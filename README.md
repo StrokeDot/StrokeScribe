@@ -1,0 +1,76 @@
+# StrokeScribe — Windows prototype
+
+A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
+
+## Run on this computer
+
+Double-click **Launch.cmd**. The tested environment has already been installed in the parent directory's `.venv`. A sample drawing loads automatically. Click **Play / pause** or **Restart**.
+
+## Set up on another Windows computer
+
+1. Extract the project ZIP into a normal writable folder.
+2. Install 64-bit Python 3.12 or newer from https://www.python.org/downloads/windows/ . Include the Python launcher. This prototype was tested with Python 3.12.
+3. Double-click **Setup.cmd**. It creates a local virtual environment and installs the pinned dependencies from PyPI. Internet is needed for this step.
+4. Double-click **Launch.cmd**. Rendering and exports run locally and require no account or network service.
+5. Optional MOV export: install an FFmpeg build containing `prores_ks`, following https://ffmpeg.org/download.html , and put its `bin` folder on PATH. Restart the app afterward. PNG export does not need FFmpeg.
+
+No standalone EXE or installer is supplied. The source project and launcher are runnable after setup.
+
+## Make an overlay
+
+1. Import a plain SVG, or use the included house-and-sun sample. Artwork is automatically fitted and centered; the original SVG page margins are not retained.
+2. Select strokes in the left list and use Move up / Move down. Separate SVG subpaths become separate strokes, preventing lines across pen lifts.
+3. Set duration, speed, and thickness. Actual duration is base duration divided by speed. Time per stroke is proportional to its length; pen lifts are instantaneous.
+4. Play or scrub the slider. The checkerboard indicates transparency and is never exported.
+5. Optionally load your own transparent hand PNG. Set the pen tip X and Y fractions to the pen contact point inside that PNG. Example: a tip at pixel (100, 150) in a 500×600 PNG has X=0.20 and Y=0.25. Adjust hand width, or uncheck Show hand.
+6. Choose resolution and frame rate. Export creates a new timestamped folder with numbered RGBA PNGs and a sequence.json file. It does not overwrite an earlier export.
+7. Check the MOV option to additionally encode ProRes 4444 after the PNGs are written. The PNG sequence remains available if MOV encoding fails.
+
+The first frame is empty and transparent. The last frame is the complete drawing. There is no extra hold at the end. Extend/freeze the final frame in your editor if desired. The hand disappears at completion. Export includes round(duration × fps) frames, with at least two frames; very short durations are quantized to this frame count.
+
+## Text and hand limitations
+
+- Create lettering replaces the current drawing. It uses an original, simple slanted single-line print alphabet. Lowercase becomes uppercase. This is not cursive, a font selector, or a reconstruction of a person's handwriting.
+- Supported characters: A–Z, digits, spaces, line breaks, and basic punctuation. Unsupported characters are reported and skipped. Text is limited to 500 characters.
+- Hand PNGs follow the active stroke with a fixed orientation. No animated hand sprites, wrist rotation, or interpolated travel between strokes. The test uses a synthetic overlay; no realistic hand asset is bundled.
+- One drawing at a time. No project save/load, undo, multi-layer composition, audio, or video editing.
+
+## SVG support and limits
+
+Paths, straight segments, cubic/quadratic curves, arcs, and basic shapes are handled by svgelements, including ordinary group transforms. Curves are sampled densely and animated by accumulated geometric distance. This is path-following animation, not a screen-direction wipe. Sampling is an approximation, not an analytic partial Bézier renderer.
+
+For best results, use plain SVGs with single-line strokes. Filled shapes are traced around their outlines rather than filled in. A bitmap converted to filled vector silhouettes will not automatically become natural pen strokes. SVG text should be converted to paths first (but font outlines will still be outlines). Embedded bitmaps are not traced by this app.
+
+Complex CSS, gradients, masks, clipping, filters, nested SVG viewports, and opacity compositing are unsupported. Import warnings cover common unsupported elements, but this is not a complete SVG conformance checker. Stroke caps and joins use round styling. Imported dash patterns are not preserved. Artwork is fitted to a fixed safe area; extreme thickness and oversized hands may reach the frame edges. Large/complex SVG imports may take time on the UI thread.
+
+## Performance
+
+CPU preview and export use Qt's raster painter. Preview is rendered at 960 pixels wide and scaled to the window. Output is rendered at the chosen full resolution: 1920×1080, 2048×1080, or 2560×1440. No explicit GPU preview backend is implemented. Export runs in a worker thread. Cancel stops after the current PNG; already-written frames remain. Once FFmpeg encoding begins, cancellation waits for encoding to finish.
+
+## Filmora 14
+
+The sample ProRes MOV has been encoded and decoded with FFmpeg and its transparency verified. Import/alpha interpretation inside Filmora 14 has **not** been tested. Try `test-output/sample-1080p/animation_prores4444.mov` above a colored/video clip in Filmora and check that the background disappears. If Filmora rejects it or interprets it as opaque, keep the PNG sequence as the verified lossless source. Do not assume every editor imports PNG sequences or ProRes alpha identically.
+
+## Tests and evidence
+
+From a terminal in this folder after Setup.cmd:
+
+```
+.venv\Scripts\python.exe test_prototype.py
+.venv\Scripts\python.exe verify_delivery.py
+```
+
+On the original computer use `..\.venv\Scripts\python.exe` instead. The verification script creates `test-output/sample-1080p` and deliberately refuses to overwrite it. Move that output aside before repeating verification.
+
+Five automated tests cover reverse-direction geometry, transformed strokes and pen lifts, growing coverage and alpha, text/hand rendering, export sizes/cancellation/overwrite protection, and UI playback/scrubbing/reordering. The app window was also launched on Windows.
+
+The delivery includes a 48-frame 1920×1080, 24 fps sample, a ProRes 4444 MOV, representative 2048×1080 and 2560×1440 images, a UI screenshot, a contact sheet, and machine-readable verification.json. Full-HD PNG rendering took about 2.32 seconds for the test drawing on this machine; that is a sample measurement, not a guarantee for other artwork.
+
+## Open-source components
+
+- PySide6 / Qt 6.10.2: https://doc.qt.io/qtforpython-6/ — LGPLv3/GPL/commercial licensing as applicable. Installed package includes upstream licensing information. No Qt binaries are redistributed in the source ZIP.
+- svgelements 1.9.6: https://github.com/meerk40t/svgelements — MIT.
+- Pillow 12.1.0: https://python-pillow.github.io/ — HPND; used for verification.
+- FFmpeg: https://ffmpeg.org/ — optional separate installation; licensing depends on build.
+
+The original application code and sample SVG are provided under the MIT license in LICENSE. Review dependency license obligations before redistributing a packaged executable.

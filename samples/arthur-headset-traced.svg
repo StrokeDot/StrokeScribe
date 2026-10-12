@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1600" viewBox="0 0 1600 1600">
+ <title>Arthur headset — simplified manual contour trace</title>
+ <desc>Manually reconstructed drawing paths from the supplied headset PNG. Shading, texture and color are intentionally omitted. The path order is curated for a drawing animation; this is not an automatic PNG converter.</desc>
+ <g fill="none" stroke="#493e2c" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
+  <path id="01-headband-outer" d="M386 403 C421 265 492 158 605 105 C696 61 841 64 944 89 C1077 121 1152 235 1193 407"/>
+  <path id="02-headband-inner" d="M605 407 C652 279 731 197 807 190 C887 177 949 266 979 416"/>
+  <path id="03-headband-seam" d="M426 410 C464 267 525 185 631 147 C697 122 765 124 825 151 C915 191 974 296 1007 404"/>
+  <path id="04-headband-highlight" stroke-width="3" d="M402 392 C444 252 513 167 619 120 C699 85 781 93 846 121 C938 160 988 257 1030 395"/>
+  <path id="05-left-hinge" d="M386 398 C421 419 526 419 600 409 Q617 407 616 426 L607 509 Q600 555 553 558 L414 557 Q364 553 362 504 Q359 450 374 409 Q378 398 386 398 Z"/>
+  <path id="06-left-hinge-edge" stroke-width="3" d="M398 411 C385 458 377 523 403 545 M429 419 C414 461 399 529 423 549"/>
+  <ellipse id="07-left-screw" cx="452" cy="476" rx="13" ry="17"/>
+  <ellipse id="08-right-screw" cx="576" cy="471" rx="12" ry="16"/>
+  <path id="09-right-hinge" d="M987 417 L1192 405 Q1210 404 1213 422 L1221 478 Q1228 540 1185 560 Q1147 575 1051 575 Q995 575 981 526 Q967 476 968 436 Q968 422 987 417 Z"/>
+  <path id="10-right-hinge-edge" stroke-width="3" d="M994 424 Q993 514 1013 546 Q1024 566 1043 565 M1024 421 Q1026 515 1045 551"/>
+  <path id="11-left-arm" d="M434 559 L432 607 Q432 616 418 619 L416 643 Q316 690 286 786 Q268 842 273 925 M518 559 L515 596 Q514 608 532 609 Q538 610 537 625 L537 644"/>
+  <path id="12-left-earcup-outer" d="M774 788 C744 691 669 631 576 645 C467 648 393 706 359 799 C322 891 329 1072 389 1169 C435 1244 517 1261 601 1238 C661 1220 700 1183 730 1144"/>
+  <path id="13-left-cushion-back" d="M495 667 C384 692 310 770 296 863 Q290 901 293 924 M301 992 C310 1103 348 1181 424 1223 Q452 1238 477 1241"/>
+  <path id="14-left-cushion-seam" stroke-width="3" d="M471 676 C374 737 330 821 331 948 C330 1071 367 1174 451 1226"/>
+  <path id="15-left-earcup-rim" stroke-width="3" d="M591 655 C501 674 448 740 416 835 C384 930 390 1062 439 1159 Q473 1216 532 1237"/>
+  <path id="16-left-driver-recess" d="M579 760 C630 744 670 797 687 862 C708 941 696 1032 659 1090 C634 1132 593 1148 556 1118 C511 1082 487 1005 485 934 C482 858 514 780 579 760 Z"/>
+  <path id="17-left-recess-edge" stroke-width="3" d="M577 747 C636 733 685 792 705 865 C726 946 709 1045 668 1105 C639 1147 590 1167 548 1130"/>
+  <ellipse id="18-left-upper-speaker" cx="588" cy="878" rx="57" ry="80" transform="rotate(-4 588 878)"/>
+  <ellipse id="19-left-upper-cone" cx="587" cy="879" rx="29" ry="42"/>
+  <ellipse id="20-left-lower-speaker" cx="582" cy="1034" rx="48" ry="62" transform="rotate(-7 582 1034)"/>
+  <ellipse id="21-left-lower-cone" cx="582" cy="1035" rx="25" ry="34"/>
+  <path id="22-left-button" d="M282 925 Q266 928 267 953 Q266 982 281 989 Q297 995 317 985 Q335 979 331 952 Q329 925 312 922 Z M281 928 Q304 923 310 950 Q317 977 298 986"/>
+  <path id="23-right-cushion-outline" d="M1059 655 C984 639 927 656 861 704 C766 775 711 914 711 1048 C708 1173 758 1264 850 1291"/>
+  <path id="24-right-cushion-seam" stroke-width="3" d="M1058 687 C965 696 892 773 848 870 C803 970 786 1089 820 1175 Q836 1215 869 1247"/>
+  <path id="25-right-arm-and-shell" d="M1076 571 L1078 632 Q1078 643 1064 647 L1064 680 Q1064 695 1049 703 C937 752 866 862 837 985 M839 1066 C840 1132 860 1191 890 1220 M945 1284 C1001 1327 1134 1327 1209 1266 C1280 1208 1312 1118 1317 1029 C1324 904 1290 759 1187 690 L1183 654 Q1182 640 1166 641 L1158 570"/>
+  <path id="26-right-shell-rim" d="M918 1216 C879 1174 864 1119 868 1050 C871 940 918 826 1003 757 C1060 712 1122 718 1179 753 C1244 793 1279 890 1286 983 C1297 1096 1266 1214 1185 1255 C1116 1294 1022 1306 959 1267"/>
+  <path id="27-wood-panel-outline" d="M1119 797 C1216 786 1257 873 1270 968 C1284 1065 1257 1173 1197 1231 C1154 1271 1065 1288 1014 1261 C966 1236 944 1172 944 1096 C940 1003 971 902 1023 840 C1049 812 1080 800 1119 797 Z"/>
+  <path id="28-right-inner-rim" stroke-width="3" d="M1104 771 C1004 780 940 874 917 980 C895 1078 906 1189 962 1246"/>
+  <ellipse id="29-right-upper-speaker" cx="1143" cy="925" rx="60" ry="87" transform="rotate(7 1143 925)"/>
+  <ellipse id="30-right-upper-cone" cx="1142" cy="925" rx="31" ry="44" transform="rotate(7 1142 925)"/>
+  <ellipse id="31-right-lower-speaker" cx="1127" cy="1130" rx="82" ry="101" transform="rotate(10 1127 1130)"/>
+  <ellipse id="32-right-lower-surround" stroke-width="3" cx="1127" cy="1130" rx="68" ry="88" transform="rotate(10 1127 1130)"/>
+  <ellipse id="33-right-lower-cone" cx="1126" cy="1132" rx="29" ry="40" transform="rotate(10 1126 1132)"/>
+  <path id="34-right-button" d="M858 992 Q841 995 841 1024 Q840 1055 860 1062 Q884 1070 908 1054 Q920 1041 913 1014 Q908 993 889 991 Z M858 994 Q881 990 888 1016 Q895 1046 876 1059"/>
+  <path id="35-microphone-socket" d="M869 1270 L898 1220 Q911 1200 927 1206 L949 1222 Q963 1234 951 1255 L922 1290 M875 1262 Q900 1265 917 1283"/>
+  <path id="36-microphone-boom" d="M887 1268 C818 1338 737 1371 635 1381 Q544 1389 468 1378 M903 1282 C830 1357 742 1396 638 1409 Q543 1417 466 1399"/>
+  <path id="37-microphone" d="M474 1369 Q470 1344 433 1328 Q354 1297 318 1322 Q289 1340 302 1380 Q314 1426 386 1430 Q439 1434 466 1415 L457 1399 L458 1380 Z"/>
+  <path id="38-microphone-edge" stroke-width="3" d="M309 1373 Q367 1403 448 1397 M473 1366 Q451 1363 449 1389 Q446 1413 458 1419"/>
+ </g>
+</svg>

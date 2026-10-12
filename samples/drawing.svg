@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450">
+ <g fill="none" stroke="#153c54" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+  <path id="roof" d="M180 220 L340 90 L500 220"/>
+  <path id="walls" d="M215 205 V350 H465 V205"/>
+  <path id="door" d="M315 350 V260 Q340 230 365 260 V350"/>
+  <path id="window" d="M245 240 H290 V285 H245 Z M267 240 V285 M245 262 H290"/>
+  <path id="sun" stroke="#e59b32" d="M620 80 A40 40 0 1 1 619.99 80"/>
+  <path id="rays" stroke="#e59b32" d="M620 55 V35 M620 185 V165 M555 120 H535 M685 120 H705 M572 72 L558 58 M668 168 L682 182"/>
+  <path id="ground" stroke="#368573" d="M140 365 C260 330 360 395 520 365 S640 350 690 365"/>
+ </g>
+</svg>
