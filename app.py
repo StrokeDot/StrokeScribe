@@ -2,10 +2,13 @@ import sys, time
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
-from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase
+from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar)
 from engine import import_svg, render, export_frames, encode_mov
 from lettering import make_text
+
+# Shared application branding asset (path independent of the working directory).
+BRAND_ICON = Path(__file__).resolve().parent / 'assets' / 'strokescribe_icon.png'
 
 class Canvas(QWidget):
     def __init__(self):
@@ -47,10 +50,24 @@ class Window(QMainWindow):
         if font.exists(): QFontDatabase.addApplicationFont(str(font))
         QApplication.instance().setFont(QFont('Segoe UI',10))
         self.setWindowTitle('StrokeScribe • local animation prototype'); self.resize(1220,800)
+        if BRAND_ICON.is_file():
+            icon = QIcon(str(BRAND_ICON))
+            self.setWindowIcon(icon)
+            QApplication.instance().setWindowIcon(icon)
         self.drawing=None; self.hand=None; self.worker=None; self.playing=False; self.position=0
         self.timer=QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(33)
         root=QWidget(); self.setCentralWidget(root); outer=QVBoxLayout(root)
-        title=QLabel('StrokeScribe  /  SVG → transparent animation'); title.setStyleSheet('font-size:22px;font-weight:600;padding:12px'); outer.addWidget(title)
+        header = QHBoxLayout(); outer.addLayout(header)
+        if BRAND_ICON.is_file():
+            brand = QLabel()
+            brand.setFixedSize(64,64)
+            brand.setPixmap(QPixmap(str(BRAND_ICON)).scaled(60,60,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+            header.addWidget(brand)
+        titles = QVBoxLayout(); header.addLayout(titles, 1)
+        title = QLabel('StrokeScribe'); title.setStyleSheet('font-size:24px;font-weight:700;color:#2767ed;')
+        subtitle = QLabel('SVG → transparent animation'); subtitle.setStyleSheet('font-size:12px;color:#72839a;')
+        titles.addWidget(title); titles.addWidget(subtitle)
+        header.setContentsMargins(8,4,8,8)
         split=QSplitter(); outer.addWidget(split,1); left=QWidget(); panel=QVBoxLayout(left); split.addWidget(left)
         b=QPushButton('Import SVG…'); b.clicked.connect(self.load); panel.addWidget(b)
         panel.addWidget(QLabel('Single-line lettering (A–Z, digits, punctuation)'))

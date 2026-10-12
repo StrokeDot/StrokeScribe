@@ -74,3 +74,7 @@ The delivery includes a 48-frame 1920×1080, 24 fps sample, a ProRes 4444 MOV, r
 - FFmpeg: https://ffmpeg.org/ — optional separate installation; licensing depends on build.
 
 The original application code and sample SVG are provided under the MIT license in LICENSE. Review dependency license obligations before redistributing a packaged executable.
+
+## Branding
+
+The `assets/strokescribe_icon.png` file is the StrokeScribe S/pen-nib logo with a transparent background. The Windows application uses it for its window/taskbar icon and displays it in the header of the running interface. This asset ships with the source and is loaded relative to `app.py`, so it works from either Windows launcher and from any working directory. The `.cmd` launcher file itself keeps the default Windows command-script icon; a packaged `.exe` can receive its own embedded `.ico` later.
