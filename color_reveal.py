@@ -189,13 +189,18 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
                           duration=4, fade_duration=.4, hold_duration=.6,
                           final_image=None, thickness=1., hand=None,
                           hand_scale=.18, anchor=(.1,.1), reveal_mode='fade',
-                          brush_width=.14, painting_hand=None):
+                          brush_width=.14, painting_hand=None, stroke_spacing=.55):
     """Show SVG drawing, then fade, serpentine, or endpoint-continuous painting."""
     if final_image is None or final_image.isNull():
         return render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)
     total = timeline_duration(duration, final_image, fade_duration, hold_duration)
     elapsed = max(0., min(1., float(fraction))) * total
     stroke_progress, reveal_progress = timeline_state(elapsed,duration,fade_duration)
+    if reveal_mode == 'adaptive' and elapsed >= duration:
+        from adaptive_hand import render_adaptive
+        return render_adaptive(drawing,final_image,width,height,reveal_progress,
+                               thickness,brush_width,stroke_spacing,
+                               painting_hand,hand_scale,anchor)
     if reveal_progress == 0:
         frame = render(drawing,stroke_progress,width,height,thickness,hand,hand_scale,anchor)
         # At the exact phase boundary, keep the painting hand at the endpoint

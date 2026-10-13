@@ -136,10 +136,18 @@ This is a geometry-and-label heuristic, not semantic object detection. Some path
 
 ## Prototype version and versioned ZIP downloads
 
-The app shows **StrokeScribe — Prototype v0.5.0** in the title bar and **Prototype v0.5.0** in the header. Click **About • v0.5.0** for the release date and exact revision (when a versioned ZIP is used).
+The current app shows **StrokeScribe — Prototype v0.5.1** in the title bar and **Prototype v0.5.1** in the header. Click **About • v0.5.0** for the release date and exact revision (when a versioned ZIP is used).
 
-For the unmistakably named download, visit **GitHub → Releases** and select the newest **StrokeScribe Prototype** prerelease. Its asset is named `StrokeScribe-Prototype-v0.5.0.zip`, and extracting it creates a matching `StrokeScribe-Prototype-v0.5.0` folder. The included `BUILD_INFO.txt` records the release version and exact GitHub commit SHA.
+For the unmistakably named download, visit **GitHub → Releases** and select the newest **StrokeScribe Prototype** prerelease. Its asset is named `StrokeScribe-Prototype-v0.5.1.zip`, and extracting it creates a matching `StrokeScribe-Prototype-v0.5.1` folder. The included `BUILD_INFO.txt` records the release version and exact GitHub commit SHA.
 
-**GitHub Code → Download ZIP will always use GitHub's standard branch-based name (`StrokeScribe-main.zip`).** For a version-named ZIP, use the release asset; do not confuse the two. If the GitHub Actions release workflow is unavailable, run `python package_prototype.py` from a source checkout to create `dist/StrokeScribe-Prototype-v0.5.0.zip` locally using only Python's standard library.
+**GitHub Code → Download ZIP will always use GitHub's standard branch-based name (`StrokeScribe-main.zip`).** For a version-named ZIP, use the release asset; do not confuse the two. If the GitHub Actions release workflow is unavailable, run `python package_prototype.py` from a source checkout to create `dist/StrokeScribe-Prototype-v0.5.1.zip` locally using only Python's standard library.
 
 A new public-facing prototype version requires updating `APP_VERSION` in `version.py`. The GitHub Actions workflow packages a new prerelease when the version file or packaging workflow changes. The archive contains editable Python source and Windows launch scripts (not a standalone executable); run `Setup.cmd` in each newly extracted folder before `Launch.cmd` or `Launch-headset.cmd`. Do not delete your older working prototype folder until the new one has been tested.
+
+## Prototype v0.5.1 — Adaptive Hand Painting
+
+This release combines the original v0.5.0 application with the **Adaptive Hand Painting** experiment developed on a separate branch and validated in GitHub Actions. It adds a color reveal based on short, shape-constrained brush strokes, adjustable stroke spacing and an optional hand that follows the painting path. The four existing reveal modes and initial SVG drawing are preserved.
+
+The original v0.5.0 release remains independently downloadable: [StrokeScribe Prototype v0.5.0](https://github.com/StrokeDot/StrokeScribe/releases/tag/prototype-v0.5.0). For the new combined version use [Prototype v0.5.1](https://github.com/StrokeDot/StrokeScribe/releases/tag/prototype-v0.5.1).
+
+This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.

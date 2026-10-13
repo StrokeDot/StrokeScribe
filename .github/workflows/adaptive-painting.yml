@@ -1,0 +1,57 @@
+name: Adaptive painting cloud validation
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pull-requests: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Qt runtime
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
+      - run: pip install -r requirements.txt
+      - name: Existing mode regressions and adaptive painting tests
+        id: tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m unittest -v test_prototype test_adaptive 2>&1 | tee adaptive-tests.log
+      - name: Report failing test output to pull request
+        if: steps.tests.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo '### Adaptive painting cloud test failures'
+            echo 'The experimental branch has not passed CI. Last 130 lines:'
+            echo '\`\`\`text'
+            tail -n 130 adaptive-tests.log
+            echo '\`\`\`'
+          } > diagnostic-comment.md
+          gh pr comment "$PR_NUMBER" --body-file diagnostic-comment.md
+      - name: Stop workflow if tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
+      - name: Render 25, 50, 75 and 100 percent sample frames
+        run: python render_adaptive_samples.py
+      - name: Package experimental source for manual Windows testing
+        run: python package_prototype.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: adaptive-hand-painting-review
+          path: |
+            samples/adaptive-demo/
+            dist/*.zip
+          if-no-files-found: error
