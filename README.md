@@ -151,3 +151,8 @@ This release combines the original v0.5.0 application with the **Adaptive Hand P
 The original v0.5.0 release remains independently downloadable: [StrokeScribe Prototype v0.5.0](https://github.com/StrokeDot/StrokeScribe/releases/tag/prototype-v0.5.0). For the new combined version use [Prototype v0.5.1](https://github.com/StrokeDot/StrokeScribe/releases/tag/prototype-v0.5.1).
 
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
+
+
+## Experimental image sources (v0.5.2)
+
+PNG, JPEG, WebP and BMP can now become contour animations or region-guided painted reconstructions. See [IMAGE_SOURCE.md](IMAGE_SOURCE.md) for controls, algorithm, setup and limitations. Existing SVG modes remain available. AI redraw is not implemented.

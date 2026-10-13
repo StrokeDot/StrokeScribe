@@ -78,7 +78,10 @@ def import_svg(filename):
     xs,ys=zip(*allpts)
     return Drawing(strokes,(min(xs),min(ys),max(xs),max(ys)),sorted(warnings))
 
-def render(drawing, progress, width=1920, height=1080, thickness=1.0, hand=None, hand_scale=0.18, anchor=(0.1,0.1)):
+def render(drawing, progress, width=1920, height=1080, thickness=1.0, hand=None, hand_scale=0.18, anchor=(0.1,0.1),image_timing=True):
+    if image_timing and getattr(drawing,'source_kind',None)=='image':
+        from image_drawing import render_image_lines
+        return render_image_lines(drawing,progress,width,height,thickness,hand,hand_scale,anchor)
     image=QImage(width,height,QImage.Format.Format_ARGB32)
     image.fill(Qt.GlobalColor.transparent)
     painter=QPainter(image)

@@ -1,0 +1,28 @@
+name: Image source reconstruction review
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test-and-package:
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 ffmpeg
+      - run: pip install -r requirements.txt
+      - run: python -m compileall -q .
+      - run: python -m unittest -v test_prototype test_adaptive test_image_source
+      - run: python render_image_samples.py
+      - run: python package_prototype.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StrokeScribe-image-source-review
+          path: |
+            samples/image-reconstruction-demo/
+            dist/*.zip

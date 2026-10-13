@@ -3,8 +3,8 @@
 Increment APP_VERSION for each new downloadable prototype release.
 """
 APP_NAME = "StrokeScribe"
-APP_VERSION = "0.5.1"
+APP_VERSION = "0.5.2-experimental"
 RELEASE_CHANNEL = "Prototype"
-RELEASE_DATE = "2026-10-13"
+RELEASE_DATE = "2026-10-14"
 DISPLAY_NAME = f"{APP_NAME} — {RELEASE_CHANNEL} v{APP_VERSION}"
 PACKAGE_NAME = f"{APP_NAME}-{RELEASE_CHANNEL}-v{APP_VERSION}.zip"

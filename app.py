@@ -3,7 +3,7 @@ from pathlib import Path
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
 from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap
-from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar)
+from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea)
 from engine import import_svg, render, export_frames, encode_mov
 from lettering import make_text
 from color_reveal import load_color_image, render_color_timeline, timeline_duration
@@ -43,6 +43,16 @@ class Exporter(QThread):
             self.done.emit(str(self.folder))
         except Exception as e: self.failed.emit(str(e))
 
+class ImageBuilder(QThread):
+    ready=Signal(object); failed=Signal(str)
+    def __init__(self,path,mode,detail):
+        super().__init__(); self.path=path; self.mode=mode; self.detail=detail
+    def run(self):
+        try:
+            from image_reconstruct import reconstruct
+            self.ready.emit(reconstruct(self.path,self.mode,self.detail))
+        except Exception as exc: self.failed.emit(str(exc))
+
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -56,6 +66,7 @@ class Window(QMainWindow):
             icon = QIcon(str(BRAND_ICON))
             self.setWindowIcon(icon)
             QApplication.instance().setWindowIcon(icon)
+        self.image_result=None; self.image_path=None; self.builder=None; self.svg_state=None
         self.drawing=None; self.hand=None; self.final_image=None; self.worker=None; self.playing=False; self.position=0
         self.timer=QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(33)
         root=QWidget(); self.setCentralWidget(root); outer=QVBoxLayout(root)
@@ -67,19 +78,30 @@ class Window(QMainWindow):
             header.addWidget(brand)
         titles = QVBoxLayout(); header.addLayout(titles, 1)
         title = QLabel('StrokeScribe'); title.setStyleSheet('font-size:24px;font-weight:700;color:#2767ed;')
-        subtitle = QLabel(f'Prototype v{APP_VERSION}  •  SVG → transparent animation'); subtitle.setStyleSheet('font-size:12px;color:#72839a;')
+        subtitle = QLabel(f'Prototype v{APP_VERSION}  •  SVG / Image → transparent animation'); subtitle.setStyleSheet('font-size:12px;color:#72839a;')
         titles.addWidget(title); titles.addWidget(subtitle)
         self.version_button = QPushButton(f'About • v{APP_VERSION}')
         self.version_button.clicked.connect(self.show_version_info)
         header.addWidget(self.version_button)
         header.setContentsMargins(8,4,8,8)
-        split=QSplitter(); outer.addWidget(split,1); left=QWidget(); panel=QVBoxLayout(left); split.addWidget(left)
-        b=QPushButton('Import SVG…'); b.clicked.connect(self.load); panel.addWidget(b)
+        split=QSplitter(); outer.addWidget(split,1); left=QWidget(); panel=QVBoxLayout(left); scroll=QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(left); split.addWidget(scroll)
+        self.source_type=QComboBox(); self.source_type.addItems(['SVG','Image']); panel.addWidget(self.source_type)
+        self.import_button=QPushButton('Import SVG…'); self.import_button.clicked.connect(self.load); panel.addWidget(self.import_button)
+        self.image_controls=QWidget(); image_form=QFormLayout(self.image_controls); panel.addWidget(self.image_controls)
+        self.image_mode=QComboBox(); self.image_mode.addItems(['Auto trace','Stroke reconstruction','AI redraw (not available)'])
+        self.image_mode.model().item(2).setEnabled(False)
+        image_form.addRow('Image processing',self.image_mode)
+        self.image_detail=QComboBox(); self.image_detail.addItems(['Low','Medium','High']); self.image_detail.setCurrentIndex(1)
+        image_form.addRow('Detail',self.image_detail)
+        self.preserve_colors=QCheckBox('Preserve original colors'); self.preserve_colors.setChecked(True); image_form.addRow(self.preserve_colors)
+        self.image_duration=self.number(.2,120,8,.5); image_form.addRow('Painting duration (seconds)',self.image_duration)
+        self.rebuild_button=QPushButton('Apply image settings'); self.rebuild_button.clicked.connect(self.rebuild_image); image_form.addRow(self.rebuild_button)
+        self.image_controls.hide()
         panel.addWidget(QLabel('Single-line lettering (A–Z, digits, punctuation)'))
         self.text=QPlainTextEdit('Hello world!'); self.text.setMaximumHeight(70); panel.addWidget(self.text)
         b=QPushButton('Create lettering'); b.clicked.connect(self.letter); panel.addWidget(b)
         panel.addWidget(QLabel('Stroke order • select and move'))
-        self.order=QListWidget(); panel.addWidget(self.order,1)
+        self.order=QListWidget(); self.order.setMinimumHeight(100); panel.addWidget(self.order,1)
         row=QHBoxLayout(); panel.addLayout(row)
         for label,direction in [('Move up',-1),('Move down',1)]:
             b=QPushButton(label); b.clicked.connect(lambda checked=False,d=direction:self.move(d)); row.addWidget(b)
@@ -139,6 +161,9 @@ class Window(QMainWindow):
         self.show_paint_hand.toggled.connect(self.refresh)
         self.stroke_spacing.valueChanged.connect(self.refresh)
         self.set_drawing(import_svg(Path(__file__).parent/'samples'/'drawing.svg'))
+        self.source_type.currentIndexChanged.connect(self.change_source)
+        self.preserve_colors.toggled.connect(self.refresh)
+        self.image_duration.valueChanged.connect(self.refresh)
     def show_version_info(self):
         build_file = Path(__file__).resolve().parent / 'BUILD_INFO.txt'
         build = build_file.read_text(encoding='utf-8').strip() if build_file.exists() else 'Source ZIP / local checkout'
@@ -150,13 +175,53 @@ class Window(QMainWindow):
         w=QDoubleSpinBox(); w.setRange(minimum,maximum); w.setValue(value); w.setSingleStep(step); return w
     def set_drawing(self,drawing):
         self.playing=False; self.drawing=drawing; self.order.clear(); self.order.addItems([s.name for s in drawing.strokes]); self.note.setText('\n'.join(drawing.warnings) or 'Ready. Press Play to draw from the beginning.'); self.position=1; self.slider.setValue(1000); self.refresh()
+    def change_source(self,index):
+        self.playing=False
+        if index:
+            self.svg_state=(self.drawing,self.final_image,self.use_color.isChecked())
+            self.image_controls.show(); self.import_button.setText('Import image…')
+            if self.image_result: self.set_drawing(self.image_result.drawing)
+            else:
+                self.drawing=None; self.order.clear(); self.canvas.frame=None; self.canvas.update()
+                self.note.setText('Import a PNG, JPEG, WebP or BMP to begin.')
+        else:
+            self.image_controls.hide(); self.import_button.setText('Import SVG…')
+            if self.svg_state:
+                drawing,self.final_image,checked=self.svg_state
+                self.use_color.setChecked(checked); self.set_drawing(drawing)
+        self.export.setEnabled(self.drawing is not None)
+        self.refresh()
+    def rebuild_image(self):
+        if self.image_path: self.build_image(self.image_path)
+    def build_image(self,path):
+        if self.builder and self.builder.isRunning(): return
+        self.playing=False; self.image_path=path
+        self.builder=ImageBuilder(path,['auto_trace','stroke_reconstruction'][self.image_mode.currentIndex()],self.image_detail.currentText().lower())
+        self.builder.ready.connect(self.image_ready)
+        self.builder.failed.connect(lambda error: QMessageBox.warning(self,'Image import',error))
+        self.builder.finished.connect(self.image_finished)
+        self.source_type.setEnabled(False); self.import_button.setEnabled(False); self.rebuild_button.setEnabled(False); self.export.setEnabled(False)
+        self.status.setText('Analyzing image locally…'); self.builder.start()
+    def image_ready(self,result):
+        self.image_result=result; self.set_drawing(result.drawing)
+        self.color_note.setText(result.filename+' • original colors; adaptive brush reveal')
+    def image_finished(self):
+        self.source_type.setEnabled(True); self.import_button.setEnabled(True); self.rebuild_button.setEnabled(True)
+        self.export.setEnabled(self.drawing is not None and not (self.worker and self.worker.isRunning()))
+        self.status.setText('Image analysis finished. Apply image settings after changing mode or detail.')
     def load(self):
+        if self.source_type.currentIndex():
+            name,_=QFileDialog.getOpenFileName(self,'Import image','','Images (*.png *.jpg *.jpeg *.webp *.bmp)')
+            if name: self.build_image(name)
+            return
         name,_=QFileDialog.getOpenFileName(self,'Import SVG','','SVG (*.svg)')
         if name:
             try: self.set_drawing(import_svg(name))
             except Exception as e: QMessageBox.warning(self,'Cannot import',str(e))
     def letter(self):
-        try: self.set_drawing(make_text(self.text.toPlainText()))
+        try:
+            self.source_type.setCurrentIndex(0)
+            self.set_drawing(make_text(self.text.toPlainText()))
         except Exception as e: QMessageBox.warning(self,'Lettering',str(e))
     def move(self,direction):
         i=self.order.currentRow(); j=i+direction
@@ -182,11 +247,11 @@ class Window(QMainWindow):
         self.refresh()
     def effective_duration(self): return self.duration.value()/self.speed.value()
     def timeline_length(self):
-        color = self.final_image if self.use_color.isChecked() else None
-        return timeline_duration(self.effective_duration(),color,self.color_fade.value(),self.color_hold.value())
+        options=self.options()
+        return timeline_duration(options['duration'],options['final_image'],options['fade_duration'],options['hold_duration'])
     def options(self):
         width,height=[int(x.strip()) for x in self.res.currentText().split('×')]
-        return dict(duration=self.effective_duration(),fps=self.fps.value(),width=width,height=height,
+        options=dict(duration=self.effective_duration(),fps=self.fps.value(),width=width,height=height,
                     thickness=self.thickness.value(),hand=self.hand if self.showhand.isChecked() else None,
                     hand_scale=self.handsize.value(),anchor=(self.ax.value(),self.ay.value()),
                     final_image=self.final_image if self.use_color.isChecked() else None,
@@ -194,6 +259,10 @@ class Window(QMainWindow):
                     reveal_mode=['fade','brush','guided','clean','adaptive'][self.reveal_mode.currentIndex()],
                     brush_width=self.brush_width.value(),stroke_spacing=self.stroke_spacing.value(),
                     painting_hand=self.hand if self.show_paint_hand.isChecked() else None)
+        if self.source_type.currentIndex():
+            options.update(final_image=self.image_result.image if self.image_result and self.preserve_colors.isChecked() else None,
+                           fade_duration=self.image_duration.value(),reveal_mode='adaptive')
+        return options
     def refresh(self,*args):
         if not self.drawing: return
         options=self.options()
@@ -220,6 +289,7 @@ class Window(QMainWindow):
         self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False); self.refresh()
         if self.position>=1: self.playing=False
     def save(self):
+        if not self.drawing or (self.builder and self.builder.isRunning()): return
         parent=QFileDialog.getExistingDirectory(self,'Choose destination; a new sequence folder will be created')
         if not parent: return
         import copy
@@ -233,6 +303,8 @@ class Window(QMainWindow):
     def cancel_export(self):
         if self.worker: self.worker.requestInterruption(); self.status.setText('Cancelling after current frame. MOV encoding, if started, must finish.')
     def closeEvent(self,event):
+        if self.builder and self.builder.isRunning():
+            QMessageBox.information(self,'Image analysis','Please wait for image analysis to finish.'); event.ignore(); return
         if self.worker and self.worker.isRunning():
             self.cancel_export(); QMessageBox.information(self,'Export running','Please wait for the current export to stop before closing.'); event.ignore()
         else: event.accept()
