@@ -1,4 +1,4 @@
-# Adaptive Hand Painting — experimental v0.6
+# Adaptive Hand Painting — Prototype v0.5.1 (experimental feature)
 
 Select **Adaptive Hand Painting** in Reveal mode after importing an SVG and its
 matching original colored PNG. Drawing duration is unchanged. Reveal duration
@@ -77,3 +77,7 @@ headset PNG remains required, especially at the headband and microphone.
 The existing Fade, Brush painting, Stroke-guided painting, Clean contour painting,
 SVG rendering, optional hand, PNG exporter and ProRes encoder remain available.
 No local Windows files are accessed by the cloud workflow.
+
+## Versioning
+
+This feature is included in **StrokeScribe Prototype v0.5.1**, alongside all existing v0.5.0 functionality. The separately tagged [Prototype v0.5.0](https://github.com/StrokeDot/StrokeScribe/releases/tag/prototype-v0.5.0) release remains unchanged for comparison or rollback. v0.5.1 is an experimental improvement, not a replacement for the archived v0.5.0 ZIP.
