@@ -200,7 +200,7 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         frame = render(drawing,stroke_progress,width,height,thickness,hand,hand_scale,anchor)
         # At the exact phase boundary, keep the painting hand at the endpoint
         # instead of hiding it and making it reappear one frame later.
-        if (reveal_mode in ('continue','guided') and elapsed >= duration
+        if (reveal_mode in ('continue','guided','clean') and elapsed >= duration
                 and painting_hand is not None and not painting_hand.isNull()):
             painter = QPainter(frame)
             draw_hand(painter,last_stroke_canvas_endpoint(drawing,width,height),
@@ -214,7 +214,7 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
     painter = QPainter(canvas)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-    if reveal_mode in ('brush','continue','guided'):
+    if reveal_mode in ('brush','continue','guided','clean'):
         if reveal_progress >= 1:
             painter.drawImage(rect, final_image)
             painter.end()
@@ -222,7 +222,10 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         # Preserve completed strokes until the paint sweep reaches them.
         origin = (last_stroke_canvas_endpoint(drawing,width,height)
                   if reveal_mode=='continue' else None)
-        if reveal_mode == 'guided':
+        if reveal_mode == 'clean':
+            from clean_paint import clean_paint_mask
+            mask, tip = clean_paint_mask(drawing,width,height,rect,reveal_progress,brush_width)
+        elif reveal_mode == 'guided':
             from stroke_guided import guided_paint_mask
             mask, tip = guided_paint_mask(drawing,width,height,rect,reveal_progress,brush_width)
         else:
@@ -232,6 +235,20 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         erase.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
         erase.drawImage(0,0,mask)
         erase.end()
+        if reveal_mode == 'clean':
+            # Remove stray SVG outlines outside the original PNG's alpha.
+            footprint=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
+            footprint.fill(Qt.GlobalColor.transparent)
+            clip=QPainter(footprint)
+            clip.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            clip.drawImage(rect,final_image)
+            clip.end()
+            # Strict per-pixel alpha clip: stray vector strokes cannot remain
+            # visible outside the final full-color artwork.
+            clipping=QPainter(outline)
+            clipping.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+            clipping.drawImage(0,0,footprint)
+            clipping.end()
         painter.drawImage(0,0,outline)
         painted = QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
         painted.fill(Qt.GlobalColor.transparent)
