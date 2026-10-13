@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBo
 from engine import import_svg, render, export_frames, encode_mov
 from lettering import make_text
 from color_reveal import load_color_image, render_color_timeline, timeline_duration
+from version import APP_VERSION, DISPLAY_NAME, RELEASE_DATE
 
 # Shared application branding asset (path independent of the working directory).
 BRAND_ICON = Path(__file__).resolve().parent / 'assets' / 'strokescribe_icon.png'
@@ -50,7 +51,7 @@ class Window(QMainWindow):
         font=Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts'/'segoeui.ttf'
         if font.exists(): QFontDatabase.addApplicationFont(str(font))
         QApplication.instance().setFont(QFont('Segoe UI',10))
-        self.setWindowTitle('StrokeScribe • local animation prototype'); self.resize(1220,800)
+        self.setWindowTitle(DISPLAY_NAME); self.resize(1220,800)
         if BRAND_ICON.is_file():
             icon = QIcon(str(BRAND_ICON))
             self.setWindowIcon(icon)
@@ -66,8 +67,11 @@ class Window(QMainWindow):
             header.addWidget(brand)
         titles = QVBoxLayout(); header.addLayout(titles, 1)
         title = QLabel('StrokeScribe'); title.setStyleSheet('font-size:24px;font-weight:700;color:#2767ed;')
-        subtitle = QLabel('SVG → transparent animation'); subtitle.setStyleSheet('font-size:12px;color:#72839a;')
+        subtitle = QLabel(f'Prototype v{APP_VERSION}  •  SVG → transparent animation'); subtitle.setStyleSheet('font-size:12px;color:#72839a;')
         titles.addWidget(title); titles.addWidget(subtitle)
+        self.version_button = QPushButton(f'About • v{APP_VERSION}')
+        self.version_button.clicked.connect(self.show_version_info)
+        header.addWidget(self.version_button)
         header.setContentsMargins(8,4,8,8)
         split=QSplitter(); outer.addWidget(split,1); left=QWidget(); panel=QVBoxLayout(left); split.addWidget(left)
         b=QPushButton('Import SVG…'); b.clicked.connect(self.load); panel.addWidget(b)
@@ -131,6 +135,13 @@ class Window(QMainWindow):
         self.brush_width.valueChanged.connect(self.refresh)
         self.show_paint_hand.toggled.connect(self.refresh)
         self.set_drawing(import_svg(Path(__file__).parent/'samples'/'drawing.svg'))
+    def show_version_info(self):
+        build_file = Path(__file__).resolve().parent / 'BUILD_INFO.txt'
+        build = build_file.read_text(encoding='utf-8').strip() if build_file.exists() else 'Source ZIP / local checkout'
+        QMessageBox.information(self, 'About StrokeScribe',
+            f'{DISPLAY_NAME}\nRelease date: {RELEASE_DATE}\n\nBuild details:\n{build}\n\n'
+            'If your title bar shows a different version, you are running an older folder.')
+
     def number(self,minimum,maximum,value,step):
         w=QDoubleSpinBox(); w.setRange(minimum,maximum); w.setValue(value); w.setSingleStep(step); return w
     def set_drawing(self,drawing):
