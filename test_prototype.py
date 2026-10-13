@@ -4,10 +4,12 @@ import json, tempfile, unittest, subprocess, shutil, time
 from pathlib import Path
 from PIL import Image
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QImage
+from PySide6.QtGui import QImage, QPainter, QColor
+from PySide6.QtCore import Qt
 from engine import import_svg, render, export_frames, encode_mov
 from lettering import make_text
 from stroke_guided import guided_route, guided_paint_mask
+from clean_paint import clean_route, clean_hand_tip, clean_paint_mask
 from color_reveal import (load_color_image, render_color_timeline, brush_route, paint_mask,
                           artwork_rect, last_stroke_canvas_endpoint, continuation_brush_route)
 
@@ -190,6 +192,36 @@ class PrototypeTests(unittest.TestCase):
         d.strokes[0],d.strokes[-1]=d.strokes[-1],d.strokes[0]
         new_route=guided_route(d,320,240)
         self.assertNotEqual(route[0][:2],new_route[0][:2])
+
+    def test_clean_contour_mode_and_artwork_clipping(self):
+        d=import_svg(HERE/'samples/drawing.svg')
+        route=clean_route(d,320,240)
+        self.assertEqual(route[0][:2],last_stroke_canvas_endpoint(d,320,240))
+        self.assertTrue(any(p[2] for p in route[1:]))
+        self.assertTrue(any(not p[2] for p in route[1:]))
+        from color_reveal import artwork_rect
+        art=QImage(80,60,QImage.Format.Format_ARGB32)
+        art.fill(Qt.GlobalColor.transparent)
+        artist=QPainter(art)
+        artist.fillRect(20,15,40,30,QColor(250,100,50))
+        artist.end()
+        bounds=artwork_rect(d,art,320,240)
+        mask,tip=clean_paint_mask(d,320,240,bounds,.5,.14)
+        self.assertFalse(mask.isNull())
+        self.assertGreater(rgba(mask).getchannel('A').getextrema()[1],0)
+        options=dict(final_image=art,duration=.5,fade_duration=.5,
+                     reveal_mode='clean',brush_width=.14)
+        halfway=rgba(render_color_timeline(d,.75,320,240,**options))
+        complete=rgba(render_color_timeline(d,1,320,240,**options))
+        self.assertEqual(halfway.getpixel((0,0))[3],0)
+        self.assertEqual(complete.getpixel((0,0))[3],0)
+        self.assertEqual(complete.getpixel((160,120)),(250,100,50,255))
+        with tempfile.TemporaryDirectory() as tmp:
+            output=Path(tmp)/'clean_frames'
+            self.assertEqual(export_frames(d,output,duration=.5,fps=8,
+                             width=320,height=240,final_image=art,fade_duration=.5,
+                             reveal_mode='clean'),8)
+            self.assertEqual(json.loads((output/'sequence.json').read_text())['reveal_mode'],'clean')
 
     def test_ui(self):
         from app import Window
