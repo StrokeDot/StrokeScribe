@@ -86,7 +86,7 @@ class Window(QMainWindow):
         panel.addWidget(self.use_color)
         color_form=QFormLayout(); panel.addLayout(color_form)
         self.reveal_mode=QComboBox()
-        self.reveal_mode.addItems(['Fade','Brush painting','Continue from last stroke'])
+        self.reveal_mode.addItems(['Fade','Brush painting','Stroke-guided painting'])
         color_form.addRow('Reveal mode',self.reveal_mode)
         self.color_fade=self.number(0,20,.4,.1)
         color_form.addRow('Reveal duration (seconds)',self.color_fade)
@@ -176,7 +176,7 @@ class Window(QMainWindow):
                     hand_scale=self.handsize.value(),anchor=(self.ax.value(),self.ay.value()),
                     final_image=self.final_image if self.use_color.isChecked() else None,
                     fade_duration=self.color_fade.value(),hold_duration=self.color_hold.value(),
-                    reveal_mode=['fade','brush','continue'][self.reveal_mode.currentIndex()],
+                    reveal_mode=['fade','brush','guided'][self.reveal_mode.currentIndex()],
                     brush_width=self.brush_width.value(),
                     painting_hand=self.hand if self.show_paint_hand.isChecked() else None)
     def refresh(self,*args):
