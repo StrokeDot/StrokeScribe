@@ -84,6 +84,15 @@ class ImageSourceTests(unittest.TestCase):
             probe=json.loads(subprocess.check_output(['ffprobe','-v','quiet','-show_streams','-of','json',str(mov)]))
             self.assertEqual(probe['streams'][0]['codec_name'],'prores')
             self.assertIn('a',probe['streams'][0]['pix_fmt'])
+    def test_background_builder_prepares_route(self):
+        from app import ImageBuilder
+        ready=[]; errors=[]
+        worker=ImageBuilder(str(self.path),'stroke_reconstruction','low',.14,.55)
+        worker.ready.connect(ready.append); worker.failed.connect(errors.append)
+        worker.run()
+        self.assertFalse(errors)
+        self.assertEqual(len(ready),1)
+        self.assertTrue(plan_for(ready[0].drawing,ready[0].image).segments)
     def test_ui_source_switch_preserves_svg(self):
         from app import Window
         w=Window(); old=w.drawing

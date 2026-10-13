@@ -20,7 +20,7 @@ Preview and export share these functions. SVG Drawings without raster metadata r
 This reconstructs plausible contours and brush order, not the artist's original strokes. It does not recognize objects or use an AI model.
 Photos, gradients, textured or noisy images may produce distracting doubled contours and many small regions. Low detail is a useful first attempt.
 The planner uses a bounded 224-cell analysis grid; very fine strands can have coarse masks. Brush width cannot exceed the region's usable interior.
-The first painting preview or brush/spacing/order change can take time while the route is computed. Image decoding and tracing run in a worker.
+Image decoding, tracing and the initial brush route run in a worker. Later brush/spacing/order changes can pause preview while a new route is computed.
 Original colors and alpha are preserved in the settled image, subject to normal output scaling and Qt premultiplied-alpha rounding.
 Analysis refuses images above 24 megapixels. Animated WebP uses its first frame. AI redraw is a disabled placeholder.
 There is no manual region editor yet. A future tool could split/merge and prioritize regions, then let the user choose a brush direction.

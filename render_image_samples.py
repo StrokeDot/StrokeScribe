@@ -23,3 +23,8 @@ for i,im in enumerate(frames): sheet.paste(im,((i%2)*640,(i//2)*360))
 sheet.save(out/'contact-sheet.png')
 (out/'README.txt').write_text('Synthetic transparent illustration. Original headset PNG is not supplied by this task. Review Windows hand calibration, busy artwork and real photographs manually. All color samples use identical adaptive masks in preview/export.\n')
 print(f'Regions: {plan.region_count}; brush segments: {len(plan.segments)}')
+
+# A compact remote preview is also available in CI logs for automated review.
+import io,base64
+buffer=io.BytesIO(); sheet.resize((960,540)).save(buffer,format='PNG')
+print('REVIEW_IMAGE_BASE64='+base64.b64encode(buffer.getvalue()).decode('ascii'))

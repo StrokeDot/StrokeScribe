@@ -45,12 +45,15 @@ class Exporter(QThread):
 
 class ImageBuilder(QThread):
     ready=Signal(object); failed=Signal(str)
-    def __init__(self,path,mode,detail):
-        super().__init__(); self.path=path; self.mode=mode; self.detail=detail
+    def __init__(self,path,mode,detail,brush_width,spacing):
+        super().__init__(); self.path=path; self.mode=mode; self.detail=detail; self.brush_width=brush_width; self.spacing=spacing
     def run(self):
         try:
             from image_reconstruct import reconstruct
-            self.ready.emit(reconstruct(self.path,self.mode,self.detail))
+            result=reconstruct(self.path,self.mode,self.detail)
+            from adaptive_hand import plan_for
+            plan_for(result.drawing,result.image,self.brush_width,self.spacing)
+            self.ready.emit(result)
         except Exception as exc: self.failed.emit(str(exc))
 
 class Window(QMainWindow):
@@ -196,7 +199,7 @@ class Window(QMainWindow):
     def build_image(self,path):
         if self.builder and self.builder.isRunning(): return
         self.playing=False; self.image_path=path
-        self.builder=ImageBuilder(path,['auto_trace','stroke_reconstruction'][self.image_mode.currentIndex()],self.image_detail.currentText().lower())
+        self.builder=ImageBuilder(path,['auto_trace','stroke_reconstruction'][self.image_mode.currentIndex()],self.image_detail.currentText().lower(),self.brush_width.value(),self.stroke_spacing.value())
         self.builder.ready.connect(self.image_ready)
         self.builder.failed.connect(lambda error: QMessageBox.warning(self,'Image import',error))
         self.builder.finished.connect(self.image_finished)
@@ -235,6 +238,8 @@ class Window(QMainWindow):
             if image.isNull(): QMessageBox.warning(self,'Hand','Could not read PNG.'); return
             self.hand=image; self.refresh()
     def load_color(self):
+        if self.source_type.currentIndex():
+            QMessageBox.information(self,'Image colors','Image mode uses the imported image. Switch to SVG to load a matching colored PNG.'); return
         name,_=QFileDialog.getOpenFileName(self,'Load final colored artwork','','PNG (*.png)')
         if not name: return
         try:
@@ -280,11 +285,14 @@ class Window(QMainWindow):
         self.clock.setText(f'{self.position*length:.2f} / {length:.2f} s')
     def scrub(self,value): self.position=value/1000; self.refresh()
     def toggle(self):
+        if not self.drawing: return
         if self.position>=1: self.slider.setValue(0)
         self.playing=not self.playing; self.last=time.perf_counter()
-    def restart(self): self.slider.setValue(0); self.playing=True; self.last=time.perf_counter()
+    def restart(self):
+        if not self.drawing: return
+        self.slider.setValue(0); self.playing=True; self.last=time.perf_counter()
     def tick(self):
-        if not self.playing: return
+        if not self.playing or not self.drawing: return
         now=time.perf_counter(); self.position=min(1,self.position+(now-self.last)/self.timeline_length()); self.last=now
         self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False); self.refresh()
         if self.position>=1: self.playing=False
