@@ -133,3 +133,13 @@ Choose **Clean contour painting** in Reveal mode to test smoother color-animatio
 **Temporary dark-outline artifact mitigation:** During this mode's painting phase, residual SVG strokes are clipped to the original PNG's visible alpha, rather than allowed to extend beyond the picture. This is especially useful if the tracing SVG has stray lines around the headset. The final frame is the unchanged original colored PNG. The initial line-drawing animation is untouched and may still show any stray SVG paths that exist in the source.
 
 This is a geometry-and-label heuristic, not semantic object detection. Some path ordering or hand timing may still look unnatural. For meaningful tests set Reveal duration to 5–8 seconds and use a matching traced SVG and original transparent PNG. Python / Windows UI tests still require manual execution.
+
+## Prototype version and versioned ZIP downloads
+
+The app shows **StrokeScribe — Prototype v0.5.0** in the title bar and **Prototype v0.5.0** in the header. Click **About • v0.5.0** for the release date and exact revision (when a versioned ZIP is used).
+
+For the unmistakably named download, visit **GitHub → Releases** and select the newest **StrokeScribe Prototype** prerelease. Its asset is named `StrokeScribe-Prototype-v0.5.0.zip`, and extracting it creates a matching `StrokeScribe-Prototype-v0.5.0` folder. The included `BUILD_INFO.txt` records the release version and exact GitHub commit SHA.
+
+**GitHub Code → Download ZIP will always use GitHub's standard branch-based name (`StrokeScribe-main.zip`).** For a version-named ZIP, use the release asset; do not confuse the two. If the GitHub Actions release workflow is unavailable, run `python package_prototype.py` from a source checkout to create `dist/StrokeScribe-Prototype-v0.5.0.zip` locally using only Python's standard library.
+
+A new public-facing prototype version requires updating `APP_VERSION` in `version.py`. The GitHub Actions workflow packages a new prerelease when the version file or packaging workflow changes. The archive contains editable Python source and Windows launch scripts (not a standalone executable); run `Setup.cmd` in each newly extracted folder before `Launch.cmd` or `Launch-headset.cmd`. Do not delete your older working prototype folder until the new one has been tested.
