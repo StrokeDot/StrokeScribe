@@ -1,0 +1,51 @@
+name: Versioned StrokeScribe prototype ZIP
+
+on:
+  push:
+    paths:
+      - version.py
+      - .github/workflows/prototype-zip.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-versioned-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out prototype source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Create versioned prototype ZIP
+        run: python package_prototype.py
+
+      - name: Upload downloadable workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StrokeScribe-Prototype
+          path: dist/StrokeScribe-Prototype-v*.zip
+          if-no-files-found: error
+
+      - name: Publish versioned GitHub prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          VERSION=$(python -c 'from version import APP_VERSION;print(APP_VERSION)')
+          TAG="prototype-v${VERSION}"
+          FILE="dist/StrokeScribe-Prototype-v${VERSION}.zip"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Prototype release $TAG already exists; bump APP_VERSION for a new package."
+            exit 0
+          fi
+          gh release create "$TAG" "$FILE" \
+            --target "$GITHUB_SHA" \
+            --title "StrokeScribe Prototype v${VERSION}" \
+            --notes "Experimental Windows/Python source prototype. Extract the ZIP, run Setup.cmd once, then Launch-headset.cmd or Launch.cmd. See BUILD_INFO.txt for the precise GitHub revision. This is not a standalone EXE." \
+            --prerelease
