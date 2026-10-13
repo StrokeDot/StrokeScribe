@@ -132,8 +132,8 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
         color_fade_seconds=fade_duration if use_color else 0,
         color_hold_seconds=hold_duration if use_color else 0,
         reveal_mode=reveal_mode if use_color else 'none',
-        brush_width=brush_width if use_color and reveal_mode in ('brush','continue') else None,
-        painting_hand=bool(use_color and reveal_mode in ('brush','continue') and painting_hand is not None and not painting_hand.isNull()),
+        brush_width=brush_width if use_color and reveal_mode in ('brush','continue','guided') else None,
+        painting_hand=bool(use_color and reveal_mode in ('brush','continue','guided') and painting_hand is not None and not painting_hand.isNull()),
         alpha=True,first_frame='transparent',
         last_frame='original_color_png' if use_color else 'complete'),indent=2))
     return count
