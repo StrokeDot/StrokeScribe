@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QImage
 from engine import import_svg, render, export_frames, encode_mov
 from lettering import make_text
+from stroke_guided import guided_route, guided_paint_mask
 from color_reveal import (load_color_image, render_color_timeline, brush_route, paint_mask,
                           artwork_rect, last_stroke_canvas_endpoint, continuation_brush_route)
 
@@ -168,6 +169,28 @@ class PrototypeTests(unittest.TestCase):
             self.assertEqual(json.loads((folder/'sequence.json').read_text())['reveal_mode'],'continue')
             self.assertEqual(Image.open(folder/'frame_000009.png').getpixel((160,120)),
                              (220,100,68,255))
+    def test_guided_painting_from_final_stroke(self):
+        d=import_svg(HERE/'samples/drawing.svg')
+        artwork=QImage(60,60,QImage.Format.Format_ARGB32)
+        artwork.fill(0xffd28256)
+        from color_reveal import artwork_rect, last_stroke_canvas_endpoint
+        rect=artwork_rect(d,artwork,320,240)
+        route=guided_route(d,320,240)
+        self.assertEqual(route[0][:2],last_stroke_canvas_endpoint(d,320,240))
+        self.assertTrue(any(item[2] for item in route[1:]))
+        mask,tip=guided_paint_mask(d,320,240,rect,.5,.14)
+        self.assertIsNotNone(tip)
+        self.assertGreater(rgba(mask).getchannel('A').getextrema()[1],0)
+        end,tip=guided_paint_mask(d,320,240,rect,1,.14)
+        self.assertIsNone(tip)
+        self.assertEqual(rgba(end).getchannel('A').getpixel((160,120)),255)
+        frame=rgba(render_color_timeline(d,1,320,240,duration=.4,
+                   fade_duration=.4,final_image=artwork,reveal_mode='guided'))
+        self.assertEqual(frame.getpixel((160,120)),(210,130,86,255))
+        d.strokes[0],d.strokes[-1]=d.strokes[-1],d.strokes[0]
+        new_route=guided_route(d,320,240)
+        self.assertNotEqual(route[0][:2],new_route[0][:2])
+
     def test_ui(self):
         from app import Window
         w=Window(); w.show(); APP.processEvents(); w.slider.setValue(500); APP.processEvents()
