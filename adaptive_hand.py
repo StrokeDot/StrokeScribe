@@ -302,6 +302,17 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
     from color_reveal import artwork_rect,draw_hand
     from engine import render
     rect=artwork_rect(drawing,image,width,height)
+    # All cells were painted by the real stroke plan at 98%. Render the
+    # settled original PNG directly rather than recompositing it over SVG
+    # outlines; this preserves exact colors/alpha and avoids dark fringes.
+    if progress>=.98:
+        frame=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
+        frame.fill(Qt.GlobalColor.transparent)
+        painter=QPainter(frame)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.drawImage(rect,image)
+        painter.end()
+        return frame
     mask,tip=adaptive_paint_mask(drawing,image,width,height,rect,progress,
                                 brush_width,stroke_spacing)
     footprint=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
