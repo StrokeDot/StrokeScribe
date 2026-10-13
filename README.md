@@ -117,3 +117,11 @@ A third **Reveal mode** is **Continue from last stroke**, alongside Fade and Bru
 The SVG-to-canvas projection matches the current vector renderer. If the colored PNG has proportions different from the SVG, the starting endpoint may lie outside the PNG's fitted rectangle: the painting hand travels from that exact SVG endpoint to the image edge rather than jumping. For best results, use matching PNG/SVG artwork. Color reveal still uses the unmodified original PNG, and the complete image appears after the mask finishes. Duration, width and hold are adjustable. The rendering and export use the same path generator.
 
 This is a continuity experiment, **not** an AI-derived object-aware coloring route. It still uses a serpentine brush sweep after the start point and has not yet been visually validated on Windows.
+
+## Stroke-guided painting (experimental)
+
+Select **Stroke-guided painting** in the Reveal mode dropdown after loading both a stroke SVG and matching original colored PNG. This replaces the previous **Continue from last stroke** menu entry; Fade and Brush painting remain available. The previous "continue" rendering implementation stays in code for compatibility.
+
+The new mode starts at the endpoint of the final stroke in the editable Stroke order list. It follows the last SVG path backward, then visits nearby SVG contour paths, progressively growing the PNG-color reveal outward from those paths. It is **not** a rectangular up/down brush sweep. Optional **Show hand during painting** makes the hand follow this vector route; the color effect also works without a hand. A disconnected path transfer can still produce a visible hand movement across empty space, but it does not paint during that transfer.
+
+The original PNG is used at its original colors and alpha without vectorizing its shading. The final frame always displays the complete colored image. A reduced-resolution timing mask is cached for performance. It is geometrical approximation, **not** recognition of each headset component, and may show premature color spread or visual jumps if the stroke SVG and PNG do not align. Windows preview, PNG-sequence export, and MOV import need manual validation. The initial mask computation can take time on the CPU.
