@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QImage
 from engine import import_svg, render, export_frames, encode_mov
 from lettering import make_text
-from color_reveal import load_color_image, render_color_timeline
+from color_reveal import load_color_image, render_color_timeline, brush_route, paint_mask, artwork_rect
 
 APP=QApplication.instance() or QApplication([])
 HERE=Path(__file__).parent
@@ -80,6 +80,47 @@ class PrototypeTests(unittest.TestCase):
             metadata=json.loads((folder/'sequence.json').read_text())
             self.assertTrue(metadata['color_reveal'])
             self.assertEqual(metadata['last_frame'],'original_color_png')
+    def test_brush_paint_reveal_optional_hand_and_export(self):
+        d=import_svg(HERE/'samples/drawing.svg')
+        with tempfile.TemporaryDirectory() as tmp:
+            picture=Path(tmp)/'original.png'
+            colored=Image.new('RGBA',(80,64),(0,0,0,0))
+            from PIL import ImageDraw
+            ImageDraw.Draw(colored).rectangle((4,4,75,59),fill=(245,64,32,255))
+            colored.save(picture)
+            artwork=load_color_image(picture)
+            params=dict(duration=.4,fade_duration=.4,hold_duration=.2,
+                        final_image=artwork,reveal_mode='brush',brush_width=.15)
+            first=rgba(render_color_timeline(d,0,400,300,**params))
+            partial=rgba(render_color_timeline(d,.6,400,300,**params))
+            finished=rgba(render_color_timeline(d,1,400,300,**params))
+            self.assertEqual(first.getchannel('A').getextrema(),(0,0))
+            self.assertEqual(finished.getpixel((0,0))[3],0)
+            self.assertEqual(finished.getpixel((200,150)),(245,64,32,255))
+            def reds(frame):
+                return sum(1 for r,g,b,a in frame.getdata() if r>220 and g<100 and a>200)
+            self.assertGreater(reds(partial),0)
+            self.assertLess(reds(partial),reds(finished))
+            hand=QImage(20,20,QImage.Format.Format_ARGB32)
+            hand.fill(0xff00ff00)
+            with_hand=rgba(render_color_timeline(d,.6,400,300,painting_hand=hand,**params))
+            self.assertNotEqual(partial.tobytes(),with_hand.tobytes())
+            self.assertEqual(finished.tobytes(),
+                             rgba(render_color_timeline(d,1,400,300,painting_hand=hand,**params)).tobytes())
+            for f in (.01,.2,.5,.8,1.):
+                rect=artwork_rect(d,artwork,400,300)
+                mask,tip=paint_mask(400,300,rect,f,.15)
+                self.assertFalse(mask.isNull())
+                if f<1: self.assertIsNotNone(tip)
+            folder=Path(tmp)/'brush_frames'
+            count=export_frames(d,folder,duration=.4,fps=10,width=400,height=300,
+                                final_image=artwork,fade_duration=.4,hold_duration=.2,
+                                reveal_mode='brush',brush_width=.15,painting_hand=None)
+            self.assertEqual(count,10)
+            self.assertEqual(Image.open(folder/'frame_000009.png').getpixel((200,150)),(245,64,32,255))
+            info=json.loads((folder/'sequence.json').read_text())
+            self.assertEqual(info['reveal_mode'],'brush')
+            self.assertFalse(info['painting_hand'])
     def test_ui(self):
         from app import Window
         w=Window(); w.show(); APP.processEvents(); w.slider.setValue(500); APP.processEvents()

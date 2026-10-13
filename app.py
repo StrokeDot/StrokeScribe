@@ -85,7 +85,16 @@ class Window(QMainWindow):
         self.use_color.setEnabled(False)
         panel.addWidget(self.use_color)
         color_form=QFormLayout(); panel.addLayout(color_form)
-        self.color_fade=self.number(0,5,.4,.1); color_form.addRow('Color crossfade (seconds)',self.color_fade)
+        self.reveal_mode=QComboBox()
+        self.reveal_mode.addItems(['Fade','Brush painting'])
+        color_form.addRow('Reveal mode',self.reveal_mode)
+        self.color_fade=self.number(0,20,.4,.1)
+        color_form.addRow('Reveal duration (seconds)',self.color_fade)
+        self.brush_width=self.number(.02,.5,.14,.02)
+        color_form.addRow('Brush width / artwork',self.brush_width)
+        self.show_paint_hand=QCheckBox('Show hand during painting')
+        self.show_paint_hand.setChecked(True)
+        color_form.addRow(self.show_paint_hand)
         self.color_hold=self.number(0,30,.6,.1); color_form.addRow('Final image hold (seconds)',self.color_hold)
         self.color_note=QLabel('No final PNG loaded'); self.color_note.setWordWrap(True); panel.addWidget(self.color_note)
         self.note=QLabel(); self.note.setWordWrap(True); self.note.setMaximumWidth(340); panel.addWidget(self.note)
@@ -118,6 +127,9 @@ class Window(QMainWindow):
         self.use_color.toggled.connect(self.refresh)
         self.color_fade.valueChanged.connect(self.refresh)
         self.color_hold.valueChanged.connect(self.refresh)
+        self.reveal_mode.currentIndexChanged.connect(self.refresh)
+        self.brush_width.valueChanged.connect(self.refresh)
+        self.show_paint_hand.toggled.connect(self.refresh)
         self.set_drawing(import_svg(Path(__file__).parent/'samples'/'drawing.svg'))
     def number(self,minimum,maximum,value,step):
         w=QDoubleSpinBox(); w.setRange(minimum,maximum); w.setValue(value); w.setSingleStep(step); return w
@@ -159,7 +171,14 @@ class Window(QMainWindow):
         return timeline_duration(self.effective_duration(),color,self.color_fade.value(),self.color_hold.value())
     def options(self):
         width,height=[int(x.strip()) for x in self.res.currentText().split('×')]
-        return dict(duration=self.effective_duration(),fps=self.fps.value(),width=width,height=height,thickness=self.thickness.value(),hand=self.hand if self.showhand.isChecked() else None,hand_scale=self.handsize.value(),anchor=(self.ax.value(),self.ay.value()),final_image=self.final_image if self.use_color.isChecked() else None,fade_duration=self.color_fade.value(),hold_duration=self.color_hold.value())
+        return dict(duration=self.effective_duration(),fps=self.fps.value(),width=width,height=height,
+                    thickness=self.thickness.value(),hand=self.hand if self.showhand.isChecked() else None,
+                    hand_scale=self.handsize.value(),anchor=(self.ax.value(),self.ay.value()),
+                    final_image=self.final_image if self.use_color.isChecked() else None,
+                    fade_duration=self.color_fade.value(),hold_duration=self.color_hold.value(),
+                    reveal_mode='brush' if self.reveal_mode.currentIndex()==1 else 'fade',
+                    brush_width=self.brush_width.value(),
+                    painting_hand=self.hand if self.show_paint_hand.isChecked() else None)
     def refresh(self,*args):
         if not self.drawing: return
         options=self.options()
@@ -169,7 +188,8 @@ class Window(QMainWindow):
         if options['final_image'] is not None:
             self.canvas.frame=render_color_timeline(self.drawing,self.position,duration=duration,**options)
         else:
-            options.pop('final_image'); options.pop('fade_duration'); options.pop('hold_duration')
+            for key in ('final_image','fade_duration','hold_duration','reveal_mode','brush_width','painting_hand'):
+                options.pop(key)
             self.canvas.frame=render(self.drawing,self.position,**options)
         self.canvas.update()
         length=self.timeline_length()
