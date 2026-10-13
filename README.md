@@ -108,3 +108,12 @@ For **SVG drawing first, then hand-painted color**, import a drawable SVG, load 
 The source PNG itself remains unchanged and transparent edges are preserved. The coloring effect is an image-reveal mask (it is *not* a paint simulation); the SVG and PNG still need similar proportions for convincing alignment. During the sweep the SVG strokes are erased from painted regions. The moving hand uses the same PNG, size, and tip-anchor controls as the drawing phase, but is optional during painting.
 
 The brush prototype is CPU-rendered with Qt and may export more slowly at 1440p. **The code is experimental and requires local visual testing.** It does not yet include precise SVG/PNG registration, variable brush angles, or physically realistic paint strokes.
+
+
+## Continuous Drawing → Painting (experimental)
+
+A third **Reveal mode** is **Continue from last stroke**, alongside Fade and Brush painting. After the last SVG path finishes, the brush-painting mask begins at that path's **actual final canvas position**, using the current **Stroke order** (including edits made with Move up/Move down). The path covers the artwork with connected, alternating vertical passes, sweeping from the starting position toward the nearer edge and then across the opposite side. No hand teleportation is introduced when moving between passes, though the brush may backtrack across the artwork. The user can choose independent hand visibility for drawing and painting. Painting works without any hand PNG.
+
+The SVG-to-canvas projection matches the current vector renderer. If the colored PNG has proportions different from the SVG, the starting endpoint may lie outside the PNG's fitted rectangle: the painting hand travels from that exact SVG endpoint to the image edge rather than jumping. For best results, use matching PNG/SVG artwork. Color reveal still uses the unmodified original PNG, and the complete image appears after the mask finishes. Duration, width and hold are adjustable. The rendering and export use the same path generator.
+
+This is a continuity experiment, **not** an AI-derived object-aware coloring route. It still uses a serpentine brush sweep after the start point and has not yet been visually validated on Windows.

@@ -7,7 +7,8 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QImage
 from engine import import_svg, render, export_frames, encode_mov
 from lettering import make_text
-from color_reveal import load_color_image, render_color_timeline, brush_route, paint_mask, artwork_rect
+from color_reveal import (load_color_image, render_color_timeline, brush_route, paint_mask,
+                          artwork_rect, last_stroke_canvas_endpoint, continuation_brush_route)
 
 APP=QApplication.instance() or QApplication([])
 HERE=Path(__file__).parent
@@ -121,6 +122,52 @@ class PrototypeTests(unittest.TestCase):
             info=json.loads((folder/'sequence.json').read_text())
             self.assertEqual(info['reveal_mode'],'brush')
             self.assertFalse(info['painting_hand'])
+    def test_continuous_brush_starts_at_last_reordered_stroke(self):
+        d=import_svg(HERE/'samples/drawing.svg')
+        # Reordering directly affects the origin; no dependence on stroke name.
+        endpoint1=last_stroke_canvas_endpoint(d,320,240)
+        d.strokes[0],d.strokes[-1]=d.strokes[-1],d.strokes[0]
+        endpoint2=last_stroke_canvas_endpoint(d,320,240)
+        self.assertNotEqual(endpoint1,endpoint2)
+        image=QImage(96,72,QImage.Format.Format_ARGB32)
+        image.fill(0xffdc6444)
+        region=artwork_rect(d,image,320,240)
+        route,thickness=continuation_brush_route(region,.16,endpoint2)
+        self.assertEqual(route[0],endpoint2)
+        self.assertGreater(len(route),8)
+        self.assertGreater(thickness,0)
+        mask0,_=paint_mask(320,240,region,0,.16,origin=endpoint2)
+        self.assertEqual(rgba(mask0).getchannel('A').getextrema(),(0,0))
+        mask_half,tip=paint_mask(320,240,region,.5,.16,origin=endpoint2)
+        self.assertIsNotNone(tip)
+        self.assertGreater(rgba(mask_half).getchannel('A').getextrema()[1],0)
+        mask_end,lasttip=paint_mask(320,240,region,1,.16,origin=endpoint2)
+        self.assertIsNone(lasttip)
+        self.assertEqual(rgba(mask_end).getchannel('A').getpixel(
+            (round(region.center().x()),round(region.center().y()))),255)
+        kwargs=dict(final_image=image,duration=.4,fade_duration=.4,hold_duration=.2,
+                    brush_width=.16,reveal_mode='continue')
+        first=rgba(render_color_timeline(d,.0,320,240,**kwargs))
+        partial=rgba(render_color_timeline(d,.6,320,240,**kwargs))
+        final=rgba(render_color_timeline(d,1.,320,240,**kwargs))
+        self.assertEqual(first.getchannel('A').getextrema(),(0,0))
+        self.assertEqual(final.getpixel((160,120)),(220,100,68,255))
+        self.assertNotEqual(partial.tobytes(),final.tobytes())
+        hand=QImage(14,14,QImage.Format.Format_ARGB32)
+        hand.fill(0xff00ff00)
+        with_hand=rgba(render_color_timeline(d,.6,320,240,painting_hand=hand,**kwargs))
+        self.assertNotEqual(partial.tobytes(),with_hand.tobytes())
+        self.assertEqual(final.tobytes(),
+                         rgba(render_color_timeline(d,1,320,240,painting_hand=hand,**kwargs)).tobytes())
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp)/'continuous'
+            n=export_frames(d,folder,duration=.4,fps=10,width=320,height=240,
+                            final_image=image,fade_duration=.4,hold_duration=.2,
+                            reveal_mode='continue',brush_width=.16)
+            self.assertEqual(n,10)
+            self.assertEqual(json.loads((folder/'sequence.json').read_text())['reveal_mode'],'continue')
+            self.assertEqual(Image.open(folder/'frame_000009.png').getpixel((160,120)),
+                             (220,100,68,255))
     def test_ui(self):
         from app import Window
         w=Window(); w.show(); APP.processEvents(); w.slider.setValue(500); APP.processEvents()

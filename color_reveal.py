@@ -72,6 +72,64 @@ def brush_route(rect, brush_fraction):
     return points, brush_px
 
 
+def last_stroke_canvas_endpoint(drawing, width, height):
+    """Canvas position of the final stroke endpoint, after user reordering."""
+    if not drawing.strokes or not drawing.strokes[-1].points:
+        raise ValueError('A drawable final stroke is needed for continuous painting.')
+    x0,y0,x1,y1 = drawing.bounds
+    scale = min(width*.82/max(1.,x1-x0),height*.78/max(1.,y1-y0))
+    ox = (width-(x1-x0)*scale)/2-x0*scale
+    oy = (height-(y1-y0)*scale)/2-y0*scale
+    x,y = drawing.strokes[-1].points[-1]
+    return (x*scale+ox,y*scale+oy)
+
+
+def continuation_brush_route(rect, brush_fraction, origin):
+    """Continuous down/up coverage beginning at the actual last-stroke endpoint.
+
+    Begin at origin without teleportation, cover its vertical stripe, sweep
+    toward the nearest side, then cover the opposite side. Connecting strokes
+    remain continuous; the final pass reaches both edges of the artwork.
+    """
+    brush_px = max(2.,rect.width()*max(.02,min(.5,float(brush_fraction))))
+    gap = max(1.,brush_px*.72)
+    x = min(rect.right(),max(rect.left(),float(origin[0])))
+    y = min(rect.bottom(),max(rect.top(),float(origin[1])))
+    top,bottom = rect.top(),rect.bottom()
+    near_y = top if abs(y-top)<=abs(y-bottom) else bottom
+    far_y = bottom if near_y==top else top
+    points = [(float(origin[0]),float(origin[1]))]
+    def append(px,py):
+        if math.hypot(px-points[-1][0],py-points[-1][1])>1e-7:
+            points.append((px,py))
+    # If source SVG and final PNG are not perfectly aligned, travel smoothly
+    # to the closest edge of the painted region instead of teleporting.
+    append(x,y)
+    append(x,near_y)
+    append(x,far_y)
+    at_y = far_y
+
+    def sweep(start,end,y_at_start):
+        if abs(end-start)<1e-7:
+            return y_at_start
+        columns=max(1,math.ceil(abs(end-start)/gap))
+        y_position=y_at_start
+        for index in range(1,columns+1):
+            xpos=start+(end-start)*index/columns
+            append(xpos,y_position)
+            y_position=bottom if y_position==top else top
+            append(xpos,y_position)
+        return y_position
+
+    nearest = rect.left() if x-rect.left()<=rect.right()-x else rect.right()
+    opposite = rect.right() if nearest==rect.left() else rect.left()
+    at_y=sweep(x,nearest,at_y)
+    # Travel back along the edge, then cover the other side.
+    append(x,at_y)
+    sweep(x,opposite,at_y)
+    return points,brush_px
+
+
 def partial_brush_path(points, fraction):
     """Arc-length-progressive paint path; return both path and brush-tip position."""
     progress = max(0., min(1., float(fraction)))
@@ -95,12 +153,13 @@ def partial_brush_path(points, fraction):
     return path, tip
 
 
-def paint_mask(width, height, rect, progress, brush_fraction):
+def paint_mask(width, height, rect, progress, brush_fraction, origin=None):
     """Return soft-edged opaque-mask pixels and the current brush tip."""
     progress = max(0., min(1., float(progress)))
     mask = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied)
     mask.fill(Qt.GlobalColor.transparent)
-    points, brush_px = brush_route(rect, brush_fraction)
+    points, brush_px = (brush_route(rect, brush_fraction) if origin is None
+                        else continuation_brush_route(rect, brush_fraction, origin))
     path, tip = partial_brush_path(points, progress)
     painter = QPainter(mask)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -131,14 +190,23 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
                           final_image=None, thickness=1., hand=None,
                           hand_scale=.18, anchor=(.1,.1), reveal_mode='fade',
                           brush_width=.14, painting_hand=None):
-    """Show SVG drawing, then either fade or brush-paint the original PNG."""
+    """Show SVG drawing, then fade, serpentine, or endpoint-continuous painting."""
     if final_image is None or final_image.isNull():
         return render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)
     total = timeline_duration(duration, final_image, fade_duration, hold_duration)
     elapsed = max(0., min(1., float(fraction))) * total
     stroke_progress, reveal_progress = timeline_state(elapsed,duration,fade_duration)
     if reveal_progress == 0:
-        return render(drawing,stroke_progress,width,height,thickness,hand,hand_scale,anchor)
+        frame = render(drawing,stroke_progress,width,height,thickness,hand,hand_scale,anchor)
+        # At the exact phase boundary, keep the painting hand at the endpoint
+        # instead of hiding it and making it reappear one frame later.
+        if (reveal_mode == 'continue' and elapsed >= duration
+                and painting_hand is not None and not painting_hand.isNull()):
+            painter = QPainter(frame)
+            draw_hand(painter,last_stroke_canvas_endpoint(drawing,width,height),
+                      painting_hand,width,hand_scale,anchor)
+            painter.end()
+        return frame
 
     rect = artwork_rect(drawing,final_image,width,height)
     canvas = QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
@@ -146,13 +214,15 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
     painter = QPainter(canvas)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-    if reveal_mode == 'brush':
+    if reveal_mode in ('brush','continue'):
         if reveal_progress >= 1:
             painter.drawImage(rect, final_image)
             painter.end()
             return canvas
         # Preserve completed strokes until the paint sweep reaches them.
-        mask, tip = paint_mask(width,height,rect,reveal_progress,brush_width)
+        origin = (last_stroke_canvas_endpoint(drawing,width,height)
+                  if reveal_mode=='continue' else None)
+        mask, tip = paint_mask(width,height,rect,reveal_progress,brush_width,origin=origin)
         outline = render(drawing,1,width,height,thickness)
         erase = QPainter(outline)
         erase.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
