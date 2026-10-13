@@ -8,6 +8,7 @@ from PySide6.QtGui import QImage, QPainter, QColor
 from PySide6.QtCore import Qt
 from engine import import_svg, render, export_frames, encode_mov
 from lettering import make_text
+from version import APP_VERSION, DISPLAY_NAME, PACKAGE_NAME
 from stroke_guided import guided_route, guided_paint_mask
 from clean_paint import clean_route, clean_hand_tip, clean_paint_mask
 from color_reveal import (load_color_image, render_color_timeline, brush_route, paint_mask,
@@ -226,6 +227,9 @@ class PrototypeTests(unittest.TestCase):
     def test_ui(self):
         from app import Window
         w=Window(); w.show(); APP.processEvents(); w.slider.setValue(500); APP.processEvents()
+        self.assertIn(DISPLAY_NAME,w.windowTitle())
+        self.assertIn('v'+APP_VERSION,w.version_button.text())
+        self.assertTrue(PACKAGE_NAME.startswith('StrokeScribe-Prototype-v'))
         self.assertAlmostEqual(w.position,.5); self.assertIsNotNone(w.canvas.frame)
         old=w.drawing.strokes[0]; w.order.setCurrentRow(0); w.move(1); self.assertIs(w.drawing.strokes[1],old)
         w.restart(); time.sleep(.04); w.tick(); self.assertGreater(w.position,0)
