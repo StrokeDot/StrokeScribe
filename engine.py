@@ -107,15 +107,31 @@ def render(drawing, progress, width=1920, height=1080, thickness=1.0, hand=None,
     painter.end()
     return image
 
-def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None):
+def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6):
     folder=Path(folder)
     folder.mkdir(parents=True,exist_ok=False)
-    count=max(2,round(duration*fps))
+    use_color = final_image is not None and not final_image.isNull()
+    if use_color:
+        from color_reveal import timeline_duration, render_color_timeline
+        total=timeline_duration(duration,final_image,fade_duration,hold_duration)
+    else:
+        total=duration
+    count=max(2,round(total*fps))
     for i in range(count):
-        img=render(drawing,i/(count-1),width,height,thickness,hand,hand_scale,anchor)
+        fraction=i/(count-1)
+        if use_color:
+            img=render_color_timeline(drawing,fraction,width,height,duration,fade_duration,hold_duration,
+                                      final_image,thickness,hand,hand_scale,anchor)
+        else:
+            img=render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)
         if not img.save(str(folder/f'frame_{i:06d}.png')): raise OSError('Unable to save PNG frame.')
         if callback and callback(i+1,count) is False: raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
-    (folder/'sequence.json').write_text(json.dumps(dict(width=width,height=height,fps=fps,frames=count,duration=count/fps,alpha=True,first_frame='transparent',last_frame='complete'),indent=2))
+    (folder/'sequence.json').write_text(json.dumps(dict(width=width,height=height,fps=fps,frames=count,
+        duration=count/fps,draw_duration=duration,color_reveal=use_color,
+        color_fade_seconds=fade_duration if use_color else 0,
+        color_hold_seconds=hold_duration if use_color else 0,
+        alpha=True,first_frame='transparent',
+        last_frame='original_color_png' if use_color else 'complete'),indent=2))
     return count
 
 def encode_mov(folder, fps=30):

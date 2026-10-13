@@ -78,3 +78,17 @@ The original application code and sample SVG are provided under the MIT license 
 ## Branding
 
 The `assets/strokescribe_icon.png` file is the StrokeScribe S/pen-nib logo with a transparent background. The Windows application uses it for its window/taskbar icon and displays it in the header of the running interface. This asset ships with the source and is loaded relative to `app.py`, so it works from either Windows launcher and from any working directory. The `.cmd` launcher file itself keeps the default Windows command-script icon; a packaged `.exe` can receive its own embedded `.ico` later.
+
+## Final Artwork Reveal (new optional feature)
+
+To preserve the full colors of a detailed PNG without degrading them through SVG tracing:
+
+1. Import a **drawable stroke SVG** with **Import SVG…**. The SVG controls the hand's drawing movement, not the final colors.
+2. In the left panel, click **Load original colored PNG…**. Choose the high-quality **transparent PNG** used to make the SVG.
+3. Keep **Reveal PNG after drawing** enabled. Set the **Color crossfade** and **Final image hold** durations as desired (defaults: 0.4 and 0.6 seconds).
+4. Press **Restart** to preview the SVG strokes, then the transition to the original PNG. Scrub through the entire timeline.
+5. Export the usual alpha PNG sequence and optionally ProRes 4444 MOV. The exported final frame is the actual colored PNG rendered over transparency.
+
+Color reveal is **off** until a PNG is loaded and does not affect traditional stroke-only exports. The original PNG is not altered or quantized; transparent external margins are cropped only for alignment. The colored artwork is aspect-fitted to the SVG's visible bounds and centered. For best alignment, both must depict the same object/view. If a traced SVG's proportions differ substantially, the reveal may shift slightly; precise registration tools are a possible later enhancement. A PNG with an opaque background will also produce an opaque background in the final artwork (use a transparent PNG for transparent video).
+
+This feature does **not** automatically create strokes from a PNG. Use a separately traced/constructed SVG for now. Generated project ZIPs do not include the user's private colored art; load your own copy.

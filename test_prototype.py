@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QImage
 from engine import import_svg, render, export_frames, encode_mov
 from lettering import make_text
+from color_reveal import load_color_image, render_color_timeline
 
 APP=QApplication.instance() or QApplication([])
 HERE=Path(__file__).parent
@@ -52,6 +53,33 @@ class PrototypeTests(unittest.TestCase):
             self.assertEqual(first.size,(2048,1080)); self.assertEqual(first.getchannel('A').getextrema(),(0,0)); self.assertEqual(last.getchannel('A').getextrema(),(0,255))
             with self.assertRaises(FileExistsError): export_frames(d,folder)
             with self.assertRaises(InterruptedError): export_frames(d,Path(tmp)/'cancel',callback=lambda i,n:False)
+    def test_color_reveal_png_and_export(self):
+        d=import_svg(HERE/'samples/drawing.svg')
+        with tempfile.TemporaryDirectory() as tmp:
+            original=Path(tmp)/'art.png'
+            colored=Image.new('RGBA',(72,60),(0,0,0,0))
+            from PIL import ImageDraw
+            ImageDraw.Draw(colored).rectangle((10,10,61,49),fill=(247,61,23,255))
+            colored.save(original)
+            artwork=load_color_image(original)
+            self.assertEqual((artwork.width(),artwork.height()),(52,40))
+            first=rgba(render_color_timeline(d,0,400,300,duration=.4,fade_duration=.2,hold_duration=.4,final_image=artwork))
+            self.assertEqual(first.getchannel('A').getextrema(),(0,0))
+            end=rgba(render_color_timeline(d,1,400,300,duration=.4,fade_duration=.2,hold_duration=.4,final_image=artwork))
+            self.assertEqual(end.getpixel((0,0))[3],0)
+            center=end.getpixel((200,150))
+            self.assertGreater(center[0],240)
+            self.assertLess(center[1],65)
+            self.assertEqual(center[3],255)
+            folder=Path(tmp)/'color_sequence'
+            count=export_frames(d,folder,duration=.4,fps=10,width=400,height=300,
+                                final_image=artwork,fade_duration=.2,hold_duration=.4)
+            self.assertEqual(count,10)
+            self.assertEqual(Image.open(folder/'frame_000000.png').getchannel('A').getextrema(),(0,0))
+            self.assertEqual(Image.open(folder/'frame_000009.png').getpixel((200,150)),center)
+            metadata=json.loads((folder/'sequence.json').read_text())
+            self.assertTrue(metadata['color_reveal'])
+            self.assertEqual(metadata['last_frame'],'original_color_png')
     def test_ui(self):
         from app import Window
         w=Window(); w.show(); APP.processEvents(); w.slider.setValue(500); APP.processEvents()

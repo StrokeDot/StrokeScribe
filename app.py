@@ -6,6 +6,7 @@ from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon,
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar)
 from engine import import_svg, render, export_frames, encode_mov
 from lettering import make_text
+from color_reveal import load_color_image, render_color_timeline, timeline_duration
 
 # Shared application branding asset (path independent of the working directory).
 BRAND_ICON = Path(__file__).resolve().parent / 'assets' / 'strokescribe_icon.png'
@@ -54,7 +55,7 @@ class Window(QMainWindow):
             icon = QIcon(str(BRAND_ICON))
             self.setWindowIcon(icon)
             QApplication.instance().setWindowIcon(icon)
-        self.drawing=None; self.hand=None; self.worker=None; self.playing=False; self.position=0
+        self.drawing=None; self.hand=None; self.final_image=None; self.worker=None; self.playing=False; self.position=0
         self.timer=QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(33)
         root=QWidget(); self.setCentralWidget(root); outer=QVBoxLayout(root)
         header = QHBoxLayout(); outer.addLayout(header)
@@ -78,6 +79,15 @@ class Window(QMainWindow):
         row=QHBoxLayout(); panel.addLayout(row)
         for label,direction in [('Move up',-1),('Move down',1)]:
             b=QPushButton(label); b.clicked.connect(lambda checked=False,d=direction:self.move(d)); row.addWidget(b)
+        panel.addWidget(QLabel('Final artwork reveal (optional)'))
+        b=QPushButton('Load original colored PNG…'); b.clicked.connect(self.load_color); panel.addWidget(b)
+        self.use_color=QCheckBox('Reveal PNG after drawing')
+        self.use_color.setEnabled(False)
+        panel.addWidget(self.use_color)
+        color_form=QFormLayout(); panel.addLayout(color_form)
+        self.color_fade=self.number(0,5,.4,.1); color_form.addRow('Color crossfade (seconds)',self.color_fade)
+        self.color_hold=self.number(0,30,.6,.1); color_form.addRow('Final image hold (seconds)',self.color_hold)
+        self.color_note=QLabel('No final PNG loaded'); self.color_note.setWordWrap(True); panel.addWidget(self.color_note)
         self.note=QLabel(); self.note.setWordWrap(True); self.note.setMaximumWidth(340); panel.addWidget(self.note)
         right=QWidget(); layout=QVBoxLayout(right); split.addWidget(right); self.canvas=Canvas(); layout.addWidget(self.canvas,1)
         self.slider=QSlider(Qt.Orientation.Horizontal); self.slider.setRange(0,1000); self.slider.valueChanged.connect(self.scrub); layout.addWidget(self.slider)
@@ -105,6 +115,9 @@ class Window(QMainWindow):
         split.setSizes([300,900])
         for w in [self.duration,self.speed,self.thickness,self.handsize,self.ax,self.ay]: w.valueChanged.connect(self.refresh)
         self.showhand.toggled.connect(self.refresh); self.res.currentIndexChanged.connect(self.refresh)
+        self.use_color.toggled.connect(self.refresh)
+        self.color_fade.valueChanged.connect(self.refresh)
+        self.color_hold.valueChanged.connect(self.refresh)
         self.set_drawing(import_svg(Path(__file__).parent/'samples'/'drawing.svg'))
     def number(self,minimum,maximum,value,step):
         w=QDoubleSpinBox(); w.setRange(minimum,maximum); w.setValue(value); w.setSingleStep(step); return w
@@ -129,14 +142,38 @@ class Window(QMainWindow):
             image=QImage(name)
             if image.isNull(): QMessageBox.warning(self,'Hand','Could not read PNG.'); return
             self.hand=image; self.refresh()
+    def load_color(self):
+        name,_=QFileDialog.getOpenFileName(self,'Load final colored artwork','','PNG (*.png)')
+        if not name: return
+        try:
+            self.final_image=load_color_image(name)
+        except Exception as e:
+            QMessageBox.warning(self,'Final artwork',str(e)); return
+        self.color_note.setText(Path(name).name+' • use a transparent PNG that matches the SVG drawing')
+        self.use_color.setEnabled(True)
+        self.use_color.setChecked(True)
+        self.refresh()
     def effective_duration(self): return self.duration.value()/self.speed.value()
+    def timeline_length(self):
+        color = self.final_image if self.use_color.isChecked() else None
+        return timeline_duration(self.effective_duration(),color,self.color_fade.value(),self.color_hold.value())
     def options(self):
         width,height=[int(x.strip()) for x in self.res.currentText().split('×')]
-        return dict(duration=self.effective_duration(),fps=self.fps.value(),width=width,height=height,thickness=self.thickness.value(),hand=self.hand if self.showhand.isChecked() else None,hand_scale=self.handsize.value(),anchor=(self.ax.value(),self.ay.value()))
+        return dict(duration=self.effective_duration(),fps=self.fps.value(),width=width,height=height,thickness=self.thickness.value(),hand=self.hand if self.showhand.isChecked() else None,hand_scale=self.handsize.value(),anchor=(self.ax.value(),self.ay.value()),final_image=self.final_image if self.use_color.isChecked() else None,fade_duration=self.color_fade.value(),hold_duration=self.color_hold.value())
     def refresh(self,*args):
         if not self.drawing: return
-        options=self.options(); options.pop('duration'); options.pop('fps'); ratio=options['height']/options['width']; options['width']=960; options['height']=round(960*ratio)
-        self.canvas.frame=render(self.drawing,self.position,**options); self.canvas.update(); self.clock.setText(f'{self.position*self.effective_duration():.2f} / {self.effective_duration():.2f} s')
+        options=self.options()
+        duration=options.pop('duration'); options.pop('fps')
+        ratio=options['height']/options['width']
+        options['width']=960; options['height']=round(960*ratio)
+        if options['final_image'] is not None:
+            self.canvas.frame=render_color_timeline(self.drawing,self.position,duration=duration,**options)
+        else:
+            options.pop('final_image'); options.pop('fade_duration'); options.pop('hold_duration')
+            self.canvas.frame=render(self.drawing,self.position,**options)
+        self.canvas.update()
+        length=self.timeline_length()
+        self.clock.setText(f'{self.position*length:.2f} / {length:.2f} s')
     def scrub(self,value): self.position=value/1000; self.refresh()
     def toggle(self):
         if self.position>=1: self.slider.setValue(0)
@@ -144,7 +181,7 @@ class Window(QMainWindow):
     def restart(self): self.slider.setValue(0); self.playing=True; self.last=time.perf_counter()
     def tick(self):
         if not self.playing: return
-        now=time.perf_counter(); self.position=min(1,self.position+(now-self.last)/self.effective_duration()); self.last=now
+        now=time.perf_counter(); self.position=min(1,self.position+(now-self.last)/self.timeline_length()); self.last=now
         self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False); self.refresh()
         if self.position>=1: self.playing=False
     def save(self):
