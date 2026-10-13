@@ -200,7 +200,7 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         frame = render(drawing,stroke_progress,width,height,thickness,hand,hand_scale,anchor)
         # At the exact phase boundary, keep the painting hand at the endpoint
         # instead of hiding it and making it reappear one frame later.
-        if (reveal_mode == 'continue' and elapsed >= duration
+        if (reveal_mode in ('continue','guided') and elapsed >= duration
                 and painting_hand is not None and not painting_hand.isNull()):
             painter = QPainter(frame)
             draw_hand(painter,last_stroke_canvas_endpoint(drawing,width,height),
@@ -214,7 +214,7 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
     painter = QPainter(canvas)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
 
-    if reveal_mode in ('brush','continue'):
+    if reveal_mode in ('brush','continue','guided'):
         if reveal_progress >= 1:
             painter.drawImage(rect, final_image)
             painter.end()
@@ -222,7 +222,11 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         # Preserve completed strokes until the paint sweep reaches them.
         origin = (last_stroke_canvas_endpoint(drawing,width,height)
                   if reveal_mode=='continue' else None)
-        mask, tip = paint_mask(width,height,rect,reveal_progress,brush_width,origin=origin)
+        if reveal_mode == 'guided':
+            from stroke_guided import guided_paint_mask
+            mask, tip = guided_paint_mask(drawing,width,height,rect,reveal_progress,brush_width)
+        else:
+            mask, tip = paint_mask(width,height,rect,reveal_progress,brush_width,origin=origin)
         outline = render(drawing,1,width,height,thickness)
         erase = QPainter(outline)
         erase.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
