@@ -90,12 +90,15 @@ class Window(QMainWindow):
         panel.addWidget(self.use_color)
         color_form=QFormLayout(); panel.addLayout(color_form)
         self.reveal_mode=QComboBox()
-        self.reveal_mode.addItems(['Fade','Brush painting','Stroke-guided painting','Clean contour painting'])
+        self.reveal_mode.addItems(['Fade','Brush painting','Stroke-guided painting','Clean contour painting','Adaptive Hand Painting'])
         color_form.addRow('Reveal mode',self.reveal_mode)
         self.color_fade=self.number(0,20,.4,.1)
         color_form.addRow('Reveal duration (seconds)',self.color_fade)
         self.brush_width=self.number(.02,.5,.14,.02)
         color_form.addRow('Brush width / artwork',self.brush_width)
+        self.stroke_spacing=self.number(.2,.9,.55,.05)
+        self.stroke_spacing.setToolTip('Adaptive mode: smaller spacing adds overlap between brush passes.')
+        color_form.addRow('Adaptive stroke spacing / width',self.stroke_spacing)
         self.show_paint_hand=QCheckBox('Show hand during painting')
         self.show_paint_hand.setChecked(True)
         color_form.addRow(self.show_paint_hand)
@@ -134,6 +137,7 @@ class Window(QMainWindow):
         self.reveal_mode.currentIndexChanged.connect(self.refresh)
         self.brush_width.valueChanged.connect(self.refresh)
         self.show_paint_hand.toggled.connect(self.refresh)
+        self.stroke_spacing.valueChanged.connect(self.refresh)
         self.set_drawing(import_svg(Path(__file__).parent/'samples'/'drawing.svg'))
     def show_version_info(self):
         build_file = Path(__file__).resolve().parent / 'BUILD_INFO.txt'
@@ -187,8 +191,8 @@ class Window(QMainWindow):
                     hand_scale=self.handsize.value(),anchor=(self.ax.value(),self.ay.value()),
                     final_image=self.final_image if self.use_color.isChecked() else None,
                     fade_duration=self.color_fade.value(),hold_duration=self.color_hold.value(),
-                    reveal_mode=['fade','brush','guided','clean'][self.reveal_mode.currentIndex()],
-                    brush_width=self.brush_width.value(),
+                    reveal_mode=['fade','brush','guided','clean','adaptive'][self.reveal_mode.currentIndex()],
+                    brush_width=self.brush_width.value(),stroke_spacing=self.stroke_spacing.value(),
                     painting_hand=self.hand if self.show_paint_hand.isChecked() else None)
     def refresh(self,*args):
         if not self.drawing: return
@@ -199,7 +203,7 @@ class Window(QMainWindow):
         if options['final_image'] is not None:
             self.canvas.frame=render_color_timeline(self.drawing,self.position,duration=duration,**options)
         else:
-            for key in ('final_image','fade_duration','hold_duration','reveal_mode','brush_width','painting_hand'):
+            for key in ('final_image','fade_duration','hold_duration','reveal_mode','brush_width','painting_hand','stroke_spacing'):
                 options.pop(key)
             self.canvas.frame=render(self.drawing,self.position,**options)
         self.canvas.update()
