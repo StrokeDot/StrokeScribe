@@ -221,7 +221,7 @@ class PrototypeTests(unittest.TestCase):
             output=Path(tmp)/'clean_frames'
             self.assertEqual(export_frames(d,output,duration=.5,fps=8,
                              width=320,height=240,final_image=art,fade_duration=.5,
-                             reveal_mode='clean'),8)
+                             hold_duration=0,reveal_mode='clean'),8)
             self.assertEqual(json.loads((output/'sequence.json').read_text())['reveal_mode'],'clean')
 
     def test_ui(self):
