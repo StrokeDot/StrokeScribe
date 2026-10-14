@@ -34,12 +34,17 @@ def load_raster(filename):
     # Opaque backgrounds are intentionally retained; this is not background removal.
     return image.crop(bbox)
 
-def reconstruct(filename,mode='auto_trace',detail='medium'):
-    if mode not in ('auto_trace','stroke_reconstruction'):
-        raise ValueError('AI redraw is not implemented yet.')
+def reconstruct(filename,mode='auto_trace',detail='medium',ai_model='qwen3-vl:4b',ai_analysis=None):
+    if mode not in ('auto_trace','stroke_reconstruction','ai_redraw'):
+        raise ValueError('Choose Auto Trace, Stroke Reconstruction, or AI Redraw.')
     if detail not in ('low','medium','high'):
         raise ValueError('Choose Low, Medium or High detail.')
     original=load_raster(filename)
+    if mode=='ai_redraw':
+        from semantic_redraw import ai_guided_drawing, local_vision_analysis
+        analysis=ai_analysis if ai_analysis is not None else local_vision_analysis(original,ai_model)
+        drawing,image=ai_guided_drawing(original,analysis,detail)
+        return Reconstruction(drawing,image,drawing.image_regions,mode,detail,Path(filename).name)
     regions=segment_regions(original,detail)
     drawing=trace_image(original,regions,detail,mode)
     # Optional metadata: existing SVG Drawings have no region map and use
