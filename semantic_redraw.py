@@ -53,6 +53,25 @@ PART_SCHEMA = {
     'required':['description','parts'],
 }
 
+# Bounded profiles only tune AI preparation and segmentation, not original
+# source pixels, output resolution or the existing SVG/font painting modes.
+# Balanced keeps the tested 640px/8-part vision settings from experimental.8.
+AI_PROFILES = {
+    'fast': dict(max_side=448, max_parts=4, keep_alive='2m',
+                 segmentation='roi', grabcut_iterations=2),
+    'balanced': dict(max_side=640, max_parts=8, keep_alive='5m',
+                     segmentation='roi', grabcut_iterations=3),
+    'quality': dict(max_side=896, max_parts=12, keep_alive='10m',
+                    segmentation='full', grabcut_iterations=3),
+}
+
+def profile_settings(profile='balanced'):
+    key=str(profile).lower().strip()
+    if key not in AI_PROFILES:
+        raise ValueError('Choose Fast, Balanced or Quality AI processing.')
+    return AI_PROFILES[key]
+
+
 PROMPT = (
     'Describe this image in one short phrase. List 1 to 8 visible objects or parts, '
     'large shapes first, then details. Use short names. Boxes are integer '
@@ -163,15 +182,16 @@ def _reply_summary(answer, attempt, budget):
             f'thinking_chars={len(thinking) if isinstance(thinking,str) else 0}')
 
 
-def local_vision_analysis(image, model=DEFAULT_MODEL, timeout=180):
+def local_vision_analysis(image, model=DEFAULT_MODEL, timeout=180, *, profile='balanced'):
     """Two bounded local attempts; retry exhaustion differently from bad JSON."""
     if not re.fullmatch(r'[A-Za-z0-9._-]{1,80}(?::[A-Za-z0-9._-]{1,30})?',model):
         raise ValueError('Choose a valid local Ollama model name.')
     timeout=float(timeout)
     if not math.isfinite(timeout) or timeout<=0:raise ValueError('Timeout must be positive.')
     timeout=min(timeout,180.)
+    settings=profile_settings(profile)
     thumbnail=image.convert('RGBA')
-    thumbnail.thumbnail((640,640),Image.Resampling.LANCZOS)
+    thumbnail.thumbnail((settings['max_side'],settings['max_side']),Image.Resampling.LANCZOS)
     background=Image.new('RGBA',thumbnail.size,'white')
     background.alpha_composite(thumbnail)
     buffer=io.BytesIO();background.convert('RGB').save(buffer,format='PNG')
@@ -181,7 +201,8 @@ def local_vision_analysis(image, model=DEFAULT_MODEL, timeout=180):
     for attempt in range(2):
         remaining=deadline-time.monotonic()
         if remaining<=0:raise RuntimeError('Local AI time budget expired; no further retry was started.')
-        prompt=PROMPT
+        prompt=PROMPT.replace('1 to 8 visible objects or parts',
+                              f'1 to {settings["max_parts"]} visible objects or parts')
         if attempt:
             prompt+=' Use only 1 to 4 major parts. Keep the complete answer below 400 tokens.'
             if retry_kind=='length':
@@ -189,7 +210,7 @@ def local_vision_analysis(image, model=DEFAULT_MODEL, timeout=180):
             else:
                 prompt+=' The previous answer was unusable. Return one complete JSON object.'
         body={'model':model,'stream':False,'think':False,'format':format_value,
-              'keep_alive':'1m',
+              'keep_alive':settings['keep_alive'],
               'options':{'temperature':0,'num_predict':budget,'num_ctx':CONTEXT_TOKENS},
               'messages':[{'role':'user','content':prompt,'images':[encoded]}]}
         request=Request(OLLAMA_ENDPOINT,data=json.dumps(body).encode('utf-8'),
@@ -243,7 +264,8 @@ def local_vision_analysis(image, model=DEFAULT_MODEL, timeout=180):
         try:
             if answer.get('done') is False:raise ValueError('Ollama marked the answer incomplete.')
             result=parse_analysis(extract_structured_parts(message.get('content','')),model)
-            return result
+            return Analysis(result.description,
+                            result.parts[:settings['max_parts']],result.model)
         except (ValueError,KeyError,AttributeError,TypeError) as exc:
             errors.append(summary+'; '+str(exc))
             retry_kind='json';format_value='json'
