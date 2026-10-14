@@ -125,6 +125,7 @@ class Window(QMainWindow):
                 drawing,self.final_image,checked=self.svg_state
                 self.use_color.setChecked(checked); self.set_drawing(drawing)
         self.export.setEnabled(self.drawing is not None)
+        self.quick_export.setEnabled(self.drawing is not None)
         self.refresh()
     def rebuild_image(self):
         if self.image_path: self.build_image(self.image_path)
@@ -135,7 +136,7 @@ class Window(QMainWindow):
         self.builder.ready.connect(self.image_ready)
         self.builder.failed.connect(lambda error: QMessageBox.warning(self,'Image import',error))
         self.builder.finished.connect(self.image_finished)
-        self.source_type.setEnabled(False); self.import_button.setEnabled(False); self.rebuild_button.setEnabled(False); self.export.setEnabled(False)
+        self.source_type.setEnabled(False); self.import_button.setEnabled(False); self.rebuild_button.setEnabled(False); self.export.setEnabled(False); self.quick_export.setEnabled(False)
         self.status.setText('Analyzing image locally…'); self.builder.start()
     def image_ready(self,result):
         self.image_result=result; self.set_drawing(result.drawing)
@@ -143,6 +144,7 @@ class Window(QMainWindow):
     def image_finished(self):
         self.source_type.setEnabled(True); self.import_button.setEnabled(True); self.rebuild_button.setEnabled(True)
         self.export.setEnabled(self.drawing is not None and not (self.worker and self.worker.isRunning()))
+        self.quick_export.setEnabled(self.drawing is not None and not (self.worker and self.worker.isRunning()))
         self.status.setText('Image analysis finished. Apply image settings after changing mode or detail.')
     def load(self):
         if self.source_type.currentIndex():
@@ -202,7 +204,8 @@ class Window(QMainWindow):
         return options
     def refresh(self,*args):
         if not self.drawing:
-            self.stage_timeline.update_state(.001,0,0,0)
+            self.stage_timeline.update_state(0,0,0,0)
+            self.clock.setText('0.00 / 0.00 s')
             return
         options=self.options()
         self.stage_timeline.update_state(options['duration'],
