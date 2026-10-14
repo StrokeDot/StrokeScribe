@@ -152,45 +152,132 @@ def create_font_drawing(text,fontfile,point_size=68):
     return drawing
 
 
-def _timing_field(drawing):
-    """Allocate genuine glyph pixels by nearest traced pen point."""
-    signature=tuple(id(s) for s in drawing.strokes)
+def _stroke_schedule(drawing):
+    """The one clock used by ink appearance AND the hand.
+
+    Events never overlap. A pen-lift event carries no ink and is inserted
+    between disconnected paths. Stroke order remains editable in the UI.
+    """
+    signature=tuple(id(stroke) for stroke in drawing.strokes)
+    cached=getattr(drawing,'font_schedule_cache',None)
+    if cached is not None and cached[0]==signature:
+        return cached[1],cached[2]
+    events=[]
+    t=0.
+    previous=None
+    for index,stroke in enumerate(drawing.strokes):
+        if len(stroke.points)<2:continue
+        first=stroke.points[0]
+        if previous is not None:
+            distance=math.dist(previous,first)
+            if distance>0.8:
+                # Pen-up travel is visible in time, but reveals no ink.
+                # Limit long trips so the viewer doesn't wait excessively.
+                lift_duration=min(12.,max(2.5,distance*.24))
+                events.append(('lift',None,t,t+lift_duration,previous,first))
+                t+=lift_duration
+        duration=max(1.,stroke.length)
+        events.append(('draw',index,t,t+duration,first,stroke.points[-1]))
+        t+=duration
+        previous=stroke.points[-1]
+    if not events:
+        raise ValueError('The font has no drawable strokes.')
+    drawing.font_schedule_cache=(signature,tuple(events),t)
+    return tuple(events),t
+
+
+def _ink_ownership(drawing):
+    """Assign EVERY visible glyph pixel one pen stroke and one reveal time.
+
+    A single nearest-seed transform transfers both the owner and its precise
+    stroke-relative time; this prevents independent clocks from painting
+    unrelated fragments. Later stroke pixels cannot reveal before the owning
+    stroke starts, and no ink changes during pen lifts.
+    """
+    events,total=_stroke_schedule(drawing)
+    signature=tuple(id(stroke) for stroke in drawing.strokes)
     cache=getattr(drawing,'font_time_cache',None)
-    if cache is not None and cache[0]==signature:return cache[1],cache[2]
+    if cache is not None and cache[0]==signature:
+        return cache[1],cache[2],cache[3]
     w,h=drawing.font_ink.size
-    seed=np.full((h,w),-1.,dtype=np.float32)
-    lengths=[max(1.,s.length) for s in drawing.strokes]
-    total=sum(lengths)
-    elapsed=0.
-    for stroke,weight in zip(drawing.strokes,lengths):
-        for k,(a,b) in enumerate(zip(stroke.points,stroke.points[1:])):
+    seed=np.full((h,w),np.inf,dtype=np.float32)
+    seed_owner=np.full((h,w),-1,dtype=np.int32)
+    intervals={}
+    for kind,index,start,end,_,_ in events:
+        if kind!='draw':continue
+        intervals[index]=(start,end)
+        stroke=drawing.strokes[index]
+        for seg_index,(a,b) in enumerate(zip(stroke.points,stroke.points[1:])):
             distance=math.dist(a,b)
-            n=max(1,math.ceil(distance))
-            for j in range(n+1):
-                f=j/n
-                x=round(a[0]+(b[0]-a[0])*f)
-                y=round(a[1]+(b[1]-a[1])*f)
-                if 0<=x<w and 0<=y<h:
-                    traversed=stroke.distances[k]+distance*f
-                    moment=(elapsed+weight*traversed/max(.001,stroke.length))/total
-                    if seed[y,x]<0 or moment<seed[y,x]:
-                        seed[y,x]=moment
-        elapsed+=weight
-    if not (seed>=0).any():
-        raise ValueError('No valid pen positions for font tracing.')
-    source=np.ones((h,w),dtype=np.uint8)
-    source[seed>=0]=0
+            samples=max(1,math.ceil(distance*2))
+            for step in range(samples+1):
+                progress=step/samples
+                x=round(a[0]+(b[0]-a[0])*progress)
+                y=round(a[1]+(b[1]-a[1])*progress)
+                if not (0<=x<w and 0<=y<h):continue
+                passed=stroke.distances[seg_index]+distance*progress
+                when=(start+(end-start)*min(1.,passed/max(.001,stroke.length)))/total
+                if when<seed[y,x]:
+                    seed[y,x]=when
+                    seed_owner[y,x]=index
+
+    if not np.any(seed_owner>=0):
+        raise ValueError('No valid pen path positions were found in this font.')
+    source=(seed_owner<0).astype(np.uint8)
+    # OpenCV labels each path sample and all pixels nearest that sample.
+    # Both the ink's owner and its reveal time come from THAT SAME sample.
     _,labels=cv2.distanceTransformWithLabels(
         source,cv2.DIST_L2,5,labelType=cv2.DIST_LABEL_PIXEL)
-    maxlabel=int(labels.max())
-    nearest=np.ones(maxlabel+1,dtype=np.float32)
-    ys,xs=np.nonzero(seed>=0)
+    count=int(labels.max())+1
+    nearest_time=np.ones(count,dtype=np.float32)
+    nearest_owner=np.full(count,-1,dtype=np.int32)
+    ys,xs=np.nonzero(seed_owner>=0)
     for y,x in zip(ys,xs):
-        label=int(labels[y,x])
-        nearest[label]=min(nearest[label],seed[y,x])
-    timing=nearest[labels]
-    drawing.font_time_cache=(signature,timing,total)
+        key=int(labels[y,x])
+        value=float(seed[y,x])
+        if value<nearest_time[key]:
+            nearest_time[key]=value
+            nearest_owner[key]=seed_owner[y,x]
+    owner=nearest_owner[labels]
+    timing=nearest_time[labels]
+    # Force every pixel's time within the interval of its unique owner.
+    # Rounding/label ties may occur at intersections, but not overlap.
+    for index,(start,end) in intervals.items():
+        belonging=owner==index
+        timing[belonging]=np.clip(timing[belonging],
+                                  start/total,end/total)
+    drawing.font_time_cache=(signature,timing,owner,total)
+    return timing,owner,total
+
+
+def _timing_field(drawing):
+    """Compatibility API used by existing handwriting tests."""
+    timing,_,total=_ink_ownership(drawing)
     return timing,total
+
+
+def _pen_state(drawing,progress):
+    """Single drawing/pen-lift event for the animation playhead.
+
+    Returns (position, pen_down, stroke_index). During a lift the hand
+    travels smoothly from the previous stroke endpoint to the next start.
+    No glyph pixels become visible during this event.
+    """
+    events,total=_stroke_schedule(drawing)
+    moment=min(1.,max(0.,float(progress)))*total
+    if moment>=total:
+        event=events[-1]
+        return event[5],False,None
+    for kind,index,start,end,a,b in events:
+        if moment>=end:continue
+        fraction=max(0.,min(1.,(moment-start)/max(.001,end-start)))
+        if kind=='lift':
+            return (a[0]+(b[0]-a[0])*fraction,
+                    a[1]+(b[1]-a[1])*fraction),False,None
+        stroke=drawing.strokes[index]
+        points=stroke.portion(stroke.length*fraction)
+        return points[-1],True,index
+    return events[-1][5],False,None
 
 
 def render_traced_font(drawing,progress,width,height,thickness=1.,
@@ -203,33 +290,30 @@ def render_traced_font(drawing,progress,width,height,thickness=1.,
     if fraction>=1.:
         pixels=rgba
     else:
-        times,total=_timing_field(drawing)
+        timing,owner,_=_ink_ownership(drawing)
         pixels=rgba.copy()
+        eligible=(owner>=0)&(timing<=fraction+1e-7)
         pixels[:,:,3]=(pixels[:,:,3].astype(np.float32)*
-                        (times<=fraction+1e-5)).astype(np.uint8)
+                        eligible).astype(np.uint8)
     ih,iw=pixels.shape[:2]
     buffer=pixels.tobytes()
     glyph_image=QImage(buffer,iw,ih,iw*4,QImage.Format.Format_RGBA8888).copy()
     scale=min(width*.82/max(1,iw),height*.78/max(1,ih))
     ox=(width-iw*scale)/2
     oy=(height-ih*scale)/2
-    p=QPainter(output)
-    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    p.drawImage(QRectF(ox,oy,iw*scale,ih*scale),glyph_image)
+    painter=QPainter(output)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    painter.drawImage(QRectF(ox,oy,iw*scale,ih*scale),glyph_image)
     if hand is not None and not hand.isNull() and fraction<1.:
-        # Follow the estimated centerline geometry, not a horizontal wipe.
-        _,total=_timing_field(drawing)
-        left=fraction*total
-        tip=None
-        for stroke in drawing.strokes:
-            length=max(1.,stroke.length)
-            if left<=length:
-                tip=stroke.portion(min(left,stroke.length))[-1]
-                break
-            left-=length
-        if tip:
-            tx=ox+tip[0]*scale;ty=oy+tip[1]*scale
-            hw=width*hand_scale;hh=hw*hand.height()/hand.width()
-            p.drawImage(QRectF(tx-anchor[0]*hw,ty-anchor[1]*hh,hw,hh),hand)
-    p.end()
+        tip,pen_down,_=_pen_state(drawing,fraction)
+        tx=ox+tip[0]*scale
+        ty=oy+tip[1]*scale
+        # Slightly raise the hand during moves; there is no drawing then.
+        if not pen_down:
+            ty-=min(12.,width*.015)
+        hw=width*hand_scale
+        hh=hw*hand.height()/hand.width()
+        painter.drawImage(QRectF(tx-anchor[0]*hw,ty-anchor[1]*hh,
+                                 hw,hh),hand)
+    painter.end()
     return output
