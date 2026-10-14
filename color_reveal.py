@@ -262,7 +262,19 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         pp.drawImage(0,0,mask)
         pp.end()
         outline=render(drawing,1,width,height,thickness)
-        painter.drawImage(0,0,replace_outlines_with_painted_pixels(outline,painted))
+        if reveal_mode == 'clean':
+            # Clean contour no longer clips the SVG to the source PNG shape;
+            # only genuinely visible painted pixels may replace SVG ink.
+            outline=replace_outlines_with_painted_pixels(outline,painted)
+        else:
+            # Preserve the existing guided/brush path reveal behavior until
+            # stray marks can be matched against the user's original PNG.
+            erase=QPainter(outline)
+            erase.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
+            erase.drawImage(0,0,mask)
+            erase.end()
+            over=QPainter(outline); over.drawImage(0,0,painted); over.end()
+        painter.drawImage(0,0,outline)
         draw_hand(painter,tip,painting_hand,width,hand_scale,anchor)
     else:
         # Existing fade remains unchanged as an alternative reveal mode.
