@@ -3,8 +3,8 @@ from pathlib import Path
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl
 from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap, QDesktopServices
-from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea)
-from engine import import_svg, render, export_frames, encode_mov, encode_webm, scale_animation_frame
+from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea,QColorDialog)
+from engine import import_svg, render, export_frames, encode_mov, encode_webm, scale_animation_frame, apply_lettering_background
 from lettering import make_text
 from font_library import (STARTER_FONTS, installed_font, make_font_text,
                           import_font, download_google_font)
@@ -119,6 +119,9 @@ class Window(QMainWindow):
         self.playing=False
         self.position=0
         self.project_title='Sample drawing'
+        self.letter_ink_color='#25364a'
+        self.letter_bg_color=None
+        self.last_letter_bg_index=0
         self.reorder_undo=[]
         self.reorder_redo=[]
         from studio_workspace import build_workspace
@@ -302,10 +305,52 @@ class Window(QMainWindow):
                     return
                 drawing=make_font_text(self.text.toPlainText(),font_path,
                                        int(self.font_size.value()))
+            drawing.source_kind=getattr(drawing,'source_kind','lettering')
+            self.apply_letter_style(drawing)
             self.source_type.setCurrentIndex(0)
             self.update_project_title('Lettering — '+self.text.toPlainText()[:16].replace('\n',' '))
             self.set_drawing(drawing)
         except Exception as e: QMessageBox.warning(self,'Lettering',str(e))
+
+    def apply_letter_style(self,drawing=None):
+        drawing=drawing or self.drawing
+        if not drawing or getattr(drawing,'source_kind',None) not in ('font','lettering'):
+            return
+        drawing.lettering_background=self.letter_bg_color
+        if drawing.source_kind=='font':
+            drawing.font_color=self.letter_ink_color
+        else:
+            for stroke in drawing.strokes:
+                stroke.color=self.letter_ink_color
+
+    def choose_letter_color(self):
+        color=QColorDialog.getColor(QColor(self.letter_ink_color),self,'Letter ink color')
+        if not color.isValid():return
+        self.letter_ink_color=color.name()
+        self.font_color_button.setText('Letter color: '+self.letter_ink_color.upper())
+        self.apply_letter_style()
+        self.refresh()
+
+    def select_letter_background(self,index):
+        if index==0:
+            color=None
+        elif index==1:
+            color='#ffffff'
+        elif index==2:
+            color='#000000'
+        else:
+            selected=QColorDialog.getColor(
+                QColor(self.letter_bg_color or '#f5f0e4'),self,'Lettering background')
+            if not selected.isValid():
+                self.font_bg_mode.blockSignals(True)
+                self.font_bg_mode.setCurrentIndex(self.last_letter_bg_index)
+                self.font_bg_mode.blockSignals(False)
+                return
+            color=selected.name()
+        self.letter_bg_color=color
+        self.last_letter_bg_index=index
+        self.apply_letter_style()
+        self.refresh()
 
     def install_selected_font(self):
         name=self.font_select.currentText().strip()
@@ -427,6 +472,7 @@ class Window(QMainWindow):
                 options.pop(key)
             self.canvas.frame=render(self.drawing,self.position,**options)
         self.canvas.frame=scale_animation_frame(self.canvas.frame,size)
+        self.canvas.frame=apply_lettering_background(self.canvas.frame,self.drawing)
         self.canvas.update()
         length=self.timeline_length()
         self.clock.setText(f'{self.position*length:.2f} / {length:.2f} s')
