@@ -29,7 +29,15 @@ def contour_lifecycle(drawing, draw_progress, paint_progress=None):
     if paint_progress is not None:
         return retirement_states(drawing,paint_progress)
     from image_drawing import drawing_state
-    state = drawing_state(drawing,draw_progress)
+    # Exact endpoints are semantic states, not floating-point arc-length
+    # comparisons. Multiplication/summation can otherwise round the final
+    # stroke a few ulps short and mark it "drawing" at 100%.
+    fraction = max(0., min(1., float(draw_progress)))
+    if fraction >= 1.:
+        return [('completed',1.) for stroke in drawing.strokes]
+    if fraction <= 0.:
+        return [('hidden',0.) for stroke in drawing.strokes]
+    state = drawing_state(drawing,fraction)
     remaining = sum(s.length for s in drawing.strokes)*state.stroke_progress
     result = []
     for stroke in drawing.strokes:
