@@ -30,9 +30,7 @@ def _thin(mask):
             p5=a[2:,2:]; p6=a[2:,1:-1]; p7=a[2:,:-2]
             p8=a[1:-1,:-2]; p9=a[:-2,:-2]
             n=p2+p3+p4+p5+p6+p7+p8+p9
-            t=((p2==0)&(p3==1))+((p3==0)&(p4==1))+((p4==0)&(p5==1))+((p5==0)&(p6==1))+((p6==0)&(p7==1))+((p7==0)&(p8==1))+((p8==0)&(p9==1))+((p9==0)&(p2==1))
-            # Cast booleans to int before summing: numpy bool addition
-            # otherwise behaves like logical OR in some releases.
+            # Count 0 -> 1 transitions around each skeleton candidate.
             t=np.zeros_like(n)
             neighbors=(p2,p3,p4,p5,p6,p7,p8,p9,p2)
             for i in range(8):
@@ -165,23 +163,19 @@ def _timing_field(drawing):
     total=sum(lengths)
     elapsed=0.
     for stroke,weight in zip(drawing.strokes,lengths):
-        for a,b in zip(stroke.points,stroke.points[1:]):
+        for k,(a,b) in enumerate(zip(stroke.points,stroke.points[1:])):
             distance=math.dist(a,b)
             n=max(1,math.ceil(distance))
-            start=stroke.distances[stroke.points.index(a)] if False else 0
             for j in range(n+1):
                 f=j/n
                 x=round(a[0]+(b[0]-a[0])*f)
                 y=round(a[1]+(b[1]-a[1])*f)
                 if 0<=x<w and 0<=y<h:
-                    time=(elapsed+min(weight,stroke.length*
-                           ((stroke.distances[stroke.points.index(a)] if False else 0)+distance*f)/max(stroke.length,1.)))/total
-                    # Geometry may overlap; the earlier visit paints first.
-                    if seed[y,x]<0 or time<seed[y,x]:
-                        seed[y,x]=time
+                    traversed=stroke.distances[k]+distance*f
+                    moment=(elapsed+weight*traversed/max(.001,stroke.length))/total
+                    if seed[y,x]<0 or moment<seed[y,x]:
+                        seed[y,x]=moment
         elapsed+=weight
-    # Replace sample-time calculation with exact segment arc lengths
-    # (above is kept for backwards-compatible structure until optimized).
     if not (seed>=0).any():
         raise ValueError('No valid pen positions for font tracing.')
     source=np.ones((h,w),dtype=np.uint8)
