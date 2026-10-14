@@ -75,8 +75,8 @@ class LocalAIRedrawTests(unittest.TestCase):
         self.assertTrue(any(s.name.startswith('AI ') for s in drawing.strokes))
         self.assertTrue(any(s.name.startswith('Fine detail') for s in drawing.strokes)
                         or len(drawing.strokes)>0)
-        self.assertEqual(qi.width(),image.width())
-        self.assertEqual(qi.height(),image.height())
+        self.assertEqual(qi.width(),image.width)
+        self.assertEqual(qi.height(),image.height)
         self.assertTrue(all(rid==0 for rid,alpha in zip(
             regions.labels,image.resize(regions.size).getchannel('A').tobytes())
             if alpha==0))
