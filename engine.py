@@ -137,6 +137,26 @@ def scale_animation_frame(frame, artwork_scale=1.0):
     return output
 
 
+def apply_lettering_background(frame,drawing):
+    """Composite an optional lettering background AFTER artwork scaling.
+
+    This covers the full output video canvas; default None keeps genuine
+    alpha. SVG/image reconstruction frames are unaffected.
+    """
+    color=getattr(drawing,'lettering_background',None)
+    if color is None or getattr(drawing,'source_kind',None) not in ('font','lettering'):
+        return frame
+    background=QColor(str(color))
+    if not background.isValid():
+        raise ValueError('Invalid lettering background color.')
+    result=QImage(frame.size(),QImage.Format.Format_ARGB32_Premultiplied)
+    result.fill(background)
+    painter=QPainter(result)
+    painter.drawImage(0,0,frame)
+    painter.end()
+    return result
+
+
 def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0):
     folder=Path(folder)
     folder.mkdir(parents=True,exist_ok=False)
@@ -156,6 +176,7 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
         else:
             img=render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)
         img=scale_animation_frame(img,artwork_scale)
+        img=apply_lettering_background(img,drawing)
         if not img.save(str(folder/f'frame_{i:06d}.png')): raise OSError('Unable to save PNG frame.')
         if callback and callback(i+1,count) is False: raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
     (folder/'sequence.json').write_text(json.dumps(dict(width=width,height=height,fps=fps,frames=count,
@@ -166,7 +187,12 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
         brush_width=brush_width if use_color and reveal_mode in ('brush','continue','guided','clean','adaptive') else None,
         painting_hand=bool(use_color and reveal_mode in ('brush','continue','guided','clean','adaptive') and painting_hand is not None and not painting_hand.isNull()),
         stroke_spacing=stroke_spacing if reveal_mode=='adaptive' else None,
-        artwork_scale=artwork_scale,alpha=True,first_frame='transparent',
+        artwork_scale=artwork_scale,
+        lettering_background=getattr(drawing,'lettering_background',None)
+          if getattr(drawing,'source_kind',None) in ('font','lettering') else None,
+        alpha=not (getattr(drawing,'lettering_background',None) is not None
+                   and getattr(drawing,'source_kind',None) in ('font','lettering')),
+        first_frame='transparent' if getattr(drawing,'lettering_background',None) is None else 'colored_background',
         last_frame='original_color_png' if use_color else 'complete'),indent=2))
     return count
 
