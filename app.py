@@ -1,8 +1,8 @@
 import sys, time
 from pathlib import Path
 from datetime import datetime
-from PySide6.QtCore import Qt, QTimer, QThread, Signal
-from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap
+from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl
+from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap, QDesktopServices
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea)
 from engine import import_svg, render, export_frames, encode_mov, encode_webm, scale_animation_frame
 from lettering import make_text
@@ -275,6 +275,9 @@ class Window(QMainWindow):
         self.download_font.setEnabled(True)
         self.download_starters.setEnabled(True)
 
+    def browse_google_fonts(self):
+        QDesktopServices.openUrl(QUrl('https://fonts.google.com/?category=Handwriting'))
+
     def import_local_font(self):
         filename,_=QFileDialog.getOpenFileName(
             self,'Import TTF/OTF font','','Font files (*.ttf *.otf)')
@@ -388,6 +391,11 @@ class Window(QMainWindow):
             self.worker.requestInterruption()
             self.status.setText('Cancelling after current frame. FFmpeg encoding, if started, must finish.')
     def closeEvent(self,event):
+        if self.font_worker and self.font_worker.isRunning():
+            QMessageBox.information(self,'Font downloads',
+                'Please wait for the current font download to finish.')
+            event.ignore()
+            return
         if self.builder and self.builder.isRunning():
             QMessageBox.information(self,'Image analysis','Please wait for image analysis to finish.'); event.ignore(); return
         if self.worker and self.worker.isRunning():
