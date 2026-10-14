@@ -55,6 +55,24 @@ class ReportedBugTests(unittest.TestCase):
             'Complete lettering should contain real filled glyph pixels')
         # The final font bitmap must be unchanged by the stroke animation.
         self.assertGreater(drawing.font_ink.getchannel('A').getextrema()[1],240)
+        # The reveal timing must be based on the actual pen centerlines, not
+        # a uniformly progressing vertical clipping rectangle.
+        from font_stroke_reveal import _timing_field
+        import numpy as np
+        times,total=_timing_field(drawing)
+        visible=np.asarray(drawing.font_ink.getchannel('A'))>100
+        self.assertGreater(total,20)
+        self.assertGreater(np.ptp(times[visible]),.6)
+        max_vertical_variation=max((
+            float(np.ptp(times[:,x][visible[:,x]]))
+            for x in range(times.shape[1])
+            if np.count_nonzero(visible[:,x])>=4
+        ),default=0.)
+        self.assertGreater(max_vertical_variation,.025,
+            'A horizontal wipe has identical timing for all pixels in each column.')
+        self.assertGreater(sum(s.length for s in drawing.strokes),50)
+        self.assertTrue(any(len(s.points)>4 for s in drawing.strokes),
+                        'Letter paths should follow curves, not rectangle midlines.')
 
     def test_qwen_json_fenced_preamble_and_retry(self):
         raw={'description':'Wooden audio speakers',
@@ -83,6 +101,10 @@ class ReportedBugTests(unittest.TestCase):
         w=Window()
         try:
             self.assertIn('Sample drawing',w.project_menu.text())
+            self.assertIn('Stroke',w.brand_wordmark.text())
+            self.assertIn('Scribe',w.brand_wordmark.text())
+            self.assertIn('#58A7FF',w.brand_wordmark.text())
+            self.assertEqual(w.brand_version.text().startswith('Prototype v'),True)
             self.assertFalse(w.undo_button.isEnabled())
             self.assertFalse(w.redo_button.isEnabled())
             w.order.setCurrentRow(0)
