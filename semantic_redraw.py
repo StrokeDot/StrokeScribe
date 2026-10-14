@@ -171,7 +171,7 @@ def local_vision_analysis(image, model=DEFAULT_MODEL, timeout=180):
     if not math.isfinite(timeout) or timeout<=0:raise ValueError('Timeout must be positive.')
     timeout=min(timeout,180.)
     thumbnail=image.convert('RGBA')
-    thumbnail.thumbnail((768,768),Image.Resampling.LANCZOS)
+    thumbnail.thumbnail((640,640),Image.Resampling.LANCZOS)
     background=Image.new('RGBA',thumbnail.size,'white')
     background.alpha_composite(thumbnail)
     buffer=io.BytesIO();background.convert('RGB').save(buffer,format='PNG')
