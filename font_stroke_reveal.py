@@ -93,7 +93,23 @@ def _paths_from_binary(binary):
         ordered.append(path)
     ordered.sort(key=lambda p:(min(x for x,y in p),min(y for x,y in p),
                                -len(p)))
-    return ordered
+    # Keep character order stable, but chain paths WITHIN each character
+    # by the nearest endpoint to avoid unnecessary jumps and pen lifts.
+    if not ordered:return []
+    remaining=ordered[1:]
+    chain=[ordered[0]]
+    while remaining:
+        tip=chain[-1][-1]
+        ranked=[]
+        for i,path in enumerate(remaining):
+            a=math.dist(tip,path[0])
+            b=math.dist(tip,path[-1])
+            ranked.append((min(a,b),i,b<a))
+        _,i,reverse=min(ranked)
+        chosen=remaining.pop(i)
+        if reverse: chosen=list(reversed(chosen))
+        chain.append(chosen)
+    return chain
 
 
 def create_font_drawing(text,fontfile,point_size=68):
