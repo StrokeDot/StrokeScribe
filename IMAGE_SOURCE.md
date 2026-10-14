@@ -1,4 +1,4 @@
-# Image source reconstruction — v0.5.2 experimental (revision .2)
+# Image source reconstruction — v0.5.2 experimental (revision .3)
 
 Choose **Image** in the source selector, import a PNG/JPEG/WebP/BMP, then press Play.
 Choose Auto trace or Stroke reconstruction and Low/Medium/High detail, then **Apply image settings** to rebuild.
@@ -39,7 +39,7 @@ FFmpeg on PATH enables MOV export.
 
 The first experimental ZIP pinned NumPy 2.2.6 and OpenCV 4.12, which could make Python 3.14 try to compile NumPy and fail with missing compiler errors. The corrected build uses NumPy 2.3.3 and OpenCV headless 4.13.0.92. Those versions offer prebuilt 64-bit Windows packages for Python 3.14. The installer now upgrades pip first and uses `--only-binary=:all:`, so an incompatible interpreter produces a clear installation error rather than trying to build a C extension.
 
-**If setup failed in an earlier extracted copy:** Download the *latest successful* `StrokeScribe-image-source-review` GitHub Actions artifact for the v0.5.2 feature branch, extract its nested `StrokeScribe-Prototype-v0.5.2-experimental.2.zip` to a **new folder**, run `Setup.cmd`, then `Launch.cmd`. This does not modify or replace the published v0.5.1 release. Python 3.12–3.14 (64-bit Windows) is the intended range; a Windows Python 3.14 CI job checks package installation and the test suite.
+**If setup failed in an earlier extracted copy:** Download the *latest successful* `StrokeScribe-image-source-review` GitHub Actions artifact for the v0.5.2 feature branch, extract its nested `StrokeScribe-Prototype-v0.5.2-experimental.3.zip` to a **new folder**, run `Setup.cmd`, then `Launch.cmd`. This does not modify or replace the published v0.5.1 release. Python 3.12–3.14 (64-bit Windows) is the intended range; a Windows Python 3.14 CI job checks package installation and the test suite.
 
 ## Compact transparent WebM export (experimental .2)
 
@@ -50,3 +50,9 @@ For significantly smaller overlay assets, check **Compact VP9 WebM + transparenc
 Filmora 15 documents WebM transparency export, but **import of externally encoded VP9 + alpha must be verified on the user's exact Filmora build**. Preview transparency over a different-colored background in Filmora. If Filmora discards WebM transparency, use the existing ProRes 4444 MOV option and retain WebM for other compatible editors.
 
 The native Filmora/OpenFX plugin idea remains a future possibility; it's not required to evaluate compact transparent exports. Cloud FFmpeg tests verify the VP9 alpha flag and decode the alpha plane with `libvpx-vp9` (the default native VP9 decoder can hide that plane). This does not guarantee Filmora reads alpha.
+
+## StrokeScribe Studio workspace (experimental.3)
+
+The interface was reorganized into four predictable working areas. **Source & Paths** on the left imports either SVG or PNG/JPEG/WebP/BMP and lists editable stroke order. A larger central **Preview Monitor** shows the transparent animation. The right **Inspector** has dedicated **Animation**, **Hand**, and **Export** tabs to reduce scrolling and make settings easier to find. An interactive bottom **Timeline** shows Draw, Paint and Hold phases and supports seeking by clicking either the ruler or the scrubber. An Export Animation shortcut is always available in the top bar.
+
+This is an original native PySide6 interface inspired by the usability of professional editing applications, not a reproduction of their brands, icons, artwork, or exact layouts. Animation/render logic, SVG support, image reconstruction, all reveal modes, hand anchor settings, ProRes/VP9 WebM/PNG output and package versioning remain separate from UI code in `studio_workspace.py`. The old v0.5.1 release remains available. Cloud screenshots of the four Studio tabs are included in the `samples/studio-preview` review artifact. The redesigned UI is still experimental until checked on an actual Windows desktop.
