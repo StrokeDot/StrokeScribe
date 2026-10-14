@@ -1,15 +1,22 @@
-# StrokeScribe — Windows prototype
+# StrokeScribe — Prototype v0.5.2
+
+**Current official downloadable prototype:** [StrokeScribe-Prototype-v0.5.2.zip](https://github.com/StrokeDot/StrokeScribe/releases/download/prototype-v0.5.2/StrokeScribe-Prototype-v0.5.2.zip).
+
+This version includes the StrokeScribe Studio UI, direct SVG animation, raster image source reconstruction (PNG/JPG/WebP/BMP), Adaptive Hand Painting, other painting modes, and compressed transparent VP9 WebM alongside ProRes 4444 and PNG export. Requires 64-bit Windows Python 3.12–3.14 and local Setup.cmd; FFmpeg is required for video encoding. Some image-specific tracing/painting alignment artifacts are still under refinement.
+
+**Previous versions remain available:** [v0.5.1](https://github.com/StrokeDot/StrokeScribe/releases/tag/prototype-v0.5.1) and [v0.5.0](https://github.com/StrokeDot/StrokeScribe/releases/tag/prototype-v0.5.0). Always extract a new release into its own folder.
+
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
 ## Run on this computer
 
-Double-click **Launch.cmd**. The tested environment has already been installed in the parent directory's `.venv`. A sample drawing loads automatically. Click **Play / pause** or **Restart**.
+Run **Setup.cmd** once in the extracted release folder, then double-click **Launch.cmd**. The local `.venv` directory stores this prototype's dependencies. A sample drawing loads automatically. Click **Play / pause** or **Restart**.
 
 ## Set up on another Windows computer
 
 1. Extract the project ZIP into a normal writable folder.
-2. Install 64-bit Python 3.12 or newer from https://www.python.org/downloads/windows/ . Include the Python launcher. This prototype was tested with Python 3.12.
+2. Install 64-bit Python 3.12 or newer from https://www.python.org/downloads/windows/ . Include the Python launcher. Windows Python 3.14 and Linux Python 3.12 were also exercised in automated tests.
 3. Double-click **Setup.cmd**. It creates a local virtual environment and installs the pinned dependencies from PyPI. Internet is needed for this step.
 4. Double-click **Launch.cmd**. Rendering and exports run locally and require no account or network service.
 5. Optional MOV export: install an FFmpeg build containing `prores_ks`, following https://ffmpeg.org/download.html , and put its `bin` folder on PATH. Restart the app afterward. PNG export does not need FFmpeg.
@@ -142,7 +149,7 @@ For the unmistakably named download, visit **GitHub → Releases** and select th
 
 **GitHub Code → Download ZIP will always use GitHub's standard branch-based name (`StrokeScribe-main.zip`).** For a version-named ZIP, use the release asset; do not confuse the two. If the GitHub Actions release workflow is unavailable, run `python package_prototype.py` from a source checkout to create `dist/StrokeScribe-Prototype-v0.5.1.zip` locally using only Python's standard library.
 
-A new public-facing prototype version requires updating `APP_VERSION` in `version.py`. The GitHub Actions workflow packages a new prerelease when the version file or packaging workflow changes. The archive contains editable Python source and Windows launch scripts (not a standalone executable); run `Setup.cmd` in each newly extracted folder before `Launch.cmd` or `Launch-headset.cmd`. Do not delete your older working prototype folder until the new one has been tested.
+A new public-facing prototype version requires updating `APP_VERSION` in `version.py`. The GitHub Actions workflow packages a new release when the version file or packaging workflow changes on main. The archive contains editable Python source and Windows launch scripts (not a standalone executable); run `Setup.cmd` in each newly extracted folder before `Launch.cmd` or `Launch-headset.cmd`. Do not delete your older working prototype folder until the new one has been tested.
 
 ## Prototype v0.5.1 — Adaptive Hand Painting
 
@@ -164,3 +171,7 @@ StrokeScribe now offers **Compact VP9 WebM + transparency** with adjustable qual
 ## StrokeScribe Studio UI (experimental.3)
 
 New source/paths sidebar, large preview monitor, task-based Animation/Hand/Export inspector, and interactive Draw/Paint/Hold timeline. All existing animation modes and exports remain. Export Animation is also available from the persistent toolbar. Refer to `IMAGE_SOURCE.md` for navigation; see the four cloud-generated workspace screenshots in `samples/studio-preview/` inside the GitHub Actions review artifact. This is an original StrokeScribe layout, not a copy of Filmora, Premiere, or VideoScribe.
+
+## Official v0.5.2 release
+
+Image reconstruction, compact VP9 WebM, the Studio workspace and the SVG-to-PNG line-retention repair are now bundled in official **Prototype v0.5.2**. Previous experimental.1–.4 labels refer to development snapshots only. GitHub release tags for 0.5.0 and 0.5.1 are not altered. Full image reconstruction and alpha/color-transition details and current known limitations are in [IMAGE_SOURCE.md](IMAGE_SOURCE.md).
