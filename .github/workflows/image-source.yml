@@ -19,12 +19,14 @@ jobs:
       - run: python -m compileall -q .
       - run: python -m unittest -v test_prototype test_adaptive test_image_source test_webm test_studio
       - run: python render_image_samples.py
+      - run: python render_studio_preview.py
       - run: python package_prototype.py
       - uses: actions/upload-artifact@v4
         with:
           name: StrokeScribe-image-source-review
           path: |
             samples/image-reconstruction-demo/
+            samples/studio-preview/
             dist/*.zip
 
   windows-python-314:
