@@ -33,3 +33,11 @@ sheet.save(out/'comparison.png')
 for p in (0,.25,.5,.75,1):
     render(d,p,640,480).save(str(out/f'drawing-{round(p*100):03d}.png'))
 print('Review frames: samples/contour-transitions/comparison.png')
+
+# Small review preview travels through CI logs; no artwork is downloaded locally.
+import base64, io
+preview=sheet.copy()
+preview.thumbnail((1200,800))
+buffer=io.BytesIO()
+preview.save(buffer,format='PNG')
+print('CONTOUR_REVIEW_PNG='+base64.b64encode(buffer.getvalue()).decode('ascii'))

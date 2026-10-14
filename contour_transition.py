@@ -24,6 +24,24 @@ def retirement_states(drawing, progress):
         remaining -= length
     return states
 
+def contour_lifecycle(drawing, draw_progress, paint_progress=None):
+    """Inspectable states for the drawing and optional retirement phases."""
+    if paint_progress is not None:
+        return retirement_states(drawing,paint_progress)
+    from image_drawing import drawing_state
+    state = drawing_state(drawing,draw_progress)
+    remaining = sum(s.length for s in drawing.strokes)*state.stroke_progress
+    result = []
+    for stroke in drawing.strokes:
+        if remaining >= stroke.length and stroke.length > 0:
+            result.append(('completed',1.))
+        elif remaining > 0 and stroke.length > 0:
+            result.append(('drawing',remaining/stroke.length))
+        else:
+            result.append(('hidden',0.))
+        remaining -= stroke.length
+    return result
+
 def remaining_contours(drawing, progress, direction='forward'):
     strokes = []
     for stroke, (_, erased) in zip(drawing.strokes, retirement_states(drawing, progress)):
@@ -55,6 +73,8 @@ def render_transition(drawing, image, width, height, progress, thickness,
                       reveal_mode='adaptive'):
     from color_reveal import artwork_rect, paint_mask, draw_hand, last_stroke_canvas_endpoint
     progress = max(0., min(1., float(progress)))
+    if progress <= 0:
+        return render(drawing,1,width,height,thickness)
     original = source_frame(drawing, image, width, height)
     if progress >= RETIRE_END:
         return original

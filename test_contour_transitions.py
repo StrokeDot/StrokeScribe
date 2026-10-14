@@ -63,6 +63,17 @@ class ContourTransitionTests(unittest.TestCase):
         d.drawing_visibility='full'
         self.assertGreater(pixels(render(d,0,220,200))[:,:,3].sum(),0)
 
+    def test_lifecycle_and_paint_boundary(self):
+        from contour_transition import contour_lifecycle
+        d,im=fixture()
+        self.assertTrue(all(s=='hidden' for s,_ in contour_lifecycle(d,0)))
+        self.assertTrue(all(s=='completed' for s,_ in contour_lifecycle(d,1)))
+        self.assertEqual(sum(s=='drawing' for s,_ in contour_lifecycle(d,.1)),1)
+        expected=pixels(render(d,1,320,240))
+        for mode in ('paint','retire'):
+            d.contour_transition=mode
+            np.testing.assert_array_equal(pixels(frame(d,im,0)),expected)
+
     def test_retirement_is_single_ordered_and_gated(self):
         d,_=fixture()
         for progress in np.linspace(0,1,101):
