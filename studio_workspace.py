@@ -322,7 +322,15 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.ai_model.addItems(['qwen3-vl:4b','qwen3-vl:2b','qwen3-vl:8b'])
     w.ai_model.setToolTip('Ollama vision model, running locally on your PC. Requires separate model download.')
     image_form.addRow('Local AI model',w.ai_model)
-    w.ai_note=caption('Uses local Ollama. First run: ollama pull qwen3-vl:4b. Image analysis is cached while this app is open, so changing Detail does not rerun Qwen.')
+    w.ai_profile=QComboBox()
+    w.ai_profile.addItems(['Fast','Balanced','Quality'])
+    w.ai_profile.setCurrentIndex(1)
+    w.ai_profile.setToolTip(
+        'Balanced: same 640px, eight-object recognition as before; optimized local '
+        'contour work and 5-minute model reuse. Fast trades some detail for speed; '
+        'Quality analyzes a larger image and may take longer.')
+    image_form.addRow('AI processing',w.ai_profile)
+    w.ai_note=caption('Balanced recommended: keeps current recognition detail, reduces local work, and caches the Qwen analysis. Models stay on your PC.')
     image_form.addRow(w.ai_note)
     w.image_detail=QComboBox();w.image_detail.addItems(['Low','Medium','High'])
     w.image_detail.setCurrentIndex(1)
@@ -338,6 +346,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.rebuild_button.clicked.connect(w.rebuild_image)
     image_form.addRow(w.rebuild_button)
     image_form.setRowVisible(w.ai_model,False)
+    image_form.setRowVisible(w.ai_profile,False)
     image_form.setRowVisible(w.ai_note,False)
     w.image_mode.currentIndexChanged.connect(w.update_image_mode)
     w.image_controls.hide()
