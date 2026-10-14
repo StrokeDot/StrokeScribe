@@ -175,3 +175,7 @@ New source/paths sidebar, large preview monitor, task-based Animation/Hand/Expor
 ## Official v0.5.2 release
 
 Image reconstruction, compact VP9 WebM, the Studio workspace and the SVG-to-PNG line-retention repair are now bundled in official **Prototype v0.5.2**. Previous experimental.1–.4 labels refer to development snapshots only. GitHub release tags for 0.5.0 and 0.5.1 are not altered. Full image reconstruction and alpha/color-transition details and current known limitations are in [IMAGE_SOURCE.md](IMAGE_SOURCE.md).
+
+## Optional local AI Redraw (v0.5.3 experimental)
+
+The new third Image Source method **AI redraw (local model)** proposes meaningful object parts and drawing order using an optional Ollama vision model, then uses image segmentation and the existing adaptive painting renderer to create a plausible construction animation. It doesn't use a paid API or generate a replacement image. Auto Trace and Stroke Reconstruction remain available without AI. The model download is separate and can require several GB of disk/RAM. For exact setup steps, privacy details and limitations, read [AI_REDRAW.md](AI_REDRAW.md). The official v0.5.2 release remains unchanged.
