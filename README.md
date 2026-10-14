@@ -160,3 +160,7 @@ PNG, JPEG, WebP and BMP can now become contour animations or region-guided paint
 ## Compact WebM (experimental .2)
 
 StrokeScribe now offers **Compact VP9 WebM + transparency** with adjustable quality 18–42 (28 default) alongside the unchanged ProRes 4444 and transparent PNG sequence options. Encoding still uses temporary PNGs for each frame; by default these are removed *only after* successful video encoding so the saved video can be much smaller on disk. Check **Keep PNG frames alongside encoded videos** to retain the full sequence. If no video option is selected, PNG frames are always retained. FFmpeg is required for video export. Filmora may vary in how it imports external VP9 alpha; verify transparency in Filmora before relying on it. The native Filmora plugin remains a future idea.
+
+## StrokeScribe Studio UI (experimental.3)
+
+New source/paths sidebar, large preview monitor, task-based Animation/Hand/Export inspector, and interactive Draw/Paint/Hold timeline. All existing animation modes and exports remain. Export Animation is also available from the persistent toolbar. Refer to `IMAGE_SOURCE.md` for navigation; see the four cloud-generated workspace screenshots in `samples/studio-preview/` inside the GitHub Actions review artifact. This is an original StrokeScribe layout, not a copy of Filmora, Premiere, or VideoScribe.
