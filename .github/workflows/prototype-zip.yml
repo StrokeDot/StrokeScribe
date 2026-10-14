@@ -48,5 +48,4 @@ jobs:
           gh release create "$TAG" "$FILE" \
             --target "$GITHUB_SHA" \
             --title "StrokeScribe Prototype v${VERSION}" \
-            --notes "Experimental Windows/Python source prototype. Extract the ZIP, run Setup.cmd once, then Launch-headset.cmd or Launch.cmd. See BUILD_INFO.txt for the precise GitHub revision. This is not a standalone EXE." \
-            --prerelease
+            --notes "Official StrokeScribe Prototype v${VERSION} for Windows. Includes image reconstruction, adaptive painting, StrokeScribe Studio and compact transparent VP9 WebM export. Extract the ZIP, run Setup.cmd once, then Launch-headset.cmd or Launch.cmd. See BUILD_INFO.txt for the precise GitHub revision. This is editable Python source, not a standalone EXE. The original v0.5.0 and v0.5.1 releases remain available."

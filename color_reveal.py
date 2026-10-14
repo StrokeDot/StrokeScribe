@@ -176,6 +176,22 @@ def paint_mask(width, height, rect, progress, brush_fraction, origin=None):
     return mask, tip
 
 
+def replace_outlines_with_painted_pixels(outline, painted):
+    """Replace SVG ink only where color pixels are actually being revealed.
+
+    Erase using *painted image alpha*, not the bare brush mask. This preserves
+    complete SVG contours in transparent/unpainted parts of the original PNG
+    even when the SVG and PNG are imperfectly aligned.
+    """
+    painter=QPainter(outline)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
+    painter.drawImage(0,0,painted)
+    painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+    painter.drawImage(0,0,painted)
+    painter.end()
+    return outline
+
+
 def draw_hand(painter, tip, hand, width, hand_scale, anchor):
     if tip is None or hand is None or hand.isNull():
         return
@@ -235,26 +251,8 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
             mask, tip = guided_paint_mask(drawing,width,height,rect,reveal_progress,brush_width)
         else:
             mask, tip = paint_mask(width,height,rect,reveal_progress,brush_width,origin=origin)
-        outline = render(drawing,1,width,height,thickness)
-        erase = QPainter(outline)
-        erase.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
-        erase.drawImage(0,0,mask)
-        erase.end()
-        if reveal_mode == 'clean':
-            # Remove stray SVG outlines outside the original PNG's alpha.
-            footprint=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
-            footprint.fill(Qt.GlobalColor.transparent)
-            clip=QPainter(footprint)
-            clip.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-            clip.drawImage(rect,final_image)
-            clip.end()
-            # Strict per-pixel alpha clip: stray vector strokes cannot remain
-            # visible outside the final full-color artwork.
-            clipping=QPainter(outline)
-            clipping.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
-            clipping.drawImage(0,0,footprint)
-            clipping.end()
-        painter.drawImage(0,0,outline)
+        # Build actual colored pixels first; mask-only erasure incorrectly
+        # deleted traced contours in PNG-transparent regions.
         painted = QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
         painted.fill(Qt.GlobalColor.transparent)
         pp = QPainter(painted)
@@ -263,7 +261,20 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         pp.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
         pp.drawImage(0,0,mask)
         pp.end()
-        painter.drawImage(0,0,painted)
+        outline=render(drawing,1,width,height,thickness)
+        if reveal_mode == 'clean':
+            # Clean contour no longer clips the SVG to the source PNG shape;
+            # only genuinely visible painted pixels may replace SVG ink.
+            outline=replace_outlines_with_painted_pixels(outline,painted)
+        else:
+            # Preserve the existing guided/brush path reveal behavior until
+            # stray marks can be matched against the user's original PNG.
+            erase=QPainter(outline)
+            erase.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
+            erase.drawImage(0,0,mask)
+            erase.end()
+            over=QPainter(outline); over.drawImage(0,0,painted); over.end()
+        painter.drawImage(0,0,outline)
         draw_hand(painter,tip,painting_hand,width,hand_scale,anchor)
     else:
         # Existing fade remains unchanged as an alternative reveal mode.

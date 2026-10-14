@@ -102,11 +102,17 @@ class AdaptiveTests(unittest.TestCase):
         p=QPainter(expected); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         p.drawImage(artwork_rect(d,image,320,240),image); p.end()
         self.assertEqual(pil_image(end).tobytes(),pil_image(expected).tobytes())
+        # During painting, source PNG transparency must never erase SVG
+        # contours that the brush has not replaced. Only the final settled
+        # frame becomes the exact original PNG and its transparent background.
         for progress in (.25,.5,.75):
             frame=pil_image(render_color_timeline(d,(1+4*progress)/5,**kwargs))
             original=pil_image(expected)
-            self.assertTrue(all(a==0 for a,b in zip(frame.getchannel('A').tobytes(),
-                                                   original.getchannel('A').tobytes()) if b==0))
+            svg=pil_image(render(d,1,320,240))
+            self.assertTrue(all(a==0 for a,b,c in zip(
+                frame.getchannel('A').tobytes(),
+                original.getchannel('A').tobytes(),
+                svg.getchannel('A').tobytes()) if b==0 and c==0))
         plan=plan_for(d,image)
         seg=next(s for s in plan.segments if s.painting and s.end>plan.total*.1)
         progress=.98*(seg.start+seg.end)/2/plan.total
@@ -117,6 +123,32 @@ class AdaptiveTests(unittest.TestCase):
         self.assertNotEqual(pil_image(plain).tobytes(),pil_image(visible).tobytes())
         # Turning off the overlay does not change the plan or mask.
         self.assertIs(plan,plan_for(d,image))
+
+    def test_unpainted_svg_contours_remain_in_clean_and_adaptive_modes(self):
+        # Traced paths commonly extend beyond a color PNG's silhouette.
+        # Their unpainted contours must remain visible during colorization.
+        d,image=fixture(80)
+        kwargs=dict(width=320,height=240,duration=1.,fade_duration=3.,
+                    hold_duration=0,final_image=image)
+        baseline=pil_image(render(d,1,320,240)).getchannel('A')
+        settled=pil_image(render_color_timeline(
+            d,1,reveal_mode='adaptive',**kwargs)).getchannel('A')
+        # Deliberately examine lines that lie OUTSIDE final colored pixels:
+        # old clean/adaptive code removed all these at painting onset.
+        candidates=[(x,y) for y in range(240) for x in range(320)
+                    if baseline.getpixel((x,y))>180
+                    and settled.getpixel((x,y))==0]
+        self.assertGreater(len(candidates),10)
+        for mode in ('clean','adaptive'):
+            for progress in (.08,.4,.8):
+                fraction=(1+3*progress)/4
+                alpha=pil_image(render_color_timeline(
+                    d,fraction,reveal_mode=mode,**kwargs)).getchannel('A')
+                self.assertTrue(all(alpha.getpixel(p)>175 for p in candidates),
+                                f'{mode} removed an unpainted SVG outline at {progress:.0%}')
+        # Finished frame must always be the untouched original artwork.
+        end=pil_image(render_color_timeline(d,1,reveal_mode='clean',**kwargs))
+        self.assertEqual(end.getchannel('A').tobytes(),settled.tobytes())
 
     def test_preview_export_and_legacy_draw(self):
         d,image=fixture(40)

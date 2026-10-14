@@ -151,6 +151,16 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
         for i,inside in enumerate(polygon):
             if inside and support[i] and not assigned[i]:
                 labels[i]=rid; assigned[i]=1
+    image_regions=getattr(drawing,'image_regions',None)
+    if image_regions is not None:
+        # Image reconstruction supplies coarse color regions. Preserve the
+        # existing SVG segmentation path when this metadata is absent.
+        region_image=Image.new('I',image_regions.size)
+        region_image.putdata(image_regions.labels)
+        region_image=region_image.resize((gw,gh),Image.Resampling.NEAREST)
+        ids=list(region_image.getdata())
+        labels=[(rid+1 if rid else 1) if support[i] else 0
+                for i,rid in enumerate(ids)]
     labels,groups=_components(labels,gw,gh)
     # Grid distance to a region boundary controls local brush size.
     clearance=[0]*len(labels); queue=deque()
@@ -220,10 +230,21 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
     c=cell_at(origin)
     if c is None or labels[c]==0:
         warnings.append('Final SVG endpoint is outside PNG alpha: initial transfer is pen-up. Check alignment.')
+    first_region=True
+    largest_region=max(map(len,groups))
     while remaining:
+        # For image reconstruction, block large regions before small accents.
+        # The first region still follows the actual final drawing endpoint.
+        pool=list(enumerate(remaining))
+        if getattr(drawing,'image_region_priority',False) and not first_region:
+            def band(cells):
+                return 0 if len(cells)>=largest_region*.15 else (1 if len(cells)>=largest_region*.025 else 2)
+            best=min(band(cells) for _,(_,cells) in pool)
+            pool=[item for item in pool if band(item[1][1])==best]
+        first_region=False
         # Nearest region, preserving the actual final stroke as route origin.
         ri,entry=min(((i,min(cells,key=lambda c:math.dist(cursor,center(c))))
-                      for i,(_,cells) in enumerate(remaining)),
+                      for i,(_,cells) in pool),
                      key=lambda pair:math.dist(cursor,center(pair[1])))
         rid,cells=remaining.pop(ri)
         paint_to(entry,rid)
@@ -270,7 +291,8 @@ def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
     # Content-based keys survive deepcopy/export and include the full stroke order.
     geometry=tuple((s.name,tuple(s.points)) for s in drawing.strokes)
     raw=pil_image(image)
-    key=(geometry,tuple(drawing.bounds),raw.size,
+    region_map=getattr(drawing,'image_regions',None)
+    key=(geometry,region_map,getattr(drawing,'image_region_priority',False),tuple(drawing.bounds),raw.size,
          hashlib.sha256(raw.getchannel('A').tobytes()).digest(),
          float(brush_width),float(stroke_spacing))
     if key not in _CACHE:
@@ -315,19 +337,8 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
         return frame
     mask,tip=adaptive_paint_mask(drawing,image,width,height,rect,progress,
                                 brush_width,stroke_spacing)
-    footprint=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
-    footprint.fill(Qt.GlobalColor.transparent)
-    p=QPainter(footprint); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    p.drawImage(rect,image); p.end()
-    outline=render(drawing,1,width,height,thickness)
-    p=QPainter(outline)
-    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
-    p.drawImage(0,0,footprint)  # no stray SVG marks outside the PNG alpha
-    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
-    # Binary erase avoids dark antialias fringes lingering under painted edges.
-    eraser=pil_image(mask)
-    eraser.putalpha(eraser.getchannel('A').point(lambda a:255 if a else 0))
-    p.drawImage(0,0,qimage(eraser)); p.end()
+    # Preserve the complete SVG until real painted pixels cover it. The old
+    # footprint clipping erased unreached contours immediately at paint start.
     from PIL import ImageChops
     source=pil_image(image)
     coverage=plan_for(drawing,image,brush_width,stroke_spacing).mask(progress)
@@ -337,6 +348,10 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
     painted.fill(Qt.GlobalColor.transparent)
     p=QPainter(painted); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     p.drawImage(rect,qimage(source)); p.end()
-    p=QPainter(outline); p.drawImage(0,0,painted)
-    draw_hand(p,tip,hand,width,hand_scale,anchor); p.end()
+    from color_reveal import replace_outlines_with_painted_pixels
+    outline=replace_outlines_with_painted_pixels(
+        render(drawing,1,width,height,thickness),painted)
+    p=QPainter(outline)
+    draw_hand(p,tip,hand,width,hand_scale,anchor)
+    p.end()
     return outline
