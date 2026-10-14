@@ -77,125 +77,28 @@ class ImageBuilder(QThread):
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
-        # Explicit font registration also supports Qt's offscreen Windows backend.
         import os
         font=Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts'/'segoeui.ttf'
-        if font.exists(): QFontDatabase.addApplicationFont(str(font))
+        if font.exists():
+            QFontDatabase.addApplicationFont(str(font))
         QApplication.instance().setFont(QFont('Segoe UI',10))
-        self.setWindowTitle(DISPLAY_NAME); self.resize(1220,800)
-        if BRAND_ICON.is_file():
-            icon = QIcon(str(BRAND_ICON))
-            self.setWindowIcon(icon)
-            QApplication.instance().setWindowIcon(icon)
-        self.image_result=None; self.image_path=None; self.builder=None; self.svg_state=None
-        self.drawing=None; self.hand=None; self.final_image=None; self.worker=None; self.playing=False; self.position=0
-        self.timer=QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(33)
-        root=QWidget(); self.setCentralWidget(root); outer=QVBoxLayout(root)
-        header = QHBoxLayout(); outer.addLayout(header)
-        if BRAND_ICON.is_file():
-            brand = QLabel()
-            brand.setFixedSize(64,64)
-            brand.setPixmap(QPixmap(str(BRAND_ICON)).scaled(60,60,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
-            header.addWidget(brand)
-        titles = QVBoxLayout(); header.addLayout(titles, 1)
-        title = QLabel('StrokeScribe'); title.setStyleSheet('font-size:24px;font-weight:700;color:#2767ed;')
-        subtitle = QLabel(f'Prototype v{APP_VERSION}  •  SVG / Image → transparent animation'); subtitle.setStyleSheet('font-size:12px;color:#72839a;')
-        titles.addWidget(title); titles.addWidget(subtitle)
-        self.version_button = QPushButton(f'About • v{APP_VERSION}')
-        self.version_button.clicked.connect(self.show_version_info)
-        header.addWidget(self.version_button)
-        header.setContentsMargins(8,4,8,8)
-        split=QSplitter(); outer.addWidget(split,1); left=QWidget(); panel=QVBoxLayout(left); scroll=QScrollArea(); scroll.setWidgetResizable(True); scroll.setWidget(left); split.addWidget(scroll)
-        self.source_type=QComboBox(); self.source_type.addItems(['SVG','Image']); panel.addWidget(self.source_type)
-        self.import_button=QPushButton('Import SVG…'); self.import_button.clicked.connect(self.load); panel.addWidget(self.import_button)
-        self.image_controls=QWidget(); image_form=QFormLayout(self.image_controls); panel.addWidget(self.image_controls)
-        self.image_mode=QComboBox(); self.image_mode.addItems(['Auto trace','Stroke reconstruction','AI redraw (not available)'])
-        self.image_mode.model().item(2).setEnabled(False)
-        image_form.addRow('Image processing',self.image_mode)
-        self.image_detail=QComboBox(); self.image_detail.addItems(['Low','Medium','High']); self.image_detail.setCurrentIndex(1)
-        image_form.addRow('Detail',self.image_detail)
-        self.preserve_colors=QCheckBox('Preserve original colors'); self.preserve_colors.setChecked(True); image_form.addRow(self.preserve_colors)
-        self.image_duration=self.number(.2,120,8,.5); image_form.addRow('Painting duration (seconds)',self.image_duration)
-        self.rebuild_button=QPushButton('Apply image settings'); self.rebuild_button.clicked.connect(self.rebuild_image); image_form.addRow(self.rebuild_button)
-        self.image_controls.hide()
-        panel.addWidget(QLabel('Single-line lettering (A–Z, digits, punctuation)'))
-        self.text=QPlainTextEdit('Hello world!'); self.text.setMaximumHeight(70); panel.addWidget(self.text)
-        b=QPushButton('Create lettering'); b.clicked.connect(self.letter); panel.addWidget(b)
-        panel.addWidget(QLabel('Stroke order • select and move'))
-        self.order=QListWidget(); self.order.setMinimumHeight(100); panel.addWidget(self.order,1)
-        row=QHBoxLayout(); panel.addLayout(row)
-        for label,direction in [('Move up',-1),('Move down',1)]:
-            b=QPushButton(label); b.clicked.connect(lambda checked=False,d=direction:self.move(d)); row.addWidget(b)
-        panel.addWidget(QLabel('Final artwork reveal (optional)'))
-        b=QPushButton('Load original colored PNG…'); b.clicked.connect(self.load_color); panel.addWidget(b)
-        self.use_color=QCheckBox('Reveal PNG after drawing')
-        self.use_color.setEnabled(False)
-        panel.addWidget(self.use_color)
-        color_form=QFormLayout(); panel.addLayout(color_form)
-        self.reveal_mode=QComboBox()
-        self.reveal_mode.addItems(['Fade','Brush painting','Stroke-guided painting','Clean contour painting','Adaptive Hand Painting'])
-        color_form.addRow('Reveal mode',self.reveal_mode)
-        self.color_fade=self.number(0,20,.4,.1)
-        color_form.addRow('Reveal duration (seconds)',self.color_fade)
-        self.brush_width=self.number(.02,.5,.14,.02)
-        color_form.addRow('Brush width / artwork',self.brush_width)
-        self.stroke_spacing=self.number(.2,.9,.55,.05)
-        self.stroke_spacing.setToolTip('Adaptive mode: smaller spacing adds overlap between brush passes.')
-        color_form.addRow('Adaptive stroke spacing / width',self.stroke_spacing)
-        self.show_paint_hand=QCheckBox('Show hand during painting')
-        self.show_paint_hand.setChecked(True)
-        color_form.addRow(self.show_paint_hand)
-        self.color_hold=self.number(0,30,.6,.1); color_form.addRow('Final image hold (seconds)',self.color_hold)
-        self.color_note=QLabel('No final PNG loaded'); self.color_note.setWordWrap(True); panel.addWidget(self.color_note)
-        self.note=QLabel(); self.note.setWordWrap(True); self.note.setMaximumWidth(340); panel.addWidget(self.note)
-        right=QWidget(); layout=QVBoxLayout(right); split.addWidget(right); self.canvas=Canvas(); layout.addWidget(self.canvas,1)
-        self.slider=QSlider(Qt.Orientation.Horizontal); self.slider.setRange(0,1000); self.slider.valueChanged.connect(self.scrub); layout.addWidget(self.slider)
-        playback=QHBoxLayout(); layout.addLayout(playback)
-        self.play=QPushButton('Play / pause'); self.play.clicked.connect(self.toggle); playback.addWidget(self.play)
-        b=QPushButton('Restart'); b.clicked.connect(self.restart); playback.addWidget(b)
-        self.clock=QLabel(); playback.addWidget(self.clock)
-        controls=QHBoxLayout(); layout.addLayout(controls); form=QFormLayout(); controls.addLayout(form)
-        self.duration=self.number(.2,120,4,.1); form.addRow('Base duration (seconds)',self.duration)
-        self.speed=self.number(.1,5,1,.1); form.addRow('Speed multiplier',self.speed)
-        self.thickness=self.number(.1,10,1,.1); form.addRow('Line thickness ×',self.thickness)
-        self.res=QComboBox(); self.res.addItems(['1920 × 1080','2048 × 1080','2560 × 1440']); form.addRow('Export resolution',self.res)
-        self.fps=QSpinBox(); self.fps.setRange(1,60); self.fps.setValue(30); form.addRow('Frames per second',self.fps)
-        handform=QFormLayout(); controls.addLayout(handform)
-        b=QPushButton('Load transparent hand PNG…'); b.clicked.connect(self.loadhand); handform.addRow(b)
-        self.showhand=QCheckBox('Show hand'); self.showhand.setChecked(True); handform.addRow(self.showhand)
-        self.handsize=self.number(.02,.8,.18,.01); handform.addRow('Hand width / canvas',self.handsize)
-        self.ax=self.number(0,1,.1,.01); handform.addRow('Pen tip X / PNG width',self.ax)
-        self.ay=self.number(0,1,.1,.01); handform.addRow('Pen tip Y / PNG height',self.ay)
-        export_controls=QFormLayout(); layout.addLayout(export_controls)
-        self.webm=QCheckBox('Compact VP9 WebM + transparency (Filmora test)')
-        export_controls.addRow(self.webm)
-        self.webm_quality=QSpinBox(); self.webm_quality.setRange(18,42); self.webm_quality.setValue(28)
-        self.webm_quality.setToolTip('Lower number means higher quality and usually larger file. 28 is a balanced starting point.')
-        export_controls.addRow('WebM quality (lower = better)',self.webm_quality)
-        self.mov=QCheckBox('Also make ProRes 4444 MOV (larger, reliable)')
-        export_controls.addRow(self.mov)
-        self.keep_png=QCheckBox('Keep PNG frames alongside encoded videos')
-        self.keep_png.setChecked(False)
-        self.keep_png.setToolTip('When unchecked, generated frame PNGs are removed ONLY after video encoding succeeds. When no video is selected, PNG frames are always kept.')
-        export_controls.addRow(self.keep_png)
-        row=QHBoxLayout(); layout.addLayout(row); self.export=QPushButton('Export transparent animation…'); self.export.clicked.connect(self.save); row.addWidget(self.export)
-        self.cancel=QPushButton('Cancel export'); self.cancel.setEnabled(False); self.cancel.clicked.connect(self.cancel_export); row.addWidget(self.cancel)
-        self.progress=QProgressBar(); layout.addWidget(self.progress)
-        self.status=QLabel('Local CPU rendering • checkerboard is preview only'); layout.addWidget(self.status)
-        split.setSizes([300,900])
-        for w in [self.duration,self.speed,self.thickness,self.handsize,self.ax,self.ay]: w.valueChanged.connect(self.refresh)
-        self.showhand.toggled.connect(self.refresh); self.res.currentIndexChanged.connect(self.refresh)
-        self.use_color.toggled.connect(self.refresh)
-        self.color_fade.valueChanged.connect(self.refresh)
-        self.color_hold.valueChanged.connect(self.refresh)
-        self.reveal_mode.currentIndexChanged.connect(self.refresh)
-        self.brush_width.valueChanged.connect(self.refresh)
-        self.show_paint_hand.toggled.connect(self.refresh)
-        self.stroke_spacing.valueChanged.connect(self.refresh)
+        self.image_result=None
+        self.image_path=None
+        self.builder=None
+        self.svg_state=None
+        self.drawing=None
+        self.hand=None
+        self.final_image=None
+        self.worker=None
+        self.playing=False
+        self.position=0
+        from studio_workspace import build_workspace
+        build_workspace(self,Canvas,BRAND_ICON)
         self.set_drawing(import_svg(Path(__file__).parent/'samples'/'drawing.svg'))
-        self.source_type.currentIndexChanged.connect(self.change_source)
-        self.preserve_colors.toggled.connect(self.refresh)
-        self.image_duration.valueChanged.connect(self.refresh)
+        self.timer=QTimer(self)
+        self.timer.timeout.connect(self.tick)
+        self.timer.start(33)
+
     def show_version_info(self):
         build_file = Path(__file__).resolve().parent / 'BUILD_INFO.txt'
         build = build_file.read_text(encoding='utf-8').strip() if build_file.exists() else 'Source ZIP / local checkout'
@@ -298,8 +201,14 @@ class Window(QMainWindow):
                            fade_duration=self.image_duration.value(),reveal_mode='adaptive')
         return options
     def refresh(self,*args):
-        if not self.drawing: return
+        if not self.drawing:
+            self.stage_timeline.update_state(.001,0,0,0)
+            return
         options=self.options()
+        self.stage_timeline.update_state(options['duration'],
+            options['fade_duration'] if options['final_image'] is not None else 0,
+            options['hold_duration'] if options['final_image'] is not None else 0,
+            self.position)
         duration=options.pop('duration'); options.pop('fps')
         ratio=options['height']/options['width']
         options['width']=960; options['height']=round(960*ratio)
