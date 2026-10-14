@@ -35,3 +35,7 @@ The output's `sequence.json` includes the `artwork_scale` value for repeatabilit
 - The full Google Fonts catalog and actual artist-quality handwriting need user testing; no paid AI or Codex credits are used in font rendering.
 
 GitHub pull request #3 remains experimental; official v0.5.2 is unchanged.
+
+### v0.5.3 experimental.3 legibility fix
+
+The initial centerline extraction broke visible letterforms into small marks. StrokeScribe now animates the complete font's genuine ink progressively per character rather than pretending fragmentary skeleton paths are finished lettering. The font looks like its true typeface when a word is completed; the hand follows an approximate left-to-right reveal rather than authentic pen strokes. The built-in single-line pen mode continues to trace genuine authored strokes.
