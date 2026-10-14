@@ -161,7 +161,16 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
         ids=list(region_image.getdata())
         labels=[(rid+1 if rid else 1) if support[i] else 0
                 for i,rid in enumerate(ids)]
+    old_labels=labels[:]
     labels,groups=_components(labels,gw,gh)
+    # Model-proposed semantic order applies to actual connected components,
+    # not the raw coarse box coordinates. Disconnected fragments still receive
+    # independent brush passes.
+    semantic=getattr(drawing,'image_semantic_order',())
+    ranks={int(region):i for i,region in enumerate(semantic)}
+    component_priority={
+        i: ranks.get(old_labels[cells[0]]-1,len(ranks)+1)
+        for i,cells in enumerate(groups,1)}
     # Grid distance to a region boundary controls local brush size.
     clearance=[0]*len(labels); queue=deque()
     for cell,rid in enumerate(labels):
@@ -236,7 +245,14 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
         # For image reconstruction, block large regions before small accents.
         # The first region still follows the actual final drawing endpoint.
         pool=list(enumerate(remaining))
-        if getattr(drawing,'image_region_priority',False) and not first_region:
+        if semantic and not first_region:
+            # Draw named objects in the AI's deliberate sequence; background
+            # and unclassified color fragments follow after named objects.
+            best=min(component_priority.get(rid,len(ranks)+1)
+                     for _,(rid,cells) in pool)
+            pool=[entry for entry in pool
+                  if component_priority.get(entry[1][0],len(ranks)+1)==best]
+        elif getattr(drawing,'image_region_priority',False) and not first_region:
             def band(cells):
                 return 0 if len(cells)>=largest_region*.15 else (1 if len(cells)>=largest_region*.025 else 2)
             best=min(band(cells) for _,(_,cells) in pool)
@@ -292,7 +308,8 @@ def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
     geometry=tuple((s.name,tuple(s.points)) for s in drawing.strokes)
     raw=pil_image(image)
     region_map=getattr(drawing,'image_regions',None)
-    key=(geometry,region_map,getattr(drawing,'image_region_priority',False),tuple(drawing.bounds),raw.size,
+    key=(geometry,region_map,getattr(drawing,'image_region_priority',False),
+         getattr(drawing,'image_semantic_order',()),tuple(drawing.bounds),raw.size,
          hashlib.sha256(raw.getchannel('A').tobytes()).digest(),
          float(brush_width),float(stroke_spacing))
     if key not in _CACHE:
