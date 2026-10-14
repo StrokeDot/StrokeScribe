@@ -72,6 +72,52 @@ class FontAndScaleTests(unittest.TestCase):
         self.assertEqual(a.pixelColor(0,0).alpha(),0)
         with self.assertRaises(ValueError):scale_animation_frame(frame,2.2)
 
+    def test_letter_color_and_background_match_export(self):
+        sample=sample_font()
+        if sample is None:self.skipTest('No system TTF available')
+        from PIL import Image
+        from engine import apply_lettering_background
+        from unittest.mock import patch
+        from PySide6.QtGui import QColor
+        drawing=make_font_text('Hello',sample,60)
+        transparent=render(drawing,1,720,360)
+        self.assertEqual(transparent.pixelColor(0,0).alpha(),0)
+        drawing.font_color='#cc1133'
+        drawing.lettering_background='#ffffff'
+        colored=apply_lettering_background(render(drawing,1,720,360),drawing)
+        self.assertEqual(colored.pixelColor(0,0).name(),'#ffffff')
+        self.assertTrue(any(
+            colored.pixelColor(x,y).red()>colored.pixelColor(x,y).blue()*1.5
+            for y in range(100,260,8) for x in range(40,680,8)))
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp)/'lettering'
+            export_frames(drawing,folder,duration=.3,fps=10,width=720,height=360,
+                          artwork_scale=.5)
+            finished=Image.open(folder/'frame_000002.png').convert('RGBA')
+            self.assertEqual(finished.getpixel((0,0)),(255,255,255,255))
+            meta=json.loads((folder/'sequence.json').read_text())
+            self.assertEqual(meta['lettering_background'],'#ffffff')
+            self.assertFalse(meta['alpha'])
+        w=Window()
+        try:
+            self.assertAlmostEqual(w.handsize.value(),.75)
+            self.assertAlmostEqual(w.ax.value(),.20)
+            self.assertAlmostEqual(w.ay.value(),.20)
+            self.assertTrue(w.showhand.isChecked())
+            self.assertTrue(w.show_paint_hand.isChecked())
+            self.assertEqual(w.font_bg_mode.currentIndex(),0)
+            w.drawing=drawing
+            with patch('app.QColorDialog.getColor',return_value=QColor('#4477aa')):
+                w.choose_letter_color()
+            self.assertEqual(drawing.font_color,'#4477aa')
+            w.font_bg_mode.setCurrentIndex(2)
+            self.assertEqual(drawing.lettering_background,'#000000')
+            w.font_bg_mode.setCurrentIndex(0)
+            self.assertIsNone(drawing.lettering_background)
+            self.assertEqual(w.canvas.frame.pixelColor(0,0).alpha(),0)
+        finally:
+            w.close()
+
     def test_export_and_preview_scale(self):
         d=import_svg(Path(__file__).parent/'samples'/'drawing.svg')
         with tempfile.TemporaryDirectory() as tmp:
