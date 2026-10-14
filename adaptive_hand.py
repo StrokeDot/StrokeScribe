@@ -337,19 +337,8 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
         return frame
     mask,tip=adaptive_paint_mask(drawing,image,width,height,rect,progress,
                                 brush_width,stroke_spacing)
-    footprint=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
-    footprint.fill(Qt.GlobalColor.transparent)
-    p=QPainter(footprint); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    p.drawImage(rect,image); p.end()
-    outline=render(drawing,1,width,height,thickness)
-    p=QPainter(outline)
-    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
-    p.drawImage(0,0,footprint)  # no stray SVG marks outside the PNG alpha
-    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
-    # Binary erase avoids dark antialias fringes lingering under painted edges.
-    eraser=pil_image(mask)
-    eraser.putalpha(eraser.getchannel('A').point(lambda a:255 if a else 0))
-    p.drawImage(0,0,qimage(eraser)); p.end()
+    # Preserve the complete SVG until real painted pixels cover it. The old
+    # footprint clipping erased unreached contours immediately at paint start.
     from PIL import ImageChops
     source=pil_image(image)
     coverage=plan_for(drawing,image,brush_width,stroke_spacing).mask(progress)
@@ -359,6 +348,10 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
     painted.fill(Qt.GlobalColor.transparent)
     p=QPainter(painted); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     p.drawImage(rect,qimage(source)); p.end()
-    p=QPainter(outline); p.drawImage(0,0,painted)
-    draw_hand(p,tip,hand,width,hand_scale,anchor); p.end()
+    from color_reveal import replace_outlines_with_painted_pixels
+    outline=replace_outlines_with_painted_pixels(
+        render(drawing,1,width,height,thickness),painted)
+    p=QPainter(outline)
+    draw_hand(p,tip,hand,width,hand_scale,anchor)
+    p.end()
     return outline
