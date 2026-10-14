@@ -1,4 +1,4 @@
-# Image source reconstruction — v0.5.2 experimental (revision .3)
+# Image source reconstruction — StrokeScribe Prototype v0.5.2
 
 Choose **Image** in the source selector, import a PNG/JPEG/WebP/BMP, then press Play.
 Choose Auto trace or Stroke reconstruction and Low/Medium/High detail, then **Apply image settings** to rebuild.
@@ -39,7 +39,7 @@ FFmpeg on PATH enables MOV export.
 
 The first experimental ZIP pinned NumPy 2.2.6 and OpenCV 4.12, which could make Python 3.14 try to compile NumPy and fail with missing compiler errors. The corrected build uses NumPy 2.3.3 and OpenCV headless 4.13.0.92. Those versions offer prebuilt 64-bit Windows packages for Python 3.14. The installer now upgrades pip first and uses `--only-binary=:all:`, so an incompatible interpreter produces a clear installation error rather than trying to build a C extension.
 
-**If setup failed in an earlier extracted copy:** Download the *latest successful* `StrokeScribe-image-source-review` GitHub Actions artifact for the v0.5.2 feature branch, extract its nested `StrokeScribe-Prototype-v0.5.2-experimental.4.zip` to a **new folder**, run `Setup.cmd`, then `Launch.cmd`. This does not modify or replace the published v0.5.1 release. Python 3.12–3.14 (64-bit Windows) is the intended range; a Windows Python 3.14 CI job checks package installation and the test suite.
+**If setup failed in an earlier extracted copy:** Download the *latest successful* `StrokeScribe-image-source-review` GitHub Actions artifact for the v0.5.2 release, extract its nested `StrokeScribe-Prototype-v0.5.2.zip` to a **new folder**, run `Setup.cmd`, then `Launch.cmd`. This does not modify or replace the published v0.5.1 release. Python 3.12–3.14 (64-bit Windows) is the intended range; a Windows Python 3.14 CI job checks package installation and the test suite.
 
 ## Compact transparent WebM export (experimental .2)
 
@@ -63,4 +63,8 @@ The v0.5.2 experimental.3 headset screenshots revealed two distinct issues: **Cl
 
 **Separate known issue:** Stroke-Guided Painting can leave temporary dark SVG artifacts outside the corresponding source PNG details near the headband/microphone; these disappear on the final PNG. Automatically deleting all SVG strokes outside the PNG would also delete valid, unpainted strokes in imperfectly registered drawings. This separate trace-registration / stray-stroke cleanup needs careful per-image alignment tests and has **not yet been automatically suppressed** in experimental.4. The user's original colored headset PNG is not checked in, so exact placement requires visual testing.
 
-Download the latest passing `StrokeScribe-image-source-review` artifact for the experimental branch. The package filename is `StrokeScribe-Prototype-v0.5.2-experimental.4.zip`; keep the existing experimental.3 and v0.5.1 folders as rollback copies.
+Download the latest passing `StrokeScribe-image-source-review` artifact for the experimental branch. The package filename is `StrokeScribe-Prototype-v0.5.2.zip`; keep the existing experimental.3 and v0.5.1 folders as rollback copies.
+
+## Official prototype release v0.5.2
+
+These features were validated in Linux offscreen CI and Windows Python 3.14 CI prior to release. The official package is **StrokeScribe-Prototype-v0.5.2.zip**, under the [GitHub v0.5.2 release](https://github.com/StrokeDot/StrokeScribe/releases/tag/prototype-v0.5.2). This replaces the development-only experimental.4 build name and retains every previous v0.5.0/v0.5.1 release. Known limitations described above remain; official means this is the latest packaged baseline, not that the image reconstruction or per-image SVG-to-PNG alignment is flawless.
