@@ -110,50 +110,99 @@ def parse_analysis(data, model=DEFAULT_MODEL):
     return Analysis(str(data.get('description',''))[:320],tuple(clean[:MAX_PARTS]),model)
 
 
+def extract_structured_parts(text):
+    """Read a JSON result despite markdown fences or short model preambles.
+
+    The decoded object is still validated by parse_analysis; do not trust
+    unconstrained model text as instructions or permit arbitrary eval.
+    """
+    if isinstance(text,dict):
+        return text
+    if not isinstance(text,str) or not text.strip():
+        raise ValueError('Ollama returned an empty text answer.')
+    result=text.strip()
+    if result.startswith('```'):
+        result=re.sub(r'^\`\`\`(?:json)?\\s*','',result,flags=re.I)
+        result=re.sub(r'\\s*\`\`\`$', '', result)
+    try:
+        data=json.loads(result)
+        if isinstance(data,dict):
+            return data
+    except (ValueError,TypeError):
+        pass
+    # Some local vision models prepend a sentence to their JSON.
+    decoder=json.JSONDecoder()
+    for pos,char in enumerate(result[:800]):
+        if char!='{':continue
+        try:
+            data,_=decoder.raw_decode(result[pos:])
+            if isinstance(data,dict) and isinstance(data.get('parts'),list):
+                return data
+        except (ValueError,TypeError):
+            pass
+    raise ValueError('Ollama did not return a complete JSON object with parts.')
+
+
 def local_vision_analysis(image, model=DEFAULT_MODEL, timeout=180):
-    """Ask the user's locally running Ollama vision model for scene structure."""
+    """Local-only Ollama vision request with defensive JSON parsing/retry."""
     if not re.fullmatch(r'[A-Za-z0-9._-]{1,80}(?::[A-Za-z0-9._-]{1,30})?',model):
         raise ValueError('Choose a valid local Ollama model name.')
     thumbnail=image.convert('RGBA')
     thumbnail.thumbnail((1024,1024),Image.Resampling.LANCZOS)
-    # The model sees the background as white, matching the preview of an
-    # image with alpha; alpha itself is retained by StrokeScribe for output.
     background=Image.new('RGBA',thumbnail.size,'white')
     background.alpha_composite(thumbnail)
     buffer=io.BytesIO()
     background.convert('RGB').save(buffer,format='PNG')
-    request_body=json.dumps({
-        'model':model,
-        'stream':False,
-        'format':PART_SCHEMA,
-        'options':{'temperature':0},
-        'messages':[{
-            'role':'user','content':PROMPT,
-            'images':[base64.b64encode(buffer.getvalue()).decode('ascii')],
-        }],
-    }).encode('utf-8')
-    request=Request(OLLAMA_ENDPOINT,data=request_body,
-                    headers={'Content-Type':'application/json'},method='POST')
-    try:
-        with urlopen(request,timeout=timeout) as response:
-            answer=json.load(response)
-    except HTTPError as exc:
-        detail=exc.read(400).decode('utf-8','replace')
-        if exc.code==404:
+    encoded=base64.b64encode(buffer.getvalue()).decode('ascii')
+
+    errors=[]
+    # Some Qwen vision/Ollama combinations ignore a schema or emit empty
+    # message.content after extended thinking. The second attempt asks for
+    # ordinary JSON, without thinking, if the schema attempt is unusable.
+    for attempt in range(2):
+        request_body=json.dumps({
+            'model':model,
+            'stream':False,
+            'think':False,
+            'format':PART_SCHEMA if attempt==0 else 'json',
+            'options':{'temperature':0,'num_predict':2560},
+            'messages':[{
+                'role':'user',
+                'content':PROMPT + (' Respond with a single JSON object ONLY: '
+                    '{"description":"...","parts":[{"name":"...","box":[0,0,500,500],"order":1}]}'
+                    if attempt else ''),
+                'images':[encoded],
+            }],
+        }).encode('utf-8')
+        request=Request(OLLAMA_ENDPOINT,data=request_body,
+                        headers={'Content-Type':'application/json'},method='POST')
+        try:
+            with urlopen(request,timeout=timeout) as response:
+                answer=json.load(response)
+        except HTTPError as exc:
+            detail=exc.read(400).decode('utf-8','replace')
+            if exc.code==404:
+                raise RuntimeError(
+                    f'Local Ollama model {model!r} was not found. Run: '
+                    f'ollama pull {model}') from exc
+            if exc.code in (400,422) and attempt==0:
+                errors.append('Schema request was unsupported by local Ollama.')
+                continue
+            raise RuntimeError(f'Local Ollama error HTTP {exc.code}: {detail}') from exc
+        except (URLError,TimeoutError,OSError) as exc:
             raise RuntimeError(
-                f'Local Ollama model {model!r} was not found. In a terminal run: '
-                f'ollama pull {model}') from exc
-        raise RuntimeError(f'Local Ollama error HTTP {exc.code}: {detail}') from exc
-    except (URLError,TimeoutError,OSError) as exc:
-        raise RuntimeError(
-            'Local AI is not running. Install/start Ollama and run '
-            f'\"ollama pull {model}\" once. AI Redraw uses a local model; '
-            'your artwork is not sent to a cloud service.') from exc
-    try:
-        raw=json.loads(answer['message']['content'])
-    except (KeyError,TypeError,ValueError) as exc:
-        raise ValueError('Local Ollama returned invalid JSON. Retry the analysis.') from exc
-    return parse_analysis(raw,model)
+                'Local AI is not running or timed out. Start Ollama and verify '
+                f'the model with "ollama list" ({model}).') from exc
+        try:
+            content=answer.get('message',{}).get('content','')
+            return parse_analysis(extract_structured_parts(content),model)
+        except (ValueError,KeyError,AttributeError,TypeError) as exc:
+            done=str(answer.get('done_reason','unknown')) if isinstance(answer,dict) else 'unknown'
+            errors.append(f'{str(exc)} (finish: {done})')
+    raise ValueError(
+        'The local vision model did not produce usable image-part JSON, '
+        'even after a second attempt. Please retry or update Ollama. '
+        'Reason: '+errors[-1])
 
 
 def _part_rect(part,w,h):
