@@ -166,7 +166,7 @@ class StageTimeline(QFrame):
         super().mousePressEvent(event)
 
 
-def build_workspace(w):
+def build_workspace(w, Canvas, BRAND_ICON):
     """Construct UI fields expected by Window methods without altering logic."""
     w.setWindowTitle(f'StrokeScribe Studio — Prototype v{APP_VERSION}')
     w.resize(1490,890)
@@ -181,7 +181,6 @@ def build_workspace(w):
     # Header: no third-party brand graphics.
     bar=QFrame(); bar.setObjectName('topBar')
     bar_l=QHBoxLayout(bar); bar_l.setContentsMargins(14,8,14,8)
-    from app import BRAND_ICON
     if BRAND_ICON.is_file():
         icon=QLabel()
         icon.setPixmap(QPixmap(str(BRAND_ICON)).scaled(
@@ -274,7 +273,6 @@ def build_workspace(w):
     top.addStretch(1)
     top.addWidget(label('TRANSPARENT CANVAS','micro'))
     monitor_l.addLayout(top)
-    from app import Canvas
     w.canvas=Canvas()
     w.canvas.setMinimumSize(360,250)
     monitor_l.addWidget(w.canvas,1)
