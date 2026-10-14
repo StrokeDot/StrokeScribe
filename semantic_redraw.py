@@ -112,7 +112,7 @@ def parse_analysis(data, model=DEFAULT_MODEL):
 
 def local_vision_analysis(image, model=DEFAULT_MODEL, timeout=180):
     """Ask the user's locally running Ollama vision model for scene structure."""
-    if not re.fullmatch(r'[A-Za-z0-9._:/-]{1,110}',model):
+    if not re.fullmatch(r'[A-Za-z0-9._-]{1,80}(?::[A-Za-z0-9._-]{1,30})?',model):
         raise ValueError('Choose a valid local Ollama model name.')
     thumbnail=image.convert('RGBA')
     thumbnail.thumbnail((1024,1024),Image.Resampling.LANCZOS)
