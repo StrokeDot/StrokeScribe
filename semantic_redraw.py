@@ -121,9 +121,9 @@ def extract_structured_parts(text):
         return text
     if not isinstance(text,str) or not text.strip():
         raise ValueError('Ollama returned an empty text answer.')
-    # Never treat JSON inside hidden reasoning as the final model answer.
-    result=re.sub(r'<think\\b[^>]*>.*?</think\\s*>','',text,flags=re.S|re.I)
-    result=re.sub(r'<think\\b[^>]*>.*
+    # Ignore reasoning blocks; only a final JSON answer can be accepted.
+    result=re.sub(r'<think\b[^>]*>.*?</think\s*>','',text,flags=re.S|re.I)
+    result=re.sub(r'<think\b[^>]*>.*$','',result,flags=re.S|re.I).strip()
     if result.startswith('```'):
         result=result[3:]
         if result.lower().startswith('json'):
