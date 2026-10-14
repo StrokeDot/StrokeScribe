@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QSpinBox, QListWidget, QPlainTextEdit, QSlider, QTabWidget,
     QProgressBar, QSizePolicy,
 )
-from version import APP_VERSION
+from version import APP_VERSION, DISPLAY_NAME
 
 
 STUDIO_STYLE = """
@@ -168,7 +168,7 @@ class StageTimeline(QFrame):
 
 def build_workspace(w, Canvas, BRAND_ICON):
     """Construct UI fields expected by Window methods without altering logic."""
-    w.setWindowTitle(f'StrokeScribe Studio — Prototype v{APP_VERSION}')
+    w.setWindowTitle(f'{DISPLAY_NAME}  •  Studio')
     w.resize(1490,890)
     w.setMinimumSize(1040,690)
     QApplication.instance().setStyleSheet(STUDIO_STYLE)
