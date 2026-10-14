@@ -4,8 +4,10 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
 from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea)
-from engine import import_svg, render, export_frames, encode_mov, encode_webm
+from engine import import_svg, render, export_frames, encode_mov, encode_webm, scale_animation_frame
 from lettering import make_text
+from font_library import (STARTER_FONTS, installed_font, make_font_text,
+                          import_font, download_google_font)
 from color_reveal import load_color_image, render_color_timeline, timeline_duration
 from version import APP_VERSION, DISPLAY_NAME, RELEASE_DATE
 
@@ -66,6 +68,22 @@ class Exporter(QThread):
                 self.done.emit(f'Saved PNG sequence: {self.folder}')
         except Exception as e: self.failed.emit(str(e))
 
+class FontInstaller(QThread):
+    complete=Signal(object); update=Signal(str)
+    def __init__(self,families):
+        super().__init__(); self.families=tuple(families)
+    def run(self):
+        installed=[]; errors=[]
+        for family in self.families:
+            if self.isInterruptionRequested(): break
+            self.update.emit('Downloading '+family+' from Google Fonts…')
+            try:
+                installed.append((family,str(download_google_font(family))))
+            except (OSError,ValueError,RuntimeError) as exc:
+                errors.append((family,str(exc)))
+        self.complete.emit((installed,errors))
+
+
 class ImageBuilder(QThread):
     ready=Signal(object); failed=Signal(str)
     def __init__(self,path,mode,detail,brush_width,spacing,ai_model='qwen3-vl:4b'):
@@ -97,6 +115,7 @@ class Window(QMainWindow):
         self.hand=None
         self.final_image=None
         self.worker=None
+        self.font_worker=None
         self.playing=False
         self.position=0
         from studio_workspace import build_workspace
@@ -206,9 +225,68 @@ class Window(QMainWindow):
             except Exception as e: QMessageBox.warning(self,'Cannot import',str(e))
     def letter(self):
         try:
+            label=self.font_select.currentText().strip()
+            if not label or label=='Built-in single-line pen':
+                drawing=make_text(self.text.toPlainText())
+            else:
+                font_path=self.font_select.currentData()
+                if not label.startswith('Local: ') or not font_path:
+                    font_path=installed_font(label)
+                if font_path is None:
+                    QMessageBox.information(self,'Handwriting font',
+                        'This font has not been downloaded yet. Click '
+                        '"Download selected Google Font" first, or import a local TTF/OTF file.')
+                    return
+                drawing=make_font_text(self.text.toPlainText(),font_path,
+                                       int(self.font_size.value()))
             self.source_type.setCurrentIndex(0)
-            self.set_drawing(make_text(self.text.toPlainText()))
+            self.set_drawing(drawing)
         except Exception as e: QMessageBox.warning(self,'Lettering',str(e))
+
+    def install_selected_font(self):
+        name=self.font_select.currentText().strip()
+        if name.startswith('Local: ') or name=='Built-in single-line pen' or not name:
+            QMessageBox.information(self,'Fonts','Select or type a Google Fonts family first.')
+            return
+        self.start_font_install((name,))
+
+    def install_starter_fonts(self):
+        self.start_font_install(STARTER_FONTS)
+
+    def start_font_install(self,families):
+        if self.font_worker and self.font_worker.isRunning(): return
+        self.font_worker=FontInstaller(families)
+        self.font_worker.update.connect(self.font_note.setText)
+        self.font_worker.complete.connect(self.font_install_complete)
+        self.font_worker.finished.connect(self.font_install_finished)
+        self.download_font.setEnabled(False)
+        self.download_starters.setEnabled(False)
+        self.font_worker.start()
+
+    def font_install_complete(self,result):
+        installed,errors=result
+        message=f'{len(installed)} handwriting font(s) ready to use.'
+        if errors:
+            message+=' Failed: '+', '.join(f'{name}: {why}' for name,why in errors[:2])
+        self.font_note.setText(message)
+        if errors: QMessageBox.warning(self,'Google Fonts download',message)
+
+    def font_install_finished(self):
+        self.download_font.setEnabled(True)
+        self.download_starters.setEnabled(True)
+
+    def import_local_font(self):
+        filename,_=QFileDialog.getOpenFileName(
+            self,'Import TTF/OTF font','','Font files (*.ttf *.otf)')
+        if not filename: return
+        try:
+            path=import_font(filename)
+            label='Local: '+path.stem
+            self.font_select.addItem(label,str(path))
+            self.font_select.setCurrentIndex(self.font_select.count()-1)
+            self.font_note.setText(f'Imported {path.name}. You are responsible for its license.')
+        except Exception as exc:
+            QMessageBox.warning(self,'Font import',str(exc))
     def move(self,direction):
         i=self.order.currentRow(); j=i+direction
         if i<0 or not 0<=j<len(self.drawing.strokes): return
@@ -246,6 +324,7 @@ class Window(QMainWindow):
                     fade_duration=self.color_fade.value(),hold_duration=self.color_hold.value(),
                     reveal_mode=['fade','brush','guided','clean','adaptive'][self.reveal_mode.currentIndex()],
                     brush_width=self.brush_width.value(),stroke_spacing=self.stroke_spacing.value(),
+                    artwork_scale=self.artwork_size.value()/100.0,
                     painting_hand=self.hand if self.show_paint_hand.isChecked() else None)
         if self.source_type.currentIndex():
             options.update(final_image=self.image_result.image if self.image_result and self.preserve_colors.isChecked() else None,
@@ -263,6 +342,7 @@ class Window(QMainWindow):
             options['hold_duration'] if options['final_image'] is not None else 0,
             self.position)
         duration=options.pop('duration'); options.pop('fps')
+        size=options.pop('artwork_scale')
         ratio=options['height']/options['width']
         options['width']=960; options['height']=round(960*ratio)
         if options['final_image'] is not None:
@@ -271,6 +351,7 @@ class Window(QMainWindow):
             for key in ('final_image','fade_duration','hold_duration','reveal_mode','brush_width','painting_hand','stroke_spacing'):
                 options.pop(key)
             self.canvas.frame=render(self.drawing,self.position,**options)
+        self.canvas.frame=scale_animation_frame(self.canvas.frame,size)
         self.canvas.update()
         length=self.timeline_length()
         self.clock.setText(f'{self.position*length:.2f} / {length:.2f} s')
