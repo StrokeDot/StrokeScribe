@@ -26,5 +26,16 @@ snapshot('studio-export.png')
 window.inspector_tabs.setCurrentIndex(0)
 window.source_type.setCurrentIndex(1)
 snapshot('studio-image-import.png')
+window.source_type.setCurrentIndex(0)
+window.resize(1100,740)
+snapshot('studio-compact.png')
 window.close()
 print('Generated four original Studio interface screenshots:', out)
+
+# Inline review without accessing a local Windows filesystem.
+import base64
+from PySide6.QtCore import QBuffer,QIODevice
+from PySide6.QtGui import QImage
+preview=QImage(str(out/'studio-animation.png')).scaledToWidth(1200)
+buffer=QBuffer();buffer.open(QIODevice.OpenModeFlag.WriteOnly);preview.save(buffer,'PNG')
+print('STUDIO_REVIEW_BASE64='+base64.b64encode(bytes(buffer.data())).decode())

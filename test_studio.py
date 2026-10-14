@@ -86,6 +86,48 @@ class StudioTests(unittest.TestCase):
         self.assertTrue(w.export.isEnabled())
         self.assertFalse(w.image_controls.isVisible())
 
+    def test_preview_background_does_not_change_frame(self):
+        w=self.window
+        original=bytes(w.canvas.frame.bits())
+        w.preview_background.setCurrentIndex(1)
+        APP.processEvents()
+        self.assertEqual(bytes(w.canvas.frame.bits()),original)
+        w.preview_background.setCurrentIndex(2)
+        self.assertEqual(bytes(w.canvas.frame.bits()),original)
+
+    def test_source_inspector_and_export_navigation(self):
+        w=self.window
+        w.quick_export.click()
+        self.assertEqual(w.inspector_tabs.currentIndex(),2)
+        w.fps.setValue(60)
+        self.assertIn('60 fps',w.output_summary.text())
+        w.inspector_tabs.setCurrentIndex(0)
+        w.source_type.setCurrentIndex(1)
+        self.assertFalse(w.load_color_button.isEnabled())
+        self.assertFalse(w.reveal_mode.isVisible())
+        self.assertTrue(w.image_duration.isVisible())
+        w.source_type.setCurrentIndex(0)
+        self.assertTrue(w.reveal_mode.isVisible())
+        self.assertFalse(w.image_duration.isVisible())
+
+    def test_timeline_keyboard_and_export_busy_guard(self):
+        w=self.window
+        w.stage_timeline.setFocus()
+        QTest.keyClick(w.stage_timeline,Qt.Key.Key_Home)
+        self.assertEqual(w.slider.value(),0)
+        QTest.keyClick(w.stage_timeline,Qt.Key.Key_Right)
+        self.assertEqual(w.slider.value(),10)
+        class Busy:
+            def isRunning(self): return True
+        w.worker=Busy()
+        w.sync_workspace()
+        self.assertFalse(w.export.isEnabled())
+        self.assertFalse(w.quick_export.isEnabled())
+        w.save()  # Must return before opening a destination dialog.
+        w.worker=None
+        w.sync_workspace()
+        self.assertTrue(w.export.isEnabled())
+
     def test_render_at_playhead_not_changed_by_ui(self):
         w=self.window
         w.slider.setValue(500)

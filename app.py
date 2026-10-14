@@ -14,16 +14,21 @@ BRAND_ICON = Path(__file__).resolve().parent / 'assets' / 'strokescribe_icon.png
 
 class Canvas(QWidget):
     def __init__(self):
-        super().__init__(); self.frame=None; self.setMinimumSize(550,330)
+        super().__init__(); self.frame=None; self.background=0; self.setMinimumSize(550,330)
+    def set_background(self,index):
+        self.background=index; self.update()
     def paintEvent(self,event):
         p=QPainter(self); p.fillRect(self.rect(),QColor('#141d28'))
         if self.frame:
             size=self.frame.size(); size.scale(self.size(),Qt.AspectRatioMode.KeepAspectRatio)
             x=(self.width()-size.width())//2; y=(self.height()-size.height())//2
             p.save(); p.setClipRect(x,y,size.width(),size.height())
-            for a in range(x,x+size.width(),20):
-                for b in range(y,y+size.height(),20):
-                    p.fillRect(a,b,20,20,QColor('#e8edf0' if ((a-x)//20+(b-y)//20)%2==0 else '#d4dce2'))
+            if self.background:
+                p.fillRect(x,y,size.width(),size.height(),QColor('#ffffff' if self.background==1 else '#242d3b'))
+            else:
+                for a in range(x,x+size.width(),20):
+                    for b in range(y,y+size.height(),20):
+                        p.fillRect(a,b,20,20,QColor('#e8edf0' if ((a-x)//20+(b-y)//20)%2==0 else '#d4dce2'))
             p.drawImage(x,y,self.frame.scaled(size,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation)); p.restore()
         p.end()
 
@@ -98,6 +103,28 @@ class Window(QMainWindow):
         self.timer=QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(33)
+
+    def open_export(self):
+        self.inspector_tabs.setCurrentIndex(2)
+        self.export.setFocus()
+
+    def sync_workspace(self,*args):
+        image_source=bool(self.source_type.currentIndex())
+        self.load_color_button.setEnabled(not image_source)
+        self.use_color.setEnabled(not image_source and self.final_image is not None)
+        self.reveal_mode.setEnabled(not image_source)
+        self.paint_form.setRowVisible(self.reveal_mode,not image_source)
+        self.paint_form.setRowVisible(self.image_paint_hint,image_source)
+        self.paint_form.setRowVisible(self.color_fade,not image_source)
+        self.paint_form.setRowVisible(self.image_duration,image_source)
+        self.reveal_mode.setToolTip('Image sources use Adaptive Hand Painting.' if image_source else '')
+        self.output_summary.setText(f'{self.res.currentText()}  •  {self.fps.value()} fps')
+        busy=bool((self.worker and self.worker.isRunning()) or (self.builder and self.builder.isRunning()))
+        self.export.setEnabled(self.drawing is not None and not busy)
+        self.quick_export.setEnabled(self.drawing is not None and not busy)
+        self.webm_quality.setEnabled(self.webm.isChecked())
+        self.keep_png.setEnabled(self.webm.isChecked() or self.mov.isChecked())
+        self.play.setText('Pause' if self.playing else 'Play')
 
     def show_version_info(self):
         build_file = Path(__file__).resolve().parent / 'BUILD_INFO.txt'
@@ -203,6 +230,7 @@ class Window(QMainWindow):
                            fade_duration=self.image_duration.value(),reveal_mode='adaptive')
         return options
     def refresh(self,*args):
+        self.sync_workspace()
         if not self.drawing:
             self.stage_timeline.update_state(0,0,0,0)
             self.clock.setText('0.00 / 0.00 s')
@@ -228,17 +256,17 @@ class Window(QMainWindow):
     def toggle(self):
         if not self.drawing: return
         if self.position>=1: self.slider.setValue(0)
-        self.playing=not self.playing; self.last=time.perf_counter()
+        self.playing=not self.playing; self.last=time.perf_counter(); self.sync_workspace()
     def restart(self):
         if not self.drawing: return
-        self.slider.setValue(0); self.playing=True; self.last=time.perf_counter()
+        self.slider.setValue(0); self.playing=True; self.last=time.perf_counter(); self.sync_workspace()
     def tick(self):
         if not self.playing or not self.drawing: return
         now=time.perf_counter(); self.position=min(1,self.position+(now-self.last)/self.timeline_length()); self.last=now
         self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False); self.refresh()
-        if self.position>=1: self.playing=False
+        if self.position>=1: self.playing=False; self.sync_workspace()
     def save(self):
-        if not self.drawing or (self.builder and self.builder.isRunning()): return
+        if not self.drawing or (self.builder and self.builder.isRunning()) or (self.worker and self.worker.isRunning()): return
         parent=QFileDialog.getExistingDirectory(self,'Choose destination; a new sequence folder will be created')
         if not parent: return
         import copy
@@ -247,10 +275,11 @@ class Window(QMainWindow):
                              self.mov.isChecked(),self.webm.isChecked(),
                              self.webm_quality.value(),self.keep_png.isChecked())
         self.worker.progress.connect(self.export_progress); self.worker.done.connect(lambda p:self.export_done('Saved: '+p)); self.worker.failed.connect(lambda e:self.export_done('Export stopped: '+e)); self.worker.finished.connect(self.export_finished)
-        self.export.setEnabled(False); self.cancel.setEnabled(True); self.status.setText('Exporting locally…'); self.worker.start()
+        self.export.setEnabled(False); self.quick_export.setEnabled(False); self.cancel.setEnabled(True); self.status.setText('Exporting locally…'); self.worker.start()
     def export_progress(self,i,n): self.progress.setRange(0,n); self.progress.setValue(i)
     def export_done(self,message): self.status.setText(message); self.status.setWordWrap(True)
-    def export_finished(self): self.export.setEnabled(True); self.cancel.setEnabled(False); self.progress.setRange(0,100); self.progress.setValue(100)
+    def export_finished(self):
+        self.cancel.setEnabled(False); self.progress.setRange(0,100); self.progress.setValue(100); self.sync_workspace()
     def cancel_export(self):
         if self.worker:
             self.worker.requestInterruption()

@@ -25,6 +25,11 @@ QFrame#assetPanel, QFrame#inspectorPanel, QFrame#monitorPanel, QFrame#timelinePa
     background: #1A222D; border: 1px solid #344153; border-radius: 9px;
 }
 QFrame#monitorPanel { background: #101721; }
+QLabel { background: transparent; }
+QPushButton:focus, QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus, QListWidget:focus { border: 1px solid #78AEFF; }
+QListWidget::item { padding: 6px; border-bottom: 1px solid #233144; }
+QListWidget::item:selected { background: #244A78; color: #FFFFFF; }
+QToolTip { background: #25374E; color: #FFFFFF; border: 1px solid #648AB8; padding: 6px; }
 QLabel#micro { color: #91A3B8; font-size: 10px; font-weight: 700; }
 QLabel#section { color: #9DB1C9; font-size: 11px; font-weight: 700; }
 QLabel#brand { color: #F6F8FC; font-size: 20px; font-weight: 800; }
@@ -109,8 +114,9 @@ class StageTimeline(QFrame):
         self.paint_seconds=0.
         self.hold_seconds=0.
         self.progress=0.
-        self.setMinimumHeight(64)
-        self.setMaximumHeight(75)
+        self.setMinimumHeight(82)
+        self.setMaximumHeight(90)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setToolTip('Click a stage to move the playback cursor.')
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -125,7 +131,7 @@ class StageTimeline(QFrame):
         p=QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         left=10.; width=max(1.,self.width()-20.)
-        top=14.; height=33.
+        top=29.; height=33.
         total=self.draw_seconds+self.paint_seconds+self.hold_seconds
         if total<=0:
             p.setPen(QColor('#91A3B8'))
@@ -133,6 +139,15 @@ class StageTimeline(QFrame):
                 Qt.AlignmentFlag.AlignCenter, 'IMPORT ARTWORK TO BEGIN')
             p.end()
             return
+        # A time ruler shares the same scale as the animation phases.
+        p.setPen(QColor('#91A3B8'))
+        ticks=max(2,min(10,int(width/110)))
+        for i in range(ticks+1):
+            x=left+width*i/ticks
+            p.drawLine(QPointF(x,23),QPointF(x,27))
+            align=Qt.AlignmentFlag.AlignCenter
+            text_x=max(left,min(x-30,left+width-60))
+            p.drawText(QRectF(text_x,3,60,16),align,f'{total*i/ticks:.1f}s')
         stages=[('DRAW',self.draw_seconds,'#4E88DB'),
                 ('PAINT',self.paint_seconds,'#30A898'),
                 ('HOLD',self.hold_seconds,'#CBA15C')]
@@ -158,7 +173,7 @@ class StageTimeline(QFrame):
         p.drawLine(QPointF(play_x,top-5),QPointF(play_x,top+height+7))
         p.setPen(QColor('#A7B9CC'))
         p.setFont(QFont('Segoe UI',8))
-        p.drawText(QRectF(left,50,width,14),
+        p.drawText(QRectF(left,68,width,14),
                    Qt.AlignmentFlag.AlignLeft,'00:00')
         p.drawText(QRectF(left,50,width,14),
                    Qt.AlignmentFlag.AlignRight,f'{total:.1f} s')
@@ -173,13 +188,31 @@ class StageTimeline(QFrame):
             return
         super().mousePressEvent(event)
 
+    def mouseMoveEvent(self,event):
+        if event.buttons() & Qt.MouseButton.LeftButton and self.draw_seconds+self.paint_seconds+self.hold_seconds>0:
+            fraction=max(0.,min(1.,(event.position().x()-10)/max(1,self.width()-20)))
+            self.slider.setValue(round(1000*fraction))
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def keyPressEvent(self,event):
+        if event.key() in (Qt.Key.Key_Left,Qt.Key.Key_Right):
+            self.slider.setValue(self.slider.value()+(-10 if event.key()==Qt.Key.Key_Left else 10))
+        elif event.key()==Qt.Key.Key_Home:
+            self.slider.setValue(0)
+        elif event.key()==Qt.Key.Key_End:
+            self.slider.setValue(1000)
+        else:
+            super().keyPressEvent(event)
+
 
 def build_workspace(w, Canvas, BRAND_ICON):
     """Construct UI fields expected by Window methods without altering logic."""
     w.setWindowTitle(f'{DISPLAY_NAME}  •  Studio')
     w.resize(1490,890)
     w.setMinimumSize(1040,690)
-    QApplication.instance().setStyleSheet(STUDIO_STYLE)
+    w.setStyleSheet(STUDIO_STYLE)
     root=QWidget()
     w.setCentralWidget(root)
     outer=QVBoxLayout(root)
@@ -196,24 +229,27 @@ def build_workspace(w, Canvas, BRAND_ICON):
             Qt.TransformationMode.SmoothTransformation))
         bar_l.addWidget(icon)
         w.setWindowIcon(QIcon(str(BRAND_ICON)))
+        QApplication.instance().setWindowIcon(QIcon(str(BRAND_ICON)))
     title=QVBoxLayout();title.setSpacing(0)
     title.addWidget(label('STROKESCRIBE','brand'))
     title.addWidget(label(f'Animation studio  •  Prototype v{APP_VERSION}','subtitle'))
     bar_l.addLayout(title)
     bar_l.addStretch(1)
-    bar_l.addWidget(label('LOCAL PROJECT  /  SVG + IMAGE','micro'))
+    w.output_summary=label('1920 × 1080  •  30 fps','micro')
+    bar_l.addWidget(w.output_summary)
     w.version_button=QPushButton(f'About  •  v{APP_VERSION}')
     w.version_button.setObjectName('subtle')
     w.version_button.clicked.connect(w.show_version_info)
     bar_l.addWidget(w.version_button)
     quick_export=QPushButton('Export Animation')
     quick_export.setObjectName('primary')
-    quick_export.clicked.connect(w.save)
+    quick_export.clicked.connect(w.open_export)
     bar_l.addWidget(quick_export)
     w.quick_export=quick_export
     outer.addWidget(bar)
 
     split=QSplitter(Qt.Orientation.Horizontal)
+    w.workspace_splitter=split
     split.setChildrenCollapsible(False)
     outer.addWidget(split,1)
 
@@ -243,7 +279,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.preserve_colors.setChecked(True)
     image_form.addRow(w.preserve_colors)
     w.image_duration=w.number(.2,120,8,.5)
-    image_form.addRow('Paint time (s)',w.image_duration)
+    # Painting timing belongs in the Animation inspector.
+    w.image_duration.setParent(w.image_controls)
     w.rebuild_button=QPushButton('Apply image settings')
     w.rebuild_button.clicked.connect(w.rebuild_image)
     image_form.addRow(w.rebuild_button)
@@ -279,11 +316,16 @@ def build_workspace(w, Canvas, BRAND_ICON):
     top=QHBoxLayout()
     top.addWidget(label('02  /  PREVIEW MONITOR','micro'))
     top.addStretch(1)
-    top.addWidget(label('TRANSPARENT CANVAS','micro'))
+    w.preview_background=QComboBox()
+    w.preview_background.addItems(['Transparency grid','White background','Dark background'])
+    w.preview_background.setToolTip('Preview background only. Exports keep transparency.')
+    w.preview_background.setAccessibleName('Preview background')
+    top.addWidget(w.preview_background)
     monitor_l.addLayout(top)
     w.canvas=Canvas()
     w.canvas.setMinimumSize(360,250)
     monitor_l.addWidget(w.canvas,1)
+    w.preview_background.currentIndexChanged.connect(w.canvas.set_background)
     monitor_l.addWidget(caption('Checkerboard = transparent  •  Scrub on the timeline below'))
     split.addWidget(monitor)
 
@@ -319,7 +361,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.reveal_mode.addItems(['Fade','Brush painting','Stroke-guided painting',
                             'Clean contour painting','Adaptive Hand Painting'])
     a2.addRow('Paint mode',w.reveal_mode)
-    w.color_fade=w.number(0,20,.4,.1);a2.addRow('Paint time (s)',w.color_fade)
+    w.image_paint_hint=caption('Adaptive Hand Painting follows reconstructed regions.')
+    a2.addRow(w.image_paint_hint)
+    w.color_fade=w.number(0,20,.4,.1);a2.addRow('SVG paint time (s)',w.color_fade)
+    a2.addRow('Image paint time (s)',w.image_duration)
+    w.paint_form=a2
     w.brush_width=w.number(.02,.5,.14,.02);a2.addRow('Brush width',w.brush_width)
     w.stroke_spacing=w.number(.2,.9,.55,.05)
     w.stroke_spacing.setToolTip('Lower values add more overlap between brush strokes.')
@@ -377,11 +423,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.cancel=QPushButton('Cancel export')
     w.cancel.setEnabled(False);w.cancel.clicked.connect(w.cancel_export)
     output_l.addWidget(w.cancel)
-    w.progress=QProgressBar()
-    output_l.addWidget(w.progress)
-    w.status=label('Local CPU rendering • transparent output','status')
-    w.status.setWordWrap(True)
-    output_l.addWidget(w.status)
+    output_l.addWidget(caption('Export progress appears below the timeline.'))
     output_l.addStretch(1)
     tabs.addTab(scroll_view(output),'Export')
     split.addWidget(inspector)
@@ -412,6 +454,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline=StageTimeline(w.slider)
     line_l.addWidget(w.stage_timeline)
     outer.addWidget(timeline)
+    footer=QHBoxLayout()
+    w.status=label('Ready  •  Import → adjust → preview → export','status')
+    w.status.setWordWrap(True)
+    footer.addWidget(w.status,1)
+    w.progress=QProgressBar();w.progress.setFixedWidth(180);w.progress.setValue(0)
+    footer.addWidget(w.progress)
+    outer.addLayout(footer)
 
     # Retain the existing preview/export signal wiring.
     for widget in (w.duration,w.speed,w.thickness,w.handsize,w.ax,w.ay):
@@ -428,3 +477,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.preserve_colors.toggled.connect(w.refresh)
     w.image_duration.valueChanged.connect(w.refresh)
     w.source_type.currentIndexChanged.connect(w.change_source)
+    w.fps.valueChanged.connect(w.sync_workspace)
+    w.webm.toggled.connect(w.sync_workspace)
+    w.mov.toggled.connect(w.sync_workspace)
+    for name in ('duration','speed','thickness','brush_width','stroke_spacing',
+                 'image_duration','color_fade','color_hold','fps','res','order'):
+        getattr(w,name).setAccessibleName(name.replace('_',' '))
+    w.stage_timeline.setAccessibleName('Animation timeline: drag to scrub; arrows to step')
+    w.sync_workspace()
