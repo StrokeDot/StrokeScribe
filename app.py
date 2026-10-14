@@ -91,11 +91,12 @@ class ImageBuilder(QThread):
     stage=Signal(str,int,bool)
     analysis_ready=Signal(object)
     def __init__(self,path,mode,detail,brush_width,spacing,ai_model='qwen3-vl:4b',
-                 cached_analysis=None):
+                 cached_analysis=None,ai_profile='balanced'):
         super().__init__()
         self.path=path; self.mode=mode; self.detail=detail
         self.brush_width=brush_width; self.spacing=spacing; self.ai_model=ai_model
         self.cached_analysis=cached_analysis
+        self.ai_profile=ai_profile
         self.analysis=None
         self.timings={}
         self.success=False
@@ -116,7 +117,7 @@ class ImageBuilder(QThread):
                     started=time.perf_counter()
                     from semantic_redraw import local_vision_analysis
                     original=load_raster(self.path)
-                    self.analysis=local_vision_analysis(original,self.ai_model)
+                    self.analysis=local_vision_analysis(original,self.ai_model,profile=self.ai_profile)
                     self.timings['vision']=time.perf_counter()-started
                     # Store a successful semantic plan even if later local
                     # contour generation fails. No disk or cloud cache used.
@@ -126,7 +127,8 @@ class ImageBuilder(QThread):
                 self.stage.emit('Tracing image details',20,False)
             started=time.perf_counter()
             result=reconstruct(self.path,self.mode,self.detail,
-                               ai_model=self.ai_model,ai_analysis=self.analysis)
+                               ai_model=self.ai_model,ai_analysis=self.analysis,
+                               ai_profile=self.ai_profile)
             self.timings['contours']=time.perf_counter()-started
             self.stage.emit('Preparing animation and brush routes',85,False)
             started=time.perf_counter()
@@ -285,19 +287,20 @@ class Window(QMainWindow):
     def update_image_mode(self,*args):
         active=self.image_mode.currentIndex()==2
         self.image_source_form.setRowVisible(self.ai_model,active)
+        self.image_source_form.setRowVisible(self.ai_profile,active)
         self.image_source_form.setRowVisible(self.ai_note,active)
         self.rebuild_button.setText('Analyze with local AI' if active else 'Apply image settings')
 
     def rebuild_image(self):
         if self.image_path: self.build_image(self.image_path)
 
-    def analysis_cache_key(self,path,model):
+    def analysis_cache_key(self,path,model,profile='balanced'):
         # Cache is memory-only and scoped to the exact file revision/model.
         # Detail is purposefully excluded: Low/Medium/High reuses the SAME
         # recognized objects while rebuilding only local contours.
         source=Path(path).resolve(strict=True)
         stat=source.stat()
-        return (str(source).casefold(),stat.st_size,stat.st_mtime_ns,model)
+        return (str(source).casefold(),stat.st_size,stat.st_mtime_ns,model,profile)
 
     def cache_ai_analysis(self,key,analysis):
         self.ai_analysis_cache.pop(key,None)
@@ -326,11 +329,12 @@ class Window(QMainWindow):
         if self.builder and self.builder.isRunning(): return
         mode=['auto_trace','stroke_reconstruction','ai_redraw'][self.image_mode.currentIndex()]
         model=self.ai_model.currentText().strip()
+        profile=self.ai_profile.currentText().strip().lower()
         cache_key=None
         cached=None
         if mode=='ai_redraw':
             try:
-                cache_key=self.analysis_cache_key(path,model)
+                cache_key=self.analysis_cache_key(path,model,profile)
             except OSError as exc:
                 QMessageBox.warning(self,'Image import',str(exc))
                 return
@@ -341,7 +345,8 @@ class Window(QMainWindow):
         self.image_path=path
         self.builder=ImageBuilder(path,mode,self.image_detail.currentText().lower(),
                                   self.brush_width.value(),self.stroke_spacing.value(),
-                                  model,cached_analysis=cached)
+                                  model,cached_analysis=cached,
+                                  ai_profile=profile)
         self.builder.ready.connect(self.image_ready)
         self.builder.failed.connect(self.image_failed)
         self.builder.stage.connect(self.image_stage)
@@ -389,7 +394,7 @@ class Window(QMainWindow):
                 vision=('reused (0s)' if self.builder.cache_hit
                         else f'{times.get("vision",0):.1f}s')
                 self.status.setText(
-                    f'AI Redraw ready: Ollama {vision}; '
+                    f'AI Redraw ({self.builder.ai_profile.title()}) ready: Ollama {vision}; '
                     f'contours {times.get("contours",0):.1f}s; '
                     f'brush plan {times.get("brush",0):.1f}s. '
                     'Medium detail recommended.')
