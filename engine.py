@@ -150,3 +150,51 @@ def encode_mov(folder, fps=30):
     result=subprocess.run(cmd,capture_output=True,text=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     if result.returncode: raise RuntimeError(result.stderr[-2000:])
     return output
+
+def encode_webm(folder, fps=30, quality=28):
+    """Create a smaller, genuinely alpha-bearing VP9 WebM from PNG frames.
+
+    Filmora import of external VP9 alpha files must still be visually tested.
+    The source frames are never removed here; callers delete them only after
+    successful encoding and when the user explicitly chose that behavior.
+    """
+    ffmpeg=shutil.which('ffmpeg')
+    if not ffmpeg:
+        raise RuntimeError('FFmpeg was not found on PATH. PNG frames have still been exported.')
+    quality=int(quality)
+    if not 18<=quality<=42:
+        raise ValueError('WebM quality must be in the range 18–42.')
+    folder=Path(folder)
+    output=folder/'animation_vp9_alpha.webm'
+    cmd=[ffmpeg,'-n','-hide_banner','-loglevel','error',
+         '-framerate',str(fps),'-i',str(folder/'frame_%06d.png'),
+         '-an','-c:v','libvpx-vp9','-deadline','good','-cpu-used','4',
+         '-row-mt','1','-b:v','0','-crf',str(quality),
+         '-auto-alt-ref','0','-pix_fmt','yuva420p',str(output)]
+    result=subprocess.run(cmd,capture_output=True,text=True,
+                          creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+    if result.returncode:
+        output.unlink(missing_ok=True)
+        raise RuntimeError('WebM encoding failed: '+result.stderr[-2000:])
+    if not output.is_file() or output.stat().st_size<=0:
+        raise RuntimeError('WebM encoder did not produce a nonempty video.')
+    # Make deletion-safe: require an encoded VP9 stream with an alpha tag.
+    # Standard ffprobe decoding may report yuv420p because it uses the native
+    # decoder, which does not expose VP9 alpha; alpha_mode=1 is the container
+    # signal for VP9 alpha, verified in the CI tests via libvpx-vp9 decoding.
+    ffprobe=shutil.which('ffprobe')
+    if ffprobe:
+        info=subprocess.run([ffprobe,'-v','error','-select_streams','v:0',
+            '-show_entries','stream=codec_name:stream_tags=alpha_mode',
+            '-of','json',str(output)],capture_output=True,text=True,
+            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        if info.returncode:
+            raise RuntimeError('WebM created but could not verify its stream; PNG frames retained.')
+        try:
+            stream=json.loads(info.stdout)['streams'][0]
+            valid=stream.get('codec_name')=='vp9' and str(stream.get('tags',{}).get('alpha_mode'))=='1'
+        except (KeyError,IndexError,ValueError,TypeError):
+            valid=False
+        if not valid:
+            raise RuntimeError('WebM was encoded without verified VP9 transparency; PNG frames retained.')
+    return output
