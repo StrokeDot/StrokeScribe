@@ -1,4 +1,5 @@
 import sys, time
+from collections import OrderedDict
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl
@@ -149,6 +150,9 @@ class Window(QMainWindow):
         self.image_result=None
         self.image_path=None
         self.builder=None
+        self.ai_analysis_cache=OrderedDict()
+        self.analysis_started=0.
+        self.analysis_stage=''
         self.svg_state=None
         self.drawing=None
         self.hand=None
@@ -169,6 +173,9 @@ class Window(QMainWindow):
         self.timer=QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(33)
+        self.analysis_timer=QTimer(self)
+        self.analysis_timer.setInterval(1000)
+        self.analysis_timer.timeout.connect(self.update_analysis_elapsed)
 
     def open_export(self):
         self.inspector_tabs.setCurrentIndex(2)
@@ -283,22 +290,82 @@ class Window(QMainWindow):
 
     def rebuild_image(self):
         if self.image_path: self.build_image(self.image_path)
+
+    def analysis_cache_key(self,path,model):
+        # Cache is memory-only and scoped to the exact file revision/model.
+        # Detail is purposefully excluded: Low/Medium/High reuses the SAME
+        # recognized objects while rebuilding only local contours.
+        source=Path(path).resolve(strict=True)
+        stat=source.stat()
+        return (str(source).casefold(),stat.st_size,stat.st_mtime_ns,model)
+
+    def cache_ai_analysis(self,key,analysis):
+        self.ai_analysis_cache.pop(key,None)
+        self.ai_analysis_cache[key]=analysis
+        # Bound stored scene plans; never persist image/model results to disk.
+        while len(self.ai_analysis_cache)>4:
+            self.ai_analysis_cache.popitem(last=False)
+
+    def image_stage(self,message,percent,indeterminate):
+        self.analysis_stage=message
+        if indeterminate:
+            self.progress.setRange(0,0)
+        else:
+            self.progress.setRange(0,100)
+            self.progress.setValue(percent)
+        self.update_analysis_elapsed()
+
+    def update_analysis_elapsed(self):
+        elapsed=max(0,time.perf_counter()-self.analysis_started)
+        if self.builder and self.builder.isRunning():
+            self.status.setText(f'{self.analysis_stage}… {elapsed:.0f}s elapsed')
+        elif self.analysis_stage:
+            self.status.setText(self.analysis_stage)
+
     def build_image(self,path):
         if self.builder and self.builder.isRunning(): return
-        self.playing=False; self.image_path=path
         mode=['auto_trace','stroke_reconstruction','ai_redraw'][self.image_mode.currentIndex()]
+        model=self.ai_model.currentText().strip()
+        cache_key=None
+        cached=None
+        if mode=='ai_redraw':
+            try:
+                cache_key=self.analysis_cache_key(path,model)
+            except OSError as exc:
+                QMessageBox.warning(self,'Image import',str(exc))
+                return
+            cached=self.ai_analysis_cache.get(cache_key)
+            if cached is not None:
+                self.ai_analysis_cache.move_to_end(cache_key)
+        self.playing=False
+        self.image_path=path
         self.builder=ImageBuilder(path,mode,self.image_detail.currentText().lower(),
                                   self.brush_width.value(),self.stroke_spacing.value(),
-                                  self.ai_model.currentText().strip())
+                                  model,cached_analysis=cached)
         self.builder.ready.connect(self.image_ready)
         self.builder.failed.connect(self.image_failed)
+        self.builder.stage.connect(self.image_stage)
+        if cache_key is not None:
+            self.builder.analysis_ready.connect(
+                lambda result,key=cache_key:self.cache_ai_analysis(key,result))
         self.builder.finished.connect(self.image_finished)
-        self.source_type.setEnabled(False); self.import_button.setEnabled(False); self.rebuild_button.setEnabled(False); self.export.setEnabled(False); self.quick_export.setEnabled(False)
-        self.status.setText('Asking local vision AI to plan the drawing…' if mode=='ai_redraw'
-                            else 'Analyzing image locally…')
+        self.analysis_started=time.perf_counter()
+        self.analysis_stage=('Reusing existing AI image analysis'
+                             if cached is not None else 'Preparing AI image analysis'
+                             if mode=='ai_redraw' else 'Preparing image reconstruction')
+        self.progress.setRange(0,0 if mode=='ai_redraw' and cached is None else 100)
+        if self.progress.maximum()!=0:self.progress.setValue(0)
+        self.source_type.setEnabled(False)
+        self.import_button.setEnabled(False)
+        self.rebuild_button.setEnabled(False)
+        self.export.setEnabled(False)
+        self.quick_export.setEnabled(False)
+        self.update_analysis_elapsed()
+        self.analysis_timer.start()
         self.builder.start()
+
     def image_failed(self,error):
-        self.status.setText('Image analysis failed. Fix the issue and retry.')
+        self.status.setText('Image analysis failed: '+str(error)[:140])
         QMessageBox.warning(self,'Image reconstruction',error)
 
     def image_ready(self,result):
@@ -306,16 +373,35 @@ class Window(QMainWindow):
         self.update_project_title(result.filename)
         self.set_drawing(result.drawing)
         self.color_note.setText(result.filename+' • original colors; adaptive brush reveal')
+
     def image_finished(self):
-        self.source_type.setEnabled(True); self.import_button.setEnabled(True); self.rebuild_button.setEnabled(True)
+        self.analysis_timer.stop()
+        self.source_type.setEnabled(True)
+        self.import_button.setEnabled(True)
+        self.rebuild_button.setEnabled(True)
         self.export.setEnabled(self.drawing is not None and not (self.worker and self.worker.isRunning()))
         self.quick_export.setEnabled(self.drawing is not None and not (self.worker and self.worker.isRunning()))
-        if self.builder and self.builder.mode=='ai_redraw' and self.image_result and self.image_result.mode=='ai_redraw':
-            self.status.setText('Local AI redraw ready. Review named parts in Stroke Order and preview the animation.')
-        elif self.builder and self.builder.mode=='ai_redraw':
-            self.status.setText('AI redraw could not be completed. Existing image kept.')
+        self.progress.setRange(0,100)
+        if self.builder and self.builder.success:
+            self.progress.setValue(100)
+            times=self.builder.timings
+            if self.builder.mode=='ai_redraw':
+                vision=('reused (0s)' if self.builder.cache_hit
+                        else f'{times.get("vision",0):.1f}s')
+                self.status.setText(
+                    f'AI Redraw ready: Ollama {vision}; '
+                    f'contours {times.get("contours",0):.1f}s; '
+                    f'brush plan {times.get("brush",0):.1f}s. '
+                    'Medium detail recommended.')
+            else:
+                self.status.setText(
+                    f'Image ready: tracing {times.get("contours",0):.1f}s; '
+                    f'brush plan {times.get("brush",0):.1f}s.')
         else:
-            self.status.setText('Image analysis finished. Apply image settings after changing mode or detail.')
+            self.progress.setValue(0)
+            message=self.builder.failed_message if self.builder else 'Unknown problem'
+            self.status.setText('Image analysis failed: '+str(message)[:140])
+        self.analysis_stage=''
     def load(self):
         if self.source_type.currentIndex():
             name,_=QFileDialog.getOpenFileName(self,'Import image','','Images (*.png *.jpg *.jpeg *.webp *.bmp)')
