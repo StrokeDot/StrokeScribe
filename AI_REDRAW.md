@@ -37,3 +37,7 @@ The selected image is scaled to at most 1024 px for analysis and sent to Ollama 
 **Development:** Run CI on Linux and Windows Python 3.14. The `test_ai_redraw.py` suite mocks local model responses so tests don't need an actual AI server. The final visual comparison on your cowboy artwork must be carried out manually.
 
 **Stability:** Based on official v0.5.2. Work is isolated on `feature/ai-redraw-v0.5.3`, not merged.
+
+### v0.5.3 experimental.3 reliability improvement
+
+If Ollama's Qwen vision model returns an empty, fenced or malformed answer, StrokeScribe now strips Markdown fences, parses an embedded JSON object when possible, asks for non-thinking output, and makes one more JSON-only attempt before showing a clearer error. The local image stays on your PC. This avoids the earlier generic `Local Ollama returned invalid JSON` failure for several common response variants. A real user model run must still validate the behavior; CI simulates these variants rather than downloading or executing the model.
