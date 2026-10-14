@@ -87,6 +87,7 @@ def scroll_view(content):
     scroll=QScrollArea()
     scroll.setWidgetResizable(True)
     scroll.setFrameShape(QFrame.Shape.NoFrame)
+    scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     scroll.setWidget(content)
     return scroll
 
@@ -114,7 +115,7 @@ class StageTimeline(QFrame):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def update_state(self, draw, paint, hold, progress):
-        self.draw_seconds=max(.001,float(draw))
+        self.draw_seconds=max(0.,float(draw))
         self.paint_seconds=max(0.,float(paint))
         self.hold_seconds=max(0.,float(hold))
         self.progress=max(0.,min(1.,float(progress)))
@@ -125,7 +126,13 @@ class StageTimeline(QFrame):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         left=10.; width=max(1.,self.width()-20.)
         top=14.; height=33.
-        total=max(.001,self.draw_seconds+self.paint_seconds+self.hold_seconds)
+        total=self.draw_seconds+self.paint_seconds+self.hold_seconds
+        if total<=0:
+            p.setPen(QColor('#91A3B8'))
+            p.drawText(QRectF(left,top,width,height),
+                Qt.AlignmentFlag.AlignCenter, 'IMPORT ARTWORK TO BEGIN')
+            p.end()
+            return
         stages=[('DRAW',self.draw_seconds,'#4E88DB'),
                 ('PAINT',self.paint_seconds,'#30A898'),
                 ('HOLD',self.hold_seconds,'#CBA15C')]
@@ -158,7 +165,8 @@ class StageTimeline(QFrame):
         p.end()
 
     def mousePressEvent(self,event):
-        if event.button()==Qt.MouseButton.LeftButton:
+        if (event.button()==Qt.MouseButton.LeftButton
+                and self.draw_seconds+self.paint_seconds+self.hold_seconds>0):
             fraction=max(0.,min(1.,(event.position().x()-10)/max(1,self.width()-20)))
             self.slider.setValue(round(1000*fraction))
             event.accept()
@@ -227,7 +235,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.image_mode=QComboBox();w.image_mode.addItems([
         'Auto trace','Stroke reconstruction','AI redraw (not available)'])
     w.image_mode.model().item(2).setEnabled(False)
-    image_form.addRow('Reconstruction',w.image_mode)
+    image_form.addRow('Method',w.image_mode)
     w.image_detail=QComboBox();w.image_detail.addItems(['Low','Medium','High'])
     w.image_detail.setCurrentIndex(1)
     image_form.addRow('Detail',w.image_detail)
@@ -348,7 +356,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.fps=QSpinBox();w.fps.setRange(1,60);w.fps.setValue(30)
     e.addRow('Frame rate',w.fps)
     output_l.addWidget(label('FORMATS'))
-    w.webm=QCheckBox('Compact WebM / VP9 + alpha (test in Filmora)')
+    w.webm=QCheckBox('Compact WebM (VP9 + alpha)')
+    w.webm.setToolTip('Filmora import of third-party WebM transparency must be tested.')
     output_l.addWidget(w.webm)
     w.webm_quality=QSpinBox()
     w.webm_quality.setRange(18,42);w.webm_quality.setValue(28)
