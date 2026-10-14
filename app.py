@@ -85,19 +85,58 @@ class FontInstaller(QThread):
 
 
 class ImageBuilder(QThread):
-    ready=Signal(object); failed=Signal(str)
-    def __init__(self,path,mode,detail,brush_width,spacing,ai_model='qwen3-vl:4b'):
+    ready=Signal(object)
+    failed=Signal(str)
+    stage=Signal(str,int,bool)
+    analysis_ready=Signal(object)
+    def __init__(self,path,mode,detail,brush_width,spacing,ai_model='qwen3-vl:4b',
+                 cached_analysis=None):
         super().__init__()
         self.path=path; self.mode=mode; self.detail=detail
         self.brush_width=brush_width; self.spacing=spacing; self.ai_model=ai_model
+        self.cached_analysis=cached_analysis
+        self.analysis=None
+        self.timings={}
+        self.success=False
+        self.failed_message=None
+        self.cache_hit=False
     def run(self):
         try:
-            from image_reconstruct import reconstruct
-            result=reconstruct(self.path,self.mode,self.detail,ai_model=self.ai_model)
+            from image_reconstruct import reconstruct, load_raster
             from adaptive_hand import plan_for
+            if self.mode=='ai_redraw':
+                if self.cached_analysis is not None:
+                    self.analysis=self.cached_analysis
+                    self.cache_hit=True
+                    self.timings['vision']=0.
+                    self.stage.emit('Reusing previous AI object analysis',45,False)
+                else:
+                    self.stage.emit('Asking Ollama to identify image objects',0,True)
+                    started=time.perf_counter()
+                    from semantic_redraw import local_vision_analysis
+                    original=load_raster(self.path)
+                    self.analysis=local_vision_analysis(original,self.ai_model)
+                    self.timings['vision']=time.perf_counter()-started
+                    # Store a successful semantic plan even if later local
+                    # contour generation fails. No disk or cloud cache used.
+                    self.analysis_ready.emit(self.analysis)
+                self.stage.emit('Building image contours and color regions',65,False)
+            else:
+                self.stage.emit('Tracing image details',20,False)
+            started=time.perf_counter()
+            result=reconstruct(self.path,self.mode,self.detail,
+                               ai_model=self.ai_model,ai_analysis=self.analysis)
+            self.timings['contours']=time.perf_counter()-started
+            self.stage.emit('Preparing animation and brush routes',85,False)
+            started=time.perf_counter()
             plan_for(result.drawing,result.image,self.brush_width,self.spacing)
+            self.timings['brush']=time.perf_counter()-started
+            self.stage.emit('Drawing is ready',100,False)
+            self.success=True
             self.ready.emit(result)
-        except Exception as exc: self.failed.emit(str(exc))
+        except Exception as exc:
+            self.failed_message=str(exc)
+            self.failed.emit(self.failed_message)
 
 class Window(QMainWindow):
     def __init__(self):
