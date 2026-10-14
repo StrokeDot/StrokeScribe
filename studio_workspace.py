@@ -20,7 +20,8 @@ from version import APP_VERSION, DISPLAY_NAME
 STUDIO_STYLE = """
 QWidget { background: #12171F; color: #E7ECF5; font-size: 12px; }
 QMainWindow { background: #0E1218; }
-QFrame#topBar { background: #1A2230; border-bottom: 1px solid #334152; }
+QFrame#topBar { background: #151D29; border-bottom: 1px solid #334152; }
+QLabel#brandWordmark { background: transparent; }
 QFrame#assetPanel, QFrame#inspectorPanel, QFrame#monitorPanel, QFrame#timelinePanel {
     background: #1A222D; border: 1px solid #344153; border-radius: 9px;
 }
@@ -219,20 +220,32 @@ def build_workspace(w, Canvas, BRAND_ICON):
     outer.setContentsMargins(10,10,10,10)
     outer.setSpacing(9)
 
-    # Header: no third-party brand graphics.
+    # Original compact StrokeScribe branding, drawn using native Qt widgets.
+    # The three brand dots are decoration, NOT fake OS close/minimize buttons.
     bar=QFrame(); bar.setObjectName('topBar')
     bar_l=QHBoxLayout(bar); bar_l.setContentsMargins(14,8,14,8)
+    bar_l.setSpacing(9)
+    dots=QWidget()
+    dots_l=QHBoxLayout(dots);dots_l.setContentsMargins(0,0,3,0);dots_l.setSpacing(6)
+    for color in ('#F56B76','#EFBF4D','#53C993'):
+        dot=QLabel()
+        dot.setFixedSize(11,11)
+        dot.setStyleSheet('background-color: '+color+'; border-radius: 5px;')
+        dots_l.addWidget(dot)
+    dots.setToolTip('StrokeScribe brand colors; window controls remain in the Windows title bar.')
+    bar_l.addWidget(dots)
     if BRAND_ICON.is_file():
-        icon=QLabel()
-        icon.setPixmap(QPixmap(str(BRAND_ICON)).scaled(
-            43,43,Qt.AspectRatioMode.KeepAspectRatio,
-            Qt.TransformationMode.SmoothTransformation))
-        bar_l.addWidget(icon)
         w.setWindowIcon(QIcon(str(BRAND_ICON)))
         QApplication.instance().setWindowIcon(QIcon(str(BRAND_ICON)))
-    title=QVBoxLayout();title.setSpacing(0)
-    title.addWidget(label('STROKESCRIBE','brand'))
-    title.addWidget(label(f'Animation studio  •  Prototype v{APP_VERSION}','subtitle'))
+    title=QHBoxLayout();title.setSpacing(10)
+    w.brand_wordmark=QLabel(
+        '<span style="color:#F6F8FC">Stroke</span>'
+        '<span style="color:#58A7FF">Scribe</span>')
+    w.brand_wordmark.setObjectName('brandWordmark')
+    w.brand_wordmark.setFont(QFont('Segoe UI',17,QFont.Weight.Bold))
+    title.addWidget(w.brand_wordmark)
+    w.brand_version=label(f'Prototype v{APP_VERSION}','subtitle')
+    title.addWidget(w.brand_version)
     bar_l.addLayout(title)
     bar_l.addStretch(1)
     from PySide6.QtWidgets import QToolButton, QMenu
