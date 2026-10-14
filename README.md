@@ -156,3 +156,7 @@ This remains an experimental prototype. Automated tests passed on the feature br
 ## Experimental image sources (v0.5.2)
 
 PNG, JPEG, WebP and BMP can now become contour animations or region-guided painted reconstructions. See [IMAGE_SOURCE.md](IMAGE_SOURCE.md) for controls, algorithm, setup and limitations. Existing SVG modes remain available. AI redraw is not implemented.
+
+## Compact WebM (experimental .2)
+
+StrokeScribe now offers **Compact VP9 WebM + transparency** with adjustable quality 18–42 (28 default) alongside the unchanged ProRes 4444 and transparent PNG sequence options. Encoding still uses temporary PNGs for each frame; by default these are removed *only after* successful video encoding so the saved video can be much smaller on disk. Check **Keep PNG frames alongside encoded videos** to retain the full sequence. If no video option is selected, PNG frames are always retained. FFmpeg is required for video export. Filmora may vary in how it imports external VP9 alpha; verify transparency in Filmora before relying on it. The native Filmora plugin remains a future idea.
