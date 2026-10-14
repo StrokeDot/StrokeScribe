@@ -194,7 +194,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     bar_l.addLayout(title)
     bar_l.addStretch(1)
     bar_l.addWidget(label('LOCAL PROJECT  /  SVG + IMAGE','micro'))
-    w.version_button=QPushButton('About / Version')
+    w.version_button=QPushButton(f'About  •  v{APP_VERSION}')
     w.version_button.setObjectName('subtle')
     w.version_button.clicked.connect(w.show_version_info)
     bar_l.addWidget(w.version_button)
