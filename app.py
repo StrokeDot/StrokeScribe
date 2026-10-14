@@ -4,7 +4,7 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QThread, Signal
 from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea)
-from engine import import_svg, render, export_frames, encode_mov
+from engine import import_svg, render, export_frames, encode_mov, encode_webm
 from lettering import make_text
 from color_reveal import load_color_image, render_color_timeline, timeline_duration
 from version import APP_VERSION, DISPLAY_NAME, RELEASE_DATE
@@ -29,18 +29,36 @@ class Canvas(QWidget):
 
 class Exporter(QThread):
     progress=Signal(int,int); done=Signal(str); failed=Signal(str)
-    def __init__(self,drawing,folder,options,mov):
-        super().__init__(); self.drawing=drawing; self.folder=folder; self.options=options; self.mov=mov
+    def __init__(self,drawing,folder,options,mov,webm=False,webm_quality=28,keep_png=True):
+        super().__init__()
+        self.drawing=drawing; self.folder=Path(folder); self.options=options
+        self.mov=mov; self.webm=webm; self.webm_quality=webm_quality
+        self.keep_png=keep_png
     def run(self):
         try:
             def tick(i,n):
                 self.progress.emit(i,n)
                 return not self.isInterruptionRequested()
             export_frames(self.drawing,self.folder,callback=tick,**self.options)
-            if self.mov:
+            videos=[]
+            if self.webm:
+                if self.isInterruptionRequested(): raise InterruptedError('Export cancelled; PNG frames were retained.')
                 self.progress.emit(0,0)
-                encode_mov(self.folder,self.options['fps'])
-            self.done.emit(str(self.folder))
+                videos.append(encode_webm(self.folder,self.options['fps'],self.webm_quality))
+            if self.mov:
+                if self.isInterruptionRequested(): raise InterruptedError('Export cancelled; completed files were retained.')
+                self.progress.emit(0,0)
+                videos.append(encode_mov(self.folder,self.options['fps']))
+            if videos and not self.keep_png:
+                # Only remove intermediate frames once every selected format
+                # encoded successfully. Never remove user-supplied artwork.
+                for frame in self.folder.glob('frame_*.png'):
+                    frame.unlink()
+            if videos:
+                details=', '.join(f'{v.name} ({v.stat().st_size/1048576:.1f} MB)' for v in videos)
+                self.done.emit(f'Saved: {details} in {self.folder}')
+            else:
+                self.done.emit(f'Saved PNG sequence: {self.folder}')
         except Exception as e: self.failed.emit(str(e))
 
 class ImageBuilder(QThread):
@@ -148,8 +166,19 @@ class Window(QMainWindow):
         self.handsize=self.number(.02,.8,.18,.01); handform.addRow('Hand width / canvas',self.handsize)
         self.ax=self.number(0,1,.1,.01); handform.addRow('Pen tip X / PNG width',self.ax)
         self.ay=self.number(0,1,.1,.01); handform.addRow('Pen tip Y / PNG height',self.ay)
-        self.mov=QCheckBox('Also make ProRes 4444 MOV (FFmpeg)'); layout.addWidget(self.mov)
-        row=QHBoxLayout(); layout.addLayout(row); self.export=QPushButton('Export transparent PNG sequence…'); self.export.clicked.connect(self.save); row.addWidget(self.export)
+        export_controls=QFormLayout(); layout.addLayout(export_controls)
+        self.webm=QCheckBox('Compact VP9 WebM + transparency (Filmora test)')
+        export_controls.addRow(self.webm)
+        self.webm_quality=QSpinBox(); self.webm_quality.setRange(18,42); self.webm_quality.setValue(28)
+        self.webm_quality.setToolTip('Lower number means higher quality and usually larger file. 28 is a balanced starting point.')
+        export_controls.addRow('WebM quality (lower = better)',self.webm_quality)
+        self.mov=QCheckBox('Also make ProRes 4444 MOV (larger, reliable)')
+        export_controls.addRow(self.mov)
+        self.keep_png=QCheckBox('Keep PNG frames alongside encoded videos')
+        self.keep_png.setChecked(False)
+        self.keep_png.setToolTip('When unchecked, generated frame PNGs are removed ONLY after video encoding succeeds. When no video is selected, PNG frames are always kept.')
+        export_controls.addRow(self.keep_png)
+        row=QHBoxLayout(); layout.addLayout(row); self.export=QPushButton('Export transparent animation…'); self.export.clicked.connect(self.save); row.addWidget(self.export)
         self.cancel=QPushButton('Cancel export'); self.cancel.setEnabled(False); self.cancel.clicked.connect(self.cancel_export); row.addWidget(self.cancel)
         self.progress=QProgressBar(); layout.addWidget(self.progress)
         self.status=QLabel('Local CPU rendering • checkerboard is preview only'); layout.addWidget(self.status)
@@ -302,14 +331,18 @@ class Window(QMainWindow):
         if not parent: return
         import copy
         folder=Path(parent)/datetime.now().strftime('StrokeScribe_%Y%m%d_%H%M%S_%f')
-        self.worker=Exporter(copy.deepcopy(self.drawing),folder,self.options(),self.mov.isChecked())
+        self.worker=Exporter(copy.deepcopy(self.drawing),folder,self.options(),
+                             self.mov.isChecked(),self.webm.isChecked(),
+                             self.webm_quality.value(),self.keep_png.isChecked())
         self.worker.progress.connect(self.export_progress); self.worker.done.connect(lambda p:self.export_done('Saved: '+p)); self.worker.failed.connect(lambda e:self.export_done('Export stopped: '+e)); self.worker.finished.connect(self.export_finished)
         self.export.setEnabled(False); self.cancel.setEnabled(True); self.status.setText('Exporting locally…'); self.worker.start()
     def export_progress(self,i,n): self.progress.setRange(0,n); self.progress.setValue(i)
     def export_done(self,message): self.status.setText(message); self.status.setWordWrap(True)
     def export_finished(self): self.export.setEnabled(True); self.cancel.setEnabled(False); self.progress.setRange(0,100); self.progress.setValue(100)
     def cancel_export(self):
-        if self.worker: self.worker.requestInterruption(); self.status.setText('Cancelling after current frame. MOV encoding, if started, must finish.')
+        if self.worker:
+            self.worker.requestInterruption()
+            self.status.setText('Cancelling after current frame. FFmpeg encoding, if started, must finish.')
     def closeEvent(self,event):
         if self.builder and self.builder.isRunning():
             QMessageBox.information(self,'Image analysis','Please wait for image analysis to finish.'); event.ignore(); return
