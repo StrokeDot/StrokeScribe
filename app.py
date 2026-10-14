@@ -68,12 +68,14 @@ class Exporter(QThread):
 
 class ImageBuilder(QThread):
     ready=Signal(object); failed=Signal(str)
-    def __init__(self,path,mode,detail,brush_width,spacing):
-        super().__init__(); self.path=path; self.mode=mode; self.detail=detail; self.brush_width=brush_width; self.spacing=spacing
+    def __init__(self,path,mode,detail,brush_width,spacing,ai_model='qwen3-vl:4b'):
+        super().__init__()
+        self.path=path; self.mode=mode; self.detail=detail
+        self.brush_width=brush_width; self.spacing=spacing; self.ai_model=ai_model
     def run(self):
         try:
             from image_reconstruct import reconstruct
-            result=reconstruct(self.path,self.mode,self.detail)
+            result=reconstruct(self.path,self.mode,self.detail,ai_model=self.ai_model)
             from adaptive_hand import plan_for
             plan_for(result.drawing,result.image,self.brush_width,self.spacing)
             self.ready.emit(result)
@@ -154,17 +156,32 @@ class Window(QMainWindow):
         self.export.setEnabled(self.drawing is not None)
         self.quick_export.setEnabled(self.drawing is not None)
         self.refresh()
+    def update_image_mode(self,*args):
+        active=self.image_mode.currentIndex()==2
+        self.image_source_form.setRowVisible(self.ai_model,active)
+        self.image_source_form.setRowVisible(self.ai_note,active)
+        self.rebuild_button.setText('Analyze with local AI' if active else 'Apply image settings')
+
     def rebuild_image(self):
         if self.image_path: self.build_image(self.image_path)
     def build_image(self,path):
         if self.builder and self.builder.isRunning(): return
         self.playing=False; self.image_path=path
-        self.builder=ImageBuilder(path,['auto_trace','stroke_reconstruction'][self.image_mode.currentIndex()],self.image_detail.currentText().lower(),self.brush_width.value(),self.stroke_spacing.value())
+        mode=['auto_trace','stroke_reconstruction','ai_redraw'][self.image_mode.currentIndex()]
+        self.builder=ImageBuilder(path,mode,self.image_detail.currentText().lower(),
+                                  self.brush_width.value(),self.stroke_spacing.value(),
+                                  self.ai_model.currentText().strip())
         self.builder.ready.connect(self.image_ready)
-        self.builder.failed.connect(lambda error: QMessageBox.warning(self,'Image import',error))
+        self.builder.failed.connect(self.image_failed)
         self.builder.finished.connect(self.image_finished)
         self.source_type.setEnabled(False); self.import_button.setEnabled(False); self.rebuild_button.setEnabled(False); self.export.setEnabled(False); self.quick_export.setEnabled(False)
-        self.status.setText('Analyzing image locally…'); self.builder.start()
+        self.status.setText('Asking local vision AI to plan the drawing…' if mode=='ai_redraw'
+                            else 'Analyzing image locally…')
+        self.builder.start()
+    def image_failed(self,error):
+        self.status.setText('Image analysis failed. Fix the issue and retry.')
+        QMessageBox.warning(self,'Image reconstruction',error)
+
     def image_ready(self,result):
         self.image_result=result; self.set_drawing(result.drawing)
         self.color_note.setText(result.filename+' • original colors; adaptive brush reveal')
@@ -172,7 +189,12 @@ class Window(QMainWindow):
         self.source_type.setEnabled(True); self.import_button.setEnabled(True); self.rebuild_button.setEnabled(True)
         self.export.setEnabled(self.drawing is not None and not (self.worker and self.worker.isRunning()))
         self.quick_export.setEnabled(self.drawing is not None and not (self.worker and self.worker.isRunning()))
-        self.status.setText('Image analysis finished. Apply image settings after changing mode or detail.')
+        if self.builder and self.builder.mode=='ai_redraw' and self.image_result and self.image_result.mode=='ai_redraw':
+            self.status.setText('Local AI redraw ready. Review named parts in Stroke Order and preview the animation.')
+        elif self.builder and self.builder.mode=='ai_redraw':
+            self.status.setText('AI redraw could not be completed. Existing image kept.')
+        else:
+            self.status.setText('Image analysis finished. Apply image settings after changing mode or detail.')
     def load(self):
         if self.source_type.currentIndex():
             name,_=QFileDialog.getOpenFileName(self,'Import image','','Images (*.png *.jpg *.jpeg *.webp *.bmp)')
