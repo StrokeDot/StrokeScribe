@@ -93,6 +93,27 @@ def _paths_from_binary(binary):
         ordered.append(path)
     ordered.sort(key=lambda p:(min(x for x,y in p),min(y for x,y in p),
                                -len(p)))
+    # Suppress tiny skeleton spurs near existing longer strokes. These are
+    # topology artifacts at joins/corners; otherwise the hand returns to
+    # finish a 1-3 px leftover after writing the letter. Distant tiny marks
+    # (e.g. a dot or punctuation) are retained.
+    def length(path):
+        return sum(math.dist(a,b) for a,b in zip(path,path[1:]))
+    substantial=[p for p in ordered if length(p)>=4.]
+    if substantial:
+        fixed=[]
+        for path in ordered:
+            if length(path)>=4.:
+                fixed.append(path)
+                continue
+            x0,y0=path[0]
+            x1,y1=path[-1]
+            neighboring=any(
+                min(math.dist((x0,y0),q),math.dist((x1,y1),q))<=3.
+                for major in substantial for q in major)
+            if not neighboring:
+                fixed.append(path)
+        ordered=fixed
     # Keep character order stable, but chain paths WITHIN each character
     # by the nearest endpoint to avoid unnecessary jumps and pen lifts.
     if not ordered:return []
@@ -163,6 +184,7 @@ def create_font_drawing(text,fontfile,point_size=68):
     ])
     drawing.source_kind='font'
     drawing.font_ink=ink
+    drawing.font_color='#25364a'
     drawing.font_boxes=tuple(boxes)
     drawing.font_time_cache=None
     return drawing
@@ -308,11 +330,14 @@ def render_traced_font(drawing,progress,width,height,thickness=1.,
     output.fill(Qt.GlobalColor.transparent)
     if fraction<=0:return output
     rgba=np.asarray(drawing.font_ink.convert('RGBA'))
-    if fraction>=1.:
-        pixels=rgba
-    else:
+    pixels=rgba.copy()
+    # Color affects only RGB, never alpha/timing/pen ownership.
+    from PySide6.QtGui import QColor
+    ink_color=QColor(getattr(drawing,'font_color','#25364a'))
+    if not ink_color.isValid():ink_color=QColor('#25364a')
+    pixels[:,:,:3]=(ink_color.red(),ink_color.green(),ink_color.blue())
+    if fraction<1.:
         timing,owner,_=_ink_ownership(drawing)
-        pixels=rgba.copy()
         eligible=(owner>=0)&(timing<=fraction+1e-7)
         pixels[:,:,3]=(pixels[:,:,3].astype(np.float32)*
                         eligible).astype(np.uint8)
