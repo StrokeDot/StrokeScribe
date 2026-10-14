@@ -179,3 +179,9 @@ Image reconstruction, compact VP9 WebM, the Studio workspace and the SVG-to-PNG 
 ## Optional local AI Redraw (v0.5.3 experimental)
 
 The new third Image Source method **AI redraw (local model)** proposes meaningful object parts and drawing order using an optional Ollama vision model, then uses image segmentation and the existing adaptive painting renderer to create a plausible construction animation. It doesn't use a paid API or generate a replacement image. Auto Trace and Stroke Reconstruction remain available without AI. The model download is separate and can require several GB of disk/RAM. For exact setup steps, privacy details and limitations, read [AI_REDRAW.md](AI_REDRAW.md). The official v0.5.2 release remains unchanged.
+
+## Experimental v0.5.3.2: handwriting fonts and artwork size
+
+The Studio Text / Handwriting panel now supports ten recommended Google Fonts families available by optional one-click download, an editable family name field for other Google Fonts, and importing local TTF/OTF files. It estimates pen-centerline paths from font glyphs so the hand can follow them; they are still approximations rather than true author-provided single-stroke fonts. The original built-in single-line alphabet remains the default. Original font license notices are stored with every Google Fonts download; Google Fonts are open-licensed, not public domain. No font binary files are added to the app ZIP.
+
+The right Animation panel now offers **Artwork size** 25%–200%, separate from export resolution. The whole animated artwork, painting layer and optional hand scale around the canvas center in preview *and* export. Sizes over 100% can crop the canvas. More detailed instructions: [FONTS_AND_ARTWORK_SIZE.md](FONTS_AND_ARTWORK_SIZE.md). This is an experimental branch; official v0.5.2 is unchanged.
