@@ -39,3 +39,7 @@ GitHub pull request #3 remains experimental; official v0.5.2 is unchanged.
 ### v0.5.3 experimental.3 legibility fix
 
 The initial centerline extraction broke visible letterforms into small marks. StrokeScribe now animates the complete font's genuine ink progressively per character rather than pretending fragmentary skeleton paths are finished lettering. The font looks like its true typeface when a word is completed; the hand follows an approximate left-to-right reveal rather than authentic pen strokes. The built-in single-line pen mode continues to trace genuine authored strokes.
+
+### Experimental.4: stroke-following for actual typefaces
+
+Google Fonts no longer rely on horizontal clipping to show each letter. A thinning algorithm builds approximate centerline paths per glyph, orders them for plausible writing, assigns original font pixels to the nearest pen-path position and draws the actual glyph ink as the hand follows each estimated stroke. Finished letters preserve their complete true font shape. This **cannot recover the original typographer's pen movements from TTF/OTF files**; dotted letters, loops, intersections, and cursive ligatures may still have unusual movement. The legacy built-in pen follows its original handcrafted vector paths unchanged. The previously downloaded ten Google Fonts still work without redownloading.
