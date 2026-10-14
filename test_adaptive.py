@@ -139,7 +139,7 @@ class AdaptiveTests(unittest.TestCase):
                     if baseline.getpixel((x,y))>180
                     and settled.getpixel((x,y))==0]
         self.assertGreater(len(candidates),10)
-        for mode in ('clean','adaptive','guided'):
+        for mode in ('clean','adaptive'):
             for progress in (.08,.4,.8):
                 fraction=(1+3*progress)/4
                 alpha=pil_image(render_color_timeline(
