@@ -256,12 +256,17 @@ def _ink_ownership(drawing):
             nearest_owner[key]=seed_owner[y,x]
     owner=nearest_owner[labels]
     timing=nearest_time[labels]
-    # Force every pixel's time within the interval of its unique owner.
-    # Rounding/label ties may occur at intersections, but not overlap.
+    # Bound all ownership times in one vectorized pass, rather than scanning
+    # the entire glyph bitmap once PER stroke (too slow for long sentences).
+    lower=np.zeros(len(drawing.strokes),dtype=np.float32)
+    upper=np.ones(len(drawing.strokes),dtype=np.float32)
     for index,(start,end) in intervals.items():
-        belonging=owner==index
-        timing[belonging]=np.clip(timing[belonging],
-                                  start/total,end/total)
+        lower[index]=start/total
+        upper[index]=end/total
+    safe=np.maximum(owner,0)
+    timing=np.where(owner>=0,
+                    np.minimum(upper[safe],np.maximum(lower[safe],timing)),
+                    1.).astype(np.float32)
     drawing.font_time_cache=(signature,timing,owner,total)
     return timing,owner,total
 
