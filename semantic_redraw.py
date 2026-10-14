@@ -286,7 +286,48 @@ def _part_rect(part,w,h):
     return left,top,right-left,bottom-top
 
 
-def semantic_masks(image, analysis, detail='medium'):
+def _grabcut_part(rgb,alpha,rect,settings):
+    """Refine a single part within its own padded ROI.
+
+    The old algorithm ran GrabCut on the entire image for every part. For
+    Balanced/Fast, a padded local crop preserves image context around the
+    proposed object while avoiding repeated full-frame inference. Quality
+    intentionally keeps the original full-frame algorithm.
+    """
+    gh,gw=alpha.shape
+    x,y,w,h=rect
+    if settings['segmentation']=='full':
+        working=rgb
+        rectangle=(x,y,w,h)
+        crop=(0,0,gw,gh)
+    else:
+        pad=max(8,round(.14*max(w,h)))
+        x0=max(0,x-pad); y0=max(0,y-pad)
+        x1=min(gw,x+w+pad); y1=min(gh,y+h+pad)
+        working=np.ascontiguousarray(rgb[y0:y1,x0:x1])
+        rectangle=(x-x0,y-y0,w,h)
+        crop=(x0,y0,x1,y1)
+    if rectangle[2]<5 or rectangle[3]<5:return None
+    if working.shape[0]<8 or working.shape[1]<8:return None
+    mask=np.zeros(working.shape[:2],dtype=np.uint8)
+    try:
+        cv2.grabCut(working,mask,rectangle,None,None,
+                    settings['grabcut_iterations'],cv2.GC_INIT_WITH_RECT)
+    except cv2.error:
+        return None
+    left,top,right,bottom=crop
+    foreground=np.isin(mask,(cv2.GC_FGD,cv2.GC_PR_FGD))
+    # Enforce the semantic part's box and original alpha.
+    local=np.zeros((gh,gw),dtype=np.uint8)
+    fg_box=foreground[y-top:y-top+h,x-left:x-left+w]
+    fg_box=fg_box&alpha[y:y+h,x:x+w]
+    area=int(np.count_nonzero(fg_box))
+    if not (5<=area<=w*h*.96):return None
+    local[y:y+h,x:x+w]=fg_box.astype(np.uint8)
+    return local
+
+
+def semantic_masks(image, analysis, detail='medium', profile='balanced'):
     """Refine AI semantic boxes against pixels; never use raw boxes as fills.
 
     GrabCut may fail on flat colored drawings or heavily overlapping boxes;
@@ -303,24 +344,13 @@ def semantic_masks(image, analysis, detail='medium'):
     original_labels=np.asarray(regions.labels,dtype=np.int32).reshape(gh,gw)
     assignments=np.zeros((gh,gw),dtype=np.int32)
     extracted=[]
-    parts=analysis.parts[:MAX_PARTS]
+    settings=profile_settings(profile)
+    parts=analysis.parts[:min(MAX_PARTS,settings['max_parts'])]
     for n,part in enumerate(parts,1):
         x,y,w,h=_part_rect(part,gw,gh)
-        candidates=np.zeros((gh,gw),np.uint8)
-        if w>=5 and h>=5 and w*h>=100:
-            mask=np.zeros((gh,gw),np.uint8)
-            try:
-                cv2.grabCut(rgb,mask,(x,y,w,h),None,None,3,cv2.GC_INIT_WITH_RECT)
-                foreground=np.isin(mask,(cv2.GC_FGD,cv2.GC_PR_FGD)) & alpha
-                foreground[:y,:]=False
-                foreground[y+h:,:]=False
-                foreground[:,:x]=False
-                foreground[:,x+w:]=False
-                area=int(np.count_nonzero(foreground))
-                if 5<=area<=w*h*.96:
-                    candidates=foreground.astype(np.uint8)
-            except cv2.error:
-                pass
+        candidates=_grabcut_part(rgb,alpha,(x,y,w,h),settings)
+        if candidates is None:
+            candidates=np.zeros((gh,gw),dtype=np.uint8)
         if not candidates.any():
             # Reuse actual image color-region boundaries as a conservative
             # fallback, filtered by the requested semantic box.
@@ -350,10 +380,10 @@ def semantic_masks(image, analysis, detail='medium'):
     return map_object,extracted,valid
 
 
-def ai_guided_drawing(image,analysis,detail='medium'):
+def ai_guided_drawing(image,analysis,detail='medium',profile='balanced'):
     """Create semantically named paths plus unchanged full-color painting data."""
     from adaptive_hand import qimage
-    region_map,masks,valid=semantic_masks(image,analysis,detail)
+    region_map,masks,valid=semantic_masks(image,analysis,detail,profile)
     w,h=image.size
     gw,gh=region_map.size
     strokes=[]
