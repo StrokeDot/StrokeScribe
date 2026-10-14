@@ -236,6 +236,10 @@ class Window(QMainWindow):
         self.paint_form.setRowVisible(self.image_paint_hint,image_source)
         self.paint_form.setRowVisible(self.color_fade,not image_source)
         self.paint_form.setRowVisible(self.image_duration,image_source)
+        self.paint_form.setRowVisible(self.drawing_visibility,image_source)
+        self.paint_form.setRowVisible(self.contour_transition,image_source)
+        self.paint_form.setRowVisible(self.retirement_direction,
+                                      image_source and self.contour_transition.currentIndex()!=0)
         self.reveal_mode.setToolTip('Image sources use Adaptive Hand Painting.' if image_source else '')
         self.output_summary.setText(f'{self.res.currentText()}  •  {self.fps.value()} fps')
         busy=bool((self.worker and self.worker.isRunning()) or (self.builder and self.builder.isRunning()))
@@ -263,8 +267,8 @@ class Window(QMainWindow):
         self.order.clear()
         self.order.addItems([s.name for s in drawing.strokes])
         self.note.setText('\n'.join(drawing.warnings) or 'Ready. Press Play to draw from the beginning.')
-        self.position=1
-        self.slider.setValue(1000)
+        self.position=0 if getattr(drawing,'source_kind',None)=='image' else 1
+        self.slider.setValue(round(self.position*1000))
         self.update_project_title(self.project_title)
         self.refresh()
     def change_source(self,index):
@@ -566,6 +570,10 @@ class Window(QMainWindow):
         options=self.options()
         return timeline_duration(options['duration'],options['final_image'],options['fade_duration'],options['hold_duration'])
     def options(self):
+        if self.drawing is not None and getattr(self.drawing,'source_kind',None)=='image':
+            self.drawing.drawing_visibility=['progressive','full'][self.drawing_visibility.currentIndex()]
+            self.drawing.contour_transition=['legacy','paint','retire'][self.contour_transition.currentIndex()]
+            self.drawing.retirement_direction=['forward','reverse'][self.retirement_direction.currentIndex()]
         width,height=[int(x.strip()) for x in self.res.currentText().split('×')]
         options=dict(duration=self.effective_duration(),fps=self.fps.value(),width=width,height=height,
                     thickness=self.thickness.value(),hand=self.hand if self.showhand.isChecked() else None,
@@ -625,7 +633,8 @@ class Window(QMainWindow):
         if not parent: return
         import copy
         folder=Path(parent)/datetime.now().strftime('StrokeScribe_%Y%m%d_%H%M%S_%f')
-        self.worker=Exporter(copy.deepcopy(self.drawing),folder,self.options(),
+        options=self.options()
+        self.worker=Exporter(copy.deepcopy(self.drawing),folder,options,
                              self.mov.isChecked(),self.webm.isChecked(),
                              self.webm_quality.value(),self.keep_png.isChecked())
         self.worker.progress.connect(self.export_progress); self.worker.done.connect(lambda p:self.export_done('Saved: '+p)); self.worker.failed.connect(lambda e:self.export_done('Export stopped: '+e)); self.worker.finished.connect(self.export_finished)

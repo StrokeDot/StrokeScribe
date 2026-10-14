@@ -471,6 +471,18 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.color_fade=w.number(0,20,.4,.1);a2.addRow('SVG paint time (s)',w.color_fade)
     a2.addRow('Image paint time (s)',w.image_duration)
     w.paint_form=a2
+    w.drawing_visibility=QComboBox()
+    w.drawing_visibility.addItems(['Reveal strokes as drawn','Show full outlines'])
+    a2.addRow('Drawing visibility',w.drawing_visibility)
+    w.contour_transition=QComboBox()
+    w.contour_transition.addItems(['Legacy','Fade with painting','Retire stroke by stroke'])
+    w.contour_transition.setToolTip('Experimental: paint first, then retire remaining contours in stroke order. Legacy preserves previous rendering.')
+    a2.addRow('Contour transition',w.contour_transition)
+    w.retirement_direction=QComboBox()
+    w.retirement_direction.addItems(['Forward erase','Reverse erase'])
+    a2.addRow('Retirement direction',w.retirement_direction)
+    for control in (w.drawing_visibility,w.contour_transition,w.retirement_direction):
+        control.currentIndexChanged.connect(w.refresh)
     w.brush_width=w.number(.02,.5,.14,.02);a2.addRow('Brush width',w.brush_width)
     w.stroke_spacing=w.number(.2,.9,.55,.05)
     w.stroke_spacing.setToolTip('Lower values add more overlap between brush strokes.')

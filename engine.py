@@ -188,6 +188,9 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
         painting_hand=bool(use_color and reveal_mode in ('brush','continue','guided','clean','adaptive') and painting_hand is not None and not painting_hand.isNull()),
         stroke_spacing=stroke_spacing if reveal_mode=='adaptive' else None,
         artwork_scale=artwork_scale,
+        drawing_visibility=getattr(drawing,'drawing_visibility','progressive'),
+        contour_transition=getattr(drawing,'contour_transition','legacy'),
+        retirement_direction=getattr(drawing,'retirement_direction','forward'),
         lettering_background=getattr(drawing,'lettering_background',None)
           if getattr(drawing,'source_kind',None) in ('font','lettering') else None,
         alpha=not (getattr(drawing,'lettering_background',None) is not None
