@@ -201,113 +201,14 @@ def _trace_skeleton(image):
 
 
 def make_font_text(text,fontfile,point_size=68):
-    """Prepare real font ink with a per-character progressive reveal route.
-
-    TTF and OTF fonts store filled contours, NOT the author's handwriting
-    movements. Rendering entire glyphs progressively preserves legibility,
-    unlike the earlier sparse medial-skeleton fragments.
-    """
-    from PIL import ImageFont, ImageDraw, Image
-    if not text.strip():
-        raise ValueError('Enter some lettering to animate.')
-    if len(text)>240:
-        raise ValueError('Font lettering currently supports up to 240 characters.')
-    point_size=int(point_size)
-    if not 24<=point_size<=128:
-        raise ValueError('Choose a font detail size from 24 to 128.')
-    font=ImageFont.truetype(str(fontfile),point_size)
-    lines=text.split('\n')
-    ascent,descent=font.getmetrics()
-    line_height=ascent+descent+12
-    width=round(max(font.getlength(line) for line in lines)+40)
-    height=round(len(lines)*line_height+32)
-    if width*height>2_600_000:
-        raise ValueError('Text is too large. Reduce detail size or shorten the lettering.')
-    ink=Image.new('RGBA',(max(20,width),max(20,height)),(0,0,0,0))
-    painter=ImageDraw.Draw(ink)
-    strokes=[]
-    boxes=[]
-    for row,line in enumerate(lines):
-        y=10+row*line_height
-        # Render the TRUE font glyphs; using a letter mask is much better than
-        # tracing noisy branch junctions of a raster skeleton.
-        painter.text((18,y),line,font=font,fill=(37,54,74,255))
-        for i,char in enumerate(line):
-            if char.isspace(): continue
-            x=18+font.getlength(line[:i])
-            left,top,right,bottom=painter.textbbox((x,y),char,font=font)
-            left=max(0,int(left)-1)
-            right=min(ink.width,int(math.ceil(right))+1)
-            top=max(0,int(top)-1)
-            bottom=min(ink.height,int(math.ceil(bottom))+1)
-            if right-left<1 or bottom-top<1:continue
-            points=[(float(left),float((top+bottom)/2)),
-                    (float(right),float((top+bottom)/2))]
-            stroke=Stroke(f'Letter {char} / {len(strokes)+1}',points,
-                          '#25364a',1.0)
-            stroke.font_piece=len(boxes)
-            strokes.append(stroke)
-            boxes.append((left,top,right,bottom))
-    if not strokes:
-        raise ValueError('There are no drawable glyphs in this text.')
-    drawing=Drawing(strokes,(0.,0.,float(ink.width),float(ink.height)),[
-        'Google Fonts lettering: complete glyphs reveal progressively, one character at a time.',
-        'Typefaces do not contain pen movement paths. Use Built-in single-line pen for true traced handwriting.',
-    ])
-    drawing.source_kind='font'
-    drawing.font_ink=ink
-    drawing.font_boxes=tuple(boxes)
-    return drawing
+    """Build authentic font ink with estimated centerline pen trajectories."""
+    from font_stroke_reveal import create_font_drawing
+    return create_font_drawing(text,fontfile,point_size)
 
 
 def render_font_lettering(drawing,progress,width,height,thickness=1.,
                           hand=None,hand_scale=.18,anchor=(.1,.1)):
-    """Reveal the genuine, fully rendered typeface at the writing playhead."""
-    from PySide6.QtGui import QImage, QPainter
-    from PySide6.QtCore import Qt, QRectF
-    image=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
-    image.fill(Qt.GlobalColor.transparent)
-    fraction=max(0.,min(1.,float(progress)))
-    if fraction<=0:return image
-    ink=drawing.font_ink.convert('RGBA')
-    font_image=QImage(ink.tobytes(),ink.width,ink.height,
-                      ink.width*4,QImage.Format.Format_RGBA8888).copy()
-    iw,ih=ink.size
-    scale=min(width*.82/max(1,iw),height*.78/max(1,ih))
-    ox=(width-iw*scale)/2
-    oy=(height-ih*scale)/2
-    frame=QRectF(ox,oy,iw*scale,ih*scale)
-    painter=QPainter(image)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    strokes=drawing.strokes
-    # Each letter is allocated a time slice proportional to its width.
-    weights=[max(6.,drawing.font_boxes[s.font_piece][2]-
-                        drawing.font_boxes[s.font_piece][0]) for s in strokes]
-    total=sum(weights)
-    remaining=fraction*total
-    tip=None
-    for s,weight in zip(strokes,weights):
-        if remaining<=0:break
-        left,top,right,bottom=drawing.font_boxes[s.font_piece]
-        portion=min(1.,remaining/weight)
-        if portion<=0:break
-        painter.save()
-        painter.setClipRect(QRectF(ox+left*scale,oy+top*scale,
-            max(0.1,(right-left)*portion*scale),(bottom-top)*scale))
-        painter.drawImage(frame,font_image)
-        painter.restore()
-        # Follow the visible ink near the current writing x-column.
-        ink_x=max(0,min(iw-1,int(left+(right-left)*portion)-1))
-        a=ink.getchannel('A').crop((ink_x,max(0,top),ink_x+1,min(ih,bottom)))
-        bbox=a.getbbox()
-        cursor_y=float(top+(bbox[1]+bbox[3])/2) if bbox else (top+bottom)/2
-        tip=(ox+(left+(right-left)*portion)*scale,oy+cursor_y*scale)
-        remaining-=weight
-    if tip and hand is not None and not hand.isNull() and 0<fraction<1:
-        hw=width*hand_scale
-        hh=hw*hand.height()/hand.width()
-        painter.drawImage(QRectF(tip[0]-anchor[0]*hw,
-                  tip[1]-anchor[1]*hh,hw,hh),hand)
-    painter.end()
-    return image
+    """Show glyph pixels only when their nearest inferred pen path is reached."""
+    from font_stroke_reveal import render_traced_font
+    return render_traced_font(drawing,progress,width,height,thickness,
+                              hand,hand_scale,anchor)
