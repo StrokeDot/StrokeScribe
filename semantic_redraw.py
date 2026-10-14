@@ -122,8 +122,12 @@ def extract_structured_parts(text):
         raise ValueError('Ollama returned an empty text answer.')
     result=text.strip()
     if result.startswith('```'):
-        result=re.sub(r'^\`\`\`(?:json)?\\s*','',result,flags=re.I)
-        result=re.sub(r'\\s*\`\`\`$', '', result)
+        result=result[3:]
+        if result.lower().startswith('json'):
+            result=result[4:]
+        if result.rstrip().endswith('```'):
+            result=result.rstrip()[:-3]
+        result=result.strip()
     try:
         data=json.loads(result)
         if isinstance(data,dict):
