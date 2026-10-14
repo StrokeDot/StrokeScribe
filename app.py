@@ -118,6 +118,9 @@ class Window(QMainWindow):
         self.font_worker=None
         self.playing=False
         self.position=0
+        self.project_title='Sample drawing'
+        self.reorder_undo=[]
+        self.reorder_redo=[]
         from studio_workspace import build_workspace
         build_workspace(self,Canvas,BRAND_ICON)
         self.set_drawing(import_svg(Path(__file__).parent/'samples'/'drawing.svg'))
@@ -128,6 +131,50 @@ class Window(QMainWindow):
     def open_export(self):
         self.inspector_tabs.setCurrentIndex(2)
         self.export.setFocus()
+
+    def open_svg_source(self):
+        self.source_type.setCurrentIndex(0)
+        self.load()
+
+    def open_image_source(self):
+        self.source_type.setCurrentIndex(1)
+        self.load()
+
+    def show_quick_help(self):
+        QMessageBox.information(self,'StrokeScribe Studio — Quick help',
+            '1. Use the project menu or Source panel to import SVG or image artwork.\\n'
+            '2. For text, choose a font and Animate lettering.\\n'
+            '3. Select Animation, Hand, or Export in the right inspector.\\n'
+            '4. Use the timeline to preview and the Export Animation button to render.\\n'
+            'Undo and Redo apply to stroke-order changes.')
+
+    def update_project_title(self,name):
+        self.project_title=str(name or 'Untitled artwork')
+        short=self.project_title if len(self.project_title)<=27 else self.project_title[:24]+'…'
+        self.project_menu.setText('▣  '+short+'  ▾')
+        self.project_menu.setToolTip('Current artwork: '+self.project_title)
+
+    def update_history_controls(self):
+        self.undo_button.setEnabled(bool(self.reorder_undo))
+        self.redo_button.setEnabled(bool(self.reorder_redo))
+
+    def undo_stroke_order(self):
+        if not self.reorder_undo or not self.drawing:return
+        self.reorder_redo.append(list(self.drawing.strokes))
+        self.drawing.strokes=self.reorder_undo.pop()
+        self.order.clear()
+        self.order.addItems([s.name for s in self.drawing.strokes])
+        self.update_history_controls()
+        self.refresh()
+
+    def redo_stroke_order(self):
+        if not self.reorder_redo or not self.drawing:return
+        self.reorder_undo.append(list(self.drawing.strokes))
+        self.drawing.strokes=self.reorder_redo.pop()
+        self.order.clear()
+        self.order.addItems([s.name for s in self.drawing.strokes])
+        self.update_history_controls()
+        self.refresh()
 
     def sync_workspace(self,*args):
         image_source=bool(self.source_type.currentIndex())
@@ -157,7 +204,18 @@ class Window(QMainWindow):
     def number(self,minimum,maximum,value,step):
         w=QDoubleSpinBox(); w.setRange(minimum,maximum); w.setValue(value); w.setSingleStep(step); return w
     def set_drawing(self,drawing):
-        self.playing=False; self.drawing=drawing; self.order.clear(); self.order.addItems([s.name for s in drawing.strokes]); self.note.setText('\n'.join(drawing.warnings) or 'Ready. Press Play to draw from the beginning.'); self.position=1; self.slider.setValue(1000); self.refresh()
+        self.playing=False
+        self.drawing=drawing
+        self.reorder_undo.clear()
+        self.reorder_redo.clear()
+        self.update_history_controls()
+        self.order.clear()
+        self.order.addItems([s.name for s in drawing.strokes])
+        self.note.setText('\n'.join(drawing.warnings) or 'Ready. Press Play to draw from the beginning.')
+        self.position=1
+        self.slider.setValue(1000)
+        self.update_project_title(self.project_title)
+        self.refresh()
     def change_source(self,index):
         self.playing=False
         if index:
@@ -202,7 +260,9 @@ class Window(QMainWindow):
         QMessageBox.warning(self,'Image reconstruction',error)
 
     def image_ready(self,result):
-        self.image_result=result; self.set_drawing(result.drawing)
+        self.image_result=result
+        self.update_project_title(result.filename)
+        self.set_drawing(result.drawing)
         self.color_note.setText(result.filename+' • original colors; adaptive brush reveal')
     def image_finished(self):
         self.source_type.setEnabled(True); self.import_button.setEnabled(True); self.rebuild_button.setEnabled(True)
@@ -221,7 +281,10 @@ class Window(QMainWindow):
             return
         name,_=QFileDialog.getOpenFileName(self,'Import SVG','','SVG (*.svg)')
         if name:
-            try: self.set_drawing(import_svg(name))
+            try:
+                drawing=import_svg(name)
+                self.update_project_title(Path(name).name)
+                self.set_drawing(drawing)
             except Exception as e: QMessageBox.warning(self,'Cannot import',str(e))
     def letter(self):
         try:
@@ -240,6 +303,7 @@ class Window(QMainWindow):
                 drawing=make_font_text(self.text.toPlainText(),font_path,
                                        int(self.font_size.value()))
             self.source_type.setCurrentIndex(0)
+            self.update_project_title('Lettering — '+self.text.toPlainText()[:16].replace('\n',' '))
             self.set_drawing(drawing)
         except Exception as e: QMessageBox.warning(self,'Lettering',str(e))
 
@@ -291,10 +355,18 @@ class Window(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self,'Font import',str(exc))
     def move(self,direction):
+        if not self.drawing:return
         i=self.order.currentRow(); j=i+direction
         if i<0 or not 0<=j<len(self.drawing.strokes): return
+        self.reorder_undo.append(list(self.drawing.strokes))
+        self.reorder_undo=self.reorder_undo[-50:]
+        self.reorder_redo.clear()
         self.drawing.strokes[i],self.drawing.strokes[j]=self.drawing.strokes[j],self.drawing.strokes[i]
-        item=self.order.takeItem(i); self.order.insertItem(j,item); self.order.setCurrentRow(j); self.refresh()
+        item=self.order.takeItem(i)
+        self.order.insertItem(j,item)
+        self.order.setCurrentRow(j)
+        self.update_history_controls()
+        self.refresh()
     def loadhand(self):
         name,_=QFileDialog.getOpenFileName(self,'Hand overlay','','PNG (*.png)')
         if name:
