@@ -267,7 +267,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.import_button.clicked.connect(w.load)
     asset_l.addWidget(w.import_button)
     w.image_controls=QWidget()
-    image_form=form_layout();w.image_controls.setLayout(image_form)
+    image_form=form_layout();w.image_controls.setLayout(image_form);w.image_source_form=image_form
     w.image_mode=QComboBox();w.image_mode.addItems([
         'Auto trace','Stroke reconstruction','AI redraw (local model)'])
     image_form.addRow('Method',w.image_mode)
@@ -290,8 +290,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.rebuild_button=QPushButton('Apply image settings')
     w.rebuild_button.clicked.connect(w.rebuild_image)
     image_form.addRow(w.rebuild_button)
-    w.ai_model.hide()
-    w.ai_note.hide()
+    image_form.setRowVisible(w.ai_model,False)
+    image_form.setRowVisible(w.ai_note,False)
     w.image_mode.currentIndexChanged.connect(w.update_image_mode)
     w.image_controls.hide()
     asset_l.addWidget(w.image_controls)
