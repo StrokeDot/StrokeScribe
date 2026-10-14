@@ -17,7 +17,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 ffmpeg
       - run: pip install -r requirements.txt
       - run: python -m compileall -q .
-      - run: python -m unittest -v test_prototype test_adaptive test_image_source test_webm test_studio test_ai_redraw
+      - run: python -m unittest -v test_prototype test_adaptive test_image_source test_webm test_studio test_ai_redraw test_font_features
       - run: python render_image_samples.py
       - run: python render_studio_preview.py
       - run: python package_prototype.py
@@ -47,4 +47,4 @@ jobs:
           python -m pip install --only-binary=:all: -r requirements.txt
           python -c "import sys, numpy, cv2; from PySide6.QtWidgets import QApplication; print(sys.version, numpy.__version__, cv2.__version__)"
       - name: Test image reconstruction and existing modes on Windows
-        run: python -m unittest -v test_prototype test_adaptive test_image_source test_webm test_studio test_ai_redraw
+        run: python -m unittest -v test_prototype test_adaptive test_image_source test_webm test_studio test_ai_redraw test_font_features
