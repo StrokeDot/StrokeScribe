@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  pull-requests: write
 jobs:
   test-and-package:
     runs-on: ubuntu-latest
@@ -17,7 +18,31 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 ffmpeg
       - run: pip install -r requirements.txt
       - run: python -m compileall -q .
-      - run: python -m unittest -v test_prototype test_adaptive test_image_source test_webm test_studio test_ai_redraw test_font_features test_reported_fixes test_ollama_reliability test_ai_performance test_ai_profiles test_contour_transitions test_image_animation test_svg_guide_cleanup
+      - name: Full test suite
+        id: tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m unittest -v test_prototype test_adaptive test_image_source test_webm test_studio test_ai_redraw test_font_features test_reported_fixes test_ollama_reliability test_ai_performance test_ai_profiles test_contour_transitions test_image_animation test_svg_guide_cleanup 2>&1 | tee full-tests.log
+      - name: Report failing test output to pull request
+        if: steps.tests.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo '### Full test suite failures (image source workflow)'
+            echo 'Failures and errors only:'
+            echo '```text'
+            awk '/^(FAIL|ERROR):/{p=1} p' full-tests.log | grep -v 'DeprecationWarning' | head -n 160
+            echo '```'
+          } > diagnostic-comment.md
+          gh pr comment "$PR_NUMBER" --body-file diagnostic-comment.md
+      - name: Stop workflow if tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
       - run: python benchmark_ai_profiles.py
       - run: python render_image_samples.py
       - run: python render_studio_preview.py
