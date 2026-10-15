@@ -183,3 +183,28 @@ class AdaptiveTests(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main(verbosity=2)
+
+class TemporaryDiagnostic(unittest.TestCase):
+    def test_zz_guide_retirement_timeline(self):
+        d,image=fixture(80)
+        kwargs=dict(width=320,height=240,duration=1.,fade_duration=3.,
+                    hold_duration=0,final_image=image)
+        baseline=pil_image(render(d,1,320,240)).getchannel('A')
+        settled=pil_image(render_color_timeline(
+            d,1,reveal_mode='adaptive',**kwargs)).getchannel('A')
+        cands=[(x,y) for y in range(240) for x in range(320)
+               if baseline.getpixel((x,y))>180 and settled.getpixel((x,y))==0]
+        from color_reveal import artwork_rect
+        rect=artwork_rect(d,image,320,240)
+        lines=[f'cands={len(cands)} rect={rect.left():.1f},{rect.top():.1f},{rect.width():.1f}']
+        for mode in ('clean','adaptive'):
+            row=[]
+            for prog in (.01,.04,.08,.15,.25,.4,.6,.8,.9,.97):
+                a=pil_image(render_color_timeline(d,(1+3*prog)/4,reveal_mode=mode,**kwargs)).getchannel('A')
+                left=[p for p in cands if a.getpixel(p)>=90]
+                row.append(len(cands)-len(left))
+                if prog==.8:
+                    pts=sorted({(round((x-rect.left())*80/rect.width()),round((y-rect.top())*80/rect.height())) for x,y in left})
+                    lines.append(f'{mode} left@.8 grid: {pts[:60]}')
+            lines.append(f'{mode} erased: {row}')
+        self.fail('DIAG ' + ' | '.join(lines))
