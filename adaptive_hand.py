@@ -370,8 +370,15 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
     from svg_guide_cleanup import remove_svg_guides
     outline=remove_svg_guides(render(drawing,1,width,height,thickness),
                               mask,image,rect)
-    p=QPainter(outline)
+    # Assemble on a fresh premultiplied canvas, exactly like the settled
+    # frame. Compositing onto the SVG layer's own image format rounded some
+    # semi-transparent edge pixels, so a fully painted frame could differ
+    # slightly from the final frame and flicker at the end.
+    frame=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
+    frame.fill(Qt.GlobalColor.transparent)
+    p=QPainter(frame)
+    p.drawImage(0,0,outline)
     p.drawImage(0,0,painted)
     draw_hand(p,tip,hand,width,hand_scale,anchor)
     p.end()
-    return outline
+    return frame
