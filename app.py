@@ -169,6 +169,12 @@ class Window(QMainWindow):
         self.last_letter_bg_index=0
         self.reorder_undo=[]
         self.reorder_redo=[]
+        # Rapid brush-width changes should not synchronously rebuild the entire
+        # paint plan for every spinbox/wheel event on the GUI thread.
+        self.brush_preview_timer=QTimer(self)
+        self.brush_preview_timer.setSingleShot(True)
+        self.brush_preview_timer.setInterval(180)
+        self.brush_preview_timer.timeout.connect(self.refresh)
         from studio_workspace import build_workspace
         build_workspace(self,Canvas,BRAND_ICON)
         self.set_drawing(import_svg(Path(__file__).parent/'samples'/'drawing.svg'))
@@ -236,10 +242,10 @@ class Window(QMainWindow):
         self.paint_form.setRowVisible(self.image_paint_hint,image_source)
         self.paint_form.setRowVisible(self.color_fade,not image_source)
         self.paint_form.setRowVisible(self.image_duration,image_source)
-        self.paint_form.setRowVisible(self.drawing_visibility,image_source)
-        self.paint_form.setRowVisible(self.contour_transition,image_source)
-        self.paint_form.setRowVisible(self.retirement_direction,
-                                      image_source and self.contour_transition.currentIndex()!=0)
+        self.paint_form.setRowVisible(self.image_animation,image_source)
+        paint_only=image_source and self.image_animation.currentIndex()==1
+        self.duration.setEnabled(not paint_only)
+        self.speed.setEnabled(not paint_only)
         self.reveal_mode.setToolTip('Image sources use Adaptive Hand Painting.' if image_source else '')
         self.output_summary.setText(f'{self.res.currentText()}  •  {self.fps.value()} fps')
         busy=bool((self.worker and self.worker.isRunning()) or (self.builder and self.builder.isRunning()))
@@ -568,12 +574,27 @@ class Window(QMainWindow):
     def effective_duration(self): return self.duration.value()/self.speed.value()
     def timeline_length(self):
         options=self.options()
+        if (self.source_type.currentIndex() and self.image_animation.currentIndex()==1
+                and options['final_image'] is not None):
+            return max(.001,options['fade_duration'])+max(0.,options['hold_duration'])
         return timeline_duration(options['duration'],options['final_image'],options['fade_duration'],options['hold_duration'])
+    def change_image_animation(self,*args):
+        # Direct painting has to retain its color source; never let the user
+        # accidentally request an invisible, no-color animation.
+        if self.image_animation.currentIndex()==1 and self.source_type.currentIndex():
+            self.preserve_colors.setChecked(True)
+        self.preserve_colors.setEnabled(self.image_animation.currentIndex()!=1)
+        self.refresh()
+
+    def schedule_brush_refresh(self,*args):
+        # Debounce potentially expensive plan_for() rebuilds while controls
+        # are changing. A single preview reflects the final requested value.
+        self.brush_preview_timer.start()
+
     def options(self):
         if self.drawing is not None and getattr(self.drawing,'source_kind',None)=='image':
-            self.drawing.drawing_visibility=['progressive','full'][self.drawing_visibility.currentIndex()]
-            self.drawing.contour_transition=['legacy','paint','retire'][self.contour_transition.currentIndex()]
-            self.drawing.retirement_direction=['forward','reverse'][self.retirement_direction.currentIndex()]
+            self.drawing.image_animation=['draw_paint','paint_only'][self.image_animation.currentIndex()]
+            self.drawing.drawing_visibility='progressive'
         width,height=[int(x.strip()) for x in self.res.currentText().split('×')]
         options=dict(duration=self.effective_duration(),fps=self.fps.value(),width=width,height=height,
                     thickness=self.thickness.value(),hand=self.hand if self.showhand.isChecked() else None,
@@ -585,8 +606,11 @@ class Window(QMainWindow):
                     artwork_scale=self.artwork_size.value()/100.0,
                     painting_hand=self.hand if self.show_paint_hand.isChecked() else None)
         if self.source_type.currentIndex():
-            options.update(final_image=self.image_result.image if self.image_result and self.preserve_colors.isChecked() else None,
-                           fade_duration=self.image_duration.value(),reveal_mode='adaptive')
+            paint_only=self.image_animation.currentIndex()==1
+            options.update(final_image=self.image_result.image if self.image_result
+                           and (self.preserve_colors.isChecked() or paint_only) else None,
+                           fade_duration=self.image_duration.value(),reveal_mode='adaptive',
+                           duration=0. if paint_only else options['duration'])
         return options
     def refresh(self,*args):
         self.sync_workspace()
@@ -601,17 +625,27 @@ class Window(QMainWindow):
             self.position)
         duration=options.pop('duration'); options.pop('fps')
         size=options.pop('artwork_scale')
+        # The artwork is scaled after rasterization. Compensating the hand
+        # before that transform keeps its FINAL size independent of Artwork
+        # Size, while its pen-tip coordinates move with the artwork.
+        options['hand_scale']/=size
         ratio=options['height']/options['width']
         options['width']=960; options['height']=round(960*ratio)
-        if options['final_image'] is not None:
-            self.canvas.frame=render_color_timeline(self.drawing,self.position,duration=duration,**options)
-        else:
-            for key in ('final_image','fade_duration','hold_duration','reveal_mode','brush_width','painting_hand','stroke_spacing'):
-                options.pop(key)
-            self.canvas.frame=render(self.drawing,self.position,**options)
-        self.canvas.frame=scale_animation_frame(self.canvas.frame,size)
-        self.canvas.frame=apply_lettering_background(self.canvas.frame,self.drawing)
-        self.canvas.update()
+        try:
+            if options['final_image'] is not None:
+                frame=render_color_timeline(self.drawing,self.position,duration=duration,**options)
+            else:
+                for key in ('final_image','fade_duration','hold_duration','reveal_mode','brush_width','painting_hand','stroke_spacing'):
+                    options.pop(key)
+                frame=render(self.drawing,self.position,**options)
+            frame=scale_animation_frame(frame,size)
+            self.canvas.frame=apply_lettering_background(frame,self.drawing)
+            self.canvas.update()
+        except Exception as exc:
+            # An invalid/expensive brush configuration must not throw out of
+            # the Qt signal handler and terminate the application.
+            self.status.setText('Preview could not be updated: '+str(exc)[:220])
+            return
         length=self.timeline_length()
         self.clock.setText(f'{self.position*length:.2f} / {length:.2f} s')
     def scrub(self,value): self.position=value/1000; self.refresh()
