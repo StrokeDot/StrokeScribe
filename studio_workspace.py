@@ -463,8 +463,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     animation_l.addWidget(w.color_note)
     a2=form_layout();animation_l.addLayout(a2)
     w.reveal_mode=QComboBox()
-    w.reveal_mode.addItems(['Fade','Brush painting','Stroke-guided painting',
-                            'Clean contour painting','Adaptive Hand Painting'])
+    w.reveal_mode.addItems(['Fade','Brush painting','Adaptive Hand Painting'])
     a2.addRow('Paint mode',w.reveal_mode)
     w.image_paint_hint=caption('AI plans the paths internally. Choose a visible outline drawing, or paint directly. Original PNG colors are preserved.')
     a2.addRow(w.image_paint_hint)

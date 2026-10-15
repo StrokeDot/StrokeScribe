@@ -14,6 +14,9 @@ from version import APP_VERSION, DISPLAY_NAME, RELEASE_DATE
 
 # Shared application branding asset (path independent of the working directory).
 BRAND_ICON = Path(__file__).resolve().parent / 'assets' / 'strokescribe_icon.png'
+# Paint mode menu order (studio_workspace). Stroke-guided and Clean contour
+# painting were retired from the menu; their code remains for old renders.
+REVEAL_MODES = ('fade', 'brush', 'adaptive')
 
 class Canvas(QWidget):
     def __init__(self):
@@ -601,7 +604,7 @@ class Window(QMainWindow):
                     hand_scale=self.handsize.value(),anchor=(self.ax.value(),self.ay.value()),
                     final_image=self.final_image if self.use_color.isChecked() else None,
                     fade_duration=self.color_fade.value(),hold_duration=self.color_hold.value(),
-                    reveal_mode=['fade','brush','guided','clean','adaptive'][self.reveal_mode.currentIndex()],
+                    reveal_mode=REVEAL_MODES[self.reveal_mode.currentIndex()],
                     brush_width=self.brush_width.value(),stroke_spacing=self.stroke_spacing.value(),
                     artwork_scale=self.artwork_size.value()/100.0,
                     painting_hand=self.hand if self.show_paint_hand.isChecked() else None)

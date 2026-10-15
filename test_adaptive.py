@@ -30,6 +30,27 @@ def fixture(size=80):
     return drawing,qimage(image)
 
 class AdaptiveTests(unittest.TestCase):
+    def test_final_frame_uses_high_quality_premultiplied_resize(self):
+        # A large detailed PNG shrunk into a small frame must be Lanczos
+        # filtered (as in a photo editor), not bilinear-sampled by Qt.
+        from source_render import pixel_rect
+        src=Image.new('RGBA',(400,400),(0,0,0,0))
+        p=ImageDraw.Draw(src)
+        for x in range(40,360,4):
+            p.line((x,40,x,360),fill=(30,20,10,255),width=2)
+        p.ellipse((60,60,340,340),outline=(240,230,200,255),width=3)
+        image=qimage(src)
+        d=Drawing([Stroke('frame',[(0,0),(400,0),(400,400),(0,400),(0,0)],width=1)],
+                  (0,0,400,400),[])
+        kwargs=dict(width=320,height=240,duration=1,fade_duration=4,
+                    hold_duration=0,final_image=image,reveal_mode='adaptive')
+        end=pil_image(render_color_timeline(d,1,**kwargs))
+        x,y,w,h=pixel_rect(artwork_rect(d,image,320,240))
+        want=src.convert('RGBa').resize((w,h),Image.Resampling.LANCZOS).convert('RGBa')
+        got=end.crop((x,y,x+w,y+h)).convert('RGBa')
+        diff=max(abs(a-b) for a,b in zip(want.tobytes(),got.tobytes()))
+        self.assertLessEqual(diff,3,'Final frame must equal the Lanczos-resized PNG')
+
     def test_regions_infill_and_coverage(self):
         for size in (24,112):
             d,image=fixture(size)
@@ -99,8 +120,9 @@ class AdaptiveTests(unittest.TestCase):
         self.assertEqual(pil_image(end).tobytes(),pil_image(almost).tobytes())
         expected=QImage(320,240,QImage.Format.Format_ARGB32_Premultiplied)
         expected.fill(Qt.GlobalColor.transparent)
-        p=QPainter(expected); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        p.drawImage(artwork_rect(d,image,320,240),image); p.end()
+        from source_render import draw_source
+        p=QPainter(expected)
+        draw_source(p,artwork_rect(d,image,320,240),image); p.end()
         self.assertEqual(pil_image(end).tobytes(),pil_image(expected).tobytes())
         # During painting, source PNG transparency must never erase SVG
         # contours that the brush has not replaced. Only the final settled

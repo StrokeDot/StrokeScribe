@@ -53,7 +53,7 @@ class StudioTests(unittest.TestCase):
         w.final_image=original
         w.use_color.setEnabled(True)
         w.use_color.setChecked(True)
-        w.reveal_mode.setCurrentIndex(4)
+        w.reveal_mode.setCurrentIndex(w.reveal_mode.findText('Adaptive Hand Painting'))
         w.color_fade.setValue(3.5)
         w.color_hold.setValue(1.25)
         APP.processEvents()
@@ -65,6 +65,13 @@ class StudioTests(unittest.TestCase):
                          QPoint(x,28))
         self.assertGreater(w.slider.value(),100)
         self.assertLess(w.slider.value(),900)
+
+    def test_retired_paint_modes_are_not_offered(self):
+        items=[self.window.reveal_mode.itemText(i)
+               for i in range(self.window.reveal_mode.count())]
+        self.assertEqual(items,['Fade','Brush painting','Adaptive Hand Painting'])
+        from app import REVEAL_MODES
+        self.assertEqual(REVEAL_MODES,('fade','brush','adaptive'))
 
     def test_image_and_export_controls_preserved(self):
         w=self.window

@@ -259,6 +259,7 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
             painter.end()
         return frame
 
+    from source_render import draw_source
     rect = artwork_rect(drawing,final_image,width,height)
     canvas = QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
     canvas.fill(Qt.GlobalColor.transparent)
@@ -267,7 +268,7 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
 
     if reveal_mode in ('brush','continue','guided','clean'):
         if reveal_progress >= 1:
-            painter.drawImage(rect, final_image)
+            draw_source(painter, rect, final_image)
             painter.end()
             return canvas
         # Preserve completed strokes until the paint sweep reaches them.
@@ -287,7 +288,7 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         painted.fill(Qt.GlobalColor.transparent)
         pp = QPainter(painted)
         pp.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        pp.drawImage(rect,final_image)
+        draw_source(pp,rect,final_image)
         pp.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
         pp.drawImage(0,0,mask)
         pp.end()
@@ -307,6 +308,6 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         painter.setOpacity(1.-reveal_progress)
         painter.drawImage(0,0,render(drawing,1,width,height,thickness))
         painter.setOpacity(reveal_progress)
-        painter.drawImage(rect,final_image)
+        draw_source(painter,rect,final_image)
     painter.end()
     return canvas

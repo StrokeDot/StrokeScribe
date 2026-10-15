@@ -349,7 +349,8 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
         frame.fill(Qt.GlobalColor.transparent)
         painter=QPainter(frame)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        painter.drawImage(rect,image)
+        from source_render import draw_source
+        draw_source(painter,rect,image)
         painter.end()
         return frame
     mask,tip=adaptive_paint_mask(drawing,image,width,height,rect,progress,
@@ -361,7 +362,8 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
     painted.fill(Qt.GlobalColor.transparent)
     p=QPainter(painted)
     p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    p.drawImage(rect,image)
+    from source_render import draw_source
+    draw_source(p,rect,image)
     p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
     p.drawImage(0,0,mask)
     p.end()
