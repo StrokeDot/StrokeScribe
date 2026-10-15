@@ -44,7 +44,7 @@ TIER_ORDER = ('fast', 'balanced', 'quality', 'max')
 
 PACKAGES = (('PySide6', 'PySide6'), ('svgelements', 'svgelements'),
             ('Pillow', 'PIL'), ('numpy', 'numpy'),
-            ('opencv-python-headless', 'cv2'))
+            ('opencv-python-headless', 'cv2'), ('onnxruntime', 'onnxruntime'))
 ENCODERS = (('libx264', 'MP4 export'), ('libvpx-vp9', 'WebM export'),
             ('prores_ks', 'ProRes MOV export'))
 WINGET_IDS = {'ffmpeg': 'Gyan.FFmpeg', 'ollama': 'Ollama.Ollama'}

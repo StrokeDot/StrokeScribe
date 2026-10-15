@@ -1,9 +1,9 @@
 """Line art reconstruction: any image -> ordered single-line pen strokes.
 
-Pipeline (numpy + OpenCV only; no Qt, no new dependencies):
+Pipeline (numpy, OpenCV and ONNX Runtime; no Qt):
 1. Object support from alpha, ignoring faint leftover background pixels.
 2. Line evidence from two sources merged together:
-   - TEED, a small MIT-licensed edge model (models/teed.onnx, run by OpenCV),
+   - TEED, a small MIT-licensed edge model (models/teed.onnx, ONNX Runtime),
      which draws artist-like contours and inner detail lines;
    - dark "ink" lines found directly (black-hat), so thick outlines become a
      single line and pencil strokes in sketches survive.
@@ -32,16 +32,34 @@ DETAIL = {
     'high':   dict(size=1400, strong=.48, weak=.28, min_len=.005, max_strokes=1000, loop_factor=1.5),
 }
 
-_NET = None
+_RUNNER = None
 
 
-def _net():
-    global _NET
-    if _NET is None:
+def _runner():
+    """Run the model with ONNX Runtime; OpenCV's DNN module as a fallback.
+
+    OpenCV 4.x cannot load this model's flexible image size, so ONNX Runtime
+    (MIT, installed by Setup.cmd) is the primary engine.
+    """
+    global _RUNNER
+    if _RUNNER is None:
         if not MODEL_PATH.is_file():
             raise FileNotFoundError(f'Line art model missing: {MODEL_PATH}')
-        _NET = cv2.dnn.readNetFromONNX(str(MODEL_PATH))
-    return _NET
+        try:
+            import onnxruntime as ort
+            options = ort.SessionOptions()
+            options.log_severity_level = 3
+            session = ort.InferenceSession(str(MODEL_PATH), options,
+                                           providers=['CPUExecutionProvider'])
+            _RUNNER = lambda x: session.run(None, {'image': x})[0]
+        except ImportError:
+            net = cv2.dnn.readNetFromONNX(str(MODEL_PATH))
+
+            def run(x):
+                net.setInput(x)
+                return net.forward()
+            _RUNNER = run
+    return _RUNNER
 
 
 # ---------------------------------------------------------------- inputs
@@ -89,9 +107,7 @@ def teed_edges(rgb):
     H, W = (h + 7) // 8 * 8, (w + 7) // 8 * 8
     bgr = cv2.resize(np.ascontiguousarray(rgb[:, :, ::-1]), (W, H),
                      interpolation=cv2.INTER_CUBIC).astype(np.float32) - TEED_MEAN
-    net = _net()
-    net.setInput(bgr.transpose(2, 0, 1)[None])
-    out = net.forward()[0, 0]
+    out = _runner()(np.ascontiguousarray(bgr.transpose(2, 0, 1)[None]))[0, 0]
     out = cv2.resize(out, (w, h), interpolation=cv2.INTER_LINEAR)
     return np.clip((out - TEED_BASELINE) / (1 - TEED_BASELINE), 0, 1)
 
