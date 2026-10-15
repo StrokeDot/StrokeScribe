@@ -36,7 +36,12 @@ jobs:
             echo '### Full test suite failures (image source workflow)'
             echo 'Failures and errors only:'
             echo '```text'
-            awk '/^(FAIL|ERROR):/{p=1} p' full-tests.log | grep -v 'DeprecationWarning' | head -n 160
+            if grep -qE '^(FAIL|ERROR):' full-tests.log; then
+              awk '/^(FAIL|ERROR):/{p=1} p' full-tests.log | grep -v 'DeprecationWarning' | head -n 160 || true
+            else
+              echo 'No unittest summary (the test process may have crashed). Last 60 lines:'
+              tail -n 60 full-tests.log || true
+            fi
             echo '```'
           } > diagnostic-comment.md
           gh pr comment "$PR_NUMBER" --body-file diagnostic-comment.md
