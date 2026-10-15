@@ -1,4 +1,5 @@
 """Setup window and system preflight tests (fake Ollama/FFmpeg answers)."""
+import faulthandler
 import io
 import json
 import os
@@ -13,6 +14,7 @@ from PySide6.QtWidgets import QApplication
 import preflight
 
 APP = QApplication.instance() or QApplication([])
+faulthandler.enable()  # print a Python traceback if Qt crashes
 
 
 class FakeResponse(io.BytesIO):
