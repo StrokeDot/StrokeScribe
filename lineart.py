@@ -30,6 +30,7 @@ DETAIL = {
     'low':    dict(size=768,  strong=.62, weak=.38, min_len=.012, max_strokes=260, loop_factor=3),
     'medium': dict(size=1024, strong=.55, weak=.32, min_len=.008, max_strokes=520, loop_factor=2.5),
     'high':   dict(size=1400, strong=.48, weak=.28, min_len=.005, max_strokes=1000, loop_factor=1.5),
+    'max':    dict(size=1800, strong=.45, weak=.26, min_len=.004, max_strokes=1500, loop_factor=1.2),
 }
 
 _RUNNER = None

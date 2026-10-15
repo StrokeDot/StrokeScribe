@@ -1,8 +1,8 @@
 """System preflight: what StrokeScribe needs, what this computer has, and where.
 
-Pure Python (no Qt) so it can be tested headless. Nothing is downloaded or
-installed here unless a caller explicitly runs pull_model() or
-winget_install(); the setup window asks the user before doing either.
+Pure Python (no Qt) so it can be tested headless. Nothing is installed here
+unless a caller explicitly runs winget_install(); the setup window asks the
+user first.
 """
 from __future__ import annotations
 
@@ -13,32 +13,26 @@ import platform
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
-from urllib.request import Request, urlopen
 
-OLLAMA_URL = 'http://127.0.0.1:11434'
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+APP_DIR = Path(__file__).resolve().parent
+LINE_MODEL = APP_DIR / 'models' / 'teed.onnx'
 
-# Model choices: instruct variants answer directly (plain qwen3-vl tags are
-# thinking models). Sizes are Ollama's listed download sizes.
+# Each level sets the Line art detail used for imported images.
 TIERS = {
-    'fast': dict(label='Fast', model='qwen3-vl:2b-instruct', model_gb=1.9,
-                 profile='fast', ram_gb=8,
-                 summary='Quickest analysis with the smallest local AI model. '
-                         'Good for simple artwork and older computers.'),
-    'balanced': dict(label='Balanced', model='qwen3-vl:4b-instruct', model_gb=3.3,
-                     profile='balanced', ram_gb=12,
-                     summary='Recommended. Good object recognition at a moderate speed.'),
-    'quality': dict(label='Quality', model='qwen3-vl:4b-instruct', model_gb=3.3,
-                    profile='quality', ram_gb=12,
-                    summary='Same model as Balanced, with a larger image and more '
-                            'parts for detailed artwork. Slower analysis.'),
-    'max': dict(label='Max', model='qwen3-vl:8b-instruct', model_gb=6.1,
-                profile='quality', ram_gb=16,
-                summary='Largest local model and most detailed settings. Best '
-                        'recognition; needs a strong computer (a GPU helps a lot).'),
+    'fast': dict(label='Fast', detail='low',
+                 summary='Fewest lines and quickest preparation. Good for simple '
+                         'artwork, icons and older computers.'),
+    'balanced': dict(label='Balanced', detail='medium',
+                     summary='Recommended. Clean outlines plus the main inner details.'),
+    'quality': dict(label='Quality', detail='high',
+                    summary='More inner lines and finer details for detailed artwork.'),
+    'max': dict(label='Max', detail='max',
+                summary='The most lines and finest detail. Takes a little longer to '
+                        'prepare; best for large, detailed images.'),
 }
 TIER_ORDER = ('fast', 'balanced', 'quality', 'max')
 
@@ -47,7 +41,7 @@ PACKAGES = (('PySide6', 'PySide6'), ('svgelements', 'svgelements'),
             ('opencv-python-headless', 'cv2'), ('onnxruntime', 'onnxruntime'))
 ENCODERS = (('libx264', 'MP4 export'), ('libvpx-vp9', 'WebM export'),
             ('prores_ks', 'ProRes MOV export'))
-WINGET_IDS = {'ffmpeg': 'Gyan.FFmpeg', 'ollama': 'Ollama.Ollama'}
+WINGET_IDS = {'ffmpeg': 'Gyan.FFmpeg'}
 
 
 @dataclass
@@ -59,7 +53,7 @@ class CheckItem:
     detail: str = ''
     location: str = ''
     required: bool = True
-    action: str = ''       # '', 'pull_model', 'winget_ffmpeg', 'winget_ollama', 'start_ollama'
+    action: str = ''       # '' or 'winget_ffmpeg'
     size_gb: float = 0.
 
 
@@ -70,7 +64,6 @@ class SystemInfo:
     ram_free_gb: float | None
     disk_free_gb: float | None
     disk_path: str
-    gpus: list = field(default_factory=list)
 
 
 # ---------- System ----------
@@ -104,46 +97,15 @@ def memory_gb():
         return None, None
 
 
-def gpus():
-    """NVIDIA GPUs with memory via nvidia-smi; empty when unknown/absent."""
-    tool = shutil.which('nvidia-smi')
-    if not tool:
-        return []
-    try:
-        out = subprocess.run([tool, '--query-gpu=name,memory.total',
-                              '--format=csv,noheader,nounits'],
-                             capture_output=True, text=True, timeout=8,
-                             creationflags=NO_WINDOW).stdout
-    except Exception:
-        return []
-    found = []
-    for line in out.strip().splitlines():
-        name, _, memory = line.rpartition(',')
-        try:
-            found.append((name.strip(), round(float(memory) / 1024, 1)))
-        except ValueError:
-            continue
-    return found
-
-
-def models_dir():
-    """Where Ollama stores models (OLLAMA_MODELS, else ~/.ollama/models)."""
-    custom = os.environ.get('OLLAMA_MODELS')
-    return Path(custom) if custom else Path.home() / '.ollama' / 'models'
-
-
 def system_info():
     total, free = memory_gb()
-    target = models_dir()
-    probe = target
-    while not probe.exists() and probe != probe.parent:
-        probe = probe.parent
+    target = Path.home()
     try:
-        disk = shutil.disk_usage(probe).free / 2**30
+        disk = shutil.disk_usage(target).free / 2**30
     except OSError:
         disk = None
     return SystemInfo(f'{platform.system()} {platform.release()}', total, free,
-                      disk, str(probe), gpus())
+                      disk, str(target))
 
 
 # ---------- FFmpeg ----------
@@ -193,51 +155,11 @@ def ffmpeg_encoders(path):
     return {name for name, _ in ENCODERS if f' {name} ' in out}
 
 
-# ---------- Ollama ----------
-
-def find_ollama():
-    found = shutil.which('ollama')
-    if found:
-        return found
-    local = os.environ.get('LOCALAPPDATA')
-    if local:
-        candidate = Path(local) / 'Programs' / 'Ollama' / 'ollama.exe'
-        if candidate.is_file():
-            return str(candidate)
-    return None
-
-
-def _get_json(path, timeout=3):
-    with urlopen(OLLAMA_URL + path, timeout=timeout) as response:
-        return json.loads(response.read(2_000_000))
-
-
-def ollama_version():
-    try:
-        return _get_json('/api/version').get('version')
-    except Exception:
-        return None
-
-
-def ollama_models():
-    """Installed model names with sizes in GB; None if Ollama is not reachable."""
-    try:
-        data = _get_json('/api/tags')
-    except Exception:
-        return None
-    return {m.get('name', ''): round(m.get('size', 0) / 1e9, 1)
-            for m in data.get('models', []) if m.get('name')}
-
-
-def has_model(installed, model):
-    return model in installed or (':' not in model and model + ':latest' in installed)
-
-
 # ---------- Checklist ----------
 
 def run_checks(tier='balanced'):
-    """Everything this tier needs, each with status and location."""
-    settings = TIERS[tier]
+    """Everything StrokeScribe needs, each with status and location."""
+    TIERS[tier]  # validate
     items = []
     for dist, module in PACKAGES:
         try:
@@ -251,6 +173,14 @@ def run_checks(tier='balanced'):
                                    'Run Setup.cmd again to install it.'))
     items.append(CheckItem('python', f'Python {platform.python_version()}', 'Runs the app',
                            'ok', '', sys.executable))
+    if LINE_MODEL.is_file():
+        items.append(CheckItem('line_model', 'Line art model (TEED)', 'Draws lines from images',
+                               'ok', f'{LINE_MODEL.stat().st_size // 1024} KB, built in',
+                               str(LINE_MODEL)))
+    else:
+        items.append(CheckItem('line_model', 'Line art model (TEED)', 'Draws lines from images',
+                               'missing', 'Extract the full StrokeScribe ZIP again; '
+                               'the models folder is missing.', str(LINE_MODEL)))
 
     ffmpeg = find_ffmpeg()
     if ffmpeg:
@@ -266,79 +196,22 @@ def run_checks(tier='balanced'):
         items.append(CheckItem('ffmpeg', 'FFmpeg', 'Video export (MP4, WebM, MOV)',
                                'missing', 'PNG export works without it; videos need it.',
                                action='winget_ffmpeg', size_gb=.2))
-
-    ollama = find_ollama()
-    version = ollama_version()
-    if not ollama and not version:
-        items.append(CheckItem('ollama', 'Ollama', 'Runs the local AI (AI redraw)',
-                               'missing', 'Needed only for AI redraw. Free; runs on your PC.',
-                               required=False, action='winget_ollama', size_gb=1.0))
-    elif not version:
-        items.append(CheckItem('ollama', 'Ollama (not running)', 'Runs the local AI (AI redraw)',
-                               'warning', 'Installed but not running. It can be started for you.',
-                               ollama, required=False, action='start_ollama'))
-    else:
-        items.append(CheckItem('ollama', f'Ollama {version}', 'Runs the local AI (AI redraw)',
-                               'ok', 'Running', ollama or 'running service', required=False))
-
-    model = settings['model']
-    installed = ollama_models() if version else None
-    where = str(models_dir())
-    if installed is not None and has_model(installed, model):
-        items.append(CheckItem('model', model, f'AI model for {settings["label"]}', 'ok',
-                               f'{installed.get(model, settings["model_gb"])} GB',
-                               where, required=False))
-    else:
-        items.append(CheckItem('model', model, f'AI model for {settings["label"]}', 'missing',
-                               f'{settings["model_gb"]} GB download'
-                               + ('' if version else ' (after Ollama is installed and running)'),
-                               where, required=False, action='pull_model',
-                               size_gb=settings['model_gb']))
     return items
 
 
 def advice(info, tier):
-    """Plain warnings about this computer for the chosen tier."""
+    """Plain warnings about this computer."""
     notes = []
-    settings = TIERS[tier]
-    # Computers sold as "8 GB" report a little less, so allow 10% slack.
-    if info.ram_total_gb is not None and info.ram_total_gb < settings['ram_gb']*.9:
-        notes.append(f'{settings["label"]} works best with about {settings["ram_gb"]} GB of RAM; '
-                     f'this computer has {info.ram_total_gb:.0f} GB. A lower level may run better.')
-    if info.disk_free_gb is not None and info.disk_free_gb < settings['model_gb'] + 2:
-        notes.append(f'Only {info.disk_free_gb:.1f} GB free on the model drive; '
-                     f'the AI model needs {settings["model_gb"]} GB plus working space.')
-    if not info.gpus and tier == 'max':
-        notes.append('No NVIDIA GPU detected. Max will run on the processor and be slow.')
+    if info.disk_free_gb is not None and info.disk_free_gb < 2:
+        notes.append(f'Only {info.disk_free_gb:.1f} GB free on {info.disk_path}; video '
+                     'exports need space for their frames.')
     return notes
 
 
 # ---------- Installing (only when the user agreed) ----------
 
-def pull_model(model, progress=None, cancelled=lambda: False):
-    """Download an Ollama model, reporting (status, completed, total)."""
-    body = json.dumps({'model': model, 'stream': True}).encode()
-    request = Request(OLLAMA_URL + '/api/pull', data=body,
-                      headers={'Content-Type': 'application/json'})
-    with urlopen(request, timeout=60) as response:
-        for line in response:
-            if cancelled():
-                raise InterruptedError('Download cancelled.')
-            if not line.strip():
-                continue
-            update = json.loads(line)
-            if update.get('error'):
-                raise RuntimeError('Ollama: ' + str(update['error']))
-            if progress:
-                progress(update.get('status', ''), update.get('completed', 0),
-                         update.get('total', 0))
-            if update.get('status') == 'success':
-                return True
-    raise RuntimeError('Ollama ended the download before it finished.')
-
-
 def winget_install(tool, output=None):
-    """Install FFmpeg or Ollama with Windows' own package manager (winget)."""
+    """Install FFmpeg with Windows' own package manager (winget)."""
     if sys.platform != 'win32' or not shutil.which('winget'):
         raise RuntimeError('Automatic install needs Windows with winget. Install it manually.')
     command = ['winget', 'install', '--id', WINGET_IDS[tool], '--exact', '--silent',
@@ -355,20 +228,10 @@ def winget_install(tool, output=None):
     return True
 
 
-def start_ollama():
-    """Start the Ollama server in the background if it is installed."""
-    path = find_ollama()
-    if not path:
-        raise RuntimeError('Ollama is not installed.')
-    subprocess.Popen([path, 'serve'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     creationflags=NO_WINDOW)
-    return True
-
-
 # ---------- Remembered choices ----------
 
 def config_path():
-    """Small JSON settings file (tier choice, show-at-startup)."""
+    """Small JSON settings file (level choice, show-at-startup)."""
     base = os.environ.get('STROKESCRIBE_CONFIG_DIR')
     if base:
         root = Path(base)

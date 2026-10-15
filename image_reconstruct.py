@@ -4,7 +4,6 @@ from pathlib import Path
 from PIL import Image, ImageOps, UnidentifiedImageError
 from adaptive_hand import qimage, pil_image
 from image_regions import segment_regions
-from image_trace import trace_image
 
 SUPPORTED_FORMATS={'PNG','JPEG','WEBP','BMP'}
 @dataclass
@@ -50,26 +49,29 @@ def line_art_drawing(original,detail='medium'):
         'Strokes approximate an artist\'s drawing; original colors are painted afterwards.'])
 
 
-def reconstruct(filename,mode='auto_trace',detail='medium',ai_model='qwen3-vl:4b-instruct',ai_analysis=None,ai_profile='balanced'):
-    if mode not in ('auto_trace','stroke_reconstruction','ai_redraw','line_art'):
-        raise ValueError('Choose Line Art, Auto Trace, Stroke Reconstruction, or AI Redraw.')
-    if detail not in ('low','medium','high'):
-        raise ValueError('Choose Low, Medium or High detail.')
+FAINT_ALPHA=64  # pixels under ~25% visible: background-removal leftovers
+
+
+def clean_faint_pixels(image):
+    """Make nearly invisible leftover pixels fully transparent."""
+    alpha=image.getchannel('A').point(lambda a:0 if a<FAINT_ALPHA else a)
+    cleaned=image.copy(); cleaned.putalpha(alpha)
+    bbox=alpha.getbbox()
+    return cleaned.crop(bbox) if bbox else cleaned
+
+
+def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False):
+    if mode!='line_art':
+        raise ValueError('Line art is the image method.')
+    if detail not in ('low','medium','high','max'):
+        raise ValueError('Choose Low, Medium, High or Max detail.')
     original=load_raster(filename)
-    if mode=='ai_redraw':
-        from semantic_redraw import ai_guided_drawing, local_vision_analysis
-        analysis=ai_analysis if ai_analysis is not None else local_vision_analysis(original,ai_model,profile=ai_profile)
-        drawing,image=ai_guided_drawing(original,analysis,detail,profile=ai_profile)
-        return Reconstruction(drawing,image,drawing.image_regions,mode,detail,Path(filename).name)
-    regions=segment_regions(original,detail)
-    if mode=='line_art':
-        drawing=line_art_drawing(original,detail)
-    else:
-        drawing=trace_image(original,regions,detail,mode)
-    # Optional metadata: existing SVG Drawings have no region map and use
-    # the unchanged contour/alpha planner.
+    if clean_faint:
+        original=clean_faint_pixels(original)
+    regions=segment_regions(original,'high' if detail=='max' else detail)
+    drawing=line_art_drawing(original,detail)
     drawing.image_regions=regions
-    drawing.image_region_priority=mode in ('stroke_reconstruction','line_art')
+    drawing.image_region_priority=True
     drawing.source_kind='image'
-    drawing.source_mode=mode
-    return Reconstruction(drawing,qimage(original),regions,mode,detail,Path(filename).name)
+    drawing.source_mode='line_art'
+    return Reconstruction(drawing,qimage(original),regions,'line_art',detail,Path(filename).name)

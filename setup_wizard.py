@@ -1,5 +1,6 @@
-"""First-launch setup window: pick Fast/Balanced/Quality/Max, check this PC,
-see what is installed and where, and download what is missing (after a yes).
+"""First-launch setup window: pick Fast/Balanced/Quality/Max line detail,
+check this PC, see what is installed and where, and install what is missing
+(after a yes).
 """
 from __future__ import annotations
 
@@ -39,38 +40,15 @@ class InstallWorker(QThread):
 
     def run(self):
         problems = []
-        for action, label, model in self.actions:
+        for action, label in self.actions:
             if self.isInterruptionRequested():
                 problems.append('Cancelled.')
                 break
             try:
                 self.progress.emit(0, 0)
-                if action == 'pull_model':
-                    if not preflight.ollama_version():
-                        if preflight.find_ollama():
-                            preflight.start_ollama(); self.sleep(3)
-                        if not preflight.ollama_version():
-                            raise RuntimeError('Ollama is not running, so the model cannot download yet.')
-                    self.message.emit(f'Downloading {model}…')
-
-                    def report(status, completed, total):
-                        if total:
-                            self.progress.emit(int(completed / 2**20), int(total / 2**20))
-                            self.message.emit(f'Downloading {model}: {completed/2**30:.2f} of {total/2**30:.2f} GB')
-                        elif status:
-                            self.message.emit(f'{model}: {status}')
-                    preflight.pull_model(model, report, self.isInterruptionRequested)
-                elif action in ('winget_ffmpeg', 'winget_ollama'):
-                    tool = action.split('_', 1)[1]
+                if action == 'winget_ffmpeg':
                     self.message.emit(f'Installing {label} with Windows Package Manager…')
-                    preflight.winget_install(tool, self.message.emit)
-                    if tool == 'ollama':
-                        self.sleep(3)
-                        if not preflight.ollama_version() and preflight.find_ollama():
-                            preflight.start_ollama(); self.sleep(3)
-                elif action == 'start_ollama':
-                    self.message.emit('Starting Ollama…')
-                    preflight.start_ollama(); self.sleep(3)
+                    preflight.winget_install('ffmpeg', self.message.emit)
                 self.message.emit(f'{label}: done')
             except Exception as exc:
                 problems.append(f'{label}: {exc}')
@@ -99,9 +77,9 @@ class SetupDialog(QDialog):
         title = QLabel('Set up StrokeScribe')
         title.setStyleSheet('font-size: 18px; font-weight: 600;')
         root.addWidget(title)
-        intro = QLabel('Choose how much quality and speed you want. StrokeScribe checks '
-                       'this computer and lists what each level needs, what is already '
-                       'installed and where. Nothing downloads until you agree.')
+        intro = QLabel('Choose how much line detail StrokeScribe draws from your images. '
+                       'It also checks this computer and lists what is installed and where. '
+                       'Nothing downloads until you agree.')
         intro.setWordWrap(True); intro.setObjectName('note')
         root.addWidget(intro)
 
@@ -168,9 +146,7 @@ class SetupDialog(QDialog):
         settings = preflight.TIERS[tier]
         self.tier_summary.setText(
             f'<b>{settings["label"]}</b>: {settings["summary"]}<br>'
-            f'AI model: {settings["model"]} ({settings["model_gb"]} GB)  •  '
-            f'AI processing: {settings["profile"].title()}  •  '
-            f'RAM: about {settings["ram_gb"]} GB recommended')
+            f'Line art detail: {settings["detail"].title()}')
         if run_check:
             self.check()
 
@@ -190,9 +166,7 @@ class SetupDialog(QDialog):
                if info.ram_total_gb else 'RAM unknown')
         disk = (f'{info.disk_free_gb:.0f} GB free on {info.disk_path}'
                 if info.disk_free_gb is not None else 'free disk space unknown')
-        gpu = (', '.join(f'{name} ({memory} GB)' for name, memory in info.gpus)
-               if info.gpus else 'no NVIDIA GPU detected')
-        self.system_label.setText(f'<b>This computer:</b> {info.os_name}  •  {ram}  •  {disk}  •  GPU: {gpu}')
+        self.system_label.setText(f'<b>This computer:</b> {info.os_name}  •  {ram}  •  {disk}')
         self.advice_label.setText('\n'.join(preflight.advice(info, self.tier)))
         self.advice_label.setVisible(bool(self.advice_label.text()))
         self.table.setRowCount(len(items))
@@ -230,15 +204,10 @@ class SetupDialog(QDialog):
         answer = QMessageBox.question(
             self, 'Download and install',
             'StrokeScribe will download and install:\n\n' + lines +
-            '\n\nFFmpeg and Ollama install through Windows Package Manager (winget); '
-            'AI models download through Ollama and are stored in:\n' +
-            str(preflight.models_dir()) + '\n\nContinue?')
+            '\n\nIt installs through Windows Package Manager (winget). Continue?')
         if answer != QMessageBox.StandardButton.Yes:
             return
-        # Ollama must exist before its model can download.
-        order = {'winget_ffmpeg': 0, 'winget_ollama': 1, 'start_ollama': 2, 'pull_model': 3}
-        actions = [(item.action, item.name, preflight.TIERS[self.tier]['model'])
-                   for item in sorted(todo, key=lambda i: order.get(i.action, 9))]
+        actions = [(item.action, item.name) for item in todo]
         self.installer = InstallWorker(actions)
         self.installer.message.connect(self.progress_label.setText)
         self.installer.progress.connect(self.set_progress)

@@ -118,50 +118,26 @@ class FontInstaller(QThread):
 
 
 class ImageBuilder(QThread):
+    """Line art reconstruction of an imported image, off the UI thread."""
     ready=Signal(object)
     failed=Signal(str)
     stage=Signal(str,int,bool)
-    analysis_ready=Signal(object)
-    def __init__(self,path,mode,detail,brush_width,spacing,ai_model='qwen3-vl:4b-instruct',
-                 cached_analysis=None,ai_profile='balanced'):
+    def __init__(self,path,detail,brush_width,spacing,clean_faint=False):
         super().__init__()
-        self.path=path; self.mode=mode; self.detail=detail
-        self.brush_width=brush_width; self.spacing=spacing; self.ai_model=ai_model
-        self.cached_analysis=cached_analysis
-        self.ai_profile=ai_profile
-        self.analysis=None
+        self.path=path; self.detail=detail; self.mode='line_art'
+        self.brush_width=brush_width; self.spacing=spacing
+        self.clean_faint=clean_faint
         self.timings={}
         self.success=False
         self.failed_message=None
-        self.cache_hit=False
     def run(self):
         try:
-            from image_reconstruct import reconstruct, load_raster
+            from image_reconstruct import reconstruct
             from adaptive_hand import plan_for
-            if self.mode=='ai_redraw':
-                if self.cached_analysis is not None:
-                    self.analysis=self.cached_analysis
-                    self.cache_hit=True
-                    self.timings['vision']=0.
-                    self.stage.emit('Reusing previous AI object analysis',45,False)
-                else:
-                    self.stage.emit('Asking Ollama to identify image objects',0,True)
-                    started=time.perf_counter()
-                    from semantic_redraw import local_vision_analysis
-                    original=load_raster(self.path)
-                    self.analysis=local_vision_analysis(original,self.ai_model,profile=self.ai_profile)
-                    self.timings['vision']=time.perf_counter()-started
-                    # Store a successful semantic plan even if later local
-                    # contour generation fails. No disk or cloud cache used.
-                    self.analysis_ready.emit(self.analysis)
-                self.stage.emit('Building image contours and color regions',65,False)
-            else:
-                self.stage.emit('Tracing image details',20,False)
+            self.stage.emit('Drawing line art from the image',20,False)
             started=time.perf_counter()
-            result=reconstruct(self.path,self.mode,self.detail,
-                               ai_model=self.ai_model,ai_analysis=self.analysis,
-                               ai_profile=self.ai_profile)
-            self.timings['contours']=time.perf_counter()-started
+            result=reconstruct(self.path,'line_art',self.detail,clean_faint=self.clean_faint)
+            self.timings['lines']=time.perf_counter()-started
             self.stage.emit('Preparing animation and brush routes',85,False)
             started=time.perf_counter()
             plan_for(result.drawing,result.image,self.brush_width,self.spacing)
@@ -184,7 +160,6 @@ class Window(QMainWindow):
         self.image_result=None
         self.image_path=None
         self.builder=None
-        self.ai_analysis_cache=OrderedDict()
         self.analysis_started=0.
         self.analysis_stage=''
         self.svg_state=None
@@ -234,19 +209,15 @@ class Window(QMainWindow):
         dialog.tier_applied.connect(self.apply_tier)
         dialog.exec()
     def apply_tier(self,tier):
-        """Use the chosen level's local AI model and AI processing setting."""
+        """Use the chosen level's Line art detail for imported images."""
         import preflight
         settings=preflight.TIERS.get(tier)
         if not settings: return
-        model=settings['model']
-        index=self.ai_model.findText(model)
-        if index>=0: self.ai_model.setCurrentIndex(index)
-        else: self.ai_model.setCurrentText(model)
-        self.ai_profile.setCurrentIndex(('fast','balanced','quality').index(settings['profile']))
+        self.image_detail.setCurrentIndex(('low','medium','high','max').index(settings['detail']))
         self.setup_tier=tier
         if hasattr(self,'status'):
-            self.status.setText(f'Setup level: {settings["label"]}  •  AI model {model}  •  '
-                                f'AI processing {settings["profile"].title()}')
+            self.status.setText(f'Setup level: {settings["label"]}  •  '
+                                f'Line art detail {settings["detail"].title()}')
     def open_export(self):
         self.inspector_tabs.setCurrentIndex(2)
         self.export.setFocus()
@@ -357,50 +328,8 @@ class Window(QMainWindow):
         self.export.setEnabled(self.drawing is not None)
         self.quick_export.setEnabled(self.drawing is not None)
         self.refresh()
-    def update_image_mode(self,*args):
-        active=self.image_mode.currentIndex()==2
-        self.image_source_form.setRowVisible(self.ai_model,active)
-        self.image_source_form.setRowVisible(self.ai_profile,active)
-        self.image_source_form.setRowVisible(self.ai_note,active)
-        self.rebuild_button.setText('Analyze with local AI' if active else 'Apply image settings')
-        if active: self.warm_up_ai()
-
-    def warm_up_ai(self,*args):
-        """Load the selected local model in the background (no generation).
-
-        Gives Ollama a head start so Analyze does not also wait for the model
-        to load. Repeats for the same model/profile are skipped for a minute.
-        """
-        if self.image_mode.currentIndex()!=2: return
-        if self.builder and self.builder.isRunning(): return
-        model=self.ai_model.currentText().strip()
-        profile=self.ai_profile.currentText().strip().lower()
-        if not model: return
-        warmed=getattr(self,'ai_warmed',{})
-        now=time.monotonic()
-        if now-warmed.get((model,profile),-1e9)<60: return
-        warmed[(model,profile)]=now; self.ai_warmed=warmed
-        import threading
-        from semantic_redraw import warm_up_model
-        threading.Thread(target=warm_up_model,args=(model,profile),daemon=True).start()
-
     def rebuild_image(self):
         if self.image_path: self.build_image(self.image_path)
-
-    def analysis_cache_key(self,path,model,profile='balanced'):
-        # Cache is memory-only and scoped to the exact file revision/model.
-        # Detail is purposefully excluded: Low/Medium/High reuses the SAME
-        # recognized objects while rebuilding only local contours.
-        source=Path(path).resolve(strict=True)
-        stat=source.stat()
-        return (str(source).casefold(),stat.st_size,stat.st_mtime_ns,model,profile)
-
-    def cache_ai_analysis(self,key,analysis):
-        self.ai_analysis_cache.pop(key,None)
-        self.ai_analysis_cache[key]=analysis
-        # Bound stored scene plans; never persist image/model results to disk.
-        while len(self.ai_analysis_cache)>4:
-            self.ai_analysis_cache.popitem(last=False)
 
     def image_stage(self,message,percent,indeterminate):
         self.analysis_stage=message
@@ -420,39 +349,18 @@ class Window(QMainWindow):
 
     def build_image(self,path):
         if self.builder and self.builder.isRunning(): return
-        mode=['auto_trace','stroke_reconstruction','ai_redraw','line_art'][self.image_mode.currentIndex()]
-        model=self.ai_model.currentText().strip()
-        profile=self.ai_profile.currentText().strip().lower()
-        cache_key=None
-        cached=None
-        if mode=='ai_redraw':
-            try:
-                cache_key=self.analysis_cache_key(path,model,profile)
-            except OSError as exc:
-                QMessageBox.warning(self,'Image import',str(exc))
-                return
-            cached=self.ai_analysis_cache.get(cache_key)
-            if cached is not None:
-                self.ai_analysis_cache.move_to_end(cache_key)
         self.playing=False
         self.image_path=path
-        self.builder=ImageBuilder(path,mode,self.image_detail.currentText().lower(),
+        self.builder=ImageBuilder(path,self.image_detail.currentText().lower(),
                                   self.brush_width.value(),self.stroke_spacing.value(),
-                                  model,cached_analysis=cached,
-                                  ai_profile=profile)
+                                  clean_faint=self.clean_faint.isChecked())
         self.builder.ready.connect(self.image_ready)
         self.builder.failed.connect(self.image_failed)
         self.builder.stage.connect(self.image_stage)
-        if cache_key is not None:
-            self.builder.analysis_ready.connect(
-                lambda result,key=cache_key:self.cache_ai_analysis(key,result))
         self.builder.finished.connect(self.image_finished)
         self.analysis_started=time.perf_counter()
-        self.analysis_stage=('Reusing existing AI image analysis'
-                             if cached is not None else 'Preparing AI image analysis'
-                             if mode=='ai_redraw' else 'Preparing image reconstruction')
-        self.progress.setRange(0,0 if mode=='ai_redraw' and cached is None else 100)
-        if self.progress.maximum()!=0:self.progress.setValue(0)
+        self.analysis_stage='Preparing line art'
+        self.progress.setRange(0,100); self.progress.setValue(0)
         self.source_type.setEnabled(False)
         self.import_button.setEnabled(False)
         self.rebuild_button.setEnabled(False)
@@ -483,18 +391,9 @@ class Window(QMainWindow):
         if self.builder and self.builder.success:
             self.progress.setValue(100)
             times=self.builder.timings
-            if self.builder.mode=='ai_redraw':
-                vision=('reused (0s)' if self.builder.cache_hit
-                        else f'{times.get("vision",0):.1f}s')
-                self.status.setText(
-                    f'AI Redraw ({self.builder.ai_profile.title()}) ready: Ollama {vision}; '
-                    f'contours {times.get("contours",0):.1f}s; '
-                    f'brush plan {times.get("brush",0):.1f}s. '
-                    'Medium detail recommended.')
-            else:
-                self.status.setText(
-                    f'Image ready: tracing {times.get("contours",0):.1f}s; '
-                    f'brush plan {times.get("brush",0):.1f}s.')
+            self.status.setText(
+                f'Line art ready ({self.builder.detail.title()} detail): '
+                f'lines {times.get("lines",0):.1f}s; brush plan {times.get("brush",0):.1f}s.')
         else:
             self.progress.setValue(0)
             message=self.builder.failed_message if self.builder else 'Unknown problem'

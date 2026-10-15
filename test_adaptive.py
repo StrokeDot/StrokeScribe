@@ -96,6 +96,28 @@ class AdaptiveTests(unittest.TestCase):
             last=files[-1].read_bytes()
             self.assertGreater(sum(p.read_bytes()==last for p in files),3)
 
+    def test_hand_skips_nearly_invisible_leftover_pixels(self):
+        # Reported: the hand painted where the PNG looked empty. Background
+        # removal had left large areas only ~10% visible.
+        size=120
+        src=Image.new('RGBA',(size,size),(0,0,0,0))
+        p=ImageDraw.Draw(src)
+        p.rectangle((10,10,60,110),fill=(90,90,90,255))      # the real object
+        p.rectangle((75,10,115,110),fill=(200,200,200,25))   # faint leftovers
+        image=qimage(src)
+        d=Drawing([Stroke('edge',[(10,10),(60,10)],width=1)],(0,0,size,size),[])
+        plan=build_plan(d,image)
+        gw,gh=plan.size
+        faint_cells=[c for c in range(gw*gh) if (c%gw)>=int(80*gw/size)
+                     and int(15*gh/size)<=(c//gw)<=int(105*gh/size)]
+        self.assertTrue(all(not plan.labels[c] for c in faint_cells), 'no brush there')
+        for seg in plan.segments:
+            if seg.painting:
+                self.assertLess(min(seg.a[0],seg.b[0]),int(75*gw/size),'hand stays on the object')
+        # The faint area still appears during painting, not only at the end.
+        self.assertTrue(all(math.isfinite(plan.arrival[c]) for c in faint_cells))
+        self.assertTrue(all(plan.arrival[c]<plan.total for c in faint_cells))
+
     def test_hand_never_blinks_out_during_painting(self):
         # Reported: the hand vanished for single frames at pen-up transfers
         # and at the drawing-to-painting handoff. Sample every frame at 30fps.
@@ -131,9 +153,10 @@ class AdaptiveTests(unittest.TestCase):
                 a=.98*(seg.start+.00001)/plan.total
                 b=.98*(seg.end-.00001)/plan.total
                 self.assertEqual(plan.mask(a).tobytes(),plan.mask(b).tobytes())
-        # Every arrival time belongs to a brush segment whose disk touches it.
+        # Every painted cell's arrival belongs to a brush segment touching it.
+        # (Faint, nearly invisible cells borrow a neighbour's time instead.)
         for cell,t in enumerate(plan.arrival):
-            if not math.isfinite(t): continue
+            if not math.isfinite(t) or not plan.labels[cell]: continue
             x,y=cell%plan.size[0]+.5,cell//plan.size[0]+.5
             matching=[]
             for s in plan.segments:

@@ -160,6 +160,14 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Images: Line art (v0.5.3-experimental.21+)
+
+Imported PNG, JPEG, WebP and BMP images are turned into clean, artist-style pen strokes by **Line art**, now the only image method. A small built-in line model (TEED, MIT license, `models/teed.onnx`, run with ONNX Runtime) finds contours and inner detail lines; dark ink lines are detected directly so thick outlines become one line and pencil strokes survive; wood grain and paper texture are ignored; dense shading is left to the colour painting. Strokes are traced along line centres, joined smoothly, and drawn outline first, then long lines, then details. Detail: Low, Medium (recommended), High or Max. No Ollama or other AI download is needed.
+
+The painting hand only visits pixels that are at least ~25% visible; nearly invisible leftovers from background removal appear together with their nearest painted area. **Clean faint background leftovers** (Image source panel) removes such pixels completely.
+
+**Removed in experimental.22:** Auto trace, Stroke reconstruction and AI redraw (Ollama/Qwen), together with their settings. Line art replaced them with better and more consistent results. The setup window's Fast/Balanced/Quality/Max levels now set Line art detail. See [IMAGE_SOURCE.md](IMAGE_SOURCE.md).
+
 ## Experimental image sources (v0.5.2)
 
 PNG, JPEG, WebP and BMP can now become contour animations or region-guided painted reconstructions. See [IMAGE_SOURCE.md](IMAGE_SOURCE.md) for controls, algorithm, setup and limitations. Existing SVG modes remain available. AI redraw is not implemented.

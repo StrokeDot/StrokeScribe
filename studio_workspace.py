@@ -341,34 +341,16 @@ def build_workspace(w, Canvas, BRAND_ICON):
     asset_l.addWidget(w.import_button)
     w.image_controls=QWidget()
     image_form=form_layout();w.image_controls.setLayout(image_form);w.image_source_form=image_form
-    w.image_mode=QComboBox();w.image_mode.addItems([
-        'Auto trace','Stroke reconstruction','AI redraw (local model)',
-        'Line art (recommended)'])
-    w.image_mode.setCurrentIndex(3)
-    w.image_mode.setToolTip('Line art: clean artist-style pen strokes from any image, '
-                            'using a small built-in line model. No Ollama needed.')
-    image_form.addRow('Method',w.image_mode)
-    w.ai_model=QComboBox()
-    w.ai_model.setEditable(True)
-    # Instruct models answer directly; plain qwen3-vl tags are thinking models.
-    w.ai_model.addItems(['qwen3-vl:4b-instruct','qwen3-vl:8b-instruct','qwen3-vl:2b-instruct',
-                         'qwen3-vl:4b','qwen3-vl:8b','qwen3-vl:2b'])
-    w.ai_model.setToolTip('Ollama vision model, running locally on your PC. Install once with: ollama pull qwen3-vl:4b-instruct. Instruct models answer directly and are recommended.')
-    image_form.addRow('Local AI model',w.ai_model)
-    w.ai_profile=QComboBox()
-    w.ai_profile.addItems(['Fast','Balanced','Quality'])
-    w.ai_profile.setCurrentIndex(1)
-    w.ai_profile.setToolTip(
-        'Balanced: same 640px, eight-object recognition as before; optimized local '
-        'contour work and 5-minute model reuse. Fast trades some detail for speed; '
-        'Quality analyzes a larger image and may take longer.')
-    image_form.addRow('AI processing',w.ai_profile)
-    w.ai_note=caption('Balanced recommended: keeps current recognition detail, reduces local work, and caches the Qwen analysis. Models stay on your PC.')
-    image_form.addRow(w.ai_note)
-    w.image_detail=QComboBox();w.image_detail.addItems(['Low','Medium','High'])
+    image_form.addRow(caption('Line art: clean, artist-style pen strokes from any image, '
+                              'drawn by a small built-in line model. Original colors are painted afterwards.'))
+    w.image_detail=QComboBox();w.image_detail.addItems(['Low','Medium','High','Max'])
     w.image_detail.setCurrentIndex(1)
-    w.image_detail.setToolTip('Medium is recommended. Switching detail after AI analysis reuses the same object recognition and recomputes only local contours.')
+    w.image_detail.setToolTip('How many inner lines are drawn. Medium is recommended; Max draws the most detail and takes a little longer.')
     image_form.addRow('Detail',w.image_detail)
+    w.clean_faint=QCheckBox('Clean faint background leftovers')
+    w.clean_faint.setToolTip('Removes nearly invisible pixels (under 25% visible) left by background removal, '
+                             'so neither the drawing nor the hand goes there.')
+    image_form.addRow(w.clean_faint)
     w.preserve_colors=QCheckBox('Preserve original colors')
     w.preserve_colors.setChecked(True)
     image_form.addRow(w.preserve_colors)
@@ -378,14 +360,6 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.rebuild_button=QPushButton('Apply image settings')
     w.rebuild_button.clicked.connect(w.rebuild_image)
     image_form.addRow(w.rebuild_button)
-    image_form.setRowVisible(w.ai_model,False)
-    image_form.setRowVisible(w.ai_profile,False)
-    image_form.setRowVisible(w.ai_note,False)
-    w.image_mode.currentIndexChanged.connect(w.update_image_mode)
-    # Typed model names warm up when editing finishes, not on every keystroke.
-    w.ai_model.currentIndexChanged.connect(w.warm_up_ai)
-    w.ai_model.lineEdit().editingFinished.connect(w.warm_up_ai)
-    w.ai_profile.currentIndexChanged.connect(w.warm_up_ai)
     w.image_controls.hide()
     asset_l.addWidget(w.image_controls)
     asset_l.addWidget(label('TEXT / HANDWRITING'))

@@ -26,7 +26,7 @@ class ImageSourceTests(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory(); self.root=Path(self.tmp.name)
         self.path=self.root/'source.png'; artwork().save(self.path)
     def tearDown(self): self.tmp.cleanup()
-    def result(self,mode='stroke_reconstruction'): return reconstruct(self.path,mode,'low')
+    def result(self,mode='line_art'): return reconstruct(self.path,mode,'low')
     def test_formats_and_original_pixels(self):
         original=artwork(); cropped=original.crop(original.getbbox())
         self.assertEqual(load_raster(self.path).tobytes(),cropped.tobytes())
@@ -38,13 +38,14 @@ class ImageSourceTests(unittest.TestCase):
         blank=self.root/'blank.png'; Image.new('RGBA',(10,10)).save(blank)
         with self.assertRaisesRegex(ValueError,'transparent'): load_raster(blank)
     def test_modes_contours_and_regions(self):
-        for mode in ('auto_trace','stroke_reconstruction'):
-            r=self.result(mode)
-            self.assertTrue(r.drawing.strokes)
-            self.assertGreater(r.regions.count,2)
-            self.assertTrue(all(s.length>0 for s in r.drawing.strokes))
-            self.assertEqual(r.drawing.source_mode,mode)
-        with self.assertRaises(ValueError): reconstruct(self.path,'unknown_mode')
+        r=self.result()
+        self.assertTrue(r.drawing.strokes)
+        self.assertGreater(r.regions.count,2)
+        self.assertTrue(all(s.length>0 for s in r.drawing.strokes))
+        self.assertEqual(r.drawing.source_mode,'line_art')
+        # Line art is the only image method now.
+        for removed in ('auto_trace','stroke_reconstruction','ai_redraw','unknown_mode'):
+            with self.assertRaises(ValueError): reconstruct(self.path,removed)
     def test_coverage_reordering_and_travel(self):
         r=self.result(); d=r.drawing
         plan=plan_for(d,r.image)
@@ -97,7 +98,7 @@ class ImageSourceTests(unittest.TestCase):
     def test_background_builder_prepares_route(self):
         from app import ImageBuilder
         ready=[]; errors=[]
-        worker=ImageBuilder(str(self.path),'stroke_reconstruction','low',.14,.55)
+        worker=ImageBuilder(str(self.path),'low',.14,.55)
         worker.ready.connect(ready.append); worker.failed.connect(errors.append)
         worker.run()
         self.assertFalse(errors)

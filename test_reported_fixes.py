@@ -1,4 +1,4 @@
-"""Regression checks for reported broken lettering, invalid Ollama JSON and Studio toolbar."""
+"""Regression checks for reported broken lettering and the Studio toolbar."""
 import json
 import os
 import unittest
@@ -11,7 +11,6 @@ from PySide6.QtWidgets import QApplication
 from app import Window
 from engine import render
 from font_library import make_font_text
-from semantic_redraw import extract_structured_parts,local_vision_analysis
 from test_image_source import artwork
 
 APP=QApplication.instance() or QApplication([])
@@ -131,29 +130,6 @@ class ReportedBugTests(unittest.TestCase):
         self.assertNotEqual(getattr(original,'source_kind',None),'font')
         frame=render(original,.6,640,360)
         self.assertFalse(frame.isNull())
-
-    def test_qwen_json_fenced_preamble_and_retry(self):
-        raw={'description':'Wooden audio speakers',
-             'parts':[{'name':'left speaker','box':[10,10,400,900],'order':1}]}
-        self.assertEqual(extract_structured_parts('\\x60\\x60\\x60json\\n'+
-            json.dumps(raw)+'\\n\\x60\\x60\\x60') if False else
-            extract_structured_parts('```json\n'+json.dumps(raw)+'\n```'),raw)
-        self.assertEqual(extract_structured_parts(
-            'The detected parts are:\n'+json.dumps(raw)),raw)
-        requests=[]
-        replies=iter(['', '```json\n'+json.dumps(raw)+'\n```'])
-        def local_call(req,timeout=None):
-            requests.append(json.loads(req.data))
-            return FakeResponse(next(replies))
-        with patch('semantic_redraw.urlopen',side_effect=local_call):
-            result=local_vision_analysis(artwork(),model='qwen3-vl:4b')
-        self.assertEqual(result.parts[0].name,'left speaker')
-        self.assertEqual(len(requests),2)
-        self.assertFalse(requests[0]['think'])
-        self.assertEqual(requests[1]['format'],'json')
-        with patch('semantic_redraw.urlopen',return_value=FakeResponse('')):
-            with self.assertRaisesRegex(ValueError,'second attempt'):
-                local_vision_analysis(artwork())
 
     def test_workspace_project_header_and_history(self):
         w=Window()

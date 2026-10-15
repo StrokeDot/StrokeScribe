@@ -114,6 +114,29 @@ def _shortest(start, finish, region, labels, width, height):
                     queue.append(n)
     raise ValueError('Region traversal failed; no safe brush connection.')
 
+VISIBLE_ALPHA = 64  # about 25% visible; fainter pixels get no brush visit
+
+
+def _reveal_faint_with_neighbours(arrival, labels, faint, gw, gh):
+    """Faint cells appear at the same moment as the nearest painted cell."""
+    if not any(faint):
+        return
+    import cv2
+    import numpy as np
+    painted = np.asarray(labels, np.int32).reshape(gh, gw) > 0
+    if not painted.any():
+        return
+    times = np.asarray(arrival, np.float64).reshape(gh, gw)
+    _, nearest = cv2.distanceTransformWithLabels(
+        (~painted).astype(np.uint8), cv2.DIST_L2, 3, labelType=cv2.DIST_LABEL_PIXEL)
+    lookup = np.full(int(nearest.max()) + 1, np.inf)
+    lookup[nearest[painted]] = times[painted]
+    borrowed = lookup[nearest].ravel()
+    for cell, is_faint in enumerate(faint):
+        if is_faint and not labels[cell]:
+            arrival[cell] = float(borrowed[cell])
+
+
 def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
     from color_reveal import artwork_rect, last_stroke_canvas_endpoint
     source=pil_image(image)
@@ -125,13 +148,20 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
         return ((point[0]-rect.x())*gw/rect.width(),
                 (point[1]-rect.y())*gh/rect.height())
     origin=grid_point(last_stroke_canvas_endpoint(drawing,1920,1080))
-    # Conservative support: retain even tiny disconnected alpha details.
+    # The hand paints only where the image is actually visible (alpha at
+    # least VISIBLE_ALPHA). Nearly invisible leftovers from background removal
+    # are revealed with their nearest painted area instead, with no hand visit.
     support=bytearray(gw*gh)
+    faint=bytearray(gw*gh)
     for i,a in enumerate(source.getchannel('A').tobytes()):
         if a:
-            support[min(gh-1,(2*(i//iw)+1)*gh//(2*ih))*gw+min(gw-1,(2*(i%iw)+1)*gw//(2*iw))]=1
+            cell=min(gh-1,(2*(i//iw)+1)*gh//(2*ih))*gw+min(gw-1,(2*(i%iw)+1)*gw//(2*iw))
+            if a>=VISIBLE_ALPHA: support[cell]=1
+            else: faint[cell]=1
     if not any(support):
-        raise ValueError('The color image has no nontransparent pixels.')
+        if not any(faint):
+            raise ValueError('The color image has no nontransparent pixels.')
+        support,faint=faint,bytearray(gw*gh)   # all faint: paint it anyway
     labels=[1 if a else 0 for a in support]
     polygons=[]
     x0,y0,x1,y1=drawing.bounds
@@ -303,6 +333,7 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
             paint_to(target,rid)
             missing={cell for cell in missing if not math.isfinite(arrival[cell])}
     assert all(not rid or math.isfinite(arrival[i]) for i,rid in enumerate(labels))
+    _reveal_faint_with_neighbours(arrival,labels,faint,gw,gh)
     return PaintPlan((gw,gh),labels,segments,[s.end for s in segments],arrival,
                      origin,clock,warnings,len(groups))
 

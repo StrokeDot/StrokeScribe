@@ -129,7 +129,7 @@ class ImageAnimationTests(unittest.TestCase):
         try:
             w.source_type.setCurrentIndex(1)
             from image_reconstruct import Reconstruction
-            w.image_result=Reconstruction(d,image,None,'ai_redraw','medium','test.png')
+            w.image_result=Reconstruction(d,image,None,'line_art','medium','test.png')
             w.set_drawing(d)
             w.position=.7
             w.image_animation.setCurrentIndex(1)
