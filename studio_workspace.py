@@ -6,6 +6,7 @@ existing modules. No third-party product assets or lookalike trade dress.
 """
 from __future__ import annotations
 
+from pathlib import Path
 from PySide6.QtCore import Qt, QPointF, QRectF
 from PySide6.QtGui import QColor, QPainter, QPen, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
@@ -208,12 +209,38 @@ class StageTimeline(QFrame):
             super().keyPressEvent(event)
 
 
+def spin_box_style(assets):
+    """Large, clearly drawn up/down buttons for every number box.
+
+    Styling the spin boxes without styling their buttons left Qt drawing tiny,
+    nearly invisible arrows that were hard to click.
+    """
+    def url(name):
+        return (Path(assets) / f'{name}.png').as_posix()
+    return f"""
+QAbstractSpinBox {{ padding-right: 28px; min-height: 22px; }}
+QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{
+    subcontrol-origin: border; width: 24px; background: #1E2A39;
+    border-left: 1px solid #3A4A5E; }}
+QAbstractSpinBox::up-button {{ subcontrol-position: top right;
+    border-bottom: 1px solid #3A4A5E; border-top-right-radius: 6px; }}
+QAbstractSpinBox::down-button {{ subcontrol-position: bottom right;
+    border-bottom-right-radius: 6px; }}
+QAbstractSpinBox::up-button:hover, QAbstractSpinBox::down-button:hover {{ background: #2C3E55; }}
+QAbstractSpinBox::up-button:pressed, QAbstractSpinBox::down-button:pressed {{ background: #3A77BA; }}
+QAbstractSpinBox::up-arrow {{ image: url("{url('spin_up')}"); width: 10px; height: 6px; }}
+QAbstractSpinBox::down-arrow {{ image: url("{url('spin_down')}"); width: 10px; height: 6px; }}
+QAbstractSpinBox::up-arrow:disabled, QAbstractSpinBox::up-arrow:off {{ image: url("{url('spin_up_disabled')}"); }}
+QAbstractSpinBox::down-arrow:disabled, QAbstractSpinBox::down-arrow:off {{ image: url("{url('spin_down_disabled')}"); }}
+"""
+
+
 def build_workspace(w, Canvas, BRAND_ICON):
     """Construct UI fields expected by Window methods without altering logic."""
     w.setWindowTitle(f'{DISPLAY_NAME}  •  Studio')
     w.resize(1490,890)
     w.setMinimumSize(1040,690)
-    w.setStyleSheet(STUDIO_STYLE)
+    w.setStyleSheet(STUDIO_STYLE + spin_box_style(Path(BRAND_ICON).parent))
     root=QWidget()
     w.setCentralWidget(root)
     outer=QVBoxLayout(root)
@@ -427,6 +454,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.canvas.setMinimumSize(360,250)
     monitor_l.addWidget(w.canvas,1)
     w.preview_background.currentIndexChanged.connect(w.canvas.set_background)
+    w.preview_background.currentIndexChanged.connect(
+        lambda index: index in (1,2) and w.mp4_background.setCurrentIndex(index-1))
     monitor_l.addWidget(caption('Checkerboard = transparent  •  Scrub on the timeline below'))
     split.addWidget(monitor)
 
@@ -520,16 +549,26 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.webm_quality=QSpinBox()
     w.webm_quality.setRange(18,42);w.webm_quality.setValue(28)
     w.webm_quality.setToolTip('Lower means higher quality and generally larger files.')
+    w.webm_quality.setMinimumWidth(110)
     e2=form_layout();e2.addRow('WebM quality',w.webm_quality)
     output_l.addLayout(e2)
+    output_l.addWidget(caption('WebM quality: 18 = best, largest file  •  42 = smallest file.'))
     w.mov=QCheckBox('ProRes 4444 MOV (larger)')
     output_l.addWidget(w.mov)
+    w.mp4=QCheckBox('Standard MP4 (H.264, solid background)')
+    w.mp4.setToolTip('Plays everywhere. MP4 has no transparency, so the animation sits on the chosen background.')
+    output_l.addWidget(w.mp4)
+    w.mp4_background=QComboBox()
+    w.mp4_background.addItems(['White','Dark','Black'])
+    w.mp4_background.setToolTip('Background color of the MP4. White and Dark match the preview backgrounds.')
+    e3=form_layout();e3.addRow('MP4 background',w.mp4_background)
+    output_l.addLayout(e3)
     w.keep_png=QCheckBox('Keep generated PNG frames')
     w.keep_png.setChecked(False)
     w.keep_png.setToolTip('If video encoding succeeds, frame PNGs can be removed.')
     output_l.addWidget(w.keep_png)
-    output_l.addWidget(caption('If neither video format is selected, all transparent PNG frames are kept.'))
-    w.export=QPushButton('Export transparent animation…')
+    output_l.addWidget(caption('If no video format is selected, all transparent PNG frames are kept.'))
+    w.export=QPushButton('Export animation…')
     w.export.setObjectName('primary');w.export.clicked.connect(w.save)
     output_l.addWidget(w.export)
     w.cancel=QPushButton('Cancel export')
@@ -592,6 +631,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.fps.valueChanged.connect(w.sync_workspace)
     w.webm.toggled.connect(w.sync_workspace)
     w.mov.toggled.connect(w.sync_workspace)
+    w.mp4.toggled.connect(w.sync_workspace)
     for name in ('duration','speed','thickness','brush_width','stroke_spacing',
                  'image_duration','color_fade','color_hold','fps','res','order'):
         getattr(w,name).setAccessibleName(name.replace('_',' '))

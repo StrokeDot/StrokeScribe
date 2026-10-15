@@ -75,6 +75,27 @@ class AdaptiveTests(unittest.TestCase):
             radii={round(s.radius,2) for s in plan.segments if s.painting}
             if size==112: self.assertGreater(len(radii),1)
 
+    def test_faster_export_keeps_every_frame_pixel_identical(self):
+        # Speed-ups (fast PNG compression, reusing repeated frames) must not
+        # change a single exported pixel.
+        from color_reveal import timeline_duration
+        d,image=fixture(60)
+        opts=dict(duration=.4,fps=12,width=160,height=120,final_image=image,
+                  fade_duration=.6,hold_duration=.5,reveal_mode='adaptive')
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp)/'out'
+            count=export_frames(d,folder,**opts)
+            files=sorted(folder.glob('frame_*.png'))
+            self.assertEqual(len(files),count)
+            for i,path in enumerate(files):
+                expected=render_color_timeline(d,i/(count-1),160,120,.4,.6,.5,
+                    image,1.,None,.18,(.1,.1),'adaptive',.14,None,.55)
+                self.assertEqual(pil_image(QImage(str(path))).tobytes(),
+                                 pil_image(expected).tobytes(),f'frame {i}')
+            # The settled ending and hold repeat the final frame exactly.
+            last=files[-1].read_bytes()
+            self.assertGreater(sum(p.read_bytes()==last for p in files),3)
+
     def test_hand_never_blinks_out_during_painting(self):
         # Reported: the hand vanished for single frames at pen-up transfers
         # and at the drawing-to-painting handoff. Sample every frame at 30fps.

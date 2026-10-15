@@ -66,6 +66,32 @@ class StudioTests(unittest.TestCase):
         self.assertGreater(w.slider.value(),100)
         self.assertLess(w.slider.value(),900)
 
+    def test_export_panel_additions(self):
+        w=self.window
+        from app import format_seconds, play_done_sound, DONE_SOUND
+        # MP4 option follows the preview background choice.
+        self.assertEqual([w.mp4_background.itemText(i) for i in range(3)],
+                         ['White','Dark','Black'])
+        w.preview_background.setCurrentIndex(2)
+        self.assertEqual(w.mp4_background.currentText(),'Dark')
+        w.preview_background.setCurrentIndex(1)
+        self.assertEqual(w.mp4_background.currentText(),'White')
+        w.mp4.setChecked(True); APP.processEvents()
+        self.assertTrue(w.mp4_background.isEnabled())
+        self.assertTrue(w.keep_png.isEnabled())
+        # Timer formatting and the finish chime.
+        self.assertEqual(format_seconds(176.57),'2:57')
+        self.assertEqual(format_seconds(3725),'1:02:05')
+        self.assertTrue(DONE_SOUND.is_file())
+        play_done_sound()
+        # Number boxes get real arrow buttons whose images exist.
+        style=w.styleSheet()
+        self.assertIn('QAbstractSpinBox::up-arrow',style)
+        from pathlib import Path
+        import re
+        for path in re.findall(r'url\("([^"]+)"\)',style):
+            self.assertTrue(Path(path).is_file(),path)
+
     def test_retired_paint_modes_are_not_offered(self):
         items=[self.window.reveal_mode.itemText(i)
                for i in range(self.window.reveal_mode.count())]

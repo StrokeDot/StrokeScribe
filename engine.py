@@ -157,6 +157,27 @@ def apply_lettering_background(frame,drawing):
     return result
 
 
+# PNG is lossless at every compression level. Qt maps PNG "quality" inversely
+# onto zlib levels; 80 selects fast level-1 compression instead of the slow
+# default. Frames are temporary encoder input, so speed matters more than size.
+PNG_FAST_QUALITY=80
+
+
+def _frame_bytes(image):
+    """Raw pixel bytes of a frame, used to detect exact repeats."""
+    if image.format()!=QImage.Format.Format_ARGB32_Premultiplied:
+        image=image.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+    return bytes(image.constBits())
+
+
+def _reuse_frame(source,target):
+    """Copy an identical frame file; far cheaper than re-encoding it.
+
+    A plain copy (not a hard link) keeps every kept PNG independently editable.
+    """
+    shutil.copyfile(source,target)
+
+
 def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0):
     folder=Path(folder)
     folder.mkdir(parents=True,exist_ok=False)
@@ -173,6 +194,7 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
     if not .25<=float(artwork_scale)<=2.0 or not math.isfinite(float(artwork_scale)):
         raise ValueError('Artwork size must be between 25% and 200%.')
     preview_hand_scale=hand_scale/float(artwork_scale)
+    previous=None
     for i in range(count):
         fraction=i/(count-1)
         if use_color:
@@ -183,7 +205,15 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
             img=render(drawing,fraction,width,height,thickness,hand,preview_hand_scale,anchor)
         img=scale_animation_frame(img,artwork_scale)
         img=apply_lettering_background(img,drawing)
-        if not img.save(str(folder/f'frame_{i:06d}.png')): raise OSError('Unable to save PNG frame.')
+        path=folder/f'frame_{i:06d}.png'
+        pixels=_frame_bytes(img)
+        if previous is not None and pixels==previous[0]:
+            # Identical to the previous frame (settled painting, hold): reuse
+            # that file instead of compressing the same image again.
+            _reuse_frame(previous[1],path)
+        else:
+            if not img.save(str(path),'PNG',PNG_FAST_QUALITY): raise OSError('Unable to save PNG frame.')
+            previous=(pixels,path)
         if callback and callback(i+1,count) is False: raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
     (folder/'sequence.json').write_text(json.dumps(dict(width=width,height=height,fps=fps,frames=count,
         duration=count/fps,draw_duration=duration,color_reveal=use_color,
@@ -260,4 +290,40 @@ def encode_webm(folder, fps=30, quality=28):
             valid=False
         if not valid:
             raise RuntimeError('WebM was encoded without verified VP9 transparency; PNG frames retained.')
+    return output
+
+
+MP4_BACKGROUNDS={'white':'FFFFFF','dark':'242D3B','black':'000000'}
+
+
+def encode_mp4(folder, fps=30, background='white'):
+    """Standard H.264 MP4 of the animation on a solid background color.
+
+    MP4 has no transparency, so frames are composited over the chosen color
+    (the same White/Dark colors as the preview). Plays everywhere and needs no
+    WebM or ProRes. Source PNG frames are never removed here.
+    """
+    ffmpeg=shutil.which('ffmpeg')
+    if not ffmpeg:
+        raise RuntimeError('FFmpeg was not found on PATH. PNG frames have still been exported.')
+    if background not in MP4_BACKGROUNDS:
+        raise ValueError('MP4 background must be white, dark or black.')
+    folder=Path(folder)
+    info=json.loads((folder/'sequence.json').read_text())
+    width,height=int(info['width']),int(info['height'])
+    output=folder/f'animation_{background}_background.mp4'
+    color=f"color=c=0x{MP4_BACKGROUNDS[background]}:s={width}x{height}:r={fps}"
+    cmd=[ffmpeg,'-n','-hide_banner','-loglevel','error',
+         '-framerate',str(fps),'-i',str(folder/'frame_%06d.png'),
+         '-f','lavfi','-i',color,
+         '-filter_complex','[1:v][0:v]overlay=shortest=1:format=auto,format=yuv420p',
+         '-an','-c:v','libx264','-preset','medium','-crf','16',
+         '-movflags','+faststart',str(output)]
+    result=subprocess.run(cmd,capture_output=True,text=True,
+                          creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+    if result.returncode:
+        output.unlink(missing_ok=True)
+        raise RuntimeError('MP4 encoding failed: '+result.stderr[-2000:])
+    if not output.is_file() or output.stat().st_size<=0:
+        raise RuntimeError('MP4 encoder did not produce a nonempty video.')
     return output

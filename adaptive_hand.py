@@ -306,14 +306,31 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
     return PaintPlan((gw,gh),labels,segments,[s.end for s in segments],arrival,
                      origin,clock,warnings,len(groups))
 
+_ALPHA_DIGESTS = OrderedDict()
+
+def _alpha_digest(image):
+    """SHA-256 of the PNG alpha, computed once per image instead of per frame.
+
+    QImage.cacheKey changes whenever an image's pixels change, so a stale
+    digest can never be reused for modified artwork.
+    """
+    key=(image.cacheKey(),image.width(),image.height())
+    digest=_ALPHA_DIGESTS.get(key)
+    if digest is None:
+        digest=hashlib.sha256(pil_image(image).getchannel('A').tobytes()).digest()
+        _ALPHA_DIGESTS[key]=digest
+        if len(_ALPHA_DIGESTS)>8: _ALPHA_DIGESTS.popitem(last=False)
+    else:
+        _ALPHA_DIGESTS.move_to_end(key)
+    return digest
+
 def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
     # Content-based keys survive deepcopy/export and include the full stroke order.
     geometry=tuple((s.name,tuple(s.points)) for s in drawing.strokes)
-    raw=pil_image(image)
     region_map=getattr(drawing,'image_regions',None)
     key=(geometry,region_map,getattr(drawing,'image_region_priority',False),
-         getattr(drawing,'image_semantic_order',()),tuple(drawing.bounds),raw.size,
-         hashlib.sha256(raw.getchannel('A').tobytes()).digest(),
+         getattr(drawing,'image_semantic_order',()),tuple(drawing.bounds),
+         (image.width(),image.height()),_alpha_digest(image),
          float(brush_width),float(stroke_spacing))
     if key not in _CACHE:
         _CACHE[key]=build_plan(drawing,image,brush_width,stroke_spacing)

@@ -5,7 +5,7 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl
 from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap, QDesktopServices
 from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea,QColorDialog)
-from engine import import_svg, render, export_frames, encode_mov, encode_webm, scale_animation_frame, apply_lettering_background
+from engine import import_svg, render, export_frames, encode_mov, encode_webm, encode_mp4, scale_animation_frame, apply_lettering_background
 from lettering import make_text
 from font_library import (STARTER_FONTS, installed_font, make_font_text,
                           import_font, download_google_font)
@@ -14,6 +14,29 @@ from version import APP_VERSION, DISPLAY_NAME, RELEASE_DATE
 
 # Shared application branding asset (path independent of the working directory).
 BRAND_ICON = Path(__file__).resolve().parent / 'assets' / 'strokescribe_icon.png'
+
+
+DONE_SOUND = Path(__file__).resolve().parent / 'assets' / 'export_done.wav'
+
+
+def play_done_sound():
+    """Short chime when an export finishes successfully (never on failure)."""
+    try:
+        if sys.platform == 'win32' and DONE_SOUND.is_file():
+            import winsound
+            winsound.PlaySound(str(DONE_SOUND),
+                               winsound.SND_FILENAME | winsound.SND_ASYNC)
+        else:
+            QApplication.beep()
+    except Exception:
+        pass  # A missing sound must never disturb a finished export.
+
+
+def format_seconds(seconds):
+    """0:42 or 1:05:09 style duration for the export timer."""
+    seconds=max(0,int(round(seconds)))
+    hours,rest=divmod(seconds,3600); minutes,secs=divmod(rest,60)
+    return f'{hours}:{minutes:02d}:{secs:02d}' if hours else f'{minutes}:{secs:02d}'
 # Paint mode menu order (studio_workspace). Stroke-guided and Clean contour
 # painting were retired from the menu; their code remains for old renders.
 REVEAL_MODES = ('fade', 'brush', 'adaptive')
@@ -40,11 +63,12 @@ class Canvas(QWidget):
 
 class Exporter(QThread):
     progress=Signal(int,int); done=Signal(str); failed=Signal(str)
-    def __init__(self,drawing,folder,options,mov,webm=False,webm_quality=28,keep_png=True):
+    def __init__(self,drawing,folder,options,mov,webm=False,webm_quality=28,keep_png=True,
+                 mp4=False,mp4_background='white'):
         super().__init__()
         self.drawing=drawing; self.folder=Path(folder); self.options=options
         self.mov=mov; self.webm=webm; self.webm_quality=webm_quality
-        self.keep_png=keep_png
+        self.keep_png=keep_png; self.mp4=mp4; self.mp4_background=mp4_background
     def run(self):
         try:
             def tick(i,n):
@@ -60,6 +84,10 @@ class Exporter(QThread):
                 if self.isInterruptionRequested(): raise InterruptedError('Export cancelled; completed files were retained.')
                 self.progress.emit(0,0)
                 videos.append(encode_mov(self.folder,self.options['fps']))
+            if self.mp4:
+                if self.isInterruptionRequested(): raise InterruptedError('Export cancelled; completed files were retained.')
+                self.progress.emit(0,0)
+                videos.append(encode_mp4(self.folder,self.options['fps'],self.mp4_background))
             if videos and not self.keep_png:
                 # Only remove intermediate frames once every selected format
                 # encoded successfully. Never remove user-supplied artwork.
@@ -255,7 +283,8 @@ class Window(QMainWindow):
         self.export.setEnabled(self.drawing is not None and not busy)
         self.quick_export.setEnabled(self.drawing is not None and not busy)
         self.webm_quality.setEnabled(self.webm.isChecked())
-        self.keep_png.setEnabled(self.webm.isChecked() or self.mov.isChecked())
+        self.keep_png.setEnabled(self.webm.isChecked() or self.mov.isChecked() or self.mp4.isChecked())
+        self.mp4_background.setEnabled(self.mp4.isChecked())
         self.play.setText('Pause' if self.playing else 'Play')
 
     def show_version_info(self):
@@ -673,12 +702,38 @@ class Window(QMainWindow):
         options=self.options()
         self.worker=Exporter(copy.deepcopy(self.drawing),folder,options,
                              self.mov.isChecked(),self.webm.isChecked(),
-                             self.webm_quality.value(),self.keep_png.isChecked())
-        self.worker.progress.connect(self.export_progress); self.worker.done.connect(lambda p:self.export_done('Saved: '+p)); self.worker.failed.connect(lambda e:self.export_done('Export stopped: '+e)); self.worker.finished.connect(self.export_finished)
-        self.export.setEnabled(False); self.quick_export.setEnabled(False); self.cancel.setEnabled(True); self.status.setText('Exporting locally…'); self.worker.start()
-    def export_progress(self,i,n): self.progress.setRange(0,n); self.progress.setValue(i)
-    def export_done(self,message): self.status.setText(message); self.status.setWordWrap(True)
+                             self.webm_quality.value(),self.keep_png.isChecked(),
+                             mp4=self.mp4.isChecked(),
+                             mp4_background=('white','dark','black')[self.mp4_background.currentIndex()])
+        self.worker.progress.connect(self.export_progress); self.worker.done.connect(lambda p:self.export_done('Saved: '+p)); self.worker.done.connect(lambda _p:play_done_sound()); self.worker.failed.connect(lambda e:self.export_done('Export stopped: '+e)); self.worker.finished.connect(self.export_finished)
+        self.export.setEnabled(False); self.quick_export.setEnabled(False); self.cancel.setEnabled(True); self.status.setText('Exporting locally…')
+        # Export timer: elapsed time, frame count and an estimate of time left.
+        self.export_started=time.perf_counter(); self.export_step=(0,0); self.export_encoding=False
+        if not hasattr(self,'export_clock'):
+            self.export_clock=QTimer(self); self.export_clock.setInterval(250)
+            self.export_clock.timeout.connect(self.update_export_status)
+        self.export_clock.start(); self.worker.start()
+    def export_elapsed(self):
+        return format_seconds(time.perf_counter()-getattr(self,'export_started',time.perf_counter()))
+    def update_export_status(self):
+        i,n=self.export_step
+        spent=time.perf_counter()-self.export_started
+        if n:
+            left=f'  •  about {format_seconds(spent/i*(n-i))} left' if i>=5 else ''
+            self.status.setText(f'Exporting frame {i} / {n}  •  {format_seconds(spent)} elapsed{left}')
+        elif self.export_encoding:
+            self.status.setText(f'Encoding video…  •  {format_seconds(spent)} elapsed')
+    def export_progress(self,i,n):
+        # (0, 0) is the worker's signal that frame rendering is done and a
+        # video encoder (FFmpeg) is running.
+        self.progress.setRange(0,n); self.progress.setValue(i); self.export_step=(i,n)
+        self.export_encoding=(n==0)
+        self.update_export_status()
+    def export_done(self,message):
+        if hasattr(self,'export_clock'): self.export_clock.stop()
+        self.status.setText(f'{message}  •  took {self.export_elapsed()}'); self.status.setWordWrap(True)
     def export_finished(self):
+        if hasattr(self,'export_clock'): self.export_clock.stop()
         self.cancel.setEnabled(False); self.progress.setRange(0,100); self.progress.setValue(100); self.sync_workspace()
     def cancel_export(self):
         if self.worker:
