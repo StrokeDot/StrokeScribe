@@ -1,0 +1,29 @@
+name: Convert TEED line-art model to ONNX
+on:
+  pull_request:
+    paths:
+      - 'tools/convert_teed.py'
+      - '.github/workflows/convert-teed.yml'
+permissions:
+  contents: write
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install onnx onnxruntime numpy
+      - run: git clone --depth 1 https://github.com/xavysp/TEED TEED
+      - run: python tools/convert_teed.py
+      - name: Commit model
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add models/teed.onnx
+          git diff --cached --quiet || git commit -m "Add TEED line-art model (ONNX, MIT) converted by CI"
+          git push
