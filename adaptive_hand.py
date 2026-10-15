@@ -354,21 +354,22 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
         return frame
     mask,tip=adaptive_paint_mask(drawing,image,width,height,rect,progress,
                                 brush_width,stroke_spacing)
-    # Preserve the complete SVG until real painted pixels cover it. The old
-    # footprint clipping erased unreached contours immediately at paint start.
-    from PIL import ImageChops
-    source=pil_image(image)
-    coverage=plan_for(drawing,image,brush_width,stroke_spacing).mask(progress)
-    coverage=coverage.resize(source.size,Image.Resampling.NEAREST)
-    source.putalpha(ImageChops.multiply(source.getchannel('A'),coverage))
+    # The brush mask governs BOTH colored pixels and temporary SVG ink.
+    # Using only the PNG alpha to erase outlines would strand misregistered
+    # guides in transparent areas until the final frame.
     painted=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
     painted.fill(Qt.GlobalColor.transparent)
-    p=QPainter(painted); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    p.drawImage(rect,qimage(source)); p.end()
-    from color_reveal import replace_outlines_with_painted_pixels
-    outline=replace_outlines_with_painted_pixels(
-        render(drawing,1,width,height,thickness),painted)
+    p=QPainter(painted)
+    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    p.drawImage(rect,image)
+    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+    p.drawImage(0,0,mask)
+    p.end()
+    from svg_guide_cleanup import remove_svg_guides
+    outline=remove_svg_guides(render(drawing,1,width,height,thickness),
+                              mask,image,rect)
     p=QPainter(outline)
+    p.drawImage(0,0,painted)
     draw_hand(p,tip,hand,width,hand_scale,anchor)
     p.end()
     return outline
