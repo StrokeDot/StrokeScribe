@@ -42,24 +42,82 @@ def format_seconds(seconds):
 # painting were retired from the menu; their code remains for old renders.
 REVEAL_MODES = ('brush', 'adaptive', 'zigzag')
 
+def timecode(seconds):
+    """00:04.25 style time for the monitor."""
+    seconds=max(0.,float(seconds))
+    minutes,rest=divmod(seconds,60)
+    return f'{int(minutes):02d}:{rest:05.2f}'
+
+
 class Canvas(QWidget):
+    """Program monitor: the frame on its preview background, plus a loading card."""
     def __init__(self):
         super().__init__(); self.frame=None; self.background=0; self.setMinimumSize(550,330)
+        self.busy_text=None; self.busy_percent=None; self.busy_detail=''
+        self._spin=0
+        self._spinner=QTimer(self); self._spinner.setInterval(40)
+        self._spinner.timeout.connect(self._advance)
     def set_background(self,index):
         self.background=index; self.update()
+    def set_busy(self,text,percent=None,detail=''):
+        """Show a loading card over the picture (text None hides it)."""
+        self.busy_text=text; self.busy_percent=percent; self.busy_detail=detail or ''
+        if text is None: self._spinner.stop()
+        elif not self._spinner.isActive(): self._spinner.start()
+        self.update()
+    def _advance(self):
+        self._spin=(self._spin+1)%1000; self.update()
+    def frame_rect(self):
+        from PySide6.QtCore import QSize
+        size=(self.frame.size() if self.frame else QSize(16,9))
+        size.scale(self.size()*.98 if self.frame is None else self.size(),Qt.AspectRatioMode.KeepAspectRatio)
+        x=(self.width()-size.width())//2; y=(self.height()-size.height())//2
+        return x,y,size
     def paintEvent(self,event):
-        p=QPainter(self); p.fillRect(self.rect(),QColor('#141d28'))
+        import theme
+        from PySide6.QtCore import QRectF
+        c=theme.colors()
+        p=QPainter(self); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(),QColor(c['monitor']))
         if self.frame:
-            size=self.frame.size(); size.scale(self.size(),Qt.AspectRatioMode.KeepAspectRatio)
-            x=(self.width()-size.width())//2; y=(self.height()-size.height())//2
+            x,y,size=self.frame_rect()
             p.save(); p.setClipRect(x,y,size.width(),size.height())
             if self.background:
-                p.fillRect(x,y,size.width(),size.height(),QColor('#ffffff' if self.background==1 else '#242d3b'))
+                p.fillRect(x,y,size.width(),size.height(),QColor('#ffffff' if self.background==1 else c['preview_dark']))
             else:
                 for a in range(x,x+size.width(),20):
                     for b in range(y,y+size.height(),20):
-                        p.fillRect(a,b,20,20,QColor('#e8edf0' if ((a-x)//20+(b-y)//20)%2==0 else '#d4dce2'))
+                        p.fillRect(a,b,20,20,QColor(c['checker_a'] if ((a-x)//20+(b-y)//20)%2==0 else c['checker_b']))
             p.drawImage(x,y,self.frame.scaled(size,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation)); p.restore()
+        if self.busy_text is not None:
+            overlay=QColor(c['monitor']); overlay.setAlpha(205)
+            p.fillRect(self.rect(),overlay)
+            w=min(360.,self.width()-40.); h=112.
+            card=QRectF((self.width()-w)/2,(self.height()-h)/2,w,h)
+            p.setPen(QColor(c['border_strong'])); p.setBrush(QColor(c['panel']))
+            p.drawRoundedRect(card,10,10)
+            title=QFont(self.font()); title.setPointSizeF(10.5); title.setBold(True)
+            p.setFont(title); p.setPen(QColor(c['text']))
+            p.drawText(card.adjusted(20,16,-20,-h+40),Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter,self.busy_text)
+            small=QFont(self.font()); small.setPointSizeF(8.5)
+            p.setFont(small); p.setPen(QColor(c['muted']))
+            right=f'{self.busy_percent}%' if self.busy_percent is not None else ''
+            p.drawText(card.adjusted(20,16,-20,-h+40),Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter,right)
+            bar=QRectF(card.x()+20,card.y()+54,w-40,8)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track']))
+            p.drawRoundedRect(bar,4,4)
+            p.setBrush(QColor(c['accent']))
+            if self.busy_percent is None:
+                # Indeterminate: a segment sliding along the bar.
+                seg=bar.width()*.28; t=(self._spin%60)/60.
+                left=bar.x()-seg+(bar.width()+seg)*t
+                p.save(); p.setClipRect(bar)
+                p.drawRoundedRect(QRectF(left,bar.y(),seg,bar.height()),4,4); p.restore()
+            else:
+                p.drawRoundedRect(QRectF(bar.x(),bar.y(),max(8.,bar.width()*max(0,min(100,self.busy_percent))/100),bar.height()),4,4)
+            p.setPen(QColor(c['muted']))
+            p.drawText(card.adjusted(20,72,-20,-12),Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter,
+                       self.busy_detail or 'The timeline unlocks when the drawing is ready.')
         p.end()
 
 class Exporter(QThread):
@@ -181,6 +239,8 @@ class Window(QMainWindow):
         self.last_letter_bg_index=0
         self.reorder_undo=[]
         self.reorder_redo=[]
+        self.busy=False
+        self._preparing=False
         # Rapid brush-width changes should not synchronously rebuild the entire
         # paint plan for every spinbox/wheel event on the GUI thread.
         self.brush_preview_timer=QTimer(self)
@@ -206,6 +266,79 @@ class Window(QMainWindow):
         self.analysis_timer=QTimer(self)
         self.analysis_timer.setInterval(1000)
         self.analysis_timer.timeout.connect(self.update_analysis_elapsed)
+
+    # ---------------------------------------------------------------- theme
+    def apply_theme(self,name):
+        import theme
+        from studio_workspace import wordmark_html
+        theme.set_current(name)
+        theme.save(theme.current())
+        self.setStyleSheet(theme.stylesheet(theme.current(),self.theme_assets))
+        self.brand_wordmark.setText(wordmark_html())
+        self.update_theme_button()
+        self.canvas.update(); self.stage_timeline.update()
+
+    def toggle_theme(self):
+        import theme
+        self.apply_theme('light' if theme.current()=='dark' else 'dark')
+
+    def update_theme_button(self):
+        import theme
+        dark=theme.current()=='dark'
+        self.theme_button.setText('☀' if dark else '☾')
+        self.theme_button.setToolTip('Switch to light mode' if dark else 'Switch to dark mode')
+
+    # ---------------------------------------------------------- busy state
+    def set_busy(self,text,percent=None,detail=''):
+        """Loading card on the monitor; the timeline stays locked until ready."""
+        self.busy=True
+        self.playing=False
+        self.canvas.set_busy(text,percent,detail)
+        self.stage_timeline.set_locked(True)
+        for button in (self.play,self.restart_button,self.to_start,self.to_end):
+            button.setEnabled(False)
+        self.timeline_status.setText('Preparing…  the timeline unlocks when ready')
+        self.sync_workspace()
+
+    def clear_busy(self):
+        self.busy=False
+        self.canvas.set_busy(None)
+        self.stage_timeline.set_locked(False)
+        for button in (self.play,self.restart_button,self.to_start,self.to_end):
+            button.setEnabled(True)
+        self.timeline_status.setText('')
+        self.sync_workspace()
+
+    def show_busy_now(self,text,detail=''):
+        """Busy card for work done right here (not in a thread): paint it first."""
+        self.set_busy(text,None,detail)
+        from PySide6.QtCore import QEventLoop
+        self.canvas.repaint()
+        QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+
+    def ensure_brush_plan(self,options):
+        """Build a missing brush plan behind a loading card before showing it."""
+        image=options.get('final_image')
+        if image is None or self.drawing is None:
+            return
+        mode=options.get('reveal_mode')
+        image_source=getattr(self.drawing,'source_kind',None)=='image'
+        if mode in ('adaptive','zigzag'):
+            self.drawing.paint_method=mode
+        elif not image_source:
+            return
+        from adaptive_hand import plan_ready, plan_for
+        bw,sp=options.get('brush_width',.14),options.get('stroke_spacing',.55)
+        if plan_ready(self.drawing,image,bw,sp):
+            return
+        self._preparing=True
+        try:
+            self.show_busy_now('Preparing brush route',
+                               'Planning how the hand paints the colours…')
+            plan_for(self.drawing,image,bw,sp)
+        finally:
+            self._preparing=False
+            self.clear_busy()
 
     def open_setup(self):
         """Setup & system check window (also opened from the ⚙ button)."""
@@ -291,13 +424,14 @@ class Window(QMainWindow):
         self.reveal_mode.setToolTip('Image sources use Adaptive Hand Painting or Zigzag sweep.'
                                     if image_source else '')
         self.output_summary.setText(f'{self.res.currentText()}  •  {self.fps.value()} fps')
-        busy=bool((self.worker and self.worker.isRunning()) or (self.builder and self.builder.isRunning()))
+        busy=bool((self.worker and self.worker.isRunning()) or (self.builder and self.builder.isRunning())
+                  or getattr(self,'busy',False))
         self.export.setEnabled(self.drawing is not None and not busy)
         self.quick_export.setEnabled(self.drawing is not None and not busy)
         self.webm_quality.setEnabled(self.webm.isChecked())
         self.keep_png.setEnabled(self.webm.isChecked() or self.mov.isChecked() or self.mp4.isChecked())
         self.mp4_background.setEnabled(self.mp4.isChecked())
-        self.play.setText('Pause' if self.playing else 'Play')
+        self.play.setText('⏸' if self.playing else '▶')
 
     def show_version_info(self):
         build_file = Path(__file__).resolve().parent / 'BUILD_INFO.txt'
@@ -343,6 +477,8 @@ class Window(QMainWindow):
 
     def image_stage(self,message,percent,indeterminate):
         self.analysis_stage=message
+        if self.busy:
+            self.canvas.set_busy('Preparing your drawing',None if indeterminate else int(percent),message+'…')
         if indeterminate:
             self.progress.setRange(0,0)
         else:
@@ -381,6 +517,7 @@ class Window(QMainWindow):
         self.quick_export.setEnabled(False)
         self.update_analysis_elapsed()
         self.analysis_timer.start()
+        self.set_busy('Preparing your drawing',0,'Reading the image…')
         self.builder.start()
 
     def export_svg(self,folder=None):
@@ -415,6 +552,7 @@ class Window(QMainWindow):
 
     def image_finished(self):
         self.analysis_timer.stop()
+        self.clear_busy()
         self.source_type.setEnabled(True)
         self.import_button.setEnabled(True)
         self.rebuild_button.setEnabled(True)
@@ -441,7 +579,11 @@ class Window(QMainWindow):
         name,_=QFileDialog.getOpenFileName(self,'Import SVG','','SVG (*.svg)')
         if name:
             try:
-                drawing=import_svg(name)
+                self.show_busy_now('Loading drawing',Path(name).name)
+                try:
+                    drawing=import_svg(name)
+                finally:
+                    self.clear_busy()
                 self.update_project_title(Path(name).name)
                 self.set_drawing(drawing)
             except Exception as e: QMessageBox.warning(self,'Cannot import',str(e))
@@ -640,12 +782,16 @@ class Window(QMainWindow):
                            duration=0. if paint_only else options['duration'])
         return options
     def refresh(self,*args):
+        if self._preparing:
+            return
         self.sync_workspace()
         if not self.drawing:
             self.stage_timeline.update_state(0,0,0,0)
-            self.clock.setText('0.00 / 0.00 s')
+            self.clock.setText(timecode(0)); self.clock_total.setText(timecode(0))
             return
         options=self.options()
+        if not (self.builder and self.builder.isRunning()):
+            self.ensure_brush_plan(options)
         self.stage_timeline.update_state(options['duration'],
             options['fade_duration'] if options['final_image'] is not None else 0,
             options['hold_duration'] if options['final_image'] is not None else 0,
@@ -659,13 +805,15 @@ class Window(QMainWindow):
         ratio=options['height']/options['width']
         options['width']=960; options['height']=round(960*ratio)
         try:
-            if options['final_image'] is not None:
-                frame=render_color_timeline(self.drawing,self.position,duration=duration,**options)
-            else:
-                for key in ('final_image','fade_duration','hold_duration','reveal_mode','brush_width','painting_hand','stroke_spacing'):
-                    options.pop(key)
-                frame=render(self.drawing,self.position,**options)
-            frame=scale_animation_frame(frame,size)
+            from hand_layer import capture
+            with capture() as hands:
+                if options['final_image'] is not None:
+                    frame=render_color_timeline(self.drawing,self.position,duration=duration,**options)
+                else:
+                    for key in ('final_image','fade_duration','hold_duration','reveal_mode','brush_width','painting_hand','stroke_spacing'):
+                        options.pop(key)
+                    frame=render(self.drawing,self.position,**options)
+            frame=scale_animation_frame(frame,size,hands)
             self.canvas.frame=apply_lettering_background(frame,self.drawing)
             self.canvas.update()
         except Exception as exc:
@@ -674,17 +822,18 @@ class Window(QMainWindow):
             self.status.setText('Preview could not be updated: '+str(exc)[:220])
             return
         length=self.timeline_length()
-        self.clock.setText(f'{self.position*length:.2f} / {length:.2f} s')
+        self.clock.setText(timecode(self.position*length))
+        self.clock_total.setText(timecode(length))
     def scrub(self,value): self.position=value/1000; self.refresh()
     def toggle(self):
-        if not self.drawing: return
+        if not self.drawing or self.busy: return
         if self.position>=1: self.slider.setValue(0)
         self.playing=not self.playing; self.last=time.perf_counter(); self.sync_workspace()
     def restart(self):
-        if not self.drawing: return
+        if not self.drawing or self.busy: return
         self.slider.setValue(0); self.playing=True; self.last=time.perf_counter(); self.sync_workspace()
     def tick(self):
-        if not self.playing or not self.drawing: return
+        if not self.playing or not self.drawing or self.busy: return
         now=time.perf_counter(); self.position=min(1,self.position+(now-self.last)/self.timeline_length()); self.last=now
         self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False); self.refresh()
         if self.position>=1: self.playing=False; self.sync_workspace()

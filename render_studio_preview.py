@@ -18,17 +18,36 @@ def snapshot(name):
     if not window.grab().save(str(out/name)):
         raise RuntimeError('Unable to save Studio screenshot: '+name)
 
-snapshot('studio-animation.png')
-window.inspector_tabs.setCurrentIndex(1)
-snapshot('studio-hand.png')
-window.inspector_tabs.setCurrentIndex(2)
-snapshot('studio-export.png')
-window.inspector_tabs.setCurrentIndex(0)
-window.source_type.setCurrentIndex(1)
-snapshot('studio-image-import.png')
-window.source_type.setCurrentIndex(0)
-window.resize(1100,740)
-snapshot('studio-compact.png')
+for theme_name in ('dark','light'):
+    window.apply_theme(theme_name)
+    window.resize(1490,890)
+    window.inspector_tabs.setCurrentIndex(0)
+    window.slider.setValue(450)
+    snapshot(f'studio-{theme_name}-animation.png')
+    window.inspector_tabs.setCurrentIndex(1)
+    snapshot(f'studio-{theme_name}-hand.png')
+    window.inspector_tabs.setCurrentIndex(2)
+    snapshot(f'studio-{theme_name}-export.png')
+    window.inspector_tabs.setCurrentIndex(0)
+    window.set_busy('Preparing your drawing',62,'Planning the brush route…')
+    snapshot(f'studio-{theme_name}-loading.png')
+    window.clear_busy()
+    window.source_type.setCurrentIndex(1)
+    snapshot(f'studio-{theme_name}-image-import.png')
+    window.source_type.setCurrentIndex(0)
+    window.resize(1100,740)
+    snapshot(f'studio-{theme_name}-compact.png')
+# Hand with a smaller artwork: the hand must not be cut off.
+window.apply_theme('dark')
+window.resize(1490,890)
+window.artwork_size.setValue(50)
+window.handsize.setValue(.75)
+window.slider.setValue(980)
+snapshot('studio-dark-artwork-50.png')
+window.artwork_size.setValue(100)
+# Keep the original file names for older review scripts.
+import shutil
+shutil.copy(out/'studio-dark-animation.png',out/'studio-animation.png')
 # Setup & system check window, with the real checks of the build machine.
 import preflight
 from setup_wizard import SetupDialog
@@ -45,6 +64,6 @@ print('Generated original Studio interface screenshots:', out)
 import base64
 from PySide6.QtCore import QBuffer,QIODevice
 from PySide6.QtGui import QImage
-preview=QImage(str(out/'studio-animation.png')).scaledToWidth(1200)
+preview=QImage(str(out/'studio-dark-animation.png')).scaledToWidth(1200)
 buffer=QBuffer();buffer.open(QIODevice.OpenModeFlag.WriteOnly);preview.save(buffer,'PNG')
 print('STUDIO_REVIEW_BASE64='+base64.b64encode(bytes(buffer.data())).decode())

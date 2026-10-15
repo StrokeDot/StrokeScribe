@@ -197,8 +197,9 @@ def draw_hand(painter, tip, hand, width, hand_scale, anchor):
         return
     hand_w = width * hand_scale
     hand_h = hand_w * hand.height() / hand.width()
-    painter.drawImage(QRectF(tip[0]-anchor[0]*hand_w,tip[1]-anchor[1]*hand_h,
-                             hand_w,hand_h),hand)
+    from hand_layer import paint
+    paint(painter,QRectF(tip[0]-anchor[0]*hand_w,tip[1]-anchor[1]*hand_h,
+                         hand_w,hand_h),hand)
 
 
 def render_color_timeline(drawing, fraction, width=1920, height=1080,

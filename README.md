@@ -160,6 +160,14 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## New look: dark and light themes (v0.5.3-experimental.26)
+
+The Studio has a calmer, video-editor style layout: panels with title strips (Source, Program, Inspector, Timeline), a program monitor with transport buttons and a timecode underneath, and a timeline with a time ruler, coloured Draw / Paint / Hold clips and a playhead you can click or drag. **Dark mode is the default**; the ☀ / ☾ button in the top bar switches to light mode and the choice is remembered. Space plays and pauses.
+
+While a drawing is being prepared (importing an image, applying image settings, loading an SVG, or planning a new brush route after changing the paint mode or brush settings), the monitor shows a loading card with a progress bar and the timeline is locked; it unlocks when the drawing is ready.
+
+The hand is now drawn on its own layer after **Artwork size** is applied, so it is no longer cut off by an invisible box when the artwork is made smaller; it is only ever cropped by the real video frame.
+
 ## Zigzag sweep painting (v0.5.3-experimental.25)
 
 **Paint mode** now offers **Brush painting**, **Adaptive Hand Painting** and the new **Zigzag sweep** (the old Fade option was removed from the menu). Zigzag sweep starts where the drawing ended and follows one logical route along the object's centre line (for a headset: one side of the band, the ear cup, across to the other cup, up the other side), scribbling colour back and forth across the shape: wide strokes on broad parts, narrow ones on thin parts. Side branches (a microphone, a handle) are painted as the route passes them, and any spot the sweep missed is touched up at the end, so every visible pixel is always painted. Image sources can choose Adaptive Hand Painting or Zigzag sweep; plain Brush painting stays SVG-only. Hand, guide-line retirement, timing and export work exactly as with Adaptive Hand Painting.

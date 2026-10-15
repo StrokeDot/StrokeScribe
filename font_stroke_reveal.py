@@ -359,7 +359,7 @@ def render_traced_font(drawing,progress,width,height,thickness=1.,
             ty-=min(12.,width*.015)
         hw=width*hand_scale
         hh=hw*hand.height()/hand.width()
-        painter.drawImage(QRectF(tx-anchor[0]*hw,ty-anchor[1]*hh,
-                                 hw,hh),hand)
+        from hand_layer import paint
+        paint(painter,QRectF(tx-anchor[0]*hw,ty-anchor[1]*hh,hw,hh),hand)
     painter.end()
     return output

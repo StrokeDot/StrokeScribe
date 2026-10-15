@@ -124,11 +124,12 @@ def render(drawing, progress, width=1920, height=1080, thickness=1.0, hand=None,
     if hand is not None and not hand.isNull() and tip and 0<progress<1:
         hw=width*hand_scale
         hh=hw*hand.height()/hand.width()
-        painter.drawImage(QRectF(tip[0]-anchor[0]*hw,tip[1]-anchor[1]*hh,hw,hh),hand)
+        from hand_layer import paint
+        paint(painter,QRectF(tip[0]-anchor[0]*hw,tip[1]-anchor[1]*hh,hw,hh),hand)
     painter.end()
     return image
 
-def scale_animation_frame(frame, artwork_scale=1.0):
+def scale_animation_frame(frame, artwork_scale=1.0, hands=None):
     """Scale the complete drawing+color+hand layer inside its output frame.
 
     This is independent from output resolution and is applied identically in
@@ -138,8 +139,9 @@ def scale_animation_frame(frame, artwork_scale=1.0):
     factor=float(artwork_scale)
     if not .25<=factor<=2.0 or not math.isfinite(factor):
         raise ValueError('Artwork size must be between 25% and 200%.')
+    from hand_layer import draw_captured
     if abs(factor-1.0)<1e-9:
-        return frame
+        return draw_captured(frame,hands,1.0)
     output=QImage(frame.size(),QImage.Format.Format_ARGB32_Premultiplied)
     output.fill(Qt.GlobalColor.transparent)
     painter=QPainter(output)
@@ -148,7 +150,8 @@ def scale_animation_frame(frame, artwork_scale=1.0):
     painter.drawImage(QRectF((w-w*factor)/2,(h-h*factor)/2,
                              w*factor,h*factor),frame)
     painter.end()
-    return output
+    # The hand goes on AFTER scaling, so it is never cut at the old frame edge.
+    return draw_captured(output,hands,factor)
 
 
 def apply_lettering_background(frame,drawing):
@@ -211,13 +214,15 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
     previous=None
     for i in range(count):
         fraction=i/(count-1)
-        if use_color:
-            img=render_color_timeline(drawing,fraction,width,height,duration,fade_duration,hold_duration,
-                                      final_image,thickness,hand,preview_hand_scale,anchor,
-                                      reveal_mode,brush_width,painting_hand,stroke_spacing)
-        else:
-            img=render(drawing,fraction,width,height,thickness,hand,preview_hand_scale,anchor)
-        img=scale_animation_frame(img,artwork_scale)
+        from hand_layer import capture
+        with capture() as hands:
+            if use_color:
+                img=render_color_timeline(drawing,fraction,width,height,duration,fade_duration,hold_duration,
+                                          final_image,thickness,hand,preview_hand_scale,anchor,
+                                          reveal_mode,brush_width,painting_hand,stroke_spacing)
+            else:
+                img=render(drawing,fraction,width,height,thickness,hand,preview_hand_scale,anchor)
+        img=scale_animation_frame(img,artwork_scale,hands)
         img=apply_lettering_background(img,drawing)
         path=folder/f'frame_{i:06d}.png'
         pixels=_frame_bytes(img)

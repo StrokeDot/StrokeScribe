@@ -355,14 +355,24 @@ def _alpha_digest(image):
         _ALPHA_DIGESTS.move_to_end(key)
     return digest
 
-def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
+def _plan_key(drawing,image,brush_width,stroke_spacing):
     # Content-based keys survive deepcopy/export and include the full stroke order.
     geometry=tuple((s.name,tuple(s.points)) for s in drawing.strokes)
     region_map=getattr(drawing,'image_regions',None)
-    key=(geometry,region_map,getattr(drawing,'image_region_priority',False),
-         getattr(drawing,'image_semantic_order',()),tuple(drawing.bounds),
-         (image.width(),image.height()),_alpha_digest(image),
-         float(brush_width),float(stroke_spacing),getattr(drawing,'paint_method','adaptive'))
+    return (geometry,region_map,getattr(drawing,'image_region_priority',False),
+            getattr(drawing,'image_semantic_order',()),tuple(drawing.bounds),
+            (image.width(),image.height()),_alpha_digest(image),
+            float(brush_width),float(stroke_spacing),getattr(drawing,'paint_method','adaptive'))
+
+def plan_ready(drawing,image,brush_width=.14,stroke_spacing=.55):
+    """True when plan_for would return at once (the brush plan is cached)."""
+    try:
+        return _plan_key(drawing,image,brush_width,stroke_spacing) in _CACHE
+    except Exception:
+        return True
+
+def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
+    key=_plan_key(drawing,image,brush_width,stroke_spacing)
     if key not in _CACHE:
         if getattr(drawing,'paint_method','adaptive')=='zigzag':
             from zigzag_paint import build_zigzag_plan

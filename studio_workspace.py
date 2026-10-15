@@ -18,63 +18,8 @@ from PySide6.QtWidgets import (
 from version import APP_VERSION, DISPLAY_NAME
 
 
-STUDIO_STYLE = """
-QWidget { background: #12171F; color: #E7ECF5; font-size: 12px; }
-QMainWindow { background: #0E1218; }
-QFrame#topBar { background: #151D29; border-bottom: 1px solid #334152; }
-QLabel#brandWordmark { background: transparent; }
-QFrame#assetPanel, QFrame#inspectorPanel, QFrame#monitorPanel, QFrame#timelinePanel {
-    background: #1A222D; border: 1px solid #344153; border-radius: 9px;
-}
-QFrame#monitorPanel { background: #101721; }
-QLabel { background: transparent; }
-QPushButton:focus, QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus, QListWidget:focus { border: 1px solid #78AEFF; }
-QListWidget::item { padding: 6px; border-bottom: 1px solid #233144; }
-QListWidget::item:selected { background: #244A78; color: #FFFFFF; }
-QToolTip { background: #25374E; color: #FFFFFF; border: 1px solid #648AB8; padding: 6px; }
-QLabel#micro { color: #91A3B8; font-size: 10px; font-weight: 700; }
-QLabel#section { color: #9DB1C9; font-size: 11px; font-weight: 700; }
-QLabel#brand { color: #F6F8FC; font-size: 20px; font-weight: 800; }
-QLabel#subtitle { color: #92A8C1; font-size: 11px; }
-QLabel#timeCode { color: #E8F4FF; font-size: 15px; font-weight: 700; }
-QLabel#status { color: #B0C0D2; font-size: 11px; }
-QLabel#note { color: #B6C4D4; }
-QPushButton {
-    background: #263447; border: 1px solid #40536A; border-radius: 6px;
-    padding: 8px 11px; font-weight: 600;
-}
-QPushButton:hover { background: #334764; border-color: #6587AD; }
-QPushButton:pressed { background: #243A56; }
-QPushButton:disabled { background: #1B2330; color: #64758A; border-color: #2D3947; }
-QPushButton#primary { background: #387BDD; color: #FFFFFF; border-color: #508DEA; }
-QPushButton#primary:hover { background: #5693ED; }
-QPushButton#subtle { background: transparent; border: 1px solid #3A4859; }
-QComboBox, QDoubleSpinBox, QSpinBox, QPlainTextEdit, QListWidget {
-    background: #101722; color: #EDF3FA; border: 1px solid #3A4A5E;
-    border-radius: 6px; padding: 5px 7px; selection-background-color: #3A77BA;
-}
-QComboBox:hover, QDoubleSpinBox:hover, QSpinBox:hover { border-color: #6999CF; }
-QComboBox QAbstractItemView { background: #1C2735; color: #EDF3FA; selection-background-color: #385C85; }
-QFormLayout QLabel { color: #BED0E0; }
-QCheckBox { spacing: 9px; padding: 5px 0px; }
-QCheckBox::indicator { width: 17px; height: 17px; }
-QCheckBox::indicator:checked { background: #4189F2; border: 1px solid #74ABF8; border-radius: 3px; }
-QCheckBox::indicator:unchecked { background: #101722; border: 1px solid #66788F; border-radius: 3px; }
-QSlider::groove:horizontal { background: #344457; height: 5px; border-radius: 2px; }
-QSlider::sub-page:horizontal { background: #5296F4; border-radius: 2px; }
-QSlider::handle:horizontal { background: #EAF4FF; width: 13px; margin: -5px 0; border-radius: 6px; }
-QTabWidget::pane { border: 1px solid #304052; border-radius: 5px; background: #1A222D; }
-QTabBar::tab { background: #222E3D; color: #9DADC1; padding: 9px 12px;
-    border: 1px solid #304052; border-bottom: 0px; }
-QTabBar::tab:selected { background: #344A66; color: #FFFFFF; }
-QScrollArea { border: 0px; background: transparent; }
-QScrollBar:vertical { width: 10px; background: #1A222D; }
-QScrollBar::handle:vertical { background: #43566E; border-radius: 4px; min-height: 28px; }
-QProgressBar { border: 1px solid #405067; border-radius: 5px;
-    background: #101722; color: #E7ECF5; text-align: center; height: 15px; }
-QProgressBar::chunk { background: #5798ED; border-radius: 4px; }
-QSplitter::handle { background: #101721; }
-"""
+# Colours and the stylesheet live in theme.py (Dark default, Light optional).
+from theme import stylesheet as theme_stylesheet, colors as theme_colors
 
 
 def label(text, kind='section'):
@@ -116,8 +61,10 @@ class StageTimeline(QFrame):
         self.paint_seconds=0.
         self.hold_seconds=0.
         self.progress=0.
-        self.setMinimumHeight(82)
-        self.setMaximumHeight(90)
+        self.setMinimumHeight(78)
+        self.setMaximumHeight(92)
+        self.setMouseTracking(True)
+        self.locked=False          # True while a drawing is being prepared
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setToolTip('Click a stage to move the playback cursor.')
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -129,76 +76,111 @@ class StageTimeline(QFrame):
         self.progress=max(0.,min(1.,float(progress)))
         self.update()
 
+    LEFT=12.
+    RIGHT=12.
+
+    def _x(self, fraction):
+        return self.LEFT+max(1.,self.width()-self.LEFT-self.RIGHT)*fraction
+
     def paintEvent(self, event):
+        c=theme_colors()
         p=QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        left=10.; width=max(1.,self.width()-20.)
-        top=29.; height=33.
+        left=self.LEFT; width=max(1.,self.width()-self.LEFT-self.RIGHT)
+        ruler_h=22.; top=ruler_h+8.; height=max(26.,self.height()-top-10.)
         total=self.draw_seconds+self.paint_seconds+self.hold_seconds
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(c['track']))
+        p.drawRoundedRect(QRectF(left,top,width,height),6,6)
+        small=QFont(self.font());small.setPointSizeF(8.)
+        p.setFont(small)
         if total<=0:
-            p.setPen(QColor('#91A3B8'))
+            p.setPen(QColor(c['dim']))
             p.drawText(QRectF(left,top,width,height),
-                Qt.AlignmentFlag.AlignCenter, 'IMPORT ARTWORK TO BEGIN')
+                Qt.AlignmentFlag.AlignCenter, 'Import artwork to begin')
             p.end()
             return
-        # A time ruler shares the same scale as the animation phases.
-        p.setPen(QColor('#91A3B8'))
-        ticks=max(2,min(10,int(width/110)))
-        for i in range(ticks+1):
-            x=left+width*i/ticks
-            p.drawLine(QPointF(x,23),QPointF(x,27))
-            align=Qt.AlignmentFlag.AlignCenter
-            text_x=max(left,min(x-30,left+width-60))
-            p.drawText(QRectF(text_x,3,60,16),align,f'{total*i/ticks:.1f}s')
-        stages=[('DRAW',self.draw_seconds,'#4E88DB'),
-                ('PAINT',self.paint_seconds,'#30A898'),
-                ('HOLD',self.hold_seconds,'#CBA15C')]
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(QColor('#101722'))
-        p.drawRoundedRect(QRectF(left,top,width,height),6,6)
+        # Ruler: major ticks with time labels, minor ticks between them.
+        steps=[.1,.2,.25,.5,1,2,5,10,15,30,60]
+        major=next((t for t in steps if width*t/total>=70),steps[-1])
+        minor=major/5
+        n=int(total/minor+1e-6)
+        for i in range(n+1):
+            t=i*minor
+            x=left+width*t/total
+            is_major=abs(t/major-round(t/major))<1e-6
+            p.setPen(QPen(QColor(c['ruler'] if is_major else c['border_strong']),1))
+            p.drawLine(QPointF(x,ruler_h-(9 if is_major else 4)),QPointF(x,ruler_h))
+            if is_major and x<left+width-24:
+                p.setPen(QColor(c['muted']))
+                p.drawText(QRectF(x+3,1,60,14),Qt.AlignmentFlag.AlignLeft,
+                           f'{t:.0f}s' if major>=1 else f'{t:.1f}s')
+        p.setPen(QPen(QColor(c['border']),1))
+        p.drawLine(QPointF(left,ruler_h+.5),QPointF(left+width,ruler_h+.5))
+        # Clips for each phase, like clips on an editor track.
+        stages=[('Draw',self.draw_seconds,c['draw']),
+                ('Paint',self.paint_seconds,c['paint']),
+                ('Hold',self.hold_seconds,c['hold'])]
         x=left
+        label_font=QFont(self.font());label_font.setPointSizeF(8.5);label_font.setBold(True)
         for name,secs,color in stages:
             if secs<=0:
                 continue
             part=width*secs/total
-            p.setBrush(QColor(color))
-            p.drawRoundedRect(QRectF(x+1,top+2,max(1,part-2),height-4),4,4)
-            if part>=50:
-                p.setPen(QColor('#FFFFFF'))
-                p.setFont(QFont('Segoe UI',9,QFont.Weight.DemiBold))
-                p.drawText(QRectF(x,top,part,height),
-                    Qt.AlignmentFlag.AlignCenter, name)
-                p.setPen(Qt.PenStyle.NoPen)
+            rect=QRectF(x+1.5,top+3,max(1.,part-3),height-6)
+            fill=QColor(color);fill.setAlpha(215)
+            p.setPen(QPen(QColor(color).lighter(125),1))
+            p.setBrush(fill)
+            p.drawRoundedRect(rect,5,5)
+            if part>=46:
+                p.setPen(QColor(c['clip_text']))
+                p.setFont(label_font)
+                text=f'{name}  {secs:.1f}s' if part>=96 else name
+                p.drawText(rect.adjusted(9,0,-6,0),
+                    Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft, text)
+                p.setFont(small)
             x+=part
+        # Playhead: a line through the track with a marker on the ruler.
         play_x=left+width*self.progress
-        p.setPen(QPen(QColor('#F7F9FF'),2))
-        p.drawLine(QPointF(play_x,top-5),QPointF(play_x,top+height+7))
-        p.setPen(QColor('#A7B9CC'))
-        p.setFont(QFont('Segoe UI',8))
-        p.drawText(QRectF(left,68,width,14),
-                   Qt.AlignmentFlag.AlignLeft,'00:00')
-        p.drawText(QRectF(left,50,width,14),
-                   Qt.AlignmentFlag.AlignRight,f'{total:.1f} s')
+        accent=QColor(c['accent'])
+        p.setPen(QPen(accent,2))
+        p.drawLine(QPointF(play_x,ruler_h-2),QPointF(play_x,top+height))
+        p.setPen(Qt.PenStyle.NoPen);p.setBrush(accent)
+        from PySide6.QtGui import QPolygonF
+        p.drawPolygon(QPolygonF([QPointF(play_x-6,ruler_h-13),QPointF(play_x+6,ruler_h-13),
+                                 QPointF(play_x+6,ruler_h-6),QPointF(play_x,ruler_h),
+                                 QPointF(play_x-6,ruler_h-6)]))
         p.end()
 
+    def set_locked(self, locked):
+        self.locked=bool(locked)
+        self.setCursor(Qt.CursorShape.BusyCursor if self.locked else Qt.CursorShape.PointingHandCursor)
+        self.update()
+
     def mousePressEvent(self,event):
+        if self.locked:
+            event.accept(); return
         if (event.button()==Qt.MouseButton.LeftButton
                 and self.draw_seconds+self.paint_seconds+self.hold_seconds>0):
-            fraction=max(0.,min(1.,(event.position().x()-10)/max(1,self.width()-20)))
+            fraction=max(0.,min(1.,(event.position().x()-self.LEFT)/max(1,self.width()-self.LEFT-self.RIGHT)))
             self.slider.setValue(round(1000*fraction))
             event.accept()
             return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self,event):
+        if self.locked:
+            event.accept(); return
         if event.buttons() & Qt.MouseButton.LeftButton and self.draw_seconds+self.paint_seconds+self.hold_seconds>0:
-            fraction=max(0.,min(1.,(event.position().x()-10)/max(1,self.width()-20)))
+            fraction=max(0.,min(1.,(event.position().x()-self.LEFT)/max(1,self.width()-self.LEFT-self.RIGHT)))
             self.slider.setValue(round(1000*fraction))
             event.accept()
         else:
             super().mouseMoveEvent(event)
 
     def keyPressEvent(self,event):
+        if self.locked:
+            event.accept(); return
         if event.key() in (Qt.Key.Key_Left,Qt.Key.Key_Right):
             self.slider.setValue(self.slider.value()+(-10 if event.key()==Qt.Key.Key_Left else 10))
         elif event.key()==Qt.Key.Key_Home:
@@ -209,30 +191,31 @@ class StageTimeline(QFrame):
             super().keyPressEvent(event)
 
 
-def spin_box_style(assets):
-    """Large, clearly drawn up/down buttons for every number box.
+def spin_box_style(assets, name='dark'):
+    """Kept for compatibility: the full themed stylesheet (includes spin boxes)."""
+    return theme_stylesheet(name, assets)
 
-    Styling the spin boxes without styling their buttons left Qt drawing tiny,
-    nearly invisible arrows that were hard to click.
-    """
-    def url(name):
-        return (Path(assets) / f'{name}.png').as_posix()
-    return f"""
-QAbstractSpinBox {{ padding-right: 28px; min-height: 22px; }}
-QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{
-    subcontrol-origin: border; width: 24px; background: #1E2A39;
-    border-left: 1px solid #3A4A5E; }}
-QAbstractSpinBox::up-button {{ subcontrol-position: top right;
-    border-bottom: 1px solid #3A4A5E; border-top-right-radius: 6px; }}
-QAbstractSpinBox::down-button {{ subcontrol-position: bottom right;
-    border-bottom-right-radius: 6px; }}
-QAbstractSpinBox::up-button:hover, QAbstractSpinBox::down-button:hover {{ background: #2C3E55; }}
-QAbstractSpinBox::up-button:pressed, QAbstractSpinBox::down-button:pressed {{ background: #3A77BA; }}
-QAbstractSpinBox::up-arrow {{ image: url("{url('spin_up')}"); width: 10px; height: 6px; }}
-QAbstractSpinBox::down-arrow {{ image: url("{url('spin_down')}"); width: 10px; height: 6px; }}
-QAbstractSpinBox::up-arrow:disabled, QAbstractSpinBox::up-arrow:off {{ image: url("{url('spin_up_disabled')}"); }}
-QAbstractSpinBox::down-arrow:disabled, QAbstractSpinBox::down-arrow:off {{ image: url("{url('spin_down_disabled')}"); }}
-"""
+
+def wordmark_html():
+    """'StrokeScribe' with the brand blue; the first half follows the theme."""
+    return (f'<span style="color:{theme_colors()["wordmark"]}">Stroke</span>'
+            '<span style="color:#58A7FF">Scribe</span>')
+
+
+def panel(object_name, title, hint=None):
+    """An editor panel: a title strip on top and a body below it."""
+    frame=QFrame();frame.setObjectName(object_name)
+    outer=QVBoxLayout(frame);outer.setContentsMargins(0,0,0,0);outer.setSpacing(0)
+    header=QFrame();header.setObjectName('panelHeader')
+    header_l=QHBoxLayout(header);header_l.setContentsMargins(12,7,10,7);header_l.setSpacing(8)
+    title_label=label(title,'panelTitle')
+    header_l.addWidget(title_label)
+    if hint:
+        header_l.addWidget(label(hint,'panelHint'))
+    header_l.addStretch(1)
+    outer.addWidget(header)
+    frame.title_label=title_label
+    return frame,outer,header_l
 
 
 def build_workspace(w, Canvas, BRAND_ICON):
@@ -240,36 +223,32 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.setWindowTitle(f'{DISPLAY_NAME}  •  Studio')
     w.resize(1490,890)
     w.setMinimumSize(1040,690)
-    w.setStyleSheet(STUDIO_STYLE + spin_box_style(Path(BRAND_ICON).parent))
-    root=QWidget()
+    w.theme_assets=Path(BRAND_ICON).parent
+    import theme
+    theme.set_current(theme.load_saved())
+    w.setStyleSheet(theme_stylesheet(theme.current(),w.theme_assets))
+    root=QWidget();root.setObjectName('root')
     w.setCentralWidget(root)
     outer=QVBoxLayout(root)
-    outer.setContentsMargins(10,10,10,10)
-    outer.setSpacing(9)
+    outer.setContentsMargins(8,8,8,8)
+    outer.setSpacing(8)
 
     # Original compact StrokeScribe branding, drawn using native Qt widgets.
     # The three brand dots are decoration, NOT fake OS close/minimize buttons.
     bar=QFrame(); bar.setObjectName('topBar')
-    bar_l=QHBoxLayout(bar); bar_l.setContentsMargins(14,8,14,8)
-    bar_l.setSpacing(9)
-    dots=QWidget()
-    dots_l=QHBoxLayout(dots);dots_l.setContentsMargins(0,0,3,0);dots_l.setSpacing(6)
-    for color in ('#F56B76','#EFBF4D','#53C993'):
-        dot=QLabel()
-        dot.setFixedSize(11,11)
-        dot.setStyleSheet('background-color: '+color+'; border-radius: 5px;')
-        dots_l.addWidget(dot)
-    dots.setToolTip('StrokeScribe brand colors; window controls remain in the Windows title bar.')
-    bar_l.addWidget(dots)
+    bar_l=QHBoxLayout(bar); bar_l.setContentsMargins(12,6,10,6)
+    bar_l.setSpacing(8)
     if BRAND_ICON.is_file():
         w.setWindowIcon(QIcon(str(BRAND_ICON)))
         QApplication.instance().setWindowIcon(QIcon(str(BRAND_ICON)))
+        logo=QLabel()
+        logo.setPixmap(QPixmap(str(BRAND_ICON)).scaled(
+            26,26,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+        bar_l.addWidget(logo)
     title=QHBoxLayout();title.setSpacing(10)
-    w.brand_wordmark=QLabel(
-        '<span style="color:#F6F8FC">Stroke</span>'
-        '<span style="color:#58A7FF">Scribe</span>')
+    w.brand_wordmark=QLabel(wordmark_html())
     w.brand_wordmark.setObjectName('brandWordmark')
-    w.brand_wordmark.setFont(QFont('Segoe UI',17,QFont.Weight.Bold))
+    w.brand_wordmark.setFont(QFont('Segoe UI',15,QFont.Weight.Bold))
     title.addWidget(w.brand_wordmark)
     w.brand_version=label(f'Prototype v{APP_VERSION}','subtitle')
     title.addWidget(w.brand_version)
@@ -277,6 +256,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     bar_l.addStretch(1)
     from PySide6.QtWidgets import QToolButton, QMenu
     w.project_menu=QToolButton()
+    w.project_menu.setObjectName('subtle')
     w.project_menu.setText('▣  Sample drawing  ▾')
     w.project_menu.setToolTip('Current artwork. Choose Import SVG or Import Image to replace it.')
     w.project_menu.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
@@ -309,6 +289,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.settings_button.setObjectName('subtle')
     w.settings_button.clicked.connect(w.open_setup)
     bar_l.addWidget(w.settings_button)
+    w.theme_button=QPushButton()
+    w.theme_button.setObjectName('subtle')
+    w.theme_button.clicked.connect(lambda checked=False: w.toggle_theme())
+    bar_l.addWidget(w.theme_button)
     w.version_button=QPushButton(f'v{APP_VERSION}')
     w.version_button.setObjectName('subtle')
     w.version_button.clicked.connect(w.show_version_info)
@@ -327,11 +311,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     outer.addWidget(split,1)
 
     # Source and stroke order (left).
-    asset=QFrame();asset.setObjectName('assetPanel')
-    asset.setMinimumWidth(215)
-    asset_l=QVBoxLayout(asset);asset_l.setContentsMargins(11,13,11,12)
+    asset_panel,asset_outer,_=panel('assetPanel','Source','Artwork & paths')
+    asset_panel.setMinimumWidth(235)
+    asset=QWidget();asset.setObjectName('panelBody')
+    asset_l=QVBoxLayout(asset);asset_l.setContentsMargins(12,10,12,12)
     asset_l.setSpacing(9)
-    asset_l.addWidget(label('01  /  SOURCE & PATHS','micro'))
     asset_l.addWidget(caption('Import artwork or generate single-line lettering.'))
     w.source_type=QComboBox(); w.source_type.addItems(['SVG source','Image source'])
     asset_l.addWidget(w.source_type)
@@ -433,36 +417,64 @@ def build_workspace(w, Canvas, BRAND_ICON):
     asset_l.addLayout(reorder)
     w.note=caption('Ready.')
     asset_l.addWidget(w.note)
-    split.addWidget(scroll_view(asset))
+    asset_outer.addWidget(scroll_view(asset),1)
+    split.addWidget(asset_panel)
 
     # Large, dedicated visual monitor (center).
-    monitor=QFrame();monitor.setObjectName('monitorPanel')
+    monitor,monitor_outer,top=panel('monitorPanel','Program','Preview monitor')
     monitor.setMinimumWidth(390)
-    monitor_l=QVBoxLayout(monitor);monitor_l.setContentsMargins(10,10,10,10)
+    body=QWidget();body.setObjectName('panelBody')
+    monitor_l=QVBoxLayout(body);monitor_l.setContentsMargins(10,10,10,8)
     monitor_l.setSpacing(8)
-    top=QHBoxLayout()
-    top.addWidget(label('02  /  PREVIEW MONITOR','micro'))
-    top.addStretch(1)
+    monitor_outer.addWidget(body,1)
     w.preview_background=QComboBox()
     w.preview_background.addItems(['Transparency grid','White background','Dark background'])
     w.preview_background.setToolTip('Preview background only. Exports keep transparency.')
     w.preview_background.setAccessibleName('Preview background')
     top.addWidget(w.preview_background)
-    monitor_l.addLayout(top)
+    well=QFrame();well.setObjectName('monitorWell')
+    well_l=QVBoxLayout(well);well_l.setContentsMargins(1,1,1,1)
     w.canvas=Canvas()
     w.canvas.setMinimumSize(360,250)
-    monitor_l.addWidget(w.canvas,1)
+    well_l.addWidget(w.canvas)
+    monitor_l.addWidget(well,1)
+    # Transport under the picture, as in a video editor's program monitor.
+    transport=QFrame();transport.setObjectName('transport')
+    tr=QHBoxLayout(transport);tr.setContentsMargins(4,0,4,0);tr.setSpacing(6)
+    w.clock=label('0.00 / 0.00 s','timeCode')
+    w.clock.setMinimumWidth(150)
+    tr.addWidget(w.clock)
+    tr.addStretch(1)
+    w.to_start=QPushButton('⏮');w.to_start.setObjectName('transportButton')
+    w.to_start.setToolTip('Go to start (Home)')
+    w.to_start.clicked.connect(lambda checked=False: w.slider.setValue(0))
+    tr.addWidget(w.to_start)
+    w.restart_button=QPushButton('↺');w.restart_button.setObjectName('transportButton')
+    w.restart_button.setToolTip('Restart and play')
+    w.restart_button.clicked.connect(w.restart)
+    tr.addWidget(w.restart_button)
+    w.play=QPushButton('▶');w.play.setObjectName('playButton')
+    w.play.setToolTip('Play / pause (Space)')
+    w.play.clicked.connect(w.toggle)
+    tr.addWidget(w.play)
+    w.to_end=QPushButton('⏭');w.to_end.setObjectName('transportButton')
+    w.to_end.setToolTip('Go to end (End)')
+    w.to_end.clicked.connect(lambda checked=False: w.slider.setValue(1000))
+    tr.addWidget(w.to_end)
+    tr.addStretch(1)
+    w.clock_total=label('','timeTotal')
+    w.clock_total.setMinimumWidth(150)
+    w.clock_total.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
+    tr.addWidget(w.clock_total)
+    monitor_l.addWidget(transport)
     w.preview_background.currentIndexChanged.connect(w.canvas.set_background)
     w.preview_background.currentIndexChanged.connect(
         lambda index: index in (1,2) and w.mp4_background.setCurrentIndex(index-1))
-    monitor_l.addWidget(caption('Checkerboard = transparent  •  Scrub on the timeline below'))
     split.addWidget(monitor)
 
     # Inspector settings grouped by task (right).
-    inspector=QFrame();inspector.setObjectName('inspectorPanel')
-    inspector.setMinimumWidth(250)
-    inspector_l=QVBoxLayout(inspector);inspector_l.setContentsMargins(10,11,10,10)
-    inspector_l.addWidget(label('03  /  INSPECTOR','micro'))
+    inspector,inspector_l,_=panel('inspectorPanel','Inspector')
+    inspector.setMinimumWidth(270)
     tabs=QTabWidget()
     tabs.setDocumentMode(True)
     w.inspector_tabs=tabs
@@ -592,24 +604,18 @@ def build_workspace(w, Canvas, BRAND_ICON):
     split.setSizes([274,870,326])
 
     # Time-based workflow remains visible whichever Inspector tab is open.
-    timeline=QFrame();timeline.setObjectName('timelinePanel')
-    line_l=QVBoxLayout(timeline)
-    line_l.setContentsMargins(14,10,14,9);line_l.setSpacing(6)
-    header=QHBoxLayout()
-    header.addWidget(label('04  /  ANIMATION TIMELINE','micro'))
-    header.addStretch(1)
-    w.clock=label('0.00 / 0.00 s','timeCode')
-    header.addWidget(w.clock)
-    line_l.addLayout(header)
-    controls=QHBoxLayout();controls.setSpacing(10)
-    w.play=QPushButton('Play / Pause');w.play.clicked.connect(w.toggle)
-    controls.addWidget(w.play)
-    restart=QPushButton('Restart');restart.clicked.connect(w.restart)
-    controls.addWidget(restart)
+    timeline,timeline_outer,timeline_head=panel('timelinePanel','Timeline','Click or drag to scrub')
+    w.timeline_status=label('','panelHint')
+    timeline_head.addWidget(w.timeline_status)
+    body=QWidget();body.setObjectName('panelBody')
+    line_l=QVBoxLayout(body)
+    line_l.setContentsMargins(6,4,6,6);line_l.setSpacing(4)
+    timeline_outer.addWidget(body)
+    # The slider keeps the position; the timeline is what you see and drag.
     w.slider=QSlider(Qt.Orientation.Horizontal)
     w.slider.setRange(0,1000);w.slider.valueChanged.connect(w.scrub)
-    controls.addWidget(w.slider,1)
-    line_l.addLayout(controls)
+    w.slider.hide()
+    line_l.addWidget(w.slider)
     w.stage_timeline=StageTimeline(w.slider)
     line_l.addWidget(w.stage_timeline)
     outer.addWidget(timeline)
@@ -618,6 +624,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.status.setWordWrap(True)
     footer.addWidget(w.status,1)
     w.progress=QProgressBar();w.progress.setFixedWidth(180);w.progress.setValue(0)
+    w.progress.setTextVisible(False);w.progress.setFixedHeight(8)
     footer.addWidget(w.progress)
     outer.addLayout(footer)
 
@@ -644,4 +651,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
                  'image_duration','color_fade','color_hold','fps','res','order'):
         getattr(w,name).setAccessibleName(name.replace('_',' '))
     w.stage_timeline.setAccessibleName('Animation timeline: drag to scrub; arrows to step')
+    from PySide6.QtGui import QShortcut, QKeySequence
+    w.space_shortcut=QShortcut(QKeySequence(Qt.Key.Key_Space),w)
+    w.space_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+    w.space_shortcut.activated.connect(
+        lambda: None if isinstance(QApplication.focusWidget(),(QPlainTextEdit,QComboBox)) else w.toggle())
+    w.update_theme_button()
     w.sync_workspace()
