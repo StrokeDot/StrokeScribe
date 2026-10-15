@@ -124,29 +124,37 @@ class AdaptiveTests(unittest.TestCase):
         # Turning off the overlay does not change the plan or mask.
         self.assertIs(plan,plan_for(d,image))
 
-    def test_unpainted_svg_contours_remain_in_clean_and_adaptive_modes(self):
+    def test_svg_contours_retire_locally_during_clean_and_adaptive_painting(self):
         # Traced paths commonly extend beyond a color PNG's silhouette.
-        # Their unpainted contours must remain visible during colorization.
+        # Painted guides must disappear as color arrives, while unpainted
+        # guides remain. The old test demanded ALL exterior ink persist until
+        # the final frame, which is precisely the defect this change fixes.
         d,image=fixture(80)
         kwargs=dict(width=320,height=240,duration=1.,fade_duration=3.,
                     hold_duration=0,final_image=image)
         baseline=pil_image(render(d,1,320,240)).getchannel('A')
         settled=pil_image(render_color_timeline(
             d,1,reveal_mode='adaptive',**kwargs)).getchannel('A')
-        # Deliberately examine lines that lie OUTSIDE final colored pixels:
-        # old clean/adaptive code removed all these at painting onset.
         candidates=[(x,y) for y in range(240) for x in range(320)
                     if baseline.getpixel((x,y))>180
                     and settled.getpixel((x,y))==0]
         self.assertGreater(len(candidates),10)
         for mode in ('clean','adaptive'):
+            erased=[]
             for progress in (.08,.4,.8):
                 fraction=(1+3*progress)/4
                 alpha=pil_image(render_color_timeline(
                     d,fraction,reveal_mode=mode,**kwargs)).getchannel('A')
-                self.assertTrue(all(alpha.getpixel(p)>175 for p in candidates),
-                                f'{mode} removed an unpainted SVG outline at {progress:.0%}')
-        # Finished frame must always be the untouched original artwork.
+                erased.append(sum(alpha.getpixel(p)<90 for p in candidates))
+            self.assertGreater(erased[0],0,
+                               f'{mode} did not retire any painted SVG ink early')
+            self.assertLess(erased[0],len(candidates),
+                            f'{mode} erased every guide before painting it')
+            self.assertEqual(erased,sorted(erased),
+                             f'{mode} repainted a guide after removing it')
+            self.assertGreater(erased[-1],erased[0],
+                               f'{mode} postponed guide removal until the end')
+        # Finished frame always contains precisely the original PNG.
         end=pil_image(render_color_timeline(d,1,reveal_mode='clean',**kwargs))
         self.assertEqual(end.getchannel('A').tobytes(),settled.tobytes())
 
