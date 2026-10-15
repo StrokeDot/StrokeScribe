@@ -46,7 +46,10 @@ class AdaptiveTests(unittest.TestCase):
                     hold_duration=0,final_image=image,reveal_mode='adaptive')
         end=pil_image(render_color_timeline(d,1,**kwargs))
         x,y,w,h=pixel_rect(artwork_rect(d,image,320,240))
-        want=src.convert('RGBa').resize((w,h),Image.Resampling.LANCZOS).convert('RGBa')
+        # Lanczos can overshoot at hard edges; the app stores the result as
+        # straight RGBA, which clips those pixels, so compare after the same step.
+        want=(src.convert('RGBa').resize((w,h),Image.Resampling.LANCZOS)
+              .convert('RGBA').convert('RGBa'))
         got=end.crop((x,y,x+w,y+h)).convert('RGBa')
         diff=max(abs(a-b) for a,b in zip(want.tobytes(),got.tobytes()))
         self.assertLessEqual(diff,3,'Final frame must equal the Lanczos-resized PNG')
