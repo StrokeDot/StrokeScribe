@@ -17,6 +17,7 @@ BRAND_ICON = Path(__file__).resolve().parent / 'assets' / 'strokescribe_icon.png
 
 
 DONE_SOUND = Path(__file__).resolve().parent / 'assets' / 'export_done.wav'
+DEFAULT_HAND = Path(__file__).resolve().parent / 'assets' / 'default_hand.png'
 
 
 def play_done_sound():
@@ -208,6 +209,7 @@ class Window(QMainWindow):
         self.brush_preview_timer.timeout.connect(self.refresh)
         from studio_workspace import build_workspace
         build_workspace(self,Canvas,BRAND_ICON)
+        self.use_builtin_hand(refresh=False)
         self.set_drawing(import_svg(Path(__file__).parent/'samples'/'drawing.svg'))
         self.timer=QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -589,7 +591,14 @@ class Window(QMainWindow):
         if name:
             image=QImage(name)
             if image.isNull(): QMessageBox.warning(self,'Hand','Could not read PNG.'); return
-            self.hand=image; self.refresh()
+            self.hand=image; self.hand_name.setText('Hand: '+Path(name).name); self.refresh()
+    def use_builtin_hand(self,refresh=True):
+        """Load the bundled StrokeScribe hand (pencil tip at about X 0.20, Y 0.20)."""
+        image=QImage(str(DEFAULT_HAND)) if DEFAULT_HAND.is_file() else QImage()
+        if image.isNull():
+            self.hand_name.setText('Hand: none (built-in hand file missing)'); return
+        self.hand=image; self.hand_name.setText('Hand: StrokeScribe built-in hand')
+        if refresh: self.refresh()
     def load_color(self):
         if self.source_type.currentIndex():
             QMessageBox.information(self,'Image colors','Image mode uses the imported image. Switch to SVG to load a matching colored PNG.'); return
