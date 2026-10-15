@@ -122,7 +122,7 @@ class ImageBuilder(QThread):
     failed=Signal(str)
     stage=Signal(str,int,bool)
     analysis_ready=Signal(object)
-    def __init__(self,path,mode,detail,brush_width,spacing,ai_model='qwen3-vl:4b',
+    def __init__(self,path,mode,detail,brush_width,spacing,ai_model='qwen3-vl:4b-instruct',
                  cached_analysis=None,ai_profile='balanced'):
         super().__init__()
         self.path=path; self.mode=mode; self.detail=detail
@@ -613,7 +613,7 @@ class Window(QMainWindow):
             if image.isNull(): QMessageBox.warning(self,'Hand','Could not read PNG.'); return
             self.hand=image; self.hand_name.setText('Hand: '+Path(name).name); self.refresh()
     def use_builtin_hand(self,refresh=True):
-        """Load the bundled StrokeScribe hand (pencil tip at about X 0.20, Y 0.20)."""
+        """Load the bundled StrokeScribe hand (calibrated pencil tip X 0.08, Y 0.13)."""
         image=QImage(str(DEFAULT_HAND)) if DEFAULT_HAND.is_file() else QImage()
         if image.isNull():
             self.hand_name.setText('Hand: none (built-in hand file missing)'); return

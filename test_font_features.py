@@ -101,8 +101,9 @@ class FontAndScaleTests(unittest.TestCase):
         w=Window()
         try:
             self.assertAlmostEqual(w.handsize.value(),.75)
-            self.assertAlmostEqual(w.ax.value(),.20)
-            self.assertAlmostEqual(w.ay.value(),.20)
+            # Defaults are calibrated for the bundled built-in hand.
+            self.assertAlmostEqual(w.ax.value(),.08)
+            self.assertAlmostEqual(w.ay.value(),.13)
             self.assertTrue(w.showhand.isChecked())
             self.assertTrue(w.show_paint_hand.isChecked())
             self.assertEqual(w.font_bg_mode.currentIndex(),0)

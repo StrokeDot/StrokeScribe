@@ -346,8 +346,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     image_form.addRow('Method',w.image_mode)
     w.ai_model=QComboBox()
     w.ai_model.setEditable(True)
-    w.ai_model.addItems(['qwen3-vl:4b','qwen3-vl:2b','qwen3-vl:8b'])
-    w.ai_model.setToolTip('Ollama vision model, running locally on your PC. Requires separate model download.')
+    # Instruct models answer directly; plain qwen3-vl tags are thinking models.
+    w.ai_model.addItems(['qwen3-vl:4b-instruct','qwen3-vl:8b-instruct','qwen3-vl:2b-instruct',
+                         'qwen3-vl:4b','qwen3-vl:8b','qwen3-vl:2b'])
+    w.ai_model.setToolTip('Ollama vision model, running locally on your PC. Install once with: ollama pull qwen3-vl:4b-instruct. Instruct models answer directly and are recommended.')
     image_form.addRow('Local AI model',w.ai_model)
     w.ai_profile=QComboBox()
     w.ai_profile.addItems(['Fast','Balanced','Quality'])
@@ -537,8 +539,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     hand_l.addWidget(caption('Calibrate the pencil tip to your hand PNG for accurate tracing.'))
     h=form_layout();hand_l.addLayout(h)
     w.handsize=w.number(.02,.8,.75,.01);h.addRow('Hand scale',w.handsize)
-    w.ax=w.number(0,1,.20,.01);h.addRow('Pen tip X',w.ax)
-    w.ay=w.number(0,1,.20,.01);h.addRow('Pen tip Y',w.ay)
+    # Defaults calibrated for the built-in hand (assets/default_hand.png).
+    w.ax=w.number(0,1,.08,.01);h.addRow('Pen tip X',w.ax)
+    w.ay=w.number(0,1,.13,.01);h.addRow('Pen tip Y',w.ay)
     hand_l.addStretch(1)
     tabs.addTab(scroll_view(hand),'Hand')
 

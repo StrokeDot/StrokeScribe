@@ -85,7 +85,9 @@ class ProfileTests(unittest.TestCase):
             self.assertIn(f'1 to {parts} visible objects or parts',
                           request['messages'][0]['content'])
             self.assertEqual(request['think'],False)
-            self.assertEqual(request['model'],'qwen3-vl:4b')
+            from semantic_redraw import DEFAULT_MODEL
+            self.assertEqual(request['model'],DEFAULT_MODEL)
+            self.assertEqual(DEFAULT_MODEL,'qwen3-vl:4b-instruct')
             raw=base64.b64decode(request['messages'][0]['images'][0])
             with Image.open(io.BytesIO(raw)) as sent:
                 self.assertLessEqual(max(sent.size),size)

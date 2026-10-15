@@ -31,7 +31,10 @@ from image_trace import trace_image
 from engine import Drawing, Stroke
 
 OLLAMA_ENDPOINT = 'http://127.0.0.1:11434/api/chat'
-DEFAULT_MODEL = 'qwen3-vl:4b'
+# Plain 'qwen3-vl:4b' in Ollama is the THINKING variant: it always reasons
+# before answering and ignores think:false, which can use up the whole token
+# budget with no answer. The instruct variant answers directly (and faster).
+DEFAULT_MODEL = 'qwen3-vl:4b-instruct'
 MAX_PARTS = 14
 
 PART_SCHEMA = {
@@ -199,6 +202,7 @@ def local_vision_analysis(image, model=DEFAULT_MODEL, timeout=180, *, profile='b
     buffer=io.BytesIO();background.convert('RGB').save(buffer,format='PNG')
     encoded=base64.b64encode(buffer.getvalue()).decode('ascii')
     errors=[]; budget=INITIAL_TOKENS; format_value=PART_SCHEMA; retry_kind=''
+    reasoned_without_answer=False
     deadline=time.monotonic()+timeout*2
     for attempt in range(2):
         remaining=deadline-time.monotonic()
@@ -230,7 +234,7 @@ def local_vision_analysis(image, model=DEFAULT_MODEL, timeout=180, *, profile='b
         except HTTPError as exc:
             detail=exc.read(500).decode('utf-8','replace')
             if exc.code==404:
-                raise RuntimeError(f'Ollama could not find local model {model!r}. Check "ollama list" and the selected model name.') from exc
+                raise RuntimeError(f'Ollama could not find local model {model!r}. Install it by running this in a terminal: ollama pull {model}  (or pick an installed model; check "ollama list").') from exc
             schema_error=exc.code in (400,422) and any(
                 word in detail.lower() for word in ('schema','format','grammar'))
             if schema_error and attempt==0:
@@ -259,7 +263,10 @@ def local_vision_analysis(image, model=DEFAULT_MODEL, timeout=180, *, profile='b
         if finish=='length':
             has_thinking=bool(message.get('thinking')) or '<think' in str(message.get('content','')).lower()
             reason='generation limit exhausted'
-            if has_thinking:reason+=' while reasoning was present despite think:false'
+            if has_thinking:
+                reason+=' while reasoning was present despite think:false'
+                if not str(message.get('content','')).strip():
+                    reasoned_without_answer=True
             errors.append(summary+'; '+reason)
             retry_kind='length';budget=RETRY_TOKENS;format_value='json'
             continue
@@ -271,6 +278,14 @@ def local_vision_analysis(image, model=DEFAULT_MODEL, timeout=180, *, profile='b
         except (ValueError,KeyError,AttributeError,TypeError) as exc:
             errors.append(summary+'; '+str(exc))
             retry_kind='json';format_value='json'
+    if reasoned_without_answer:
+        raise ValueError(
+            f'The model {model!r} kept reasoning and never wrote an answer. It is a '
+            '"thinking" model, which ignores the request to answer directly; complex '
+            'images can use up its whole budget. Use the instruct version instead: '
+            'in a terminal run  ollama pull qwen3-vl:4b-instruct  then choose '
+            'qwen3-vl:4b-instruct as the Local AI model. No Auto Trace fallback was '
+            'used. Details: '+' | '.join(errors))
     raise ValueError(
         'Local AI could not produce usable image-part JSON after a second attempt. '
         +' | '.join(errors)+

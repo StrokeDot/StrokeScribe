@@ -34,7 +34,7 @@ def load_raster(filename):
     # Opaque backgrounds are intentionally retained; this is not background removal.
     return image.crop(bbox)
 
-def reconstruct(filename,mode='auto_trace',detail='medium',ai_model='qwen3-vl:4b',ai_analysis=None,ai_profile='balanced'):
+def reconstruct(filename,mode='auto_trace',detail='medium',ai_model='qwen3-vl:4b-instruct',ai_analysis=None,ai_profile='balanced'):
     if mode not in ('auto_trace','stroke_reconstruction','ai_redraw'):
         raise ValueError('Choose Auto Trace, Stroke Reconstruction, or AI Redraw.')
     if detail not in ('low','medium','high'):

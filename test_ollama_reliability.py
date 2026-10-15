@@ -42,6 +42,15 @@ class OllamaReliabilityTests(unittest.TestCase):
         self.assertEqual(call.call_count,2)
         self.assertNotIn('secret image analysis',str(error.exception))
         self.assertIn('No Auto Trace fallback',str(error.exception))
+        # Plain-language guidance toward the instruct model, with the command.
+        self.assertIn('thinking',str(error.exception))
+        self.assertIn('ollama pull qwen3-vl:4b-instruct',str(error.exception))
+
+    def test_missing_model_message_gives_install_command(self):
+        missing=HTTPError(OLLAMA_ENDPOINT,404,'not found',{},io.BytesIO(b'model not found'))
+        with patch('semantic_redraw.urlopen',side_effect=missing):
+            with self.assertRaisesRegex(RuntimeError,'ollama pull qwen3-vl:4b-instruct'):
+                local_vision_analysis(artwork(),model='qwen3-vl:4b-instruct')
 
     def test_truncation_retried_without_inventing_missing_json(self):
         broken='{"description":"x","parts":[{"name":"body","box":[1,2'

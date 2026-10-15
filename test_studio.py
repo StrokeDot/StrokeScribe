@@ -72,10 +72,10 @@ class StudioTests(unittest.TestCase):
         self.assertTrue(DEFAULT_HAND.is_file())
         self.assertIsNotNone(w.hand)
         self.assertFalse(w.hand.isNull())
-        self.assertEqual((w.hand.width(),w.hand.height()),(1625,1625))
+        self.assertEqual((w.hand.width(),w.hand.height()),(1230,1278))
         self.assertIn('built-in',w.hand_name.text())
         # Calibration defaults match the pencil tip in the bundled image.
-        self.assertAlmostEqual(w.ax.value(),.20); self.assertAlmostEqual(w.ay.value(),.20)
+        self.assertAlmostEqual(w.ax.value(),.08); self.assertAlmostEqual(w.ay.value(),.13)
         self.assertAlmostEqual(w.handsize.value(),.75)
         w.hand=None; w.use_builtin_hand()
         self.assertFalse(w.hand.isNull())
