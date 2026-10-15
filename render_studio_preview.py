@@ -29,8 +29,17 @@ snapshot('studio-image-import.png')
 window.source_type.setCurrentIndex(0)
 window.resize(1100,740)
 snapshot('studio-compact.png')
+# Setup & system check window, with the real checks of the build machine.
+import preflight
+from setup_wizard import SetupDialog
+setup=SetupDialog(window,auto_check=False)
+setup.show_results(preflight.system_info(),preflight.run_checks('balanced'))
+setup.show(); app.processEvents()
+if not setup.grab().save(str(out/'setup-window.png')):
+    raise RuntimeError('Unable to save setup window screenshot')
+setup.close()
 window.close()
-print('Generated four original Studio interface screenshots:', out)
+print('Generated original Studio interface screenshots:', out)
 
 # Inline review without accessing a local Windows filesystem.
 import base64

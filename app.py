@@ -210,6 +210,15 @@ class Window(QMainWindow):
         from studio_workspace import build_workspace
         build_workspace(self,Canvas,BRAND_ICON)
         self.use_builtin_hand(refresh=False)
+        # Setup level chosen in the setup window (Fast/Balanced/Quality/Max).
+        import preflight
+        preflight.ensure_ffmpeg_on_path()
+        saved=preflight.load_setup()
+        if saved['tier']: self.apply_tier(saved['tier'])
+        # First launch (or when enabled): show the setup window once the main
+        # window is up. Never in headless/offscreen runs such as tests.
+        if saved['show_at_startup'] and QApplication.platformName()!='offscreen':
+            QTimer.singleShot(400,self.open_setup)
         self.set_drawing(import_svg(Path(__file__).parent/'samples'/'drawing.svg'))
         self.timer=QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -218,6 +227,26 @@ class Window(QMainWindow):
         self.analysis_timer.setInterval(1000)
         self.analysis_timer.timeout.connect(self.update_analysis_elapsed)
 
+    def open_setup(self):
+        """Setup & system check window (also opened from the ⚙ button)."""
+        from setup_wizard import SetupDialog
+        dialog=SetupDialog(self)
+        dialog.tier_applied.connect(self.apply_tier)
+        dialog.exec()
+    def apply_tier(self,tier):
+        """Use the chosen level's local AI model and AI processing setting."""
+        import preflight
+        settings=preflight.TIERS.get(tier)
+        if not settings: return
+        model=settings['model']
+        index=self.ai_model.findText(model)
+        if index>=0: self.ai_model.setCurrentIndex(index)
+        else: self.ai_model.setCurrentText(model)
+        self.ai_profile.setCurrentIndex(('fast','balanced','quality').index(settings['profile']))
+        self.setup_tier=tier
+        if hasattr(self,'status'):
+            self.status.setText(f'Setup level: {settings["label"]}  •  AI model {model}  •  '
+                                f'AI processing {settings["profile"].title()}')
     def open_export(self):
         self.inspector_tabs.setCurrentIndex(2)
         self.export.setFocus()
