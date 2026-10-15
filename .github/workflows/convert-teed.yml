@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: pip install onnx onnxscript onnxruntime numpy
+      - run: pip install onnx onnxscript onnxruntime numpy opencv-python-headless kornia matplotlib
       - run: git clone --depth 1 https://github.com/xavysp/TEED TEED
       - name: Convert
         id: convert
