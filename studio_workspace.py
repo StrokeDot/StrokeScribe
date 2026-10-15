@@ -245,7 +245,9 @@ def fit_to_width(content, stacked=False):
     """Let a scrolling panel shrink to its column instead of being cut off."""
     from PySide6.QtWidgets import QAbstractSpinBox
     for button in content.findChildren(QPushButton):
-        policy=button.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        # Expanding fills the column; the explicit minimum lets it shrink
+        # below its text width rather than push the panel wider.
+        policy=button.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
         button.setSizePolicy(policy);button.setMinimumWidth(60)
     for box in content.findChildren(QComboBox):
         box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
