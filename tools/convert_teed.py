@@ -9,6 +9,12 @@ import numpy as np
 import torch
 
 sys.path.insert(0, 'TEED')
+# ted.py imports a training helper module (needs cv2/kornia/skimage); the
+# model itself only uses count_parameters from it, so provide a stand-in.
+import types  # noqa: E402
+_helpers = types.ModuleType('utils.img_processing')
+_helpers.count_parameters = lambda model: sum(p.numel() for p in model.parameters())
+sys.modules['utils.img_processing'] = _helpers
 import utils.AF.Fsmish as fsmish_module  # noqa: E402
 
 
