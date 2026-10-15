@@ -114,11 +114,14 @@ class ImageAnimationTests(unittest.TestCase):
             count=export_frames(d,folder,fps=6,**options)
             for i in range(count):
                 f=i/(count-1)
-                preview=render_color_timeline(d,f,width=220,height=165,
-                         duration=1,fade_duration=1,hold_duration=0,
-                         final_image=image,reveal_mode='adaptive',
-                         painting_hand=hand,hand_scale=.15/1.3)
-                preview=scale_animation_frame(preview,1.3)
+                # Same path as the Studio preview: hand drawn after scaling.
+                from hand_layer import capture
+                with capture() as hands:
+                    preview=render_color_timeline(d,f,width=220,height=165,
+                             duration=1,fade_duration=1,hold_duration=0,
+                             final_image=image,reveal_mode='adaptive',
+                             painting_hand=hand,hand_scale=.15/1.3)
+                preview=scale_animation_frame(preview,1.3,hands)
                 np.testing.assert_array_equal(pixels(preview),
                     pixels(QImage(str(folder/f'frame_{i:06d}.png'))))
             self.assertGreater(count,2)

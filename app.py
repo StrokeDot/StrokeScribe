@@ -276,11 +276,23 @@ class Window(QMainWindow):
         self.setStyleSheet(theme.stylesheet(theme.current(),self.theme_assets))
         self.brand_wordmark.setText(wordmark_html())
         self.update_theme_button()
+        self.update_transport_icons()
         self.canvas.update(); self.stage_timeline.update()
 
     def toggle_theme(self):
         import theme
         self.apply_theme('light' if theme.current()=='dark' else 'dark')
+
+    def update_transport_icons(self):
+        import theme
+        from studio_workspace import transport_icon
+        from PySide6.QtCore import QSize
+        c=theme.colors()
+        self.play.setIcon(transport_icon('pause' if self.playing else 'play',c['accent_text']))
+        self.play.setIconSize(QSize(18,18))
+        for button,kind in ((self.to_start,'start'),(self.restart_button,'restart'),(self.to_end,'end')):
+            button.setIcon(transport_icon(kind,c['text'] if button.isEnabled() else c['dim']))
+            button.setIconSize(QSize(18,18))
 
     def update_theme_button(self):
         import theme
@@ -297,6 +309,7 @@ class Window(QMainWindow):
         self.stage_timeline.set_locked(True)
         for button in (self.play,self.restart_button,self.to_start,self.to_end):
             button.setEnabled(False)
+        self.update_transport_icons()
         self.timeline_status.setText('Preparing…  the timeline unlocks when ready')
         self.sync_workspace()
 
@@ -306,6 +319,7 @@ class Window(QMainWindow):
         self.stage_timeline.set_locked(False)
         for button in (self.play,self.restart_button,self.to_start,self.to_end):
             button.setEnabled(True)
+        self.update_transport_icons()
         self.timeline_status.setText('')
         self.sync_workspace()
 
@@ -431,7 +445,7 @@ class Window(QMainWindow):
         self.webm_quality.setEnabled(self.webm.isChecked())
         self.keep_png.setEnabled(self.webm.isChecked() or self.mov.isChecked() or self.mp4.isChecked())
         self.mp4_background.setEnabled(self.mp4.isChecked())
-        self.play.setText('⏸' if self.playing else '▶')
+        self.update_transport_icons()
 
     def show_version_info(self):
         build_file = Path(__file__).resolve().parent / 'BUILD_INFO.txt'

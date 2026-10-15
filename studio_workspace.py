@@ -196,10 +196,71 @@ def spin_box_style(assets, name='dark'):
     return theme_stylesheet(name, assets)
 
 
+_ICONS={}
+
+
+def transport_icon(kind, color, size=18):
+    """Crisp drawn transport icons (emoji glyphs vary by system font)."""
+    from PySide6.QtGui import QPolygonF, QPainterPath
+    key=(kind,color,size)
+    if key in _ICONS:
+        return _ICONS[key]
+    scale=2
+    pix=QPixmap(size*scale,size*scale);pix.fill(Qt.GlobalColor.transparent)
+    p=QPainter(pix);p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.scale(scale,scale)
+    col=QColor(color)
+    p.setPen(Qt.PenStyle.NoPen);p.setBrush(col)
+    s=float(size)
+    if kind=='play':
+        p.drawPolygon(QPolygonF([QPointF(s*.32,s*.2),QPointF(s*.32,s*.8),QPointF(s*.8,s*.5)]))
+    elif kind=='pause':
+        p.drawRoundedRect(QRectF(s*.27,s*.2,s*.16,s*.6),1.5,1.5)
+        p.drawRoundedRect(QRectF(s*.57,s*.2,s*.16,s*.6),1.5,1.5)
+    elif kind=='start':
+        p.drawRoundedRect(QRectF(s*.2,s*.24,s*.1,s*.52),1,1)
+        p.drawPolygon(QPolygonF([QPointF(s*.78,s*.24),QPointF(s*.78,s*.76),QPointF(s*.34,s*.5)]))
+    elif kind=='end':
+        p.drawRoundedRect(QRectF(s*.7,s*.24,s*.1,s*.52),1,1)
+        p.drawPolygon(QPolygonF([QPointF(s*.22,s*.24),QPointF(s*.22,s*.76),QPointF(s*.66,s*.5)]))
+    elif kind=='restart':
+        pen=QPen(col,s*.11);pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen);p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawArc(QRectF(s*.22,s*.22,s*.56,s*.56),100*16,280*16)
+        p.setPen(Qt.PenStyle.NoPen);p.setBrush(col)
+        p.drawPolygon(QPolygonF([QPointF(s*.38,s*.08),QPointF(s*.58,s*.24),QPointF(s*.36,s*.36)]))
+    p.end()
+    icon=QIcon(pix)
+    _ICONS[key]=icon
+    return icon
+
+
 def wordmark_html():
     """'StrokeScribe' with the brand blue; the first half follows the theme."""
     return (f'<span style="color:{theme_colors()["wordmark"]}">Stroke</span>'
             '<span style="color:#58A7FF">Scribe</span>')
+
+
+def fit_to_width(content):
+    """Let a scrolling panel shrink to its column instead of being cut off."""
+    from PySide6.QtWidgets import QAbstractSpinBox
+    for button in content.findChildren(QPushButton):
+        policy=button.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        button.setSizePolicy(policy);button.setMinimumWidth(60)
+    for box in content.findChildren(QComboBox):
+        box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        box.setMinimumContentsLength(6)
+        policy=box.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        box.setSizePolicy(policy)
+    for box in content.findChildren(QAbstractSpinBox):
+        box.setMinimumWidth(84)
+        policy=box.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        box.setSizePolicy(policy)
+    for edit in content.findChildren(QPlainTextEdit):
+        policy=edit.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        edit.setSizePolicy(policy)
+    for form in content.findChildren(QFormLayout):
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
 
 
 def panel(object_name, title, hint=None):
@@ -252,6 +313,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     title.addWidget(w.brand_wordmark)
     w.brand_version=label(f'Prototype v{APP_VERSION}','subtitle')
     title.addWidget(w.brand_version)
+    w.brand_version.hide()           # the version button already shows it
     bar_l.addLayout(title)
     bar_l.addStretch(1)
     from PySide6.QtWidgets import QToolButton, QMenu
@@ -389,16 +451,16 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.generate_text=QPushButton('Animate lettering')
     w.generate_text.clicked.connect(w.letter)
     asset_l.addWidget(w.generate_text)
-    w.download_font=QPushButton('Download selected Google Font')
+    w.download_font=QPushButton('Download selected font')
     w.download_font.clicked.connect(w.install_selected_font)
     asset_l.addWidget(w.download_font)
     w.download_starters=QPushButton('Download 10 handwriting fonts')
     w.download_starters.clicked.connect(w.install_starter_fonts)
     asset_l.addWidget(w.download_starters)
-    w.import_font_button=QPushButton('Import local TTF / OTF…')
+    w.import_font_button=QPushButton('Import TTF / OTF…')
     w.import_font_button.clicked.connect(w.import_local_font)
     asset_l.addWidget(w.import_font_button)
-    browse_fonts=QPushButton('Browse Google Fonts catalog ↗')
+    browse_fonts=QPushButton('Browse Google Fonts ↗')
     browse_fonts.setObjectName('subtle')
     browse_fonts.clicked.connect(w.browse_google_fonts)
     asset_l.addWidget(browse_fonts)
@@ -445,19 +507,19 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.clock.setMinimumWidth(150)
     tr.addWidget(w.clock)
     tr.addStretch(1)
-    w.to_start=QPushButton('⏮');w.to_start.setObjectName('transportButton')
+    w.to_start=QPushButton();w.to_start.setObjectName('transportButton')
     w.to_start.setToolTip('Go to start (Home)')
     w.to_start.clicked.connect(lambda checked=False: w.slider.setValue(0))
     tr.addWidget(w.to_start)
-    w.restart_button=QPushButton('↺');w.restart_button.setObjectName('transportButton')
+    w.restart_button=QPushButton();w.restart_button.setObjectName('transportButton')
     w.restart_button.setToolTip('Restart and play')
     w.restart_button.clicked.connect(w.restart)
     tr.addWidget(w.restart_button)
-    w.play=QPushButton('▶');w.play.setObjectName('playButton')
+    w.play=QPushButton();w.play.setObjectName('playButton')
     w.play.setToolTip('Play / pause (Space)')
     w.play.clicked.connect(w.toggle)
     tr.addWidget(w.play)
-    w.to_end=QPushButton('⏭');w.to_end.setObjectName('transportButton')
+    w.to_end=QPushButton();w.to_end.setObjectName('transportButton')
     w.to_end.setToolTip('Go to end (End)')
     w.to_end.clicked.connect(lambda checked=False: w.slider.setValue(1000))
     tr.addWidget(w.to_end)
@@ -601,7 +663,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     split.setStretchFactor(0,0)
     split.setStretchFactor(1,1)
     split.setStretchFactor(2,0)
-    split.setSizes([274,870,326])
+    split.setSizes([290,850,330])
 
     # Time-based workflow remains visible whichever Inspector tab is open.
     timeline,timeline_outer,timeline_head=panel('timelinePanel','Timeline','Click or drag to scrub')
@@ -651,6 +713,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
                  'image_duration','color_fade','color_hold','fps','res','order'):
         getattr(w,name).setAccessibleName(name.replace('_',' '))
     w.stage_timeline.setAccessibleName('Animation timeline: drag to scrub; arrows to step')
+    for content in (asset,animation,hand,output):
+        fit_to_width(content)
     from PySide6.QtGui import QShortcut, QKeySequence
     w.space_shortcut=QShortcut(QKeySequence(Qt.Key.Key_Space),w)
     w.space_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
