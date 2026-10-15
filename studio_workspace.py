@@ -241,7 +241,7 @@ def wordmark_html():
             '<span style="color:#58A7FF">Scribe</span>')
 
 
-def fit_to_width(content):
+def fit_to_width(content, stacked=False):
     """Let a scrolling panel shrink to its column instead of being cut off."""
     from PySide6.QtWidgets import QAbstractSpinBox
     for button in content.findChildren(QPushButton):
@@ -260,7 +260,8 @@ def fit_to_width(content):
         policy=edit.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
         edit.setSizePolicy(policy)
     for form in content.findChildren(QFormLayout):
-        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows if stacked
+                              else QFormLayout.RowWrapPolicy.WrapLongRows)
 
 
 def panel(object_name, title, hint=None):
@@ -504,7 +505,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     transport=QFrame();transport.setObjectName('transport')
     tr=QHBoxLayout(transport);tr.setContentsMargins(4,0,4,0);tr.setSpacing(6)
     w.clock=label('0.00 / 0.00 s','timeCode')
-    w.clock.setMinimumWidth(150)
+    w.clock.setMinimumWidth(104)
     tr.addWidget(w.clock)
     tr.addStretch(1)
     w.to_start=QPushButton();w.to_start.setObjectName('transportButton')
@@ -525,7 +526,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     tr.addWidget(w.to_end)
     tr.addStretch(1)
     w.clock_total=label('','timeTotal')
-    w.clock_total.setMinimumWidth(150)
+    w.clock_total.setMinimumWidth(104)
     w.clock_total.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
     tr.addWidget(w.clock_total)
     monitor_l.addWidget(transport)
@@ -713,7 +714,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
                  'image_duration','color_fade','color_hold','fps','res','order'):
         getattr(w,name).setAccessibleName(name.replace('_',' '))
     w.stage_timeline.setAccessibleName('Animation timeline: drag to scrub; arrows to step')
-    for content in (asset,animation,hand,output):
+    fit_to_width(asset,stacked=True)       # labels above fields in the narrow column
+    for content in (animation,hand,output):
         fit_to_width(content)
     from PySide6.QtGui import QShortcut, QKeySequence
     w.space_shortcut=QShortcut(QKeySequence(Qt.Key.Key_Space),w)
