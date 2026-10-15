@@ -175,3 +175,37 @@ New source/paths sidebar, large preview monitor, task-based Animation/Hand/Expor
 ## Official v0.5.2 release
 
 Image reconstruction, compact VP9 WebM, the Studio workspace and the SVG-to-PNG line-retention repair are now bundled in official **Prototype v0.5.2**. Previous experimental.1–.4 labels refer to development snapshots only. GitHub release tags for 0.5.0 and 0.5.1 are not altered. Full image reconstruction and alpha/color-transition details and current known limitations are in [IMAGE_SOURCE.md](IMAGE_SOURCE.md).
+
+## Optional local AI Redraw (v0.5.3 experimental)
+
+The new third Image Source method **AI redraw (local model)** proposes meaningful object parts and drawing order using an optional Ollama vision model, then uses image segmentation and the existing adaptive painting renderer to create a plausible construction animation. It doesn't use a paid API or generate a replacement image. Auto Trace and Stroke Reconstruction remain available without AI. The model download is separate and can require several GB of disk/RAM. For exact setup steps, privacy details and limitations, read [AI_REDRAW.md](AI_REDRAW.md). The official v0.5.2 release remains unchanged.
+
+## Experimental v0.5.3.2: handwriting fonts and artwork size
+
+The Studio Text / Handwriting panel now supports ten recommended Google Fonts families available by optional one-click download, an editable family name field for other Google Fonts, and importing local TTF/OTF files. It estimates pen-centerline paths from font glyphs so the hand can follow them; they are still approximations rather than true author-provided single-stroke fonts. The original built-in single-line alphabet remains the default. Original font license notices are stored with every Google Fonts download; Google Fonts are open-licensed, not public domain. No font binary files are added to the app ZIP.
+
+The right Animation panel now offers **Artwork size** 25%–200%, separate from export resolution. The whole animated artwork, painting layer and optional hand scale around the canvas center in preview *and* export. Sizes over 100% can crop the canvas. More detailed instructions: [FONTS_AND_ARTWORK_SIZE.md](FONTS_AND_ARTWORK_SIZE.md). This is an experimental branch; official v0.5.2 is unchanged.
+
+## v0.5.3 experimental.3 — font legibility, Ollama JSON, Studio header
+
+Fixed incomplete Google Font lettering: instead of displaying fragmented skeleton traces, the animation reveals the original font's complete character shapes in order. This is a readable typeface reveal, **not** a reconstruction of authentic pen trajectories; the built-in single-line alphabet is still recommended for genuine pen drawing. AI Redraw now retries malformed/empty local Qwen responses with a second constrained JSON request, and provides more detailed failure messages. The upper Studio toolbar now shows the current source/project and has functional stroke-order Undo/Redo, quick Help and Export Settings controls. The user's official v0.5.2 remains unchanged.
+
+## v0.5.3 experimental.4 — TrueType pen-following and requested branding
+
+Google Fonts now animate from **estimated centerline stroke paths** rather than simple left-to-right per-glyph wipes. Each genuine glyph pixel is revealed according to its nearest simulated stroke, so the finished text remains faithful to the actual font. An optional hand follows the path, with pen lifts between strokes. Ordinary TTF/OTF files contain outlines but no authentic writing history, so this is a best-effort path estimate; handwriting remains a visual experiment. The built-in single-line pen mode is unchanged. The Studio top-left now shows the three decorative brand circles, white **Stroke** and blue **Scribe** wordmark, and the current prototype version. The real Windows window controls are untouched. The experimental AI Redraw implementation is unchanged while its local Qwen test is pending.
+
+### Experimental.5: deterministic one-stroke-at-a-time handwriting
+
+The estimated font paths and the optional drawing hand now use **one shared timeline**: draw the current path, lift the pen, move to the next path, then draw it. Every original font-ink pixel is assigned to exactly one owning stroke and one time within that stroke's allotted interval, so later disconnected fragments cannot reveal simultaneously or during a pen-lift. The hand's cursor position and ink reveal derive from the same event schedule. The complete original TTF/OTF glyph appearance is retained on the final frame. Font path ordering is still an approximation—not a recovery of historical pen movement—and some complex joined glyphs may need manual correction. New regression tests check pauses and stroke order. Unrelated image reconstruction, AI Redraw, exports and official v0.5.2 are unchanged.
+
+### v0.5.3-experimental.6 — smoother writing, ink/background colors, hand defaults
+
+The inferred pen-tracing algorithm now filters very short redundant skeleton spurs situated next to already covered longer paths. This reduces little return twitches after a glyph has nearly finished, while independent dots and punctuation are kept. Font appearance is unchanged at the settled final frame; precise historical writing order still cannot be inferred from regular TTF/OTF files.
+
+A new **Ink color** chooser applies to both Google Fonts and built-in single-line lettering; it updates the currently generated lettering live and is used on the next generated text. **Lettering background** offers Transparent (default), White, Black or a custom color. This choice affects actual PNG/WebM/ProRes export frames as well as the preview. Background is composited after scaling so it always covers the entire output canvas; choosing Transparent preserves alpha. Neither control recolors imported SVG drawings or image reconstruction. Studio's Hand panel defaults are now **Hand scale 0.75**, **Pen tip X 0.20**, **Pen tip Y 0.20**, with hand visibility enabled during drawing and painting. These are defaults, not a change to saved hand PNG geometry; users can adjust them.
+
+The official v0.5.2 and AI image redraw algorithms are unchanged. New tests verify these settings, transparent/colored export pixels, and color changes after lettering has already been created.
+
+## v0.5.3-experimental.9 — Balanced AI processing
+
+Image Source → AI Redraw now offers **Fast**, **Balanced** (selected by default), and **Quality** AI processing profiles, independent of the Low/Medium/High contour Detail control. Balanced retains the existing 640px/8-part vision settings while using local-region OpenCV GrabCut instead of full-frame segmentation per object and keeping the local Ollama model warm for five minutes. A cached scene plan is reused when only Detail changes, and the cache now distinguishes processing profiles. [AI_PERFORMANCE.md](AI_PERFORMANCE.md) describes all settings, limitations and the CPU-only benchmark. Existing SVG, lettering, image import and output modes are unchanged. Official Prototype v0.5.2 remains available.

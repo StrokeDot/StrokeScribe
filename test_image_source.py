@@ -44,7 +44,7 @@ class ImageSourceTests(unittest.TestCase):
             self.assertGreater(r.regions.count,2)
             self.assertTrue(all(s.length>0 for s in r.drawing.strokes))
             self.assertEqual(r.drawing.source_mode,mode)
-        with self.assertRaises(ValueError): reconstruct(self.path,'ai_redraw')
+        with self.assertRaises(ValueError): reconstruct(self.path,'unknown_mode')
     def test_coverage_reordering_and_travel(self):
         r=self.result(); d=r.drawing
         plan=plan_for(d,r.image)

@@ -79,6 +79,10 @@ def import_svg(filename):
     return Drawing(strokes,(min(xs),min(ys),max(xs),max(ys)),sorted(warnings))
 
 def render(drawing, progress, width=1920, height=1080, thickness=1.0, hand=None, hand_scale=0.18, anchor=(0.1,0.1),image_timing=True):
+    if getattr(drawing,'source_kind',None)=='font':
+        from font_library import render_font_lettering
+        return render_font_lettering(drawing,progress,width,height,thickness,
+                                    hand,hand_scale,anchor)
     if image_timing and getattr(drawing,'source_kind',None)=='image':
         from image_drawing import render_image_lines
         return render_image_lines(drawing,progress,width,height,thickness,hand,hand_scale,anchor)
@@ -110,7 +114,50 @@ def render(drawing, progress, width=1920, height=1080, thickness=1.0, hand=None,
     painter.end()
     return image
 
-def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55):
+def scale_animation_frame(frame, artwork_scale=1.0):
+    """Scale the complete drawing+color+hand layer inside its output frame.
+
+    This is independent from output resolution and is applied identically in
+    preview and export. Keeps SVG and raster PNG perfectly aligned, including
+    their hand overlay. Can crop at >100% by design.
+    """
+    factor=float(artwork_scale)
+    if not .25<=factor<=2.0 or not math.isfinite(factor):
+        raise ValueError('Artwork size must be between 25% and 200%.')
+    if abs(factor-1.0)<1e-9:
+        return frame
+    output=QImage(frame.size(),QImage.Format.Format_ARGB32_Premultiplied)
+    output.fill(Qt.GlobalColor.transparent)
+    painter=QPainter(output)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    w,h=frame.width(),frame.height()
+    painter.drawImage(QRectF((w-w*factor)/2,(h-h*factor)/2,
+                             w*factor,h*factor),frame)
+    painter.end()
+    return output
+
+
+def apply_lettering_background(frame,drawing):
+    """Composite an optional lettering background AFTER artwork scaling.
+
+    This covers the full output video canvas; default None keeps genuine
+    alpha. SVG/image reconstruction frames are unaffected.
+    """
+    color=getattr(drawing,'lettering_background',None)
+    if color is None or getattr(drawing,'source_kind',None) not in ('font','lettering'):
+        return frame
+    background=QColor(str(color))
+    if not background.isValid():
+        raise ValueError('Invalid lettering background color.')
+    result=QImage(frame.size(),QImage.Format.Format_ARGB32_Premultiplied)
+    result.fill(background)
+    painter=QPainter(result)
+    painter.drawImage(0,0,frame)
+    painter.end()
+    return result
+
+
+def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0):
     folder=Path(folder)
     folder.mkdir(parents=True,exist_ok=False)
     use_color = final_image is not None and not final_image.isNull()
@@ -120,14 +167,22 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
     else:
         total=duration
     count=max(2,round(total*fps))
+    # Artwork scaling transforms the completed frame. Counter-scale the hand
+    # first so the final hand width is governed ONLY by Hand Size, not artwork
+    # magnification. This applies to preview and all export formats equally.
+    if not .25<=float(artwork_scale)<=2.0 or not math.isfinite(float(artwork_scale)):
+        raise ValueError('Artwork size must be between 25% and 200%.')
+    preview_hand_scale=hand_scale/float(artwork_scale)
     for i in range(count):
         fraction=i/(count-1)
         if use_color:
             img=render_color_timeline(drawing,fraction,width,height,duration,fade_duration,hold_duration,
-                                      final_image,thickness,hand,hand_scale,anchor,
+                                      final_image,thickness,hand,preview_hand_scale,anchor,
                                       reveal_mode,brush_width,painting_hand,stroke_spacing)
         else:
-            img=render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)
+            img=render(drawing,fraction,width,height,thickness,hand,preview_hand_scale,anchor)
+        img=scale_animation_frame(img,artwork_scale)
+        img=apply_lettering_background(img,drawing)
         if not img.save(str(folder/f'frame_{i:06d}.png')): raise OSError('Unable to save PNG frame.')
         if callback and callback(i+1,count) is False: raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
     (folder/'sequence.json').write_text(json.dumps(dict(width=width,height=height,fps=fps,frames=count,
@@ -138,7 +193,15 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
         brush_width=brush_width if use_color and reveal_mode in ('brush','continue','guided','clean','adaptive') else None,
         painting_hand=bool(use_color and reveal_mode in ('brush','continue','guided','clean','adaptive') and painting_hand is not None and not painting_hand.isNull()),
         stroke_spacing=stroke_spacing if reveal_mode=='adaptive' else None,
-        alpha=True,first_frame='transparent',
+        artwork_scale=artwork_scale,
+        drawing_visibility=getattr(drawing,'drawing_visibility','progressive'),
+        contour_transition=getattr(drawing,'contour_transition','legacy'),
+        retirement_direction=getattr(drawing,'retirement_direction','forward'),
+        lettering_background=getattr(drawing,'lettering_background',None)
+          if getattr(drawing,'source_kind',None) in ('font','lettering') else None,
+        alpha=not (getattr(drawing,'lettering_background',None) is not None
+                   and getattr(drawing,'source_kind',None) in ('font','lettering')),
+        first_frame='transparent' if getattr(drawing,'lettering_background',None) is None else 'colored_background',
         last_frame='original_color_png' if use_color else 'complete'),indent=2))
     return count
 
