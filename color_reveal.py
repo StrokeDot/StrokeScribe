@@ -209,6 +209,29 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
     """Show SVG drawing, then fade, serpentine, or endpoint-continuous painting."""
     if final_image is None or final_image.isNull():
         return render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)
+    image_animation=getattr(drawing,'image_animation',None)
+    if getattr(drawing,'source_kind',None)=='image' and image_animation in ('draw_paint','paint_only'):
+        # This is a choice of visible animation, not an AI recognition mode.
+        # Paint Only has zero drawing time. Both choices reuse the SAME
+        # reconstructed regions and the SAME continuous paint clock.
+        from image_painting import paint_frame
+        if image_animation=='paint_only':
+            paint_length=max(.001,float(fade_duration))
+            total=paint_length+max(0.,float(hold_duration))
+            elapsed=max(0.,min(1.,float(fraction)))*total
+            paint_progress=min(1.,elapsed/paint_length)
+            return paint_frame(drawing,final_image,width,height,paint_progress,
+                               thickness,brush_width,stroke_spacing,
+                               painting_hand,hand_scale,anchor,False)
+        total=timeline_duration(duration,final_image,fade_duration,hold_duration)
+        elapsed=max(0.,min(1.,float(fraction)))*total
+        stroke_progress,paint_progress=timeline_state(elapsed,duration,fade_duration)
+        if elapsed < max(.001,float(duration)):
+            return render(drawing,stroke_progress,width,height,thickness,
+                          hand,hand_scale,anchor)
+        return paint_frame(drawing,final_image,width,height,paint_progress,
+                           thickness,brush_width,stroke_spacing,
+                           painting_hand,hand_scale,anchor,True)
     total = timeline_duration(duration, final_image, fade_duration, hold_duration)
     elapsed = max(0., min(1., float(fraction))) * total
     stroke_progress, reveal_progress = timeline_state(elapsed,duration,fade_duration)
