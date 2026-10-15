@@ -1,6 +1,6 @@
 """One-time conversion of TEED (MIT, Xavier Soria Poma) to ONNX for StrokeScribe.
 
-Run in CI with PyTorch installed and the TEED repository cloned to ./TEED.
+Rebuild (one time; the result is committed) with PyTorch installed and the TEED repository cloned to ./TEED.
 Writes models/teed.onnx (sigmoid edge probability, 1x1xHxW; H and W must be
 multiples of 8) and verifies ONNX Runtime output against PyTorch.
 """
