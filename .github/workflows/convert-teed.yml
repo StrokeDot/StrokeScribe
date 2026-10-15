@@ -6,6 +6,7 @@ on:
       - '.github/workflows/convert-teed.yml'
 permissions:
   contents: write
+  pull-requests: write
 jobs:
   convert:
     runs-on: ubuntu-latest
@@ -17,9 +18,32 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
-      - run: pip install onnx onnxruntime numpy
+      - run: pip install onnx onnxscript onnxruntime numpy
       - run: git clone --depth 1 https://github.com/xavysp/TEED TEED
-      - run: python tools/convert_teed.py
+      - name: Convert
+        id: convert
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python tools/convert_teed.py 2>&1 | tee convert.log
+      - name: Report conversion output
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo "### TEED conversion: ${{ steps.convert.outcome }}"
+            echo '```text'
+            tail -n 60 convert.log || true
+            echo '```'
+          } > comment.md
+          gh pr comment "$PR_NUMBER" --body-file comment.md
+      - name: Stop if conversion failed
+        if: steps.convert.outcome == 'failure'
+        run: exit 1
       - name: Commit model
         run: |
           git config user.name "github-actions[bot]"
