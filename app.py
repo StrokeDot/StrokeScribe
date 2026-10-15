@@ -334,6 +334,26 @@ class Window(QMainWindow):
         self.image_source_form.setRowVisible(self.ai_profile,active)
         self.image_source_form.setRowVisible(self.ai_note,active)
         self.rebuild_button.setText('Analyze with local AI' if active else 'Apply image settings')
+        if active: self.warm_up_ai()
+
+    def warm_up_ai(self,*args):
+        """Load the selected local model in the background (no generation).
+
+        Gives Ollama a head start so Analyze does not also wait for the model
+        to load. Repeats for the same model/profile are skipped for a minute.
+        """
+        if self.image_mode.currentIndex()!=2: return
+        if self.builder and self.builder.isRunning(): return
+        model=self.ai_model.currentText().strip()
+        profile=self.ai_profile.currentText().strip().lower()
+        if not model: return
+        warmed=getattr(self,'ai_warmed',{})
+        now=time.monotonic()
+        if now-warmed.get((model,profile),-1e9)<60: return
+        warmed[(model,profile)]=now; self.ai_warmed=warmed
+        import threading
+        from semantic_redraw import warm_up_model
+        threading.Thread(target=warm_up_model,args=(model,profile),daemon=True).start()
 
     def rebuild_image(self):
         if self.image_path: self.build_image(self.image_path)

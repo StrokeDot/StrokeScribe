@@ -57,7 +57,8 @@ class ImageSourceTests(unittest.TestCase):
         for seg in other.segments[::max(1,len(other.segments)//40)]:
             progress=.98*(seg.start+seg.end)/2/other.total
             active,tip=other.state(progress)
-            self.assertEqual(tip is not None,seg.painting)
+            # The hand stays visible on painting and pen-up travel alike.
+            self.assertIsNotNone(tip)
     def test_drawing_hand_lifts(self):
         r=self.result(); states=[drawing_state(r.drawing,i/2000) for i in range(2001)]
         self.assertTrue(any(not s.painting and 0<s.stroke_progress<1 for s in states))
@@ -66,7 +67,16 @@ class ImageSourceTests(unittest.TestCase):
         index=next(i for i,s in enumerate(states) if not s.painting and 0<s.stroke_progress<1)
         no=render(r.drawing,index/2000,160,90)
         yes=render(r.drawing,index/2000,160,90,hand=hand)
-        self.assertEqual(pil_image(no).tobytes(),pil_image(yes).tobytes())
+        # During a pen lift the hand stays visible (no blinking) ...
+        self.assertNotEqual(pil_image(no).tobytes(),pil_image(yes).tobytes())
+        self.assertIsNotNone(states[index].lift_point)
+        # ... but no ink is added while the pen is lifted.
+        before=pil_image(render(r.drawing,(index-1)/2000,160,90)).tobytes()
+        if not states[index-1].painting:
+            self.assertEqual(before,pil_image(no).tobytes())
+        # Every frame of the drawing phase has a hand position.
+        self.assertTrue(all(s.painting or s.lift_point is not None
+                            for s in states[1:-1]))
     def test_export_preview_and_alpha(self):
         r=self.result()
         options=dict(duration=.3,fps=10,width=160,height=90,final_image=r.image,

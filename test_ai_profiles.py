@@ -93,6 +93,44 @@ class ProfileTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             local_vision_analysis(image,profile='untrusted')
 
+    def test_warm_up_loads_model_with_the_analysis_context_size(self):
+        from unittest.mock import patch
+        from semantic_redraw import warm_up_model, CONTEXT_TOKENS
+        sent=[]
+        class Reply:
+            def __enter__(self): return self
+            def __exit__(self,*a): return False
+            def read(self,n=-1): return b'{}'
+        def fake(request,timeout=None):
+            sent.append((request.full_url,json.loads(request.data)))
+            return Reply()
+        with patch('urllib.request.urlopen',fake):
+            self.assertTrue(warm_up_model('qwen3-vl:4b','quality'))
+        url,body=sent[0]
+        self.assertTrue(url.endswith('/api/generate'))
+        self.assertEqual(body['model'],'qwen3-vl:4b')
+        self.assertNotIn('prompt',body)
+        self.assertEqual(body['options']['num_ctx'],CONTEXT_TOKENS)
+        self.assertEqual(body['keep_alive'],AI_PROFILES['quality']['keep_alive'])
+        # Unreachable Ollama is silent: warm-up is only a head start.
+        with patch('urllib.request.urlopen',side_effect=OSError('offline')):
+            self.assertFalse(warm_up_model('qwen3-vl:4b'))
+
+    def test_parallel_part_refinement_is_repeatable_and_thread_independent(self):
+        from unittest.mock import patch
+        image=artwork(); parts=sample_analysis()
+        for profile in ('balanced','quality'):
+            with self.subTest(profile=profile):
+                first,masks_a,ids_a=semantic_masks(image,parts,'medium',profile)
+                again,masks_b,ids_b=semantic_masks(image,parts,'medium',profile)
+                with patch('os.cpu_count',return_value=1):
+                    single,masks_c,ids_c=semantic_masks(image,parts,'medium',profile)
+                self.assertEqual(first.labels,again.labels)
+                self.assertEqual(first.labels,single.labels)
+                self.assertEqual(ids_a,ids_c)
+                for a,c in zip(masks_a,masks_c):
+                    np.testing.assert_array_equal(a,c)
+
     def test_both_local_segmentation_methods_preserve_original_pixels(self):
         image=artwork()
         parts=sample_analysis()

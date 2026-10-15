@@ -9,6 +9,8 @@ to the fixed local endpoint 127.0.0.1:11434 (not to an online service).
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+import os
 import base64
 from dataclasses import dataclass
 import io
@@ -286,7 +288,7 @@ def _part_rect(part,w,h):
     return left,top,right-left,bottom-top
 
 
-def _grabcut_part(rgb,alpha,rect,settings):
+def _grabcut_part(rgb,alpha,rect,settings,seed=0):
     """Refine a single part within its own padded ROI.
 
     The old algorithm ran GrabCut on the entire image for every part. For
@@ -311,6 +313,11 @@ def _grabcut_part(rgb,alpha,rect,settings):
     if working.shape[0]<8 or working.shape[1]<8:return None
     mask=np.zeros(working.shape[:2],dtype=np.uint8)
     try:
+        # GrabCut seeds its color models from OpenCV's per-thread random
+        # generator. A fixed seed per part makes results repeatable (the
+        # same image always yields the same outlines) and independent of
+        # which worker thread refines which part.
+        cv2.setRNGSeed(seed)
         cv2.grabCut(working,mask,rectangle,None,None,
                     settings['grabcut_iterations'],cv2.GC_INIT_WITH_RECT)
     except cv2.error:
@@ -346,9 +353,18 @@ def semantic_masks(image, analysis, detail='medium', profile='balanced'):
     extracted=[]
     settings=profile_settings(profile)
     parts=analysis.parts[:min(MAX_PARTS,settings['max_parts'])]
+    # Each part is refined independently, so they run side by side on the
+    # CPU cores (OpenCV releases Python's lock during GrabCut). Results are
+    # collected in the original part order, so output is unchanged by threads.
+    rects=[_part_rect(part,gw,gh) for part in parts]
+    workers=max(1,min(len(parts),os.cpu_count() or 1,8))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        refined=list(pool.map(
+            lambda item:_grabcut_part(rgb,alpha,item[1],settings,seed=1000+item[0]),
+            enumerate(rects,1)))
     for n,part in enumerate(parts,1):
-        x,y,w,h=_part_rect(part,gw,gh)
-        candidates=_grabcut_part(rgb,alpha,(x,y,w,h),settings)
+        x,y,w,h=rects[n-1]
+        candidates=refined[n-1]
         if candidates is None:
             candidates=np.zeros((gh,gw),dtype=np.uint8)
         if not candidates.any():
@@ -430,3 +446,29 @@ def ai_guided_drawing(image,analysis,detail='medium',profile='balanced'):
     d.source_kind='image'
     d.source_mode='ai_redraw'
     return d,qimage(image)
+
+
+OLLAMA_GENERATE = 'http://127.0.0.1:11434/api/generate'
+
+
+def warm_up_model(model=DEFAULT_MODEL, profile='balanced', timeout=120.):
+    """Ask local Ollama to load the vision model before Analyze is clicked.
+
+    Loading a model can take several seconds. A request with only the model
+    name loads it without generating anything. It uses the SAME context size
+    as the real analysis: Ollama reloads a model whose context size changes,
+    which would waste the warm-up. Failures are silent; this is only a head
+    start, and nothing leaves the computer.
+    """
+    import urllib.request as request_module
+    settings=profile_settings(profile)
+    body=json.dumps({'model':str(model),'keep_alive':settings['keep_alive'],
+                     'options':{'num_ctx':CONTEXT_TOKENS}}).encode()
+    request=request_module.Request(OLLAMA_GENERATE,data=body,
+                                   headers={'Content-Type':'application/json'})
+    try:
+        with request_module.urlopen(request,timeout=timeout) as response:
+            response.read(65536)
+        return True
+    except Exception:
+        return False

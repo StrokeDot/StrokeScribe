@@ -376,6 +376,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     image_form.setRowVisible(w.ai_profile,False)
     image_form.setRowVisible(w.ai_note,False)
     w.image_mode.currentIndexChanged.connect(w.update_image_mode)
+    # Typed model names warm up when editing finishes, not on every keystroke.
+    w.ai_model.currentIndexChanged.connect(w.warm_up_ai)
+    w.ai_model.lineEdit().editingFinished.connect(w.warm_up_ai)
+    w.ai_profile.currentIndexChanged.connect(w.warm_up_ai)
     w.image_controls.hide()
     asset_l.addWidget(w.image_controls)
     asset_l.addWidget(label('TEXT / HANDWRITING'))
