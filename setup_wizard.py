@@ -144,17 +144,20 @@ class SetupDialog(QDialog):
         self.progress_label.setObjectName('note')
         root.addWidget(self.progress); root.addWidget(self.progress_label)
 
+        # Buttons connect through small lambdas: connecting a bound method
+        # here crashed PySide6 when this window was opened from another
+        # button's click (the ⚙ button).
         bottom = QHBoxLayout()
         self.show_at_startup = QCheckBox('Show this window when StrokeScribe starts')
         self.show_at_startup.setChecked(show_at_startup and saved['show_at_startup'])
         bottom.addWidget(self.show_at_startup); bottom.addStretch(1)
         self.recheck_button = QPushButton('Check again')
-        self.recheck_button.clicked.connect(self.check)
+        self.recheck_button.clicked.connect(lambda checked=False: self.check())
         self.download_button = QPushButton('Download missing…')
         self.download_button.setObjectName('primary')
-        self.download_button.clicked.connect(self.download_missing)
+        self.download_button.clicked.connect(lambda checked=False: self.download_missing())
         self.done_button = QPushButton('Use this level')
-        self.done_button.clicked.connect(self.finish)
+        self.done_button.clicked.connect(lambda checked=False: self.finish())
         for button in (self.recheck_button, self.download_button, self.done_button):
             bottom.addWidget(button)
         root.addLayout(bottom)
