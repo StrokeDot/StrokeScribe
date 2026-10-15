@@ -22,6 +22,8 @@ SOURCE_FILES = (
     + [ROOT / "LICENSE"]
     + [p for folder in ("assets", "samples") for p in (ROOT / folder).rglob("*")
        if p.is_file() and p.suffix.lower() in {".png", ".svg", ".wav"}]
+    + [p for p in (ROOT / "models").glob("*")
+       if p.is_file() and p.suffix.lower() in {".onnx", ".txt"}]
 )
 
 

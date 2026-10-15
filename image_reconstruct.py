@@ -34,9 +34,25 @@ def load_raster(filename):
     # Opaque backgrounds are intentionally retained; this is not background removal.
     return image.crop(bbox)
 
+def line_art_drawing(original,detail='medium'):
+    """Ordered pen strokes from the line art method (lineart.py)."""
+    from engine import Drawing, Stroke
+    from lineart import line_art_strokes
+    strokes,outlines=line_art_strokes(original,detail)
+    width=max(original.size)*.0025
+    named=[Stroke(('outline' if i<outlines else 'line')+f' {i+1}',points,'#303946',width)
+           for i,points in enumerate(strokes)]
+    if not named:
+        w,h=original.size
+        named=[Stroke('image perimeter',[(0,0),(w,0),(w,h),(0,h),(0,0)],'#303946',width)]
+    return Drawing(named,(0.,0.,float(original.width),float(original.height)),[
+        'Line art: pen strokes reconstructed from the image (TEED line model + ink lines).',
+        'Strokes approximate an artist\'s drawing; original colors are painted afterwards.'])
+
+
 def reconstruct(filename,mode='auto_trace',detail='medium',ai_model='qwen3-vl:4b-instruct',ai_analysis=None,ai_profile='balanced'):
-    if mode not in ('auto_trace','stroke_reconstruction','ai_redraw'):
-        raise ValueError('Choose Auto Trace, Stroke Reconstruction, or AI Redraw.')
+    if mode not in ('auto_trace','stroke_reconstruction','ai_redraw','line_art'):
+        raise ValueError('Choose Line Art, Auto Trace, Stroke Reconstruction, or AI Redraw.')
     if detail not in ('low','medium','high'):
         raise ValueError('Choose Low, Medium or High detail.')
     original=load_raster(filename)
@@ -46,11 +62,14 @@ def reconstruct(filename,mode='auto_trace',detail='medium',ai_model='qwen3-vl:4b
         drawing,image=ai_guided_drawing(original,analysis,detail,profile=ai_profile)
         return Reconstruction(drawing,image,drawing.image_regions,mode,detail,Path(filename).name)
     regions=segment_regions(original,detail)
-    drawing=trace_image(original,regions,detail,mode)
+    if mode=='line_art':
+        drawing=line_art_drawing(original,detail)
+    else:
+        drawing=trace_image(original,regions,detail,mode)
     # Optional metadata: existing SVG Drawings have no region map and use
     # the unchanged contour/alpha planner.
     drawing.image_regions=regions
-    drawing.image_region_priority=mode=='stroke_reconstruction'
+    drawing.image_region_priority=mode in ('stroke_reconstruction','line_art')
     drawing.source_kind='image'
     drawing.source_mode=mode
     return Reconstruction(drawing,qimage(original),regions,mode,detail,Path(filename).name)

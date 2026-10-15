@@ -342,7 +342,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.image_controls=QWidget()
     image_form=form_layout();w.image_controls.setLayout(image_form);w.image_source_form=image_form
     w.image_mode=QComboBox();w.image_mode.addItems([
-        'Auto trace','Stroke reconstruction','AI redraw (local model)'])
+        'Auto trace','Stroke reconstruction','AI redraw (local model)',
+        'Line art (recommended)'])
+    w.image_mode.setCurrentIndex(3)
+    w.image_mode.setToolTip('Line art: clean artist-style pen strokes from any image, '
+                            'using a small built-in line model. No Ollama needed.')
     image_form.addRow('Method',w.image_mode)
     w.ai_model=QComboBox()
     w.ai_model.setEditable(True)

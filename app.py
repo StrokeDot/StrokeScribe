@@ -420,7 +420,7 @@ class Window(QMainWindow):
 
     def build_image(self,path):
         if self.builder and self.builder.isRunning(): return
-        mode=['auto_trace','stroke_reconstruction','ai_redraw'][self.image_mode.currentIndex()]
+        mode=['auto_trace','stroke_reconstruction','ai_redraw','line_art'][self.image_mode.currentIndex()]
         model=self.ai_model.currentText().strip()
         profile=self.ai_profile.currentText().strip().lower()
         cache_key=None
