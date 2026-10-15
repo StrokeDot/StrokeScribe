@@ -18,6 +18,18 @@ from adaptive_hand import pil_image, qimage
 
 _SUPPORT_CACHE = OrderedDict()
 
+# How far painted coverage reaches to retire nearby SVG guide ink, as a
+# fraction of the artwork's longest side. About 2.5 adaptive grid cells.
+GUIDE_REACH = .012
+
+
+def grown_coverage(alpha, rect):
+    """Dilate a canvas-sized coverage alpha by GUIDE_REACH of the artwork."""
+    reach = max(2, int(round(max(rect.width(), rect.height()) * GUIDE_REACH)))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,
+                                       (2 * reach + 1, 2 * reach + 1))
+    return cv2.dilate(np.ascontiguousarray(alpha), kernel)
+
 
 def _nearest_source_support(image):
     """Map each source-grid cell to its nearest visible PNG pixel (cached)."""
@@ -62,7 +74,13 @@ def svg_guide_erase_mask(coverage, image, rect):
     alpha = np.frombuffer(bytes(canvas.constBits()), dtype=np.uint8).reshape(
         height, width, 4)[:, :, 3]
 
-    # Sample *the actual current paint mask*, not an independent erase timer.
+    # Grow the *actual current paint mask* by a small reach before using it.
+    # The adaptive planner reveals on a coarse grid, so the outermost source
+    # cells often read as unpainted even when the paint beside them is done.
+    # Ink that the SVG trace places a few pixels outside the PNG edge then
+    # survives as dark specks until the final frame. Growing the coverage
+    # retires that ink together with its painted neighbourhood.
+    alpha = grown_coverage(alpha, rect)
     xs = np.clip(np.floor(rect.left() + (np.arange(gw) + .5) *
                           rect.width() / gw).astype(np.int32), 0, width - 1)
     ys = np.clip(np.floor(rect.top() + (np.arange(gh) + .5) *
@@ -78,7 +96,7 @@ def svg_guide_erase_mask(coverage, image, rect):
     out_y = np.clip(np.floor((np.arange(height) + .5 - rect.top()) *
                              gh / max(.001, rect.height())).astype(np.int32),
                     0, gh - 1)
-    amount = source_coverage[np.ix_(out_y, out_x)]
+    amount = np.maximum(source_coverage[np.ix_(out_y, out_x)], alpha)
     mask = Image.new('RGBA', (width, height), (255, 255, 255, 0))
     mask.putalpha(Image.fromarray(amount, 'L'))
     return qimage(mask)

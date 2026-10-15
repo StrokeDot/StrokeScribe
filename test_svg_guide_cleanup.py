@@ -116,6 +116,36 @@ class SVGGuideCoverageTests(unittest.TestCase):
                         self.check_left_guide_removed_right_guide_waits(
                             result, d, image)
 
+    def test_guide_just_outside_png_edge_retires_with_painted_neighbourhood(self):
+        # Reported as dark specks along the headset silhouette: the trace sits
+        # a few pixels outside the PNG edge, and the coarse adaptive grid has
+        # not marked the outermost source cells as painted yet.
+        png = Image.new('RGBA', (90, 70))
+        ImageDraw.Draw(png).rectangle((20, 18, 70, 52),
+                                      fill=(219, 183, 103, 255))
+        image = qimage(png)
+        d = Drawing([Stroke('edge guide', [(30., 16.8), (60., 16.8)],
+                            '#172A3F', 2.)], (0., 0., 90., 70.), [])
+        d.source_kind = 'svg'
+        rect = artwork_rect(d, image, 320, 240)
+        mask = QImage(320, 240, QImage.Format.Format_ARGB32_Premultiplied)
+        mask.fill(Qt.GlobalColor.transparent)
+        p = QPainter(mask)
+        # Everything painted except a thin band at the PNG's outer edge.
+        top = int(rect.top() + 18 * rect.height() / 70) + 3
+        p.fillRect(int(rect.left() + 20 * rect.width() / 90) + 2, top,
+                   int(48 * rect.width() / 90), int(30 * rect.height() / 70),
+                   Qt.GlobalColor.white)
+        p.end()
+        x, y = (round(v) for v in project(d, 320, 240, (45., 16.8)))
+        before = pixels(render(d, 1., 320, 240))
+        self.assertGreater(int(before[y, x, 3]), 0)
+        self.assertGreater(top - y, 3, 'Guide must sit outside direct reach')
+        cleaned = pixels(remove_svg_guides(render(d, 1., 320, 240), mask,
+                                           image, rect))
+        self.assertEqual(int(cleaned[y, x, 3]), 0,
+                         'Edge guide beside painted color must not linger')
+
     def test_empty_mask_does_not_erase_svg_guides(self):
         d, image = svg_fixture()
         mask = QImage(320, 240, QImage.Format.Format_ARGB32_Premultiplied)
