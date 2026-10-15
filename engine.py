@@ -167,14 +167,20 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
     else:
         total=duration
     count=max(2,round(total*fps))
+    # Artwork scaling transforms the completed frame. Counter-scale the hand
+    # first so the final hand width is governed ONLY by Hand Size, not artwork
+    # magnification. This applies to preview and all export formats equally.
+    if not .25<=float(artwork_scale)<=2.0 or not math.isfinite(float(artwork_scale)):
+        raise ValueError('Artwork size must be between 25% and 200%.')
+    preview_hand_scale=hand_scale/float(artwork_scale)
     for i in range(count):
         fraction=i/(count-1)
         if use_color:
             img=render_color_timeline(drawing,fraction,width,height,duration,fade_duration,hold_duration,
-                                      final_image,thickness,hand,hand_scale,anchor,
+                                      final_image,thickness,hand,preview_hand_scale,anchor,
                                       reveal_mode,brush_width,painting_hand,stroke_spacing)
         else:
-            img=render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)
+            img=render(drawing,fraction,width,height,thickness,hand,preview_hand_scale,anchor)
         img=scale_animation_frame(img,artwork_scale)
         img=apply_lettering_background(img,drawing)
         if not img.save(str(folder/f'frame_{i:06d}.png')): raise OSError('Unable to save PNG frame.')
