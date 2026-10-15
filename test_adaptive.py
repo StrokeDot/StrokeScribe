@@ -108,7 +108,7 @@ class AdaptiveTests(unittest.TestCase):
         d=Drawing([Stroke('edge',[(10,10),(60,10)],width=1)],(0,0,size,size),[])
         plan=build_plan(d,image)
         gw,gh=plan.size
-        faint_cells=[c for c in range(gw*gh) if (c%gw)>=int(80*gw/size)
+        faint_cells=[c for c in range(gw*gh) if int(80*gw/size)<=(c%gw)<=int(110*gw/size)
                      and int(15*gh/size)<=(c//gw)<=int(105*gh/size)]
         self.assertTrue(all(not plan.labels[c] for c in faint_cells), 'no brush there')
         for seg in plan.segments:

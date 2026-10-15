@@ -134,14 +134,19 @@ class LineArtReconstructionTests(unittest.TestCase):
         plan = plan_for(d, result.image)
         self.assertGreater(len(plan.segments), 0)
 
-    def test_line_art_is_the_default_image_method(self):
+    def test_line_art_is_the_only_image_method(self):
         os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
         from PySide6.QtWidgets import QApplication
         QApplication.instance() or QApplication([])
         from app import Window
         w = Window()
         try:
-            self.assertEqual(w.image_mode.currentText(), 'Line art (recommended)')
+            self.assertFalse(hasattr(w, 'image_mode'))      # no method menu any more
+            self.assertFalse(hasattr(w, 'ai_model'))
+            self.assertEqual([w.image_detail.itemText(i) for i in range(w.image_detail.count())],
+                             ['Low', 'Medium', 'High', 'Max'])
+            self.assertEqual(w.image_detail.currentText(), 'Medium')
+            self.assertFalse(w.clean_faint.isChecked())
         finally:
             w.close()
 
