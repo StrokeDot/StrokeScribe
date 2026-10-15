@@ -144,9 +144,6 @@ class SetupDialog(QDialog):
         self.progress_label.setObjectName('note')
         root.addWidget(self.progress); root.addWidget(self.progress_label)
 
-        # Buttons connect through small lambdas: connecting a bound method
-        # here crashed PySide6 when this window was opened from another
-        # button's click (the ⚙ button).
         bottom = QHBoxLayout()
         self.show_at_startup = QCheckBox('Show this window when StrokeScribe starts')
         self.show_at_startup.setChecked(show_at_startup and saved['show_at_startup'])

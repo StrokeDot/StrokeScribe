@@ -168,10 +168,20 @@ class SetupWindowTests(IsolatedSettings):
             w.apply_tier('max')
             self.assertEqual(w.ai_model.currentText(), 'qwen3-vl:8b-instruct')
             self.assertEqual(w.ai_profile.currentText(), 'Quality')
-            with patch('setup_wizard.SetupDialog.exec', return_value=0) as shown, \
-                 patch('setup_wizard.CheckWorker.start'):
+            # Swap in a stand-in window class. (Patching a method on the real
+            # Qt class crashes PySide6 when it later connects signals.)
+            opened = []
+            class FakeDialog:
+                def __init__(self, parent=None):
+                    from types import SimpleNamespace
+                    opened.append(parent)
+                    self.tier_applied = SimpleNamespace(connect=lambda slot: opened.append(slot))
+                def exec(self):
+                    return 0
+            with patch('setup_wizard.SetupDialog', FakeDialog):
                 w.settings_button.click()
-            self.assertTrue(shown.called)
+            self.assertIs(opened[0], w)
+            self.assertEqual(opened[1], w.apply_tier)
         finally:
             w.close()
 
