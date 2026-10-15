@@ -61,7 +61,10 @@ class PaintPlan:
         f = min(1., max(0., (clock-segment.start)/(segment.end-segment.start)))
         point = (segment.a[0]+(segment.b[0]-segment.a[0])*f,
                  segment.a[1]+(segment.b[1]-segment.a[1])*f)
-        return segment, point if segment.painting else None
+        # Pen-up transfers never paint (segment.painting is False), but the
+        # hand stays visible and glides to the next region. Hiding it here made
+        # the hand blink out for a frame at every transfer.
+        return segment, point
 
     def mask(self, progress):
         clock = max(0., min(1., float(progress)))/.98*self.total

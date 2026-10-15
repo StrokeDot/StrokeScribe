@@ -75,17 +75,38 @@ class AdaptiveTests(unittest.TestCase):
             radii={round(s.radius,2) for s in plan.segments if s.painting}
             if size==112: self.assertGreater(len(radii),1)
 
+    def test_hand_never_blinks_out_during_painting(self):
+        # Reported: the hand vanished for single frames at pen-up transfers
+        # and at the drawing-to-painting handoff. Sample every frame at 30fps.
+        d,image=fixture(80)
+        plan=build_plan(d,image)
+        self.assertTrue(any(not s.painting for s in plan.segments))
+        frames=300
+        missing=[i for i in range(frames)
+                 if plan.state(.98*i/frames)[1] is None]
+        self.assertEqual(missing,[],'Hand missing on painting frames')
+        hand=QImage(12,12,QImage.Format.Format_ARGB32); hand.fill(0xffff00ff)
+        kwargs=dict(width=320,height=240,duration=1.,fade_duration=3.,
+                    hold_duration=0,final_image=image,reveal_mode='adaptive',
+                    hand=hand,painting_hand=hand)
+        def has_hand(fraction):
+            px=pil_image(render_color_timeline(d,fraction,**kwargs)).convert('RGB')
+            return (255,0,255) in {c for _,c in px.getcolors(320*240)}
+        # Exact handoff frame (elapsed == drawing duration) and its neighbours.
+        for fraction in (.249,.25,.251):
+            self.assertTrue(has_hand(fraction),f'Hand missing at {fraction}')
+
     def test_brush_and_hand_share_clock_no_travel_paint(self):
         d,image=fixture(40); plan=build_plan(d,image)
         for seg in plan.segments[::max(1,len(plan.segments)//25)]:
             progress=.98*((seg.start+seg.end)/2)/plan.total
             active,tip=plan.state(progress)
             self.assertIs(active,seg)
-            if seg.painting:
-                self.assertAlmostEqual(tip[0],(seg.a[0]+seg.b[0])/2)
-                self.assertAlmostEqual(tip[1],(seg.a[1]+seg.b[1])/2)
-            else:
-                self.assertIsNone(tip)
+            # The hand follows the route on painting AND pen-up travel.
+            self.assertAlmostEqual(tip[0],(seg.a[0]+seg.b[0])/2)
+            self.assertAlmostEqual(tip[1],(seg.a[1]+seg.b[1])/2)
+            if not seg.painting:
+                # Travel moves the hand but never paints.
                 a=.98*(seg.start+.00001)/plan.total
                 b=.98*(seg.end-.00001)/plan.total
                 self.assertEqual(plan.mask(a).tobytes(),plan.mask(b).tobytes())
