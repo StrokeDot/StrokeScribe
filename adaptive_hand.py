@@ -362,9 +362,13 @@ def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
     key=(geometry,region_map,getattr(drawing,'image_region_priority',False),
          getattr(drawing,'image_semantic_order',()),tuple(drawing.bounds),
          (image.width(),image.height()),_alpha_digest(image),
-         float(brush_width),float(stroke_spacing))
+         float(brush_width),float(stroke_spacing),getattr(drawing,'paint_method','adaptive'))
     if key not in _CACHE:
-        _CACHE[key]=build_plan(drawing,image,brush_width,stroke_spacing)
+        if getattr(drawing,'paint_method','adaptive')=='zigzag':
+            from zigzag_paint import build_zigzag_plan
+            _CACHE[key]=build_zigzag_plan(drawing,image,brush_width,stroke_spacing)
+        else:
+            _CACHE[key]=build_plan(drawing,image,brush_width,stroke_spacing)
         if len(_CACHE)>3: _CACHE.popitem(last=False)
     else:
         _CACHE.move_to_end(key)

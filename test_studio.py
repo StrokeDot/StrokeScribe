@@ -109,9 +109,10 @@ class StudioTests(unittest.TestCase):
     def test_retired_paint_modes_are_not_offered(self):
         items=[self.window.reveal_mode.itemText(i)
                for i in range(self.window.reveal_mode.count())]
-        self.assertEqual(items,['Fade','Brush painting','Adaptive Hand Painting'])
+        self.assertEqual(items,['Brush painting','Adaptive Hand Painting','Zigzag sweep'])
         from app import REVEAL_MODES
-        self.assertEqual(REVEAL_MODES,('fade','brush','adaptive'))
+        self.assertEqual(REVEAL_MODES,('brush','adaptive','zigzag'))
+        self.assertEqual(self.window.reveal_mode.currentText(),'Adaptive Hand Painting')
 
     def test_image_and_export_controls_preserved(self):
         w=self.window
@@ -151,10 +152,14 @@ class StudioTests(unittest.TestCase):
         w.inspector_tabs.setCurrentIndex(0)
         w.source_type.setCurrentIndex(1)
         self.assertFalse(w.load_color_button.isEnabled())
-        self.assertFalse(w.reveal_mode.isVisible())
+        # Images choose Adaptive or Zigzag; plain Brush painting is SVG-only.
+        self.assertTrue(w.reveal_mode.isVisible())
+        self.assertFalse(w.reveal_mode.model().item(0).isEnabled())
+        self.assertTrue(w.reveal_mode.model().item(2).isEnabled())
         self.assertTrue(w.image_duration.isVisible())
         w.source_type.setCurrentIndex(0)
         self.assertTrue(w.reveal_mode.isVisible())
+        self.assertTrue(w.reveal_mode.model().item(0).isEnabled())
         self.assertFalse(w.image_duration.isVisible())
 
     def test_timeline_keyboard_and_export_busy_guard(self):

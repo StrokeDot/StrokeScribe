@@ -160,6 +160,10 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Zigzag sweep painting (v0.5.3-experimental.25)
+
+**Paint mode** now offers **Brush painting**, **Adaptive Hand Painting** and the new **Zigzag sweep** (the old Fade option was removed from the menu). Zigzag sweep starts where the drawing ended and follows one logical route along the object's centre line (for a headset: one side of the band, the ear cup, across to the other cup, up the other side), scribbling colour back and forth across the shape: wide strokes on broad parts, narrow ones on thin parts. Side branches (a microphone, a handle) are painted as the route passes them, and any spot the sweep missed is touched up at the end, so every visible pixel is always painted. Image sources can choose Adaptive Hand Painting or Zigzag sweep; plain Brush painting stays SVG-only. Hand, guide-line retirement, timing and export work exactly as with Adaptive Hand Painting.
+
 ## Artist animation (v0.5.3-experimental.24)
 
 Images now animate like a pencil artist by default (**Animation: Artist (layered)**), following lessons from a real face-drawing video: light guide shapes first, then the main lines area by area with the densest detail last and slowest, then darker accents. Strokes carry their own drawing speed (`pace`). **Standard** keeps the single-pass animation. Exported SVGs keep each layer's colour and line weight.

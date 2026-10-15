@@ -40,7 +40,7 @@ def format_seconds(seconds):
     return f'{hours}:{minutes:02d}:{secs:02d}' if hours else f'{minutes}:{secs:02d}'
 # Paint mode menu order (studio_workspace). Stroke-guided and Clean contour
 # painting were retired from the menu; their code remains for old renders.
-REVEAL_MODES = ('fade', 'brush', 'adaptive')
+REVEAL_MODES = ('brush', 'adaptive', 'zigzag')
 
 class Canvas(QWidget):
     def __init__(self):
@@ -123,8 +123,9 @@ class ImageBuilder(QThread):
     failed=Signal(str)
     stage=Signal(str,int,bool)
     def __init__(self,path,detail,brush_width,spacing,clean_faint=False,style='clean',
-                 animation='standard'):
+                 animation='standard',paint_method='adaptive'):
         super().__init__()
+        self.paint_method=paint_method
         self.path=path; self.detail=detail; self.mode='line_art'; self.style=style
         self.animation=animation
         self.brush_width=brush_width; self.spacing=spacing
@@ -143,6 +144,7 @@ class ImageBuilder(QThread):
             self.timings['lines']=time.perf_counter()-started
             self.stage.emit('Preparing animation and brush routes',85,False)
             started=time.perf_counter()
+            result.drawing.paint_method=self.paint_method
             plan_for(result.drawing,result.image,self.brush_width,self.spacing)
             self.timings['brush']=time.perf_counter()-started
             self.stage.emit('Drawing is ready',100,False)
@@ -273,8 +275,12 @@ class Window(QMainWindow):
         image_source=bool(self.source_type.currentIndex())
         self.load_color_button.setEnabled(not image_source)
         self.use_color.setEnabled(not image_source and self.final_image is not None)
-        self.reveal_mode.setEnabled(not image_source)
-        self.paint_form.setRowVisible(self.reveal_mode,not image_source)
+        # Image sources paint by brush plan only (Adaptive or Zigzag).
+        brush_item=self.reveal_mode.model().item(0)
+        if brush_item is not None:
+            brush_item.setEnabled(not image_source)
+        if image_source and self.reveal_mode.currentIndex()==0:
+            self.reveal_mode.setCurrentIndex(1)
         self.paint_form.setRowVisible(self.image_paint_hint,image_source)
         self.paint_form.setRowVisible(self.color_fade,not image_source)
         self.paint_form.setRowVisible(self.image_duration,image_source)
@@ -282,7 +288,8 @@ class Window(QMainWindow):
         paint_only=image_source and self.image_animation.currentIndex()==1
         self.duration.setEnabled(not paint_only)
         self.speed.setEnabled(not paint_only)
-        self.reveal_mode.setToolTip('Image sources use Adaptive Hand Painting.' if image_source else '')
+        self.reveal_mode.setToolTip('Image sources use Adaptive Hand Painting or Zigzag sweep.'
+                                    if image_source else '')
         self.output_summary.setText(f'{self.res.currentText()}  •  {self.fps.value()} fps')
         busy=bool((self.worker and self.worker.isRunning()) or (self.builder and self.builder.isRunning()))
         self.export.setEnabled(self.drawing is not None and not busy)
@@ -358,7 +365,8 @@ class Window(QMainWindow):
                                   self.brush_width.value(),self.stroke_spacing.value(),
                                   clean_faint=self.clean_faint.isChecked(),
                                   style=('clean','detailed')[self.image_style.currentIndex()],
-                                  animation=('artist','standard')[self.image_animation_style.currentIndex()])
+                                  animation=('artist','standard')[self.image_animation_style.currentIndex()],
+                                  paint_method=self.image_paint_method())
         self.builder.ready.connect(self.image_ready)
         self.builder.failed.connect(self.image_failed)
         self.builder.stage.connect(self.image_stage)
@@ -606,6 +614,10 @@ class Window(QMainWindow):
         # are changing. A single preview reflects the final requested value.
         self.brush_preview_timer.start()
 
+    def image_paint_method(self):
+        mode=REVEAL_MODES[self.reveal_mode.currentIndex()]
+        return mode if mode in ('adaptive','zigzag') else 'adaptive'
+
     def options(self):
         if self.drawing is not None and getattr(self.drawing,'source_kind',None)=='image':
             self.drawing.image_animation=['draw_paint','paint_only'][self.image_animation.currentIndex()]
@@ -624,7 +636,7 @@ class Window(QMainWindow):
             paint_only=self.image_animation.currentIndex()==1
             options.update(final_image=self.image_result.image if self.image_result
                            and (self.preserve_colors.isChecked() or paint_only) else None,
-                           fade_duration=self.image_duration.value(),reveal_mode='adaptive',
+                           fade_duration=self.image_duration.value(),reveal_mode=self.image_paint_method(),
                            duration=0. if paint_only else options['duration'])
         return options
     def refresh(self,*args):

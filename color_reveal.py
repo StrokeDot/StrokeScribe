@@ -206,9 +206,14 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
                           final_image=None, thickness=1., hand=None,
                           hand_scale=.18, anchor=(.1,.1), reveal_mode='fade',
                           brush_width=.14, painting_hand=None, stroke_spacing=.55):
-    """Show SVG drawing, then fade, serpentine, or endpoint-continuous painting."""
+    """Show SVG drawing, then fade, brush, adaptive or zigzag painting."""
     if final_image is None or final_image.isNull():
         return render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)
+    if reveal_mode in ('adaptive','zigzag'):
+        # Zigzag sweep is a different brush ROUTE; the timed plan format,
+        # renderer, hand and guide retirement are shared with Adaptive.
+        drawing.paint_method=reveal_mode
+        reveal_mode='adaptive'
     image_animation=getattr(drawing,'image_animation',None)
     if getattr(drawing,'source_kind',None)=='image' and image_animation in ('draw_paint','paint_only'):
         # This is a choice of visible animation, not an AI recognition mode.
