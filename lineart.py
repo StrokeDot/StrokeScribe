@@ -615,3 +615,93 @@ def line_art_strokes(image, detail='medium', style='detailed'):
     ordered = order_strokes(outline, strokes, size * .06)
     inverse = 1. / scale
     return [[(x * inverse + ox, y * inverse + oy) for x, y in s] for s in ordered], len(outline)
+
+
+# ---------------------------------------------------------------- artist
+
+ARTIST_COLORS = {'guide': '#A3ABB6', 'line': '#303946', 'accent': '#121820'}
+ARTIST_WIDTH = {'guide': .6, 'line': 1., 'accent': 1.45}
+
+
+def nearest_order(strokes, cursor):
+    """Nearest-next order (reversing strokes when that is closer)."""
+    pending, ordered = list(strokes), []
+    while pending:
+        _, i, reverse = min([(math.dist(cursor, s[0]), i, False) for i, s in enumerate(pending)] +
+                            [(math.dist(cursor, s[-1]), i, True) for i, s in enumerate(pending)])
+        s = pending.pop(i)
+        if reverse:
+            s = list(reversed(s))
+        ordered.append(s)
+        cursor = s[-1]
+    return ordered, cursor
+
+
+def _loosen(points, epsilon):
+    """Straighter, simpler version of a stroke, like a quick guide line."""
+    return smooth(simplify([(y, x) for x, y in points], epsilon), 1)
+
+
+def artist_strokes(image, detail='medium'):
+    """Layered drawing like an artist: guides, main lines, then accents.
+
+    Returns [(layer, points, pace)] in drawing order, image coordinates.
+    - guide: a few light, quick lines for the big shapes (low-detail lines,
+      loosened), drawn first and left faintly visible underneath;
+    - line: the Clean drawing, outline first, then long structural lines,
+      then area by area from simple areas to the densest detail, which is
+      also drawn more slowly;
+    - accent: the outline and strongest lines re-drawn darker at the end.
+    """
+    main, outlines = line_art_strokes(image, detail, 'clean')
+    if not main:
+        return []
+    xs = [x for s in main for x, _ in s]
+    ys = [y for s in main for _, y in s]
+    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+    size = max(x1 - x0, y1 - y0, 1.)
+    long_len = size * .12
+
+    # 1. Guides: the biggest shapes only, loosened.
+    rough, rough_outlines = line_art_strokes(image, 'low', 'clean')
+    guides = rough[:rough_outlines] + sorted(
+        [s for s in rough[rough_outlines:] if length(s) >= size * .08],
+        key=length, reverse=True)[:16]
+    guides = [_loosen(s, size * .0025) for s in guides]
+    guides = [g for g in guides if len(g) >= 2]
+    guides, cursor = nearest_order(guides, guides[0][0] if guides else (x0, y0))
+
+    # 2. Main lines: outline, long structure, then areas simple -> dense.
+    outline, rest = main[:outlines], main[outlines:]
+    structure = [s for s in rest if length(s) >= long_len]
+    details = [s for s in rest if length(s) < long_len]
+    grid = 4
+    cells = {}
+    for s in details:
+        cx = sum(x for x, _ in s) / len(s)
+        cy = sum(y for _, y in s) / len(s)
+        key = (min(grid - 1, int((cx - x0) / size * grid)), min(grid - 1, int((cy - y0) / size * grid)))
+        cells.setdefault(key, []).append(s)
+    density = {key: sum(map(length, group)) for key, group in cells.items()}
+    top = max(density.values(), default=1.) or 1.
+    ordered_main = []
+    first, cursor = nearest_order(outline, cursor)
+    ordered_main += [(s, 1.) for s in first]
+    first, cursor = nearest_order(structure, cursor)
+    ordered_main += [(s, 1.) for s in first]
+    for key in sorted(cells, key=lambda k: density[k]):
+        group, cursor = nearest_order(cells[key], cursor)
+        busy = density[key] / top
+        for s in group:
+            short = 1 - min(1., length(s) / long_len)
+            ordered_main.append((s, (.8 + 1.4 * busy) * (1 + .5 * short)))
+
+    # 3. Accents: outline and the strongest long lines, darker and quicker.
+    accent_pool = outline + sorted(structure, key=length, reverse=True)[:max(1, len(structure) // 6)]
+    # Accents emphasise a few lines; on simple drawings that is few indeed.
+    accents, cursor = nearest_order(accent_pool[:min(30, max(1, len(main) // 3))], cursor)
+
+    plan = [('guide', s, .35) for s in guides]
+    plan += [('line', s, pace) for s, pace in ordered_main]
+    plan += [('accent', s, .5) for s in accents]
+    return plan

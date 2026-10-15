@@ -3,6 +3,7 @@
 Choose **Image source → Import image…** (PNG, JPEG, WebP or BMP, up to 24 megapixels). StrokeScribe draws the image as pen strokes, then paints the original colours with the adaptive hand brush.
 
 ## Settings
+- **Animation:** *Artist (layered)* (default) draws like a pencil artist: a few light, quick guide lines for the big shapes; then the main lines, outline and long structure first, then area by area from simple areas to the densest detail, which is drawn more slowly; then the strongest lines are re-drawn darker as accents. *Standard* draws the lines in a single pass.
 - **Drawing style:** *Clean drawing* (default) draws fewer, longer, smooth strokes like an artist's drawing; shading and texture appear during the colour painting. *Detailed (all lines)* draws every line found.
 - **Detail:** Low, Medium (recommended), High or Max. Higher detail draws more inner lines and takes a little longer to prepare.
 - **Clean faint background leftovers:** removes pixels under ~25% visible that background removal often leaves behind, so neither the lines nor the hand go there.

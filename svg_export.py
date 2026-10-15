@@ -64,10 +64,16 @@ def svg_document(strokes, width, height, color='#303946', stroke_width=None, tit
         f' <g fill="none" stroke={quoteattr(color)} stroke-width="{_num(stroke_width)}" '
         'stroke-linecap="round" stroke-linejoin="round">',
     ]
-    for index, (name, points) in enumerate(strokes, 1):
+    for index, item in enumerate(strokes, 1):
+        name, points = item[0], item[1]
         data = path_data(points)
-        if data:
-            lines.append(f'  <path id={quoteattr(_slug(name, index))} d={quoteattr(data)}/>')
+        if not data:
+            continue
+        style = ''
+        if len(item) >= 4 and item[2] and item[2].lower() != color.lower():
+            # Layered drawings keep each layer's colour and line weight.
+            style = f' stroke={quoteattr(item[2])} stroke-width="{_num(item[3])}"'
+        lines.append(f'  <path id={quoteattr(_slug(name, index))}{style} d={quoteattr(data)}/>')
     lines += [' </g>', '</svg>', '']
     return '\n'.join(lines)
 
@@ -81,13 +87,14 @@ def visible_box(image):
 def export_drawing(strokes, image, folder, stem):
     """Write <stem>.svg and <stem>_color.png; return both paths.
 
-    strokes: [(name, points)] in the image's pixel coordinates.
+    strokes: [(name, points)] or [(name, points, color, width)] in the image's
+    pixel coordinates.
     image: the PIL RGBA image the strokes were drawn from.
     """
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     left, top, right, bottom = visible_box(image)
-    shifted = [(name, [(x - left, y - top) for x, y in points]) for name, points in strokes]
+    shifted = [(item[0], [(x - left, y - top) for x, y in item[1]], *item[2:]) for item in strokes]
     svg_path = folder / f'{stem}.svg'
     png_path = folder / f'{stem}_color.png'
     svg_path.write_text(svg_document(shifted, right - left, bottom - top,

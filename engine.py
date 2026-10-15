@@ -14,6 +14,9 @@ class Stroke:
     points: list[tuple[float, float]]
     color: str = '#153c54'
     width: float = 3
+    # Drawing speed factor: >1 draws this stroke more slowly (careful detail),
+    # <1 faster (quick guide lines). Used by image-source timing.
+    pace: float = 1.0
     def __post_init__(self):
         self.distances = [0.0]
         for a, b in zip(self.points, self.points[1:]):

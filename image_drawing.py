@@ -20,7 +20,8 @@ def drawing_state(drawing,fraction):
             if distance>1e-6:
                 phases.append((min(distance*.25,ink*.02),0.,False,
                                (previous,stroke.points[0])))
-        phases.append((stroke.length,stroke.length,True,None))
+        pace=max(.05,float(getattr(stroke,'pace',1.) or 1.))
+        phases.append((stroke.length*pace,stroke.length,True,None))
         previous=stroke.points[-1]
     remaining=max(0.,min(1.,float(fraction)))*sum(p[0] for p in phases)
     done=0.

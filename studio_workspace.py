@@ -343,6 +343,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     image_form=form_layout();w.image_controls.setLayout(image_form);w.image_source_form=image_form
     image_form.addRow(caption('Line art: clean, artist-style pen strokes from any image, '
                               'drawn by a small built-in line model. Original colors are painted afterwards.'))
+    w.image_animation_style=QComboBox()
+    w.image_animation_style.addItems(['Artist (layered)','Standard'])
+    w.image_animation_style.setToolTip('Artist: light guide shapes first, then the main lines area by area '
+                                       '(densest detail last, drawn more slowly), then dark accents, '
+                                       'like a real pencil drawing. Standard: one pass of lines.')
+    image_form.addRow('Animation',w.image_animation_style)
     w.image_style=QComboBox();w.image_style.addItems(['Clean drawing','Detailed (all lines)'])
     w.image_style.setToolTip('Clean drawing: fewer, longer, smooth strokes like an artist\'s drawing; '
                              'shading is revealed by the colour painting. Detailed: every line found.')

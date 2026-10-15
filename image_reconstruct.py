@@ -60,7 +60,26 @@ def clean_faint_pixels(image):
     return cleaned.crop(bbox) if bbox else cleaned
 
 
-def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False,style='clean'):
+def artist_drawing(original,detail='medium'):
+    """Layered 'Artist' animation: light guides, main lines, dark accents."""
+    from engine import Drawing, Stroke
+    from lineart import artist_strokes, ARTIST_COLORS, ARTIST_WIDTH
+    base=max(original.size)*.0025
+    counters={}
+    strokes=[]
+    for layer,points,pace in artist_strokes(original,detail):
+        counters[layer]=counters.get(layer,0)+1
+        strokes.append(Stroke(f'{layer} {counters[layer]}',points,ARTIST_COLORS[layer],
+                              base*ARTIST_WIDTH[layer],pace))
+    if not strokes:
+        return line_art_drawing(original,detail,'clean')
+    return Drawing(strokes,(0.,0.,float(original.width),float(original.height)),[
+        'Artist style: light guide shapes, then the main lines area by area '
+        '(densest detail last and slowest), then dark accents.'])
+
+
+def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False,style='clean',
+                animation='standard'):
     if mode!='line_art':
         raise ValueError('Line art is the image method.')
     if detail not in ('low','medium','high','max'):
@@ -69,8 +88,15 @@ def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False,style
     if clean_faint:
         original=clean_faint_pixels(original)
     regions=segment_regions(original,'high' if detail=='max' else detail)
-    drawing=line_art_drawing(original,detail,style)
+    if animation not in ('standard','artist'):
+        raise ValueError('Choose the Standard or Artist animation.')
+    if animation=='artist':
+        drawing=artist_drawing(original,detail)
+        style='clean'
+    else:
+        drawing=line_art_drawing(original,detail,style)
     drawing.line_style=style
+    drawing.animation_style=animation
     drawing.image_regions=regions
     drawing.image_region_priority=True
     drawing.source_kind='image'

@@ -122,9 +122,11 @@ class ImageBuilder(QThread):
     ready=Signal(object)
     failed=Signal(str)
     stage=Signal(str,int,bool)
-    def __init__(self,path,detail,brush_width,spacing,clean_faint=False,style='clean'):
+    def __init__(self,path,detail,brush_width,spacing,clean_faint=False,style='clean',
+                 animation='standard'):
         super().__init__()
         self.path=path; self.detail=detail; self.mode='line_art'; self.style=style
+        self.animation=animation
         self.brush_width=brush_width; self.spacing=spacing
         self.clean_faint=clean_faint
         self.timings={}
@@ -137,7 +139,7 @@ class ImageBuilder(QThread):
             self.stage.emit('Drawing line art from the image',20,False)
             started=time.perf_counter()
             result=reconstruct(self.path,'line_art',self.detail,clean_faint=self.clean_faint,
-                               style=self.style)
+                               style=self.style,animation=self.animation)
             self.timings['lines']=time.perf_counter()-started
             self.stage.emit('Preparing animation and brush routes',85,False)
             started=time.perf_counter()
@@ -355,7 +357,8 @@ class Window(QMainWindow):
         self.builder=ImageBuilder(path,self.image_detail.currentText().lower(),
                                   self.brush_width.value(),self.stroke_spacing.value(),
                                   clean_faint=self.clean_faint.isChecked(),
-                                  style=('clean','detailed')[self.image_style.currentIndex()])
+                                  style=('clean','detailed')[self.image_style.currentIndex()],
+                                  animation=('artist','standard')[self.image_animation_style.currentIndex()])
         self.builder.ready.connect(self.image_ready)
         self.builder.failed.connect(self.image_failed)
         self.builder.stage.connect(self.image_stage)
@@ -383,7 +386,7 @@ class Window(QMainWindow):
         from adaptive_hand import pil_image
         stem=Path(self.image_result.filename).stem+'_drawing'
         try:
-            svg,png=export_drawing([(s.name,s.points) for s in self.drawing.strokes],
+            svg,png=export_drawing([(s.name,s.points,s.color,s.width) for s in self.drawing.strokes],
                                    pil_image(self.image_result.image),folder,stem)
         except Exception as exc:
             QMessageBox.warning(self,'Export SVG',str(exc)); return None
@@ -414,7 +417,7 @@ class Window(QMainWindow):
             self.progress.setValue(100)
             times=self.builder.timings
             self.status.setText(
-                f'Line art ready ({"Clean drawing" if self.builder.style=="clean" else "Detailed"}, '
+                f'Line art ready ({"Artist layers" if self.builder.animation=="artist" else "Clean drawing" if self.builder.style=="clean" else "Detailed"}, '
                 f'{self.builder.detail.title()} detail, {len(self.drawing.strokes)} strokes): '
                 f'lines {times.get("lines",0):.1f}s; brush plan {times.get("brush",0):.1f}s.')
         else:

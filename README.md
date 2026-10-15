@@ -160,6 +160,10 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Artist animation (v0.5.3-experimental.24)
+
+Images now animate like a pencil artist by default (**Animation: Artist (layered)**), following lessons from a real face-drawing video: light guide shapes first, then the main lines area by area with the densest detail last and slowest, then darker accents. Strokes carry their own drawing speed (`pace`). **Standard** keeps the single-pass animation. Exported SVGs keep each layer's colour and line weight.
+
 ## Clean drawing style and SVG export (v0.5.3-experimental.23)
 
 Line art now has two **Drawing styles**: *Clean drawing* (default), which keeps only the meaningful lines as fewer, longer, smooth strokes, the way an artist would draw it, and *Detailed (all lines)*. **Export drawing as SVG…** saves the strokes as an editable SVG plus the matching colour PNG, so any image can be polished in Inkscape and re-imported through SVG source, like a hand-made SVG. See [IMAGE_SOURCE.md](IMAGE_SOURCE.md).
