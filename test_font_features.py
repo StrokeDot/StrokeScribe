@@ -128,8 +128,11 @@ class FontAndScaleTests(unittest.TestCase):
             self.assertEqual(json.loads((folder/'sequence.json').read_text())['artwork_scale'],.5)
             expected=scale_animation_frame(render(d,.5,240,160),.5)
             actual=QImage(str(folder/'frame_000001.png'))
-            self.assertEqual(bytes(actual.convertToFormat(QImage.Format.Format_RGBA8888).constBits()),
-                             bytes(expected.convertToFormat(QImage.Format.Format_RGBA8888).constBits()))
+            # Keep converted images alive while copying their pixels; a
+            # temporary image can be freed before bytes() reads its buffer.
+            got=actual.convertToFormat(QImage.Format.Format_RGBA8888)
+            want=expected.convertToFormat(QImage.Format.Format_RGBA8888)
+            self.assertEqual(bytes(got.constBits()),bytes(want.constBits()))
         w=Window()
         self.assertEqual(w.artwork_size.value(),100)
         w.artwork_size.setValue(65)
