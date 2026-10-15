@@ -76,7 +76,18 @@ def import_svg(filename):
     if not strokes: raise ValueError('No drawable vector strokes found. Convert text or images to SVG paths first.')
     allpts=[pt for s in strokes for pt in s.points]
     xs,ys=zip(*allpts)
-    return Drawing(strokes,(min(xs),min(ys),max(xs),max(ys)),sorted(warnings))
+    bounds=(min(xs),min(ys),max(xs),max(ys))
+    # SVGs exported by StrokeScribe record their exact image frame so the
+    # matching colour PNG lines up even when lines don't reach the edges.
+    frame=root.attrib.get('data-strokescribe-frame')
+    if frame:
+        try:
+            fx,fy,fw,fh=(float(v) for v in frame.replace(',',' ').split())
+            if fw>0 and fh>0 and all(math.isfinite(v) for v in (fx,fy,fw,fh)):
+                bounds=(fx,fy,fx+fw,fy+fh)
+        except ValueError:
+            pass
+    return Drawing(strokes,bounds,sorted(warnings))
 
 def render(drawing, progress, width=1920, height=1080, thickness=1.0, hand=None, hand_scale=0.18, anchor=(0.1,0.1),image_timing=True):
     if getattr(drawing,'source_kind',None)=='font':

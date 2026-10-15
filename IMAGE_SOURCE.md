@@ -3,10 +3,14 @@
 Choose **Image source → Import image…** (PNG, JPEG, WebP or BMP, up to 24 megapixels). StrokeScribe draws the image as pen strokes, then paints the original colours with the adaptive hand brush.
 
 ## Settings
+- **Drawing style:** *Clean drawing* (default) draws fewer, longer, smooth strokes like an artist's drawing; shading and texture appear during the colour painting. *Detailed (all lines)* draws every line found.
 - **Detail:** Low, Medium (recommended), High or Max. Higher detail draws more inner lines and takes a little longer to prepare.
 - **Clean faint background leftovers:** removes pixels under ~25% visible that background removal often leaves behind, so neither the lines nor the hand go there.
 - **Preserve original colors:** paint the original image after the drawing.
 - **Apply image settings:** rebuild after changing settings.
+
+## Export drawing as SVG
+**Export drawing as SVG…** saves two files: `<name>_drawing.svg` (smooth, named paths in drawing order) and `<name>_drawing_color.png` (the image cropped to match). Edit the SVG in a free editor such as Inkscape (delete, redraw or reorder lines), then use **SVG source → Import SVG…** and **Load matching colored PNG…** with that PNG. The SVG stores its exact image frame, so the colour lines up perfectly.
 
 ## How Line art works
 1. Work on the object itself (cropped from empty transparent canvas) at a size set by Detail.

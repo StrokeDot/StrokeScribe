@@ -343,6 +343,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     image_form=form_layout();w.image_controls.setLayout(image_form);w.image_source_form=image_form
     image_form.addRow(caption('Line art: clean, artist-style pen strokes from any image, '
                               'drawn by a small built-in line model. Original colors are painted afterwards.'))
+    w.image_style=QComboBox();w.image_style.addItems(['Clean drawing','Detailed (all lines)'])
+    w.image_style.setToolTip('Clean drawing: fewer, longer, smooth strokes like an artist\'s drawing; '
+                             'shading is revealed by the colour painting. Detailed: every line found.')
+    image_form.addRow('Drawing style',w.image_style)
     w.image_detail=QComboBox();w.image_detail.addItems(['Low','Medium','High','Max'])
     w.image_detail.setCurrentIndex(1)
     w.image_detail.setToolTip('How many inner lines are drawn. Medium is recommended; Max draws the most detail and takes a little longer.')
@@ -360,6 +364,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.rebuild_button=QPushButton('Apply image settings')
     w.rebuild_button.clicked.connect(w.rebuild_image)
     image_form.addRow(w.rebuild_button)
+    w.export_svg_button=QPushButton('Export drawing as SVG…')
+    w.export_svg_button.setToolTip('Save the strokes as an editable SVG plus the matching colour PNG. '
+                                   'Fix any line in Inkscape, then import with SVG source.')
+    w.export_svg_button.clicked.connect(lambda checked=False: w.export_svg())
+    image_form.addRow(w.export_svg_button)
     w.image_controls.hide()
     asset_l.addWidget(w.image_controls)
     asset_l.addWidget(label('TEXT / HANDWRITING'))

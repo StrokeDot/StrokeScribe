@@ -122,9 +122,9 @@ class ImageBuilder(QThread):
     ready=Signal(object)
     failed=Signal(str)
     stage=Signal(str,int,bool)
-    def __init__(self,path,detail,brush_width,spacing,clean_faint=False):
+    def __init__(self,path,detail,brush_width,spacing,clean_faint=False,style='clean'):
         super().__init__()
-        self.path=path; self.detail=detail; self.mode='line_art'
+        self.path=path; self.detail=detail; self.mode='line_art'; self.style=style
         self.brush_width=brush_width; self.spacing=spacing
         self.clean_faint=clean_faint
         self.timings={}
@@ -136,7 +136,8 @@ class ImageBuilder(QThread):
             from adaptive_hand import plan_for
             self.stage.emit('Drawing line art from the image',20,False)
             started=time.perf_counter()
-            result=reconstruct(self.path,'line_art',self.detail,clean_faint=self.clean_faint)
+            result=reconstruct(self.path,'line_art',self.detail,clean_faint=self.clean_faint,
+                               style=self.style)
             self.timings['lines']=time.perf_counter()-started
             self.stage.emit('Preparing animation and brush routes',85,False)
             started=time.perf_counter()
@@ -353,7 +354,8 @@ class Window(QMainWindow):
         self.image_path=path
         self.builder=ImageBuilder(path,self.image_detail.currentText().lower(),
                                   self.brush_width.value(),self.stroke_spacing.value(),
-                                  clean_faint=self.clean_faint.isChecked())
+                                  clean_faint=self.clean_faint.isChecked(),
+                                  style=('clean','detailed')[self.image_style.currentIndex()])
         self.builder.ready.connect(self.image_ready)
         self.builder.failed.connect(self.image_failed)
         self.builder.stage.connect(self.image_stage)
@@ -370,6 +372,26 @@ class Window(QMainWindow):
         self.analysis_timer.start()
         self.builder.start()
 
+    def export_svg(self,folder=None):
+        """Save the current image drawing as an editable SVG + matching PNG."""
+        if not self.image_result or not self.drawing or getattr(self.drawing,'source_kind',None)!='image':
+            QMessageBox.information(self,'Export SVG','Import an image first.'); return None
+        if folder is None:
+            folder=QFileDialog.getExistingDirectory(self,'Choose a folder for the SVG and its colour PNG')
+            if not folder: return None
+        from svg_export import export_drawing
+        from adaptive_hand import pil_image
+        stem=Path(self.image_result.filename).stem+'_drawing'
+        try:
+            svg,png=export_drawing([(s.name,s.points) for s in self.drawing.strokes],
+                                   pil_image(self.image_result.image),folder,stem)
+        except Exception as exc:
+            QMessageBox.warning(self,'Export SVG',str(exc)); return None
+        self.status.setText(f'Saved {svg.name} and {png.name} in {svg.parent}. '
+                            'Edit the SVG in Inkscape, then import it with SVG source + '
+                            'Load matching colored PNG.')
+        self.status.setWordWrap(True)
+        return svg,png
     def image_failed(self,error):
         self.status.setText('Image analysis failed: '+str(error)[:140])
         QMessageBox.warning(self,'Image reconstruction',error)
@@ -392,7 +414,8 @@ class Window(QMainWindow):
             self.progress.setValue(100)
             times=self.builder.timings
             self.status.setText(
-                f'Line art ready ({self.builder.detail.title()} detail): '
+                f'Line art ready ({"Clean drawing" if self.builder.style=="clean" else "Detailed"}, '
+                f'{self.builder.detail.title()} detail, {len(self.drawing.strokes)} strokes): '
                 f'lines {times.get("lines",0):.1f}s; brush plan {times.get("brush",0):.1f}s.')
         else:
             self.progress.setValue(0)

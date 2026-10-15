@@ -33,11 +33,11 @@ def load_raster(filename):
     # Opaque backgrounds are intentionally retained; this is not background removal.
     return image.crop(bbox)
 
-def line_art_drawing(original,detail='medium'):
+def line_art_drawing(original,detail='medium',style='clean'):
     """Ordered pen strokes from the line art method (lineart.py)."""
     from engine import Drawing, Stroke
     from lineart import line_art_strokes
-    strokes,outlines=line_art_strokes(original,detail)
+    strokes,outlines=line_art_strokes(original,detail,style)
     width=max(original.size)*.0025
     named=[Stroke(('outline' if i<outlines else 'line')+f' {i+1}',points,'#303946',width)
            for i,points in enumerate(strokes)]
@@ -45,7 +45,7 @@ def line_art_drawing(original,detail='medium'):
         w,h=original.size
         named=[Stroke('image perimeter',[(0,0),(w,0),(w,h),(0,h),(0,0)],'#303946',width)]
     return Drawing(named,(0.,0.,float(original.width),float(original.height)),[
-        'Line art: pen strokes reconstructed from the image (TEED line model + ink lines).',
+        'Line art ('+('clean drawing' if style=='clean' else 'detailed')+'): pen strokes reconstructed from the image.',
         'Strokes approximate an artist\'s drawing; original colors are painted afterwards.'])
 
 
@@ -60,7 +60,7 @@ def clean_faint_pixels(image):
     return cleaned.crop(bbox) if bbox else cleaned
 
 
-def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False):
+def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False,style='clean'):
     if mode!='line_art':
         raise ValueError('Line art is the image method.')
     if detail not in ('low','medium','high','max'):
@@ -69,7 +69,8 @@ def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False):
     if clean_faint:
         original=clean_faint_pixels(original)
     regions=segment_regions(original,'high' if detail=='max' else detail)
-    drawing=line_art_drawing(original,detail)
+    drawing=line_art_drawing(original,detail,style)
+    drawing.line_style=style
     drawing.image_regions=regions
     drawing.image_region_priority=True
     drawing.source_kind='image'

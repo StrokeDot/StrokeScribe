@@ -33,6 +33,17 @@ DETAIL = {
     'max':    dict(size=1800, strong=.45, weak=.26, min_len=.004, max_strokes=1500, loop_factor=1.2),
 }
 
+# Clean drawing: fewer, longer, smoother strokes that read like an artist's
+# drawing. Shading and texture are left to the colour painting.
+CLEAN = {
+    #        analysis size, edge threshold raise, min stroke (fraction), max strokes
+    'low':    dict(size=640,  raise_=.12, min_len=.045, max_strokes=35),
+    'medium': dict(size=768,  raise_=.10, min_len=.035, max_strokes=70),
+    'high':   dict(size=896,  raise_=.08, min_len=.026, max_strokes=120),
+    'max':    dict(size=1024, raise_=.06, min_len=.020, max_strokes=180),
+}
+STYLES = ('clean', 'detailed')
+
 _RUNNER = None
 
 
@@ -178,6 +189,15 @@ def structural_detail(confident, base, size):
         enclosed = int((filled == 0).sum())
         keep[label] = enclosed >= 6
     return extra & keep[labels]
+
+
+def long_marks(mask, min_span):
+    """Keep only connected marks that span at least min_span pixels."""
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(mask.astype(np.uint8), 8)
+    keep = np.zeros(count, bool)
+    spans = np.hypot(stats[1:, cv2.CC_STAT_WIDTH], stats[1:, cv2.CC_STAT_HEIGHT])
+    keep[1:] = spans >= min_span
+    return keep[labels]
 
 
 def hysteresis(strength, strong, weak):
@@ -499,10 +519,22 @@ def order_strokes(outline, strokes, long_len):
 
 # ---------------------------------------------------------------- main
 
-def line_art_strokes(image, detail='medium'):
+def importance(points, strength):
+    """Length times average line strength under the stroke."""
+    h, w = strength.shape
+    values = [strength[min(h - 1, max(0, int(y))), min(w - 1, max(0, int(x)))]
+              for x, y in points[::2]]
+    return length(points) * (float(np.mean(values)) + .15)
+
+
+def line_art_strokes(image, detail='medium', style='detailed'):
     """Ordered strokes as lists of (x, y) in original image pixels."""
+    if style not in STYLES:
+        raise ValueError('Choose the Clean or Detailed drawing style.')
     settings = DETAIL[detail]
-    rgb, support, scale, (ox, oy) = prepare(image, settings['size'])
+    clean = CLEAN[detail] if style == 'clean' else None
+    size_limit = clean['size'] if clean else settings['size']
+    rgb, support, scale, (ox, oy) = prepare(image, size_limit)
     h, w = support.shape
     size = max(h, w)
 
@@ -512,24 +544,34 @@ def line_art_strokes(image, detail='medium'):
         contours, _ = cv2.findContours(support.astype(np.uint8), cv2.RETR_EXTERNAL,
                                        cv2.CHAIN_APPROX_NONE)
         for contour in sorted(contours, key=cv2.contourArea, reverse=True):
-            if cv2.contourArea(contour) < size * size * .002:
+            if cv2.contourArea(contour) < size * size * (.01 if clean else .002):
                 continue
             pts = [(float(x), float(y)) for x, y in contour.reshape(-1, 2)]
-            pts = smooth(simplify([(y, x) for x, y in pts], .9), 1)
+            # The silhouette must stay accurate (thin parts like cords), so it
+            # gets only light smoothing even in the Clean style.
+            pts = smooth(simplify([(y, x) for x, y in pts], 1.0 if clean else .9), 1)
             if pts and pts[0] != pts[-1]:
                 pts.append(pts[0])
             outline.append(pts)
 
     calm = calm_textures(rgb)
     sketch = is_sketch(rgb, support)
+    if clean:
+        calm = calm_textures(calm)           # calmer still: only real forms remain
     strong, weak = settings['strong'], settings['weak']
     if sketch:
         strong, weak = strong - .08, weak - .06
-    edges = hysteresis(teed_edges(calm), strong, weak)
+    if clean:
+        strong, weak = strong + clean['raise_'], weak + clean['raise_']
+    strength = teed_edges(calm)
+    edges = hysteresis(strength, strong, weak)
     # Very confident lines from the unsmoothed image keep fine real detail
     # (speaker rings, screws) that smoothing softened; texture stays out.
     edges |= structural_detail(hysteresis(teed_edges(rgb), .85, .6), edges, size)
-    lines = (edges | ink_lines(calm, support, sketch)) & support
+    ink = ink_lines(calm, support, sketch)
+    if clean and sketch:
+        ink = long_marks(ink, size * .08)     # contours yes, hatching marks no
+    lines = (edges | ink) & support
     if outline:
         # The outline is drawn separately; remove its duplicate from the map.
         border = cv2.morphologyEx(support.astype(np.uint8), cv2.MORPH_GRADIENT,
@@ -543,21 +585,33 @@ def line_art_strokes(image, detail='medium'):
     spur = max(4, int(size * .006))
     traced = trace(skeleton, spur)
 
-    min_len = size * settings['min_len']
+    min_len = size * (clean['min_len'] if clean else settings['min_len'])
+    if clean and sketch:
+        min_len *= 1.4      # sketches: shading fragments are short; real contours long
     traced = [[(float(x), float(y)) for y, x in pts] for pts in traced if len(pts) >= 3]
-    traced = [[(y, x) for x, y in pts] for pts in link_strokes(traced, size * .012)]
+    if clean:
+        # Join generously: an artist draws one long line, not many pieces.
+        traced = link_strokes(traced, size * .03, min_alignment=.3)
+    else:
+        traced = link_strokes(traced, size * .012)
+    traced = [[(y, x) for x, y in pts] for pts in traced]
     strokes = []
     for pts in traced:
         if len(pts) < 3:
             continue
-        shaped = smooth(simplify(pts, .8), 1)
+        shaped = (smooth(simplify(pts, 1.6), 2) if clean else smooth(simplify(pts, .8), 1))
         size_of = length(shaped)
         closed = math.dist(shaped[0], shaped[-1]) <= 2
+        loop_factor = (3. if sketch else 1.2) if clean else settings['loop_factor']
         # Tiny closed loops are usually highlight or texture outlines.
-        if size_of >= min_len and not (closed and size_of < min_len * settings['loop_factor']):
+        if size_of >= min_len and not (closed and size_of < min_len * loop_factor):
             strokes.append(shaped)
-    strokes.sort(key=length, reverse=True)
-    strokes = strokes[:settings['max_strokes']]
+    if clean:
+        strokes.sort(key=lambda s: importance(s, strength), reverse=True)
+        strokes = strokes[:clean['max_strokes']]
+    else:
+        strokes.sort(key=length, reverse=True)
+        strokes = strokes[:settings['max_strokes']]
     ordered = order_strokes(outline, strokes, size * .06)
     inverse = 1. / scale
     return [[(x * inverse + ox, y * inverse + oy) for x, y in s] for s in ordered], len(outline)
