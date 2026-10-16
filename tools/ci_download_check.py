@@ -53,6 +53,9 @@ for connections in (1, 4, 8):
     took = max(.1, time.time() - began)
     assert target.stat().st_size == f.size
     lines.append(f'app download, {connections} connection(s): {f.size / 1e6:.0f} MB in {took:.1f} s = {f.size / took / 1e6:.0f} MB/s')
+    for name, piece, problem in ai_engine.RETRIES:
+        lines.append(f'    retried piece {piece}: {problem}')
+    ai_engine.RETRIES.clear()
     target.unlink()
 # Cancel after 1.5 s, then resume.
 target = out / 'resume' / f.name

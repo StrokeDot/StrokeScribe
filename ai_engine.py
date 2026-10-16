@@ -112,6 +112,7 @@ SEGMENT = 32 << 20               # bytes per piece (each piece is resumable)
 BLOCK = 256 << 10                # read size: small, so Cancel works within a moment
 SOCKET_TIMEOUT = 20              # seconds without data before a connection is retried
 PARALLEL_FROM = 64 << 20         # files smaller than this use one connection
+RETRIES = []                     # (file, piece, problem) of the last downloads, for the engine log
 
 
 def _open(url, start=None, end=None, timeout=SOCKET_TIMEOUT):
@@ -253,6 +254,8 @@ def _download_pieces(final, original, part, size, progress, cancelled, connectio
                 if stop.is_set():
                     return
                 tries += 1
+                RETRIES.append((part.name, i, f'{type(exc).__name__}: {exc}'[:160]))
+                del RETRIES[:-50]
                 if tries > 6:
                     state['error'] = exc
                     stop.set(); return
