@@ -93,6 +93,20 @@ def save_settings(data):
 
 # ------------------------------------------------------------ GitHub
 
+def key_problem(token):
+    """A plain-language problem with a pasted key, or None if it looks right."""
+    token = (token or '').strip()
+    if not token:
+        return 'Paste your GitHub key first.'
+    if not token.startswith(('github_pat_', 'ghp_')):
+        return ('This does not look like a GitHub key: a key starts with “github_pat_”. '
+                'Copy it again on GitHub (the copy button next to the key).')
+    if len(token) < 40:
+        return (f'The key is too short ({len(token)} characters; a GitHub key has about 90). '
+                'It was not copied completely: copy it again with the copy button on GitHub.')
+    return None
+
+
 def _request(url, token, accept='application/vnd.github+json', timeout=30):
     headers = {'Accept': accept, 'User-Agent': 'StrokeScribe-updater', 'X-GitHub-Api-Version': '2022-11-28'}
     if token:

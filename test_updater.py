@@ -90,6 +90,11 @@ class UpdaterTests(unittest.TestCase):
             updater.apply_zip(path, self.app)
         self.assertEqual((self.app / 'app.py').read_text(), 'old app')
 
+    def test_key_check(self):
+        self.assertIn('too short', updater.key_problem('github_pat_ab'))
+        self.assertIn('starts with', updater.key_problem('hello'))
+        self.assertIsNone(updater.key_problem('github_pat_' + 'A' * 82))
+
     def test_github_answers(self):
         class Reply(io.BytesIO):
             headers = {'Content-Length': '0'}
@@ -138,11 +143,11 @@ class UpdateWindowTests(unittest.TestCase):
                 from update_dialog import UpdateDialog
                 d = UpdateDialog(None, latest='0.5.3-experimental.999')
                 self.assertFalse(d.update_button.isEnabled())             # no key yet
-                d.token.setText('github_pat_x'); d.refresh()
+                d.token.setText('github_pat_' + 'x' * 82); d.refresh()
                 self.assertTrue(d.update_button.isEnabled())
                 self.assertIn('999', d.version_label.text())
                 d.close()
-                self.assertEqual(updater.load_settings()['token'], 'github_pat_x')
+                self.assertEqual(updater.load_settings()['token'], 'github_pat_' + 'x' * 82)
                 from app import Window
                 w = Window(); w.update_found('0.5.3-experimental.999')
                 self.assertTrue(w.update_button.isVisibleTo(w))

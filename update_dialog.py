@@ -82,6 +82,11 @@ class UpdateDialog(QDialog):
         self.token.setEchoMode(QLineEdit.EchoMode.Password)
         self.token.setPlaceholderText('github_pat_…')
         row.addWidget(self.token, 1)
+        self.show_key = QPushButton('Show'); self.show_key.setObjectName('subtle'); self.show_key.setCheckable(True)
+        self.show_key.toggled.connect(lambda on: (self.token.setEchoMode(
+            QLineEdit.EchoMode.Normal if on else QLineEdit.EchoMode.Password), self.show_key.setText('Hide' if on else 'Show')))
+        row.addWidget(self.show_key)
+        self.token.textChanged.connect(lambda text: self.refresh())
         make = QPushButton('Make a key on GitHub'); make.setObjectName('subtle')
         make.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(updater.TOKEN_HELP)))
         row.addWidget(make)
@@ -130,7 +135,10 @@ class UpdateDialog(QDialog):
             text += (f'  •  New version on GitHub: <b>{self.latest}</b>' if newer
                      else f'  •  GitHub: {self.latest} — you have the newest version.')
         self.version_label.setText(text)
-        has_key = bool(self.token.text().strip())
+        problem = updater.key_problem(self.token.text())
+        has_key = problem is None
+        if self.token.text().strip() and problem and not busy:
+            self.status.setText(problem)
         self.check_button.setEnabled(has_key and not busy and not self.updated)
         self.update_button.setEnabled(has_key and not busy and not self.updated
                                       and bool(self.latest) and updater.is_newer(self.latest, self.current))
