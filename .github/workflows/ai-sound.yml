@@ -38,8 +38,15 @@ jobs:
           path: /tmp/engine/data/models
           key: stable-audio-3-small-sfx-v1
       - name: Make sample sounds with Stable Audio 3 Small-SFX
-        run: python tools/ci_sound_samples.py /tmp/engine/ComfyUI /tmp/engine/data /tmp/sound-samples
-      - name: Publish the samples to the sound-previews branch
+        id: samples
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p /tmp/sound-samples
+          python tools/ci_sound_samples.py /tmp/engine/ComfyUI /tmp/engine/data /tmp/sound-samples 2>&1 | tee /tmp/sound-samples/log.txt
+      - name: Publish the samples (and the log) to the sound-previews branch
+        if: always()
         shell: bash
         run: |
           set -e
@@ -53,3 +60,6 @@ jobs:
           git add -A
           git commit -qm "Sound samples for ${GITHUB_SHA}"
           git push -f origin HEAD:sound-previews
+      - name: Fail if the samples failed
+        if: steps.samples.outcome == 'failure'
+        run: exit 1
