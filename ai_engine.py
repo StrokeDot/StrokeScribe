@@ -339,9 +339,9 @@ class Engine:
         """Copy an input image where ComfyUI's LoadImage finds it."""
         self.paths.input.mkdir(parents=True, exist_ok=True)
         name = f'strokescribe_{uuid.uuid4().hex[:10]}.png'
-        from PIL import Image
+        from PIL import Image, ImageOps
         with Image.open(image_path) as im:
-            im = im.convert('RGBA')
+            im = ImageOps.exif_transpose(im).convert('RGBA')   # same orientation as the import
             flat = Image.new('RGB', im.size, 'white')
             flat.paste(im, mask=im.getchannel('A'))       # models expect no transparency
             flat.save(self.paths.input / name)

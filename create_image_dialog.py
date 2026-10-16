@@ -326,7 +326,7 @@ class CreateImageDialog(QDialog):
         self.install_button.setVisible(not engine_ok)
         self.install_button.setEnabled(not busy)
         self.download_button.setVisible(not have)
-        self.download_button.setText(f'Download {model.name} — {variant.label} ({ai_models.gb(size)})')
+        self.download_button.setText(f'Download {model.name} — {variant.label} ({ai_models.gb(size)} total)')
         self.download_button.setEnabled(license_ok and not busy)
         self.image_label.setText(Path(self.image_path).name if self.image_path else 'No image chosen')
         need_image = self.task != 'generate'

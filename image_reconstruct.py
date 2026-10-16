@@ -15,7 +15,7 @@ class Reconstruction:
     detail: str
     filename: str
 
-def load_raster(filename):
+def load_raster(filename, with_box=False):
     try:
         with Image.open(filename) as source:
             if source.format not in SUPPORTED_FORMATS:
@@ -31,6 +31,8 @@ def load_raster(filename):
     if bbox is None:
         raise ValueError('The image is completely transparent.')
     # Opaque backgrounds are intentionally retained; this is not background removal.
+    if with_box:
+        return image.crop(bbox), (image.size, bbox)
     return image.crop(bbox)
 
 def line_art_drawing(original,detail='medium',style='clean'):
@@ -66,12 +68,13 @@ def guide_drawing(guide,detail='medium'):
 FAINT_ALPHA=64  # pixels under ~25% visible: background-removal leftovers
 
 
-def clean_faint_pixels(image):
+def clean_faint_pixels(image, with_box=False):
     """Make nearly invisible leftover pixels fully transparent."""
     alpha=image.getchannel('A').point(lambda a:0 if a<FAINT_ALPHA else a)
     cleaned=image.copy(); cleaned.putalpha(alpha)
-    bbox=alpha.getbbox()
-    return cleaned.crop(bbox) if bbox else cleaned
+    bbox=alpha.getbbox() or (0,0,image.width,image.height)
+    result=cleaned.crop(bbox)
+    return (result,bbox) if with_box else result
 
 
 def artist_drawing(original,detail='medium'):
@@ -104,9 +107,10 @@ def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False,style
         raise ValueError('Line art is the image method.')
     if detail not in ('low','medium','high','max'):
         raise ValueError('Choose Low, Medium, High or Max detail.')
-    original=load_raster(filename)
+    original,(full_size,box)=load_raster(filename,with_box=True)
+    box2=None
     if clean_faint:
-        original=clean_faint_pixels(original)
+        original,box2=clean_faint_pixels(original,with_box=True)
     regions=segment_regions(original,'high' if detail=='max' else detail)
     if animation not in ('standard','artist'):
         raise ValueError('Choose the Standard or Artist animation.')
@@ -115,6 +119,13 @@ def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False,style
     if line_guide is not None:
         from ai_lineart import guide_image
         guide=line_guide if isinstance(line_guide,Image.Image) else Image.open(line_guide)
+        # The line drawing was made from the whole image file: bring it to the
+        # file's size and crop it exactly like the artwork was cropped.
+        guide=guide.convert('RGBA')
+        flat=Image.new('RGBA',guide.size,(255,255,255,255)); flat.alpha_composite(guide)
+        guide=flat.resize(full_size,Image.LANCZOS).crop(box)
+        if box2:
+            guide=guide.crop(box2)
         source,guide_score=guide_image(original,guide)
     if guide_score is not None:
         drawing=guide_drawing(source,detail)
