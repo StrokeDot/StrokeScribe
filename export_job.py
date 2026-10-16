@@ -39,6 +39,9 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     options['painting_hand'] = painting_hand(s, hand)
     options['erase'] = erase_from_settings(s, hand)
     options['workers'] = 0 if s.get('fast_export', True) else 1
+    # Recorded pencil / brush / eraser sounds (paths, '' = built-in sound).
+    options['sound_files'] = tuple(str(s.get(k) or '') for k in ('sound_pencil_file', 'sound_brush_file',
+                                                                    'sound_eraser_file'))
     if drawing is not None:
         # Timing control (stroke_timing): pauses are in seconds of drawing time.
         drawing.draw_seconds = options['duration']

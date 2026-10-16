@@ -49,6 +49,30 @@ class SoundTests(unittest.TestCase):
         quiet = sound.synthesize(samples, 6, 1920, 1080, volume=.25)
         self.assertLess(np.abs(quiet).max(), np.abs(audio).max())
 
+    def test_recorded_pencil_sound_is_used(self):
+        import os
+        old_path = os.environ.get('PATH', '')
+        with tempfile.TemporaryDirectory() as tmp:
+            # A 'recording': silence, 2 s of a 900 Hz tone, silence (the silence gets trimmed).
+            t = np.arange(int(2 * sound.RATE)) / sound.RATE
+            tone = (np.sin(2 * np.pi * 900 * t) * 12000).astype(np.int16)
+            quiet = np.zeros(sound.RATE // 2, np.int16)
+            mono = np.concatenate([quiet, tone, quiet])
+            path = sound.write_wav(Path(tmp) / 'pencil.wav', np.stack([mono, mono], 1))
+            rec = sound.load_recording(path)
+            self.assertIsNotNone(rec)
+            self.assertAlmostEqual(len(rec) / sound.RATE, 2., delta=.1)       # silence trimmed
+            samples = [(i / 120, Pen((900 + 300 * i / 120, 500), 'draw') if i < 240 else Pen(None, None))
+                       for i in range(361)]
+            audio = sound.synthesize(samples, 3, 1920, 1080, recordings={'draw': rec})
+            mono_out = audio.astype(float).mean(1)
+            part = mono_out[int(.5 * sound.RATE):int(1.5 * sound.RATE)]
+            spectrum = np.abs(np.fft.rfft(part))
+            peak_hz = np.argmax(spectrum) * sound.RATE / len(part)
+            self.assertAlmostEqual(peak_hz, 900, delta=15)                    # the recording, not noise
+            self.assertLess(np.sqrt((mono_out[int(2.3 * sound.RATE):] ** 2).mean()), 5)   # pen up: silent
+            self.assertIsNone(sound.load_recording(Path(tmp) / 'missing.wav'))
+
     def test_wav_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = sound.write_wav(Path(tmp) / 'a.wav', np.zeros((441, 2), np.int16))
@@ -160,6 +184,24 @@ class StudioFeatureTests(unittest.TestCase):
             self.assertFalse(other.open_project(str(bad)))
         finally:
             QMessageBox.warning = original
+
+    def test_choose_sound_recording(self):
+        w = self.window()
+        self.assertFalse(w.sound_on.isChecked())                 # off until you choose a sound
+        t = np.arange(sound.RATE) / sound.RATE
+        mono = (np.sin(2 * np.pi * 700 * t) * 9000).astype(np.int16)
+        path = sound.write_wav(self.dir / 'my pencil.wav', np.stack([mono, mono], 1))
+        w.set_sound_file('sound_pencil_file', str(path))
+        self.assertTrue(w.sound_on.isChecked())
+        self.assertIn('my pencil', w.sound_file_buttons['sound_pencil_file'][0].text())
+        self.assertEqual(w.options()['sound_files'][0], str(path))
+        import projects
+        saved = projects.save(self.dir / 'snd', w.project_state())
+        other = self.window()
+        self.assertTrue(other.open_project(str(saved)))
+        self.assertEqual(other.sound_files['sound_pencil_file'], str(path))
+        w.set_sound_file('sound_pencil_file', None)
+        self.assertEqual(w.options()['sound_files'][0], '')
 
     def test_soundtrack_follows_the_animation(self):
         from sound import soundtrack

@@ -160,6 +160,12 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Real recorded pencil sounds (v0.5.3-experimental.36)
+
+- **Export tab → Sound**: choose a real recording for the **Pencil**, and if you like the **Brush** and **Eraser** (MP3, WAV, M4A…). A few seconds is enough: quiet parts at the start and end are cut off, and the recording is looped from different places so it never sounds repeated. It plays only while the pen moves (louder when it moves faster), silent during pen lifts.
+- **Built-in** goes back to the generated sound. Sounds are now **off by default**; choosing a recording switches them on.
+- Recordings are kept in the Library (Audio), saved with the project, used by batch export and by all scenes.
+
 ## Scenes: several drawings in one video (v0.5.3-experimental.35)
 
 The **Scenes** strip in the Timeline panel holds the drawings of one video, in order:

@@ -199,7 +199,7 @@ def _reuse_frame(source,target):
     shutil.copyfile(source,target)
 
 
-def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0, camera_zoom=1.0, erase=None, workers=None):
+def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0, camera_zoom=1.0, erase=None, workers=None, sound_files=None):
     """Write the PNG frames. workers: None/0 = automatic (several CPU cores for
     longer exports), 1 = one core, n = n worker processes."""
     folder=Path(folder)

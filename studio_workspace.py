@@ -800,10 +800,25 @@ def build_workspace(w, Canvas, BRAND_ICON):
     output_l.addLayout(e3)
     output_l.addWidget(label('SOUND'))
     w.sound_on=QCheckBox('Pencil and brush sounds')
-    w.sound_on.setChecked(True)
-    w.sound_on.setToolTip('A pencil scratch while the pen draws (silent during pen lifts) and a soft '
-                          'brush sound while painting, matched to the animation.')
+    w.sound_on.setChecked(False)
+    w.sound_on.setToolTip('A pencil sound while the pen draws (silent during pen lifts), a brush sound '
+                          'while painting and an eraser sound while erasing, matched to the animation.')
     output_l.addWidget(w.sound_on)
+    output_l.addWidget(caption('Use real recordings: a few seconds of a pencil on paper (also brush and '
+                               'eraser if you like). They play only while the pen moves.'))
+    w.sound_file_buttons={}
+    for key,text in (('sound_pencil_file','Pencil'),('sound_brush_file','Brush'),('sound_eraser_file','Eraser')):
+        row=QHBoxLayout()
+        button=QPushButton(f'{text} sound…')
+        button.setToolTip(f'Choose a recording (MP3, WAV, M4A…) for the {text.lower()}.')
+        button.clicked.connect(lambda checked=False,k=key: w.choose_sound_file(k))
+        row.addWidget(button,1)
+        reset=QPushButton('Built-in')
+        reset.setToolTip('Use the built-in (generated) sound instead of a recording.')
+        reset.clicked.connect(lambda checked=False,k=key: w.set_sound_file(k,None))
+        row.addWidget(reset)
+        output_l.addLayout(row)
+        w.sound_file_buttons[key]=(button,text)
     w.sound_volume=QSpinBox();w.sound_volume.setRange(0,100);w.sound_volume.setValue(80)
     w.sound_volume.setSuffix('%')
     e4=form_layout();e4.addRow('Sound volume',w.sound_volume)

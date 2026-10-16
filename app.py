@@ -325,6 +325,7 @@ class Window(QMainWindow):
         self.preview_sound=None
         self.audio_path=None; self.audio_seconds=None
         self.paint_hand_path=None; self.paint_hand_tip=None
+        self.sound_files={'sound_pencil_file':None,'sound_brush_file':None,'sound_eraser_file':None}
         from scenes import DEFAULT_TRANSITION, DEFAULT_TRANSITION_SECONDS
         self.scenes=[dict(state=None,transition=DEFAULT_TRANSITION,
                           transition_seconds=DEFAULT_TRANSITION_SECONDS,name=None,thumb=None)]
@@ -341,6 +342,7 @@ class Window(QMainWindow):
         build_workspace(self,Canvas,BRAND_ICON)
         self.canvas.on_click=self.click_preview
         self.watch_settings()
+        self.update_sound_buttons()
         self.use_builtin_hand(refresh=False)
         # Setup level chosen in the setup window (Fast/Balanced/Quality/Max).
         import preflight
@@ -554,6 +556,8 @@ class Window(QMainWindow):
             self.paint_hand_path=settings.get('paint_hand_path')
             self.paint_hand_tip=settings.get('paint_hand_tip')
             self.update_paint_hand_label()
+            for key in self.sound_files: self.sound_files[key]=settings.get(key)
+            self.update_sound_buttons()
             self.canvas.set_background(self.preview_background.currentIndex())
             self.preserve_colors.setEnabled(self.image_animation.currentIndex()!=1)
             if self.drawing is not None and snapshot['strokes']:
@@ -896,6 +900,10 @@ class Window(QMainWindow):
         self.paint_hand_path=tools_kit.restore_paint_hand(settings.get('paint_hand_path'),data.get('paint_hand_png'))
         self.paint_hand_tip=settings.get('paint_hand_tip')
         self.update_paint_hand_label()
+        for key in self.sound_files:
+            path=settings.get(key)
+            self.sound_files[key]=path if path and Path(path).is_file() else None
+        self.update_sound_buttons()
         letter=data.get('letter',{})
         self.letter_ink_color=letter.get('ink',self.letter_ink_color)
         self.letter_bg_color=letter.get('background')
@@ -1560,6 +1568,28 @@ class Window(QMainWindow):
         self.note_change()
         self.refresh()
 
+    def update_sound_buttons(self):
+        for key,(button,text) in self.sound_file_buttons.items():
+            path=self.sound_files.get(key)
+            button.setText(f'{text}: {Path(path).stem[:22]}' if path else f'{text}: built-in sound — choose recording…')
+
+    def choose_sound_file(self,key):
+        import audio_track
+        name,_=QFileDialog.getOpenFileName(self,'Choose a sound recording','',
+            'Audio ('+' '.join('*'+t for t in audio_track.AUDIO_TYPES)+')')
+        if name: self.set_sound_file(key,self.keep_in_library('audio',name))
+
+    def set_sound_file(self,key,path):
+        if path:
+            from sound import load_recording
+            if load_recording(path) is None:
+                QMessageBox.warning(self,'Sound','This recording could not be read (or it is silent).'); return
+            self.sound_on.setChecked(True)
+        self.sound_files[key]=str(path) if path else None
+        self.update_sound_buttons()
+        self.note_change()
+        if self.playing: self.sync_preview_sound()
+
     def use_builtin_hand(self,refresh=True):
         """Load the bundled StrokeScribe hand (calibrated pencil tip X 0.08, Y 0.13)."""
         image=QImage(str(DEFAULT_HAND)) if DEFAULT_HAND.is_file() else QImage()
@@ -1610,6 +1640,7 @@ class Window(QMainWindow):
         state={name:widget_value(getattr(self,name)) for name in self.PROJECT_SETTINGS}
         state['audio_path']=self.audio_path
         state['paint_hand_path']=self.paint_hand_path
+        state.update(self.sound_files)
         state['paint_hand_tip']=self.paint_hand_tip
         return state
 

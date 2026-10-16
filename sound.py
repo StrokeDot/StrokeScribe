@@ -58,8 +58,12 @@ def envelopes(samples, width, height):
     return times, draw, paint, rub, pan
 
 
-def synthesize(samples, total_seconds, width, height, volume=.8, seed=11):
-    """Stereo int16 soundtrack (n, 2) for the animation."""
+def synthesize(samples, total_seconds, width, height, volume=.8, seed=11, recordings=None):
+    """Stereo int16 soundtrack (n, 2) for the animation.
+
+    recordings: {'draw'|'paint'|'rub': mono samples}; a recorded sound replaces
+    the built-in (generated) one for that tool."""
+    recordings = recordings or {}
     count = max(1, int(round(total_seconds * RATE)))
     t_audio = np.arange(count) / RATE
     if not samples:
@@ -78,16 +82,23 @@ def synthesize(samples, total_seconds, width, height, volume=.8, seed=11):
     grain = 1 + .9 * np.abs(grain) / (np.abs(grain).max() + 1e-9)
     variation = 1 + .25 * _band(rng.standard_normal(count), .5, 3) / (1e-9 + np.abs(_band(rng.standard_normal(count), .5, 3)).max())
     pencil = (scratch * grain + body) * env_draw * variation
+    if recordings.get('draw') is not None:
+        # Real pencil: full level while drawing at normal speed.
+        pencil = _bed(recordings['draw'], count, rng) * np.clip(env_draw * 1.5, 0, 1) * 1.4
     # Brush: soft, darker swish with a slow bristle flutter.
     swish = _band(rng.standard_normal(count), 250, 2200)
     flutter = 1 + .3 * np.sin(2 * np.pi * 7 * t_audio + rng.uniform(0, 6))
     brush = swish * flutter * env_paint * .8
+    if recordings.get('paint') is not None:
+        brush = _bed(recordings['paint'], count, rng) * np.clip(env_paint * 1.5, 0, 1)
     # Eraser: a rougher, lower rubbing with a fast back-and-forth grain.
     env_rub = _smooth(np.interp(t_audio, times, rub), int(.02 * RATE))
     rubbing = _band(rng.standard_normal(count), 350, 2600)
     rough = _band(rng.standard_normal(count), 20, 60)
     rough = 1 + 1.2 * np.abs(rough) / (np.abs(rough).max() + 1e-9)
     eraser = rubbing * rough * env_rub * .9
+    if recordings.get('rub') is not None:
+        eraser = _bed(recordings['rub'], count, rng) * np.clip(env_rub * 1.5, 0, 1)
     mono = pencil + brush + eraser
     peak = np.abs(mono).max()
     if peak > 0:
@@ -96,6 +107,83 @@ def synthesize(samples, total_seconds, width, height, volume=.8, seed=11):
     right = mono * np.sqrt((1 + pan_a * .35) / 2) * 1.414
     stereo = np.stack([left, right], 1)
     return np.clip(stereo * 32767, -32768, 32767).astype(np.int16)
+
+
+# ------------------------------------------------------------ recorded sounds
+# Real recordings (pencil on paper, a brush, an eraser) chosen by the user.
+# They are looped from random places with short crossfades, so a 10-second
+# recording covers any length, and played only while the pen moves.
+
+SOUND_KINDS = ('draw', 'paint', 'rub')            # pencil, brush, eraser
+_RECORDINGS = {}
+
+
+def load_recording(path):
+    """Mono float32 samples at RATE (cached), or None if the file cannot be read."""
+    import shutil
+    import subprocess
+    if not path:
+        return None
+    path = Path(path)
+    try:
+        key = (str(path), path.stat().st_mtime)
+    except OSError:
+        return None
+    if key in _RECORDINGS:
+        return _RECORDINGS[key]
+    data = None
+    ffmpeg = shutil.which('ffmpeg')
+    if ffmpeg:
+        result = subprocess.run([ffmpeg, '-v', 'error', '-i', str(path), '-ac', '1', '-ar', str(RATE),
+                                 '-f', 's16le', '-'], capture_output=True,
+                                creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+        if result.returncode == 0 and result.stdout:
+            data = np.frombuffer(result.stdout, np.int16).astype(np.float32) / 32768
+    elif path.suffix.lower() == '.wav':
+        try:
+            with wave.open(str(path)) as f:
+                raw = np.frombuffer(f.readframes(f.getnframes()), np.int16).astype(np.float32) / 32768
+                raw = raw.reshape(-1, f.getnchannels()).mean(1)
+                if f.getframerate() != RATE:
+                    n = int(len(raw) * RATE / f.getframerate())
+                    raw = np.interp(np.linspace(0, len(raw) - 1, n), np.arange(len(raw)), raw)
+                data = raw.astype(np.float32)
+        except (wave.Error, OSError):
+            data = None
+    if data is not None:
+        data = _trim_silence(data)
+        if len(data) < RATE // 10:
+            data = None
+    _RECORDINGS[key] = data
+    return data
+
+
+def _trim_silence(data):
+    """Cut quiet parts at the start and end (before and after the actual scratching)."""
+    level = np.sqrt(_smooth(data.astype(np.float64) ** 2, int(.02 * RATE)))
+    loud = np.nonzero(level > level.max() * .12)[0]
+    if len(loud) == 0:
+        return data
+    return data[loud[0]:loud[-1] + 1]
+
+
+def _bed(recording, count, rng):
+    """A continuous sound `count` samples long made of pieces of the recording."""
+    fade = int(.06 * RATE)
+    piece = max(fade * 3, min(len(recording), int(1.5 * RATE)))
+    out = np.zeros(count + piece, np.float32)
+    ramp = np.linspace(0, 1, fade, dtype=np.float32)
+    pos = 0
+    while pos < count:
+        n = min(piece, len(recording))
+        start = int(rng.integers(0, max(1, len(recording) - n + 1)))
+        chunk = recording[start:start + n].copy()
+        chunk[:fade] *= ramp; chunk[-fade:] *= ramp[::-1]
+        out[pos:pos + n] += chunk
+        pos += n - fade
+    out = out[:count]
+    rms = float(np.sqrt(np.mean(out ** 2))) or 1.
+    return out / rms * .25
 
 
 def write_wav(path, stereo):
@@ -115,4 +203,6 @@ def soundtrack(drawing, options, path, volume=.8):
     total = timeline_seconds(drawing, options)
     w, h = options.get('width', 1920), options.get('height', 1080)
     samples = motion.track(drawing, options, total, TRACK_RATE)
-    return write_wav(path, synthesize(samples, total, w, h, volume))
+    files = options.get('sound_files') or ()
+    recordings = {kind: load_recording(p) for kind, p in zip(SOUND_KINDS, files) if p}
+    return write_wav(path, synthesize(samples, total, w, h, volume, recordings=recordings))

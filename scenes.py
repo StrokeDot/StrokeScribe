@@ -25,7 +25,8 @@ DEFAULT_TRANSITION = 'Camera move'
 DEFAULT_TRANSITION_SECONDS = 1.2
 # Output settings shared by all scenes (taken from the scene being edited).
 GLOBAL_SETTINGS = ('res', 'fps', 'webm', 'webm_quality', 'mov', 'mp4', 'mp4_background', 'keep_png',
-                   'sound_on', 'sound_volume', 'fast_export')
+                   'sound_on', 'sound_volume', 'fast_export',
+                   'sound_pencil_file', 'sound_brush_file', 'sound_eraser_file')
 
 
 def transition_seconds(kind, seconds):
