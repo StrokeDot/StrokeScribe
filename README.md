@@ -160,6 +160,11 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Library and automatic pen tip (v0.5.3-experimental.29)
+
+- **▤ Library** (top bar; **Hands library…** in the Hand tab): a safe home for your images, SVGs and hands, like Canva uploads. Files are *copied* into a folder you choose (default `Documents/StrokeScribe Library`, with `Images` and `Hands` sub-folders), so moving or deleting the originals is safe. Upload, drag and drop, search, rename, show in folder, and delete (deleted items go to a *Deleted items* folder, so they can be recovered). With **Keep a copy of every file I import or load** (on by default), everything you import is added automatically.
+- **Automatic pen tip**: when you load a hand, StrokeScribe finds the pen tip itself (the sharpest point of the hand-and-pen shape, farthest from where the arm enters the picture) and sets Pen tip X/Y. **Find pen tip** repeats it; **Click to set…** shows the hand so you can click exactly on the tip. The tip is remembered with each hand in the library. Manual X/Y adjustment still works.
+
 ## Projects, pencil sound and batch export (v0.5.3-experimental.28)
 
 - **Save / open projects** (project menu, Ctrl+S / Ctrl+O): one `.strokescribe` file keeps the drawing with your stroke order, the colour image, the hand and every setting. Images are stored inside the file, so it still opens if the originals move.

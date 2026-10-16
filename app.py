@@ -749,13 +749,25 @@ class Window(QMainWindow):
             message=self.builder.failed_message if self.builder else 'Unknown problem'
             self.status.setText('Image analysis failed: '+str(message)[:140])
         self.analysis_stage=''
+    def keep_in_library(self,category,path):
+        """Copy an imported file into the library (if enabled) and return the path to use."""
+        import library
+        if not library.load_settings().get('keep_imports',True):
+            return path
+        try:
+            return str(library.Library().add(category,path).path)
+        except Exception as exc:
+            self.status.setText('Could not keep a library copy: '+str(exc)[:150])
+            return path
+
     def load(self):
         if self.source_type.currentIndex():
             name,_=QFileDialog.getOpenFileName(self,'Import image','','Images (*.png *.jpg *.jpeg *.webp *.bmp)')
-            if name: self.build_image(name)
+            if name: self.build_image(self.keep_in_library('images',name))
             return
         name,_=QFileDialog.getOpenFileName(self,'Import SVG','','SVG (*.svg)')
         if name:
+            name=self.keep_in_library('images',name)
             try:
                 self.show_busy_now('Loading drawing',Path(name).name)
                 try:
@@ -893,14 +905,92 @@ class Window(QMainWindow):
         if name:
             image=QImage(name)
             if image.isNull(): QMessageBox.warning(self,'Hand','Could not read PNG.'); return
-            self.hand=image; self.hand_builtin=False
-            self.hand_name.setText('Hand: '+Path(name).name); self.refresh()
+            kept=self.keep_in_library('hands',name)
+            self.set_hand(image,Path(name).name,kept)
+    def set_hand(self,image,label,path=None,tip=None):
+        """Use a hand image; place its pen tip automatically unless one is saved."""
+        import library
+        self.hand=image; self.hand_builtin=False; self.hand_path=path
+        lib_tip=library.Library().tip_for(path) if path else None
+        tip=tip or lib_tip
+        note='saved pen tip'
+        if tip is None:
+            from hand_tip import find_tip
+            found=find_tip(image)
+            if found:
+                tip=found[:2]; note='pen tip found automatically'
+                if path and lib_tip is None:
+                    try:
+                        lib=library.Library()
+                        item=next((i for i in lib.items('hands') if str(i.path)==str(path)),None)
+                        if item: lib.set_tip(item,tip)
+                    except Exception:
+                        pass
+        if tip:
+            for box,value in ((self.ax,tip[0]),(self.ay,tip[1])):
+                box.blockSignals(True); box.setValue(round(value,3)); box.blockSignals(False)
+        self.hand_name.setText(f'Hand: {label}' + (f'  •  {note} (adjust below if needed)' if tip else ''))
+        self.refresh()
+
+    def find_pen_tip(self):
+        if self.hand is None or self.hand.isNull(): return
+        from hand_tip import find_tip
+        found=find_tip(self.hand)
+        if not found:
+            QMessageBox.information(self,'Pen tip','The pen tip could not be found; click it instead.'); return
+        self.ax.setValue(round(found[0],3)); self.ay.setValue(round(found[1],3))
+        self.remember_tip()
+
+    def pick_pen_tip(self):
+        if self.hand is None or self.hand.isNull(): return
+        from library_dialog import PenTipDialog
+        dialog=PenTipDialog(self,self.hand,(self.ax.value(),self.ay.value()))
+        if dialog.exec():
+            self.ax.setValue(round(dialog.tip[0],3)); self.ay.setValue(round(dialog.tip[1],3))
+            self.remember_tip()
+
+    def remember_tip(self):
+        """Store the current pen tip with the hand in the library, if it is there."""
+        path=getattr(self,'hand_path',None)
+        if not path: return
+        try:
+            import library
+            lib=library.Library()
+            item=next((i for i in lib.items('hands') if str(i.path)==str(path)),None)
+            if item: lib.set_tip(item,(self.ax.value(),self.ay.value()))
+        except Exception:
+            pass
+
+    def open_library(self,category='images'):
+        from library_dialog import LibraryDialog
+        LibraryDialog(self,category,self.use_library_item).exec()
+
+    def use_library_item(self,category,item):
+        if category=='hands':
+            image=QImage(str(item.path))
+            if image.isNull():
+                QMessageBox.warning(self,'Hand','Could not read this hand image.'); return
+            self.set_hand(image,item.name,str(item.path),item.tip)
+            return
+        path=str(item.path)
+        if path.lower().endswith('.svg'):
+            self.source_type.setCurrentIndex(0)
+            try:
+                drawing=import_svg(path)
+            except Exception as exc:
+                QMessageBox.warning(self,'Cannot import',str(exc)); return
+            self.update_project_title(item.name)
+            self.set_drawing(drawing)
+        else:
+            self.source_type.setCurrentIndex(1)
+            self.build_image(path)
+
     def use_builtin_hand(self,refresh=True):
         """Load the bundled StrokeScribe hand (calibrated pencil tip X 0.08, Y 0.13)."""
         image=QImage(str(DEFAULT_HAND)) if DEFAULT_HAND.is_file() else QImage()
         if image.isNull():
             self.hand_name.setText('Hand: none (built-in hand file missing)'); return
-        self.hand=image; self.hand_builtin=True
+        self.hand=image; self.hand_builtin=True; self.hand_path=None
         self.hand_name.setText('Hand: StrokeScribe built-in hand')
         if refresh: self.refresh()
     def load_color(self):

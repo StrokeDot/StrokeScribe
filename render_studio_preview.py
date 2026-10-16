@@ -63,6 +63,27 @@ for theme_name in ('dark','light'):
     dialog.grab().save(str(out/f'create-image-lineart-{theme_name}.png'))
     dialog.close()
 window.apply_theme('dark')
+# Library with a few items, and the pen-tip helper.
+import os, tempfile, shutil as _sh
+_lib_tmp=tempfile.mkdtemp()
+os.environ['STROKESCRIBE_CONFIG_DIR']=_lib_tmp
+import library
+_settings=library.load_settings(); _settings['root']=str(Path(_lib_tmp)/'StrokeScribe Library'); library.save_settings(_settings)
+_lib=library.Library()
+_lib.add('images',Path('samples/drawing.svg'))
+from PIL import Image as _Image, ImageDraw as _Draw
+for _name,_col in (('sunset.png',(240,140,60)),('ocean.png',(40,120,200))):
+    _im=_Image.new('RGB',(320,200),_col); _Draw.Draw(_im).ellipse((110,40,210,140),fill=(255,230,120))
+    _p=Path(_lib_tmp)/_name; _im.save(_p); _lib.add('images',_p)
+from hand_tip import find_tip
+_lib.add('hands',Path('assets/default_hand.png'),tip=find_tip(_Image.open('assets/default_hand.png'))[:2])
+from library_dialog import LibraryDialog, PenTipDialog
+from PySide6.QtGui import QImage as _QImage
+_d=LibraryDialog(window,'images',lambda *a:None); _d.show(); app.processEvents()
+_d.grab().save(str(out/'library-images.png'))
+_d.set_category('hands'); app.processEvents(); _d.grab().save(str(out/'library-hands.png')); _d.close()
+_t=PenTipDialog(window,_QImage('assets/default_hand.png')); _t.show(); app.processEvents()
+_t.grab().save(str(out/'pen-tip.png')); _t.close()
 # Setup & system check window, with the real checks of the build machine.
 import preflight
 from setup_wizard import SetupDialog
