@@ -160,6 +160,10 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Downloads: no waiting for one slow piece (v0.5.3-experimental.47)
+
+- When a connection has nothing left to do, it takes over half of the slowest piece still downloading, so one slow piece no longer keeps the whole file waiting. Tested on the real Hugging Face servers.
+
 ## Faster AI model downloads (v0.5.3-experimental.46)
 
 - **8 connections at once:** big model files download in pieces over 8 connections. This is much faster where one connection is slow, as Hugging Face often is from Asia.

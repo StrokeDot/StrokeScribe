@@ -114,6 +114,7 @@ class RangeHandler(http.server.SimpleHTTPRequestHandler):
     payload = bytes(range(256)) * 4000
     fail_after = None
     slow = 0.
+    slow_start = None
     requests = []
 
     def do_GET(self):
@@ -133,6 +134,15 @@ class RangeHandler(http.server.SimpleHTTPRequestHandler):
         if limit is not None:
             RangeHandler.fail_after = None
             self.wfile.write(body[:limit])
+            return
+        if RangeHandler.slow_start is not None and start == RangeHandler.slow_start:
+            import time as _t
+            for k in range(0, len(body), 4096):     # one very slow piece
+                _t.sleep(.05)
+                try:
+                    self.wfile.write(body[k:k + 4096])
+                except OSError:
+                    return
             return
         if RangeHandler.slow:
             import time as _t
@@ -182,6 +192,8 @@ class ParallelDownloadTests(unittest.TestCase):
         self.old = (ai_engine.SEGMENT, ai_engine.PARALLEL_FROM, ai_engine.BLOCK)
         ai_engine.SEGMENT, ai_engine.PARALLEL_FROM, ai_engine.BLOCK = 64 << 10, 0, 16 << 10
         RangeHandler.slow = 0.; RangeHandler.fail_after = None; RangeHandler.requests = []
+        RangeHandler.slow_start = None
+        self.old_split = ai_engine.MIN_SPLIT; ai_engine.MIN_SPLIT = 16 << 10
         self.server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RangeHandler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.url = f'http://127.0.0.1:{self.server.server_address[1]}/file.bin'
@@ -190,7 +202,8 @@ class ParallelDownloadTests(unittest.TestCase):
 
     def tearDown(self):
         ai_engine.SEGMENT, ai_engine.PARALLEL_FROM, ai_engine.BLOCK = self.old
-        RangeHandler.slow = 0.
+        ai_engine.MIN_SPLIT = self.old_split
+        RangeHandler.slow = 0.; RangeHandler.slow_start = None
         self.server.shutdown()
         self.tmp.cleanup()
 
@@ -225,6 +238,17 @@ class ParallelDownloadTests(unittest.TestCase):
         RangeHandler.requests = []
         ai_engine.download(self.url, target, self.size)
         self.assertEqual(target.read_bytes(), RangeHandler.payload)
+
+    def test_slow_piece_is_shared(self):
+        import time as _t
+        target = Path(self.tmp.name) / 'e.bin'
+        ai_engine.SEGMENT = 512 << 10                # 2 pieces; the second one is very slow
+        RangeHandler.slow_start = 512 << 10
+        began = _t.time()
+        ai_engine.download(self.url, target, self.size, connections=4)
+        self.assertEqual(target.read_bytes(), RangeHandler.payload)
+        # Alone, the slow piece would take about 6 s; shared with the idle connections it is much quicker.
+        self.assertLess(_t.time() - began, 4.)
 
     def test_old_single_download_continues(self):
         target = Path(self.tmp.name) / 'd.bin'

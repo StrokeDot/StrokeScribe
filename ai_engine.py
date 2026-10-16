@@ -194,122 +194,181 @@ def _download_single(url, part, size, progress, cancelled):
                     progress(done, total)
 
 
+MIN_SPLIT = 4 << 20              # a piece is shared with an idle connection only if this much is left
+
+
+def _merge(ranges):
+    out = []
+    for a, b in sorted(ranges):
+        if out and a <= out[-1][1] + 1:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return out
+
+
+def _missing(done, size):
+    gaps, at = [], 0
+    for a, b in _merge(done):
+        if a > at:
+            gaps.append([at, a - 1])
+        at = max(at, b + 1)
+    if at < size:
+        gaps.append([at, size - 1])
+    return gaps
+
+
 def _download_pieces(final, original, part, size, progress, cancelled, connections):
+    """Fetch [0, size) in pieces over several connections.
+
+    Pieces wait in a queue. When the queue is empty, an idle connection takes the
+    second half of the piece with the most bytes left (one slow connection must not
+    keep the whole file waiting). Downloaded byte ranges are saved in the .part.json
+    file, so a stopped download continues where it stopped."""
     import threading
-    pieces = [(i, a, min(size, a + SEGMENT) - 1) for i, a in enumerate(range(0, size, SEGMENT))]
+    from collections import deque
     sidecar = part.with_name(part.name + '.json')
-    finished = set()
+    done = []
     if part.is_file():
         try:
             info = json.loads(sidecar.read_text())
-            if info.get('size') == size and info.get('segment') == SEGMENT:
-                finished = set(info.get('done', []))
+            if info.get('size') == size and 'ranges' in info:
+                done = [list(r) for r in info['ranges']]
+            elif info.get('size') == size and 'done' in info:          # pieces of exp.46
+                seg = int(info.get('segment') or SEGMENT)
+                done = [[i * seg, min(size, (i + 1) * seg) - 1] for i in info['done']]
         except Exception:
-            # An older one-connection download: the start of the file is already there.
-            have = part.stat().st_size
-            finished = {i for i, a, b in pieces if b < have}
-    mode = 'r+b' if part.is_file() else 'w+b'
-    with open(part, mode) as f:
+            have = part.stat().st_size                 # an older one-connection download
+            done = [[0, min(have, size) - 1]] if have else []
+    with open(part, 'r+b' if part.is_file() else 'w+b') as f:
         f.truncate(size)
+    todo = deque()
+    for a, b in _missing(done, size):
+        for x in range(a, b + 1, SEGMENT):
+            todo.append([x, min(b, x + SEGMENT - 1)])
     lock = threading.Lock()
-    state = dict(url=final, error=None, live={}, progress={})
     stop = threading.Event()
-    todo = [p for p in pieces if p[0] not in finished]
+    state = dict(url=final, error=None, failures=0)
+    active = {}                                       # id -> {'start', 'pos', 'end', 'response'}
 
     def save():
-        sidecar.write_text(json.dumps(dict(size=size, segment=SEGMENT, done=sorted(finished))))
+        sidecar.write_text(json.dumps(dict(size=size, ranges=_merge(done))))
 
-    def fetch(piece, out):
-        i, a, b = piece
-        tries = 0
-        while not stop.is_set():
-            got = 0
-            try:
-                response = _open(state['url'], a, b)
-                with lock:
-                    state['live'][i] = response
-                with response:
-                    if response.status != 206:
-                        raise RuntimeError('The server stopped sending pieces.')
-                    out.seek(a)
-                    while not stop.is_set():
-                        block = response.read(BLOCK)
-                        if not block:
-                            break
-                        out.write(block)
-                        got += len(block)
-                        with lock:
-                            state['progress'][i] = got
-                if stop.is_set():
-                    return
-                if got != b - a + 1:
-                    raise RuntimeError('A piece of the download was cut off.')
-                with lock:
-                    finished.add(i); state['progress'].pop(i, None); state['live'].pop(i, None)
-                    save()
+    def next_piece():
+        with lock:
+            if todo:
+                return todo.popleft()
+            # Share the slowest remaining piece.
+            best = max(active.values(), key=lambda e: e['end'] - e['pos'], default=None)
+            if best is None or best['end'] - best['pos'] + 1 < 2 * MIN_SPLIT:
+                return None
+            mid = (best['pos'] + best['end']) // 2
+            piece = [mid + 1, best['end']]
+            best['end'] = mid
+            return piece
+
+    def fetch(a, b, out, key):
+        entry = dict(start=a, pos=a, end=b, response=None)
+        with lock:
+            active[key] = entry
+        try:
+            response = _open(state['url'], a, b)
+            entry['response'] = response
+            with response:
+                if response.status != 206:
+                    raise RuntimeError('The server stopped sending pieces.')
+                while not stop.is_set():
+                    block = response.read(BLOCK)
+                    if not block:
+                        break
+                    with lock:
+                        pos, end = entry['pos'], entry['end']
+                        take = max(0, min(len(block), end - pos + 1))
+                        entry['pos'] = pos + take
+                    if take:
+                        out.seek(pos)
+                        out.write(block[:take])
+                    if pos + take > end:
+                        break                          # this piece (maybe shortened) is complete
+            if stop.is_set():
                 return
-            except Exception as exc:
-                with lock:
-                    state['live'].pop(i, None); state['progress'].pop(i, None)
-                if stop.is_set():
-                    return
-                tries += 1
-                RETRIES.append((part.name, i, f'{type(exc).__name__}: {exc}'[:160]))
-                del RETRIES[:-50]
-                if tries > 6:
-                    state['error'] = exc
-                    stop.set(); return
-                code = getattr(exc, 'code', None)
-                if code in (401, 403, 404, 410):              # the signed address expired: ask again
-                    try:
-                        state['url'] = _resolve(original) or state['url']
-                    except Exception:
-                        pass
-                stop.wait(min(30, 2 ** tries))
+            if entry['pos'] <= entry['end']:
+                raise RuntimeError('A piece of the download was cut off.')
+        except Exception as exc:
+            if stop.is_set():
+                return
+            with lock:
+                state['failures'] += 1
+                failures = state['failures']
+                if entry['pos'] <= entry['end']:
+                    todo.append([entry['pos'], entry['end']])      # the rest, again later
+            RETRIES.append((part.name, a, f'{type(exc).__name__}: {exc}'[:160]))
+            del RETRIES[:-50]
+            if failures > 12:
+                state['error'] = exc
+                stop.set()
+                return
+            if getattr(exc, 'code', None) in (401, 403, 404, 410):  # the signed address expired
+                try:
+                    state['url'] = _resolve(original) or state['url']
+                except Exception:
+                    pass
+            stop.wait(min(20, 1.5 ** failures))
+        finally:
+            with lock:
+                active.pop(key, None)
+                if entry['pos'] > entry['start']:
+                    done.append([entry['start'], entry['pos'] - 1])
 
-    def worker():
+    def worker(n):
         with open(part, 'r+b') as out:
             while not stop.is_set():
-                with lock:
-                    if not todo:
+                piece = next_piece()
+                if piece is None:
+                    with lock:
+                        busy = bool(active) or bool(todo)
+                    if not busy:
                         return
-                    piece = todo.pop(0)
-                fetch(piece, out)
+                    stop.wait(.2)                     # maybe a failed piece comes back
+                    continue
+                fetch(piece[0], piece[1], out, (n, piece[0]))
 
-    threads = [threading.Thread(target=worker, daemon=True) for _ in range(max(1, min(connections, len(todo))))]
+    count = max(1, min(connections, len(todo) * 2 or 1))
+    threads = [threading.Thread(target=worker, args=(n,), daemon=True) for n in range(count)]
     for t in threads:
         t.start()
+
+    def received():
+        with lock:
+            return sum(b - a + 1 for a, b in _merge(done)) + sum(e['pos'] - e['start'] for e in active.values())
     try:
         while any(t.is_alive() for t in threads):
             if cancelled():
                 stop.set()
                 with lock:
-                    for response in list(state['live'].values()):
-                        try:
-                            response.close()               # wakes a connection that waits for data
-                        except Exception:
-                            pass
+                    responses = [e['response'] for e in active.values() if e['response'] is not None]
+                for response in responses:
+                    try:
+                        response.close()               # wakes a connection that waits for data
+                    except Exception:
+                        pass
                 for t in threads:
                     t.join(2)
                 with lock:
                     save()
                 raise Cancelled('Download paused; it continues where it stopped next time.')
             if progress:
-                with lock:
-                    done = sum(min(SEGMENT, size - i * SEGMENT) for i in finished) + sum(state['progress'].values())
-                progress(done, size)
-            for t in threads:
-                t.join(.25)
-                break
+                progress(received(), size)
+            time.sleep(.25)
     finally:
         stop.set()
+    with lock:
+        save()
+        missing = _missing(done, size)
     if state['error'] is not None:
-        with lock:
-            save()
         raise RuntimeError(f'Download failed for {part.name[:-5]}: {state["error"]}. '
                            'Try again: it continues where it stopped.')
-    if len(finished) != len(pieces):
-        save()
+    if missing:
         raise RuntimeError(f'{part.name[:-5]} is incomplete. Try again: it continues where it stopped.')
     if progress:
         progress(size, size)
