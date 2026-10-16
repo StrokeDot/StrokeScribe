@@ -199,7 +199,9 @@ def _reuse_frame(source,target):
     shutil.copyfile(source,target)
 
 
-def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0, camera_zoom=1.0, erase=None):
+def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0, camera_zoom=1.0, erase=None, workers=None):
+    """Write the PNG frames. workers: None/0 = automatic (several CPU cores for
+    longer exports), 1 = one core, n = n worker processes."""
     folder=Path(folder)
     folder.mkdir(parents=True,exist_ok=False)
     use_color = final_image is not None and not final_image.isNull()
@@ -219,8 +221,17 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
     total=timeline_seconds(drawing,options)
     count=max(2,round(total*fps))
     camera_path=camera_for(drawing,options,float(camera_zoom))
+    from parallel_export import worker_count, export_parallel, NotStarted
+    cores=worker_count(count,workers)
+    rendered=False
+    if cores>1:
+        try:
+            export_parallel(drawing,folder,options,camera_path,count,cores,callback)
+            rendered=True
+        except NotStarted:
+            rendered=False            # render on one core below
     previous=None
-    for i in range(count):
+    for i in (() if rendered else range(count)):
         fraction=i/(count-1)
         img=compose_frame(drawing,fraction,options,camera_path)
         path=folder/f'frame_{i:06d}.png'
@@ -243,6 +254,7 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
         stroke_spacing=stroke_spacing if reveal_mode in ('adaptive','zigzag') else None,
         artwork_scale=artwork_scale,
         camera_zoom=float(camera_zoom),
+        cpu_workers=cores if rendered else 1,
         erase=({k:v for k,v in erase.items() if k in ('mode','seconds','size')} if erase and erase.get('mode') else None),
         drawing_visibility=getattr(drawing,'drawing_visibility','progressive'),
         contour_transition=getattr(drawing,'contour_transition','legacy'),

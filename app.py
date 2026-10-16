@@ -637,8 +637,19 @@ class Window(QMainWindow):
             self.order.clearSelection(); item.setSelected(True)
         self.order.setCurrentRow(index,QItemSelectionModel.SelectionFlag.NoUpdate)
         self.order.scrollToItem(item)
+        self.show_line_tools()
         self.status.setText(f'Selected: {self.drawing.strokes[index].name}  •  Delete, Reverse, pace and pause '
-                            'are in the Lines panel; drag in the list to reorder.')
+                            'are under LINES & ORDER on the left; drag in the list to reorder.')
+
+    def show_line_tools(self):
+        """Scroll the Source panel so the line list and its buttons are visible."""
+        from PySide6.QtWidgets import QScrollArea
+        parent=self.order.parentWidget()
+        while parent is not None and not isinstance(parent,QScrollArea):
+            parent=parent.parentWidget()
+        if parent is not None:
+            parent.ensureWidgetVisible(self.line_pause,0,40)
+            parent.ensureWidgetVisible(self.order,0,10)
 
     def change_lines(self,strokes,keep=(),current=None,status=''):
         """Apply an edited stroke list as one undo step."""
@@ -761,7 +772,7 @@ class Window(QMainWindow):
                       'sound_on','sound_volume','sound_preview','preview_background','image_detail',
                       'image_style','image_animation_style','clean_faint',
                       'erase_mode','erase_time','erase_size','eraser',
-                      'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size')
+                      'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export')
 
     def project_state(self):
         """Everything needed to reopen this exact animation."""

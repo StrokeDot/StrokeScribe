@@ -38,6 +38,7 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     from tools_kit import painting_hand
     options['painting_hand'] = painting_hand(s, hand)
     options['erase'] = erase_from_settings(s, hand)
+    options['workers'] = 0 if s.get('fast_export', True) else 1
     if drawing is not None:
         # Timing control (stroke_timing): pauses are in seconds of drawing time.
         drawing.draw_seconds = options['duration']

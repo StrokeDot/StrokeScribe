@@ -824,6 +824,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.fit_audio_button.setToolTip('Stretch draw, paint, hold and erase times so the video ends when the track ends.')
     w.fit_audio_button.clicked.connect(lambda checked=False: w.fit_to_audio())
     output_l.addWidget(w.fit_audio_button)
+    w.fast_export=QCheckBox('Use all CPU cores (faster export)')
+    w.fast_export.setChecked(True)
+    w.fast_export.setToolTip('Longer exports are rendered on several processor cores at once. '
+                             'Turn off if the computer must stay responsive during an export.')
+    output_l.addWidget(w.fast_export)
     w.keep_png=QCheckBox('Keep generated PNG frames')
     w.keep_png.setChecked(False)
     w.keep_png.setToolTip('If video encoding succeeds, frame PNGs can be removed.')

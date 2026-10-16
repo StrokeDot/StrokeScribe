@@ -160,6 +160,12 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Faster export on all CPU cores (v0.5.3-experimental.34)
+
+- Longer exports (from about 4 seconds of video) are rendered on several processor cores at once, one group of frames per core. The frames are exactly the same as before, only faster. **Export tab → Use all CPU cores (faster export)** is on by default; turn it off if you need the computer to stay quick while exporting. Batch export uses it too.
+- If the fast path cannot start for some reason, the export simply runs on one core as before.
+- Clicking a line on the preview now scrolls the left panel to **Lines & order**, so Delete, Reverse, pace and pause are in view.
+
 ## Pencil, marker and a painting hand (v0.5.3-experimental.33)
 
 - **Built-in tools** (Hand tab): **Built-in hand**, **Pencil** and **Marker** buttons. Each one sets its own pen tip and a fitting size. The pencil and marker are tools on their own, without a hand.
