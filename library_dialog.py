@@ -26,7 +26,15 @@ def thumbnail(path):
             if (x // 12 + y // 12) % 2:
                 p.fillRect(x, y, 12, 12, QColor('#D6DBE0'))
     image = QImage()
-    if Path(path).suffix.lower() == '.svg':
+    if Path(path).suffix.lower() in library.TYPES['audio']:
+        from PySide6.QtGui import QFont
+        p.fillRect(0, 0, THUMB, THUMB, QColor('#2C3E57'))
+        p.setPen(QColor('#E8F0FA'))
+        font = QFont(); font.setPointSize(42); p.setFont(font)
+        p.drawText(QRectF(0, 0, THUMB, THUMB - 20), Qt.AlignmentFlag.AlignCenter, '♪')
+        font.setPointSize(10); p.setFont(font)
+        p.drawText(QRectF(0, THUMB - 36, THUMB, 24), Qt.AlignmentFlag.AlignCenter, Path(path).suffix.upper()[1:])
+    elif Path(path).suffix.lower() == '.svg':
         try:
             from PySide6.QtSvg import QSvgRenderer
             renderer = QSvgRenderer(str(path))
@@ -75,7 +83,7 @@ class LibraryDialog(QDialog):
         root.addLayout(top)
         bar = QHBoxLayout()
         self.tab_group = QButtonGroup(self); self.tabs = {}
-        for key, text in (('images', 'Images'), ('hands', 'Hands')):
+        for key, text in (('images', 'Images'), ('hands', 'Hands'), ('audio', 'Audio')):
             button = QPushButton(text); button.setCheckable(True); button.setMinimumWidth(110)
             button.clicked.connect(lambda checked=False, k=key: self.set_category(k))
             self.tab_group.addButton(button); self.tabs[key] = button
@@ -177,8 +185,9 @@ class LibraryDialog(QDialog):
         return added
 
     def upload(self):
-        filt = ('Images (*.png *.jpg *.jpeg *.webp *.bmp *.svg)' if self.category == 'images'
-                else 'Transparent hand PNG (*.png)')
+        filt = {'images': 'Images (*.png *.jpg *.jpeg *.webp *.bmp *.svg)',
+                'hands': 'Transparent hand PNG (*.png)',
+                'audio': 'Audio (*.mp3 *.wav *.m4a *.aac *.ogg *.flac *.opus *.wma)'}[self.category]
         names, _ = QFileDialog.getOpenFileNames(self, 'Upload to the library', '', filt)
         if names:
             self.add_files(names)

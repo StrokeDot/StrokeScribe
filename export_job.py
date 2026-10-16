@@ -11,6 +11,7 @@ from pathlib import Path
 REVEAL_BY_TEXT = {'Brush painting': 'brush', 'Adaptive Hand Painting': 'adaptive',
                   'Zigzag sweep': 'zigzag'}
 MP4_BACKGROUNDS = ('white', 'dark', 'black')
+CAMERA_BY_TEXT = {'Off': 'off', 'Gentle zoom': 'gentle', 'Close-up zoom': 'close'}
 
 
 def options_from_settings(s, drawing, color_image=None, hand=None, image_source=None, image_mode=None):
@@ -35,6 +36,12 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
         artwork_scale=float(s.get('artwork_size', 100)) / 100.,
         painting_hand=hand if s.get('show_paint_hand', True) else None)
     options['erase'] = erase_from_settings(s, hand)
+    audio_path = s.get('audio_path')
+    options['audio'] = (dict(path=audio_path, volume=float(s.get('audio_volume', 100)) / 100.,
+                             offset=float(s.get('audio_offset', 0)))
+                        if audio_path else None)
+    from camera import ZOOMS
+    options['camera_zoom'] = ZOOMS[CAMERA_BY_TEXT.get(s.get('camera') or 'Off', 'off')]
     if image_mode is None:
         image_mode = image_source is not None
     if image_mode:
@@ -90,16 +97,27 @@ def run_export(drawing, folder, options, mov=False, webm=False, webm_quality=28,
     """Frames, optional soundtrack, then the chosen videos. Returns a summary."""
     from engine import export_frames, encode_mov, encode_mp4, encode_webm
     folder = Path(folder)
+    options = dict(options)
+    voice = options.pop('audio', None)
 
     def tick(i, n):
         progress(i, n)
         return not interrupted()
     export_frames(drawing, folder, callback=tick, **options)
     audio = None
+    if voice and not Path(voice['path']).is_file():
+        raise FileNotFoundError('The voiceover/music file was not found: ' + str(voice['path']))
     if sound_volume is not None:
         progress(0, 0)
         from sound import soundtrack
-        audio = soundtrack(drawing, options, folder / 'soundtrack.wav', sound_volume)
+        audio = soundtrack(drawing, options, folder / ('pencil_sounds.wav' if voice else 'soundtrack.wav'),
+                           sound_volume)
+    if voice:
+        progress(0, 0)
+        from audio_track import mix
+        from frame_render import timeline_seconds
+        audio = mix(audio, voice['path'], voice['volume'], voice['offset'],
+                    timeline_seconds(drawing, options), folder / 'soundtrack.wav')
     videos = []
     for wanted, make in ((webm, lambda: encode_webm(folder, options['fps'], webm_quality, audio)),
                          (mov, lambda: encode_mov(folder, options['fps'], audio)),

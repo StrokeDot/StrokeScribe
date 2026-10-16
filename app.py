@@ -82,7 +82,10 @@ class Canvas(QWidget):
         if self.frame:
             x,y,size=self.frame_rect()
             p.save(); p.setClipRect(x,y,size.width(),size.height())
-            if self.background:
+            if self.background>=3:
+                from backgrounds import TEXTURES, texture_qimage
+                p.drawImage(x,y,texture_qimage(TEXTURES[self.background-3],size.width(),size.height()))
+            elif self.background:
                 p.fillRect(x,y,size.width(),size.height(),QColor('#ffffff' if self.background==1 else c['preview_dark']))
             else:
                 for a in range(x,x+size.width(),20):
@@ -131,19 +134,33 @@ class PreviewSound:
         except Exception:
             self.player=None            # no audio support: preview stays silent
     def play(self,drawing,options,volume,seconds):
+        """volume: pencil/brush sounds (None = off); options['audio']: voiceover/music."""
         if self.player is None or drawing is None: return
         import tempfile,hashlib
+        voice=options.pop('audio',None)
         signature=repr((tuple(id(s) for s in drawing.strokes),id(drawing),
                         {k:v for k,v in options.items() if isinstance(v,(int,float,str,tuple))},
-                        round(volume,2)))
+                        repr(options.get('erase') and {k:v for k,v in options['erase'].items() if k!='image'}),
+                        volume if volume is None else round(volume,2),repr(voice)))
         key=hashlib.sha1(signature.encode()).hexdigest()
         if key!=self.key:
-            from sound import soundtrack
+            from frame_render import timeline_seconds
             folder=Path(tempfile.gettempdir())/'strokescribe-sound'
             folder.mkdir(exist_ok=True)
-            self.path=soundtrack(drawing,options,folder/f'preview_{key[:12]}.wav',volume)
+            effects=None
+            if volume is not None:
+                from sound import soundtrack
+                effects=soundtrack(drawing,options,folder/f'effects_{key[:12]}.wav',volume)
+            if voice:
+                from audio_track import mix
+                self.path=mix(effects,voice['path'],voice['volume'],voice['offset'],
+                              timeline_seconds(drawing,options),folder/f'preview_{key[:12]}.wav')
+            else:
+                self.path=effects
             self.key=key
+            if self.path is None: return
             self.player.setSource(QUrl.fromLocalFile(str(self.path)))
+        if self.path is None: return
         self.player.setPosition(int(seconds*1000))
         self.player.play()
     def stop(self):
@@ -258,6 +275,8 @@ class Window(QMainWindow):
         self.busy=False
         self._preparing=False
         self.preview_sound=None
+        self.audio_path=None; self.audio_seconds=None
+        self._camera_key=None; self._camera_path=None
         # Rapid brush-width changes should not synchronously rebuild the entire
         # paint plan for every spinbox/wheel event on the GUI thread.
         self.brush_preview_timer=QTimer(self)
@@ -511,7 +530,8 @@ class Window(QMainWindow):
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
                       'sound_on','sound_volume','sound_preview','preview_background','image_detail',
                       'image_style','image_animation_style','clean_faint',
-                      'erase_mode','erase_time','erase_size','eraser')
+                      'erase_mode','erase_time','erase_size','eraser',
+                      'camera','audio_volume','audio_offset')
 
     def project_state(self):
         """Everything needed to reopen this exact animation."""
@@ -521,7 +541,8 @@ class Window(QMainWindow):
                'drawing':drawing_to_dict(self.drawing),
                'settings':self.settings_state(),
                'hand':'builtin' if getattr(self,'hand_builtin',False) else qimage_to_b64(self.hand),
-               'letter':{'ink':self.letter_ink_color,'background':self.letter_bg_color}}
+               'letter':{'ink':self.letter_ink_color,'background':self.letter_bg_color},
+               'audio':str(self.audio_path or '')}
         if image_source and self.image_result:
             r=self.image_result
             state['image']={'png':qimage_to_b64(r.image),'filename':r.filename,'detail':r.detail,
@@ -613,6 +634,10 @@ class Window(QMainWindow):
                 self.use_color.blockSignals(True); self.use_color.setChecked(False); self.use_color.blockSignals(False)
             self.color_note.setText('Colour image from project' if self.final_image is not None else 'No original PNG loaded')
         self.project_title=data.get('title') or 'Project'
+        audio=data.get('audio') or None
+        if audio and not Path(audio).is_file():
+            self.status.setText('The project audio track was not found: '+audio); audio=None
+        self.set_audio(audio,refresh=False)
         self.set_drawing(drawing)
 
     def open_batch_export(self):
@@ -967,6 +992,8 @@ class Window(QMainWindow):
         LibraryDialog(self,category,self.use_library_item).exec()
 
     def use_library_item(self,category,item):
+        if category=='audio':
+            self.set_audio(str(item.path)); return
         if category=='hands':
             image=QImage(str(item.path))
             if image.isNull():
@@ -1030,7 +1057,95 @@ class Window(QMainWindow):
 
     def settings_state(self):
         from projects import widget_value
-        return {name:widget_value(getattr(self,name)) for name in self.PROJECT_SETTINGS}
+        state={name:widget_value(getattr(self,name)) for name in self.PROJECT_SETTINGS}
+        state['audio_path']=self.audio_path
+        return state
+
+    # ------------------------------------------------- voiceover, timing
+    def load_audio(self):
+        import audio_track
+        name,_=QFileDialog.getOpenFileName(self,'Load voiceover or music','',
+            'Audio ('+' '.join('*'+t for t in audio_track.AUDIO_TYPES)+')')
+        if name: self.set_audio(self.keep_in_library('audio',name))
+
+    def remove_audio(self):
+        self.set_audio(None)
+
+    def set_audio(self,path,refresh=True):
+        import audio_track
+        self.audio_path=str(path) if path else None
+        self.audio_seconds=audio_track.duration(path) if path else None
+        if self.preview_sound is not None: self.preview_sound.stop()
+        if path:
+            length=f'{self.audio_seconds:.1f} s' if self.audio_seconds else 'length unknown'
+            self.audio_note.setText(f'{Path(path).name}  •  {length}')
+        else:
+            self.audio_note.setText('No audio track')
+        self.remove_audio_button.setEnabled(bool(path))
+        self.fit_audio_button.setEnabled(bool(path and self.audio_seconds))
+        if refresh: self.refresh()
+
+    def timing_parts(self):
+        """Current stage times (seconds actually played) of the stages that are on."""
+        options=self.options()
+        image=bool(self.source_type.currentIndex())
+        paint_only=image and self.image_animation.currentIndex()==1
+        painting=options['final_image'] is not None
+        return dict(draw=0. if paint_only else options['duration'],
+                    paint=options['fade_duration'] if painting else 0.,
+                    hold=options['hold_duration'] if painting else 0.,
+                    erase=options['erase']['seconds'] if options.get('erase') else 0.)
+
+    def apply_timing(self,times):
+        image=bool(self.source_type.currentIndex())
+        widgets=[(self.duration,times['draw']*self.speed.value()),
+                 (self.image_duration if image else self.color_fade,times['paint']),
+                 (self.color_hold,times['hold']),(self.erase_time,times['erase'])]
+        for widget,value in widgets:
+            if value>0 or widget is self.color_hold:
+                widget.blockSignals(True); widget.setValue(value); widget.blockSignals(False)
+        self.refresh()
+
+    def auto_timing(self):
+        """Times from the drawing (or fitted to the voiceover when one is loaded)."""
+        if not self.drawing: return
+        import auto_timing
+        current=self.timing_parts()
+        image=bool(self.source_type.currentIndex())
+        times=auto_timing.suggest(self.drawing,paint=current['paint']>0,erase=current['erase']>0,
+                                  image=image,paint_only=image and self.image_animation.currentIndex()==1)
+        note='Auto timing: '
+        if self.audio_path and self.audio_seconds:
+            target=self.audio_seconds+self.audio_offset.value()
+            times,reached=auto_timing.fit(times,target)
+            note+=f'fitted to the audio ({target:.1f} s)' if reached else 'the audio is longer than the longest possible animation'
+        else:
+            note+='{:.1f} s in total'.format(sum(times.values()))
+        self.apply_timing(times)
+        self.status.setText(note)
+
+    def fit_to_audio(self):
+        if not self.drawing or not self.audio_seconds: return
+        import auto_timing
+        target=self.audio_seconds+self.audio_offset.value()
+        times,reached=auto_timing.fit(self.timing_parts(),target)
+        self.apply_timing(times)
+        self.status.setText(f'Animation fitted to the audio: {target:.1f} s' if reached else
+                            'The audio is longer than the longest possible animation; times set to their maximum.')
+
+    def preview_camera(self,options):
+        """Camera path for the preview, planned once per timing/drawing change."""
+        zoom=options.get('camera_zoom',1.)
+        if zoom<=1.0001: return None
+        key=(id(self.drawing),len(self.drawing.strokes),zoom,
+             repr({k:v for k,v in options.items() if isinstance(v,(int,float,str,tuple))}),
+             repr(options.get('erase') and {k:v for k,v in options['erase'].items() if k!='image'}),
+             options.get('final_image') is not None)
+        if key!=self._camera_key:
+            from frame_render import camera_for
+            self._camera_path=camera_for(self.drawing,options,zoom,rate=20.)
+            self._camera_key=key
+        return self._camera_path
 
     def options(self):
         from export_job import options_from_settings
@@ -1068,7 +1183,7 @@ class Window(QMainWindow):
         try:
             # Same frame composition as the export (hand layer, artwork size).
             from frame_render import compose_frame
-            self.canvas.frame=compose_frame(self.drawing,self.position,options)
+            self.canvas.frame=compose_frame(self.drawing,self.position,options,self.preview_camera(options))
             self.canvas.update()
         except Exception as exc:
             # An invalid/expensive brush configuration must not throw out of
@@ -1090,7 +1205,8 @@ class Window(QMainWindow):
         self.sync_preview_sound()
     def sync_preview_sound(self):
         """Start the soundtrack at the playhead when playing; stop it otherwise."""
-        if not self.playing or not self.sound_on.isChecked() or not self.sound_preview.isChecked():
+        wants=self.sound_on.isChecked() or self.audio_path
+        if not self.playing or not wants or not self.sound_preview.isChecked():
             if self.preview_sound is not None: self.preview_sound.stop()
             return
         try:
@@ -1098,8 +1214,8 @@ class Window(QMainWindow):
             options=self.options(); options.pop('fps',None)
             ratio=options['height']/options['width']
             options['width']=960; options['height']=round(960*ratio)
-            self.preview_sound.play(self.drawing,options,self.sound_volume.value()/100,
-                                    self.position*self.timeline_length())
+            effects=self.sound_volume.value()/100 if self.sound_on.isChecked() else None
+            self.preview_sound.play(self.drawing,options,effects,self.position*self.timeline_length())
             self.last=time.perf_counter()     # sound preparation must not skip frames
         except Exception as exc:
             self.status.setText('Preview sound unavailable: '+str(exc)[:160])
@@ -1125,7 +1241,7 @@ class Window(QMainWindow):
                              self.mov.isChecked(),self.webm.isChecked(),
                              self.webm_quality.value(),self.keep_png.isChecked(),
                              mp4=self.mp4.isChecked(),
-                             mp4_background=('white','dark','black')[self.mp4_background.currentIndex()],
+                             mp4_background=self.mp4_background.currentText().lower(),
                              sound_volume=self.sound_volume.value()/100 if self.sound_on.isChecked() else None)
         self.worker.progress.connect(self.export_progress); self.worker.done.connect(lambda p:self.export_done('Saved: '+p)); self.worker.done.connect(lambda _p:play_done_sound()); self.worker.failed.connect(lambda e:self.export_done('Export stopped: '+e)); self.worker.finished.connect(self.export_finished)
         self.export.setEnabled(False); self.quick_export.setEnabled(False); self.cancel.setEnabled(True); self.status.setText('Exporting locally…')

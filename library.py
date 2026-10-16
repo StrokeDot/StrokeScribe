@@ -6,6 +6,7 @@ are moved or deleted. Each category has its own sub-folder:
 
     Images/   pictures and SVGs to animate
     Hands/    hand PNGs (with their pen-tip position)
+    Audio/    voiceovers and music
 
 Deleted items go to a "Deleted items" folder inside the library, so nothing is
 lost by accident. An index.json per category keeps names, dates and, for hands,
@@ -21,8 +22,9 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-CATEGORIES = {'images': 'Images', 'hands': 'Hands'}
-TYPES = {'images': ('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.svg'), 'hands': ('.png',)}
+CATEGORIES = {'images': 'Images', 'hands': 'Hands', 'audio': 'Audio'}
+TYPES = {'images': ('.png', '.jpg', '.jpeg', '.webp', '.bmp', '.svg'), 'hands': ('.png',),
+         'audio': ('.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.opus', '.wma')}
 DELETED = 'Deleted items'
 
 

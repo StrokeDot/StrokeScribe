@@ -73,6 +73,8 @@ def plan(samples, total, width, height, zoom):
     ys = np.convolve(pad(ys), kernel, 'valid')
     # Zoom in as the pen starts; out to the full picture after it stops.
     start, end = times[first], times[len(active) - 1 - int(np.argmax(active[::-1]))]
+    # Always finish on the whole picture, even when the pen works to the very end.
+    end = max(start, min(end, total - ZOOM_OUT_SECONDS * .66))
     rise = _smoothstep((times - start + ZOOM_IN_SECONDS * .25) / ZOOM_IN_SECONDS)
     fall = 1 - _smoothstep((times - end + ZOOM_OUT_SECONDS * .35) / ZOOM_OUT_SECONDS)
     amount = np.minimum(rise, fall)

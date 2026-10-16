@@ -99,7 +99,28 @@ def compose_frame(drawing, fraction, options, camera_path=None):
             frame = hold.copy()
         frame = eraser.draw_eraser(frame, point, erase.get('image'), erase.get('anchor', eraser.ERASER_TIP),
                                    float(erase.get('width', .18)))
+        if camera_path is not None:
+            frame = _camera_view(frame, *camera_path.at(fraction))
     return apply_lettering_background(frame, drawing)
+
+
+def _camera_view(frame, zoom, cx, cy):
+    """Camera view of an already composed frame (used while erasing)."""
+    if zoom <= 1.0001:
+        return frame
+    from PySide6.QtCore import QRectF, Qt
+    from PySide6.QtGui import QImage, QPainter
+    w, h = frame.width(), frame.height()
+    vw, vh = w / zoom, h / zoom
+    left = min(max(0., cx * w - vw / 2), w - vw)
+    top = min(max(0., cy * h - vh / 2), h - vh)
+    out = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied)
+    out.fill(Qt.GlobalColor.transparent)
+    p = QPainter(out)
+    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    p.drawImage(QRectF(0, 0, w, h), frame, QRectF(left, top, vw, vh))
+    p.end()
+    return out
 
 
 def camera_for(drawing, options, zoom, rate=30.):

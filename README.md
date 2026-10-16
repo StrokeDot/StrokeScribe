@@ -160,6 +160,13 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Voiceover, camera follow, backgrounds and Auto timing (v0.5.3-experimental.31)
+
+- **Voiceover / music** (Export tab): **Load audio…** (MP3, WAV, M4A, AAC, OGG, FLAC, Opus, WMA) or pick one from the new **Audio** section of the Library. Set the track volume and when it starts. It is mixed with the pencil/brush sounds into every video (and `soundtrack.wav`), cut at the end of the animation, heard in the preview, and saved in projects. **Fit animation to audio** stretches draw, paint, hold and erase times (keeping their proportions) so the video ends when the track ends.
+- **Auto timing** (Animation tab): picks draw, paint, hold and erase times from how much there is to draw. With a voiceover loaded it fits them to the voiceover instead.
+- **Camera follow** (Animation tab): *Gentle zoom* or *Close-up zoom*. The camera glides after the pen, then pulls back to show the whole picture at the end. Frames are rendered larger and cropped, so they stay sharp. Shown in the preview and used in every export.
+- **Backgrounds**: Whiteboard, Paper, Chalkboard and Cork textures, besides White, Dark and Black, for the preview and the MP4. Transparent formats (PNG, WebM, MOV) stay transparent.
+
 ## Eraser (v0.5.3-experimental.30)
 
 Animation tab → **Erase at the end** adds an **Erase** stage after the hold (Draw → Paint → Hold → Erase), so the picture is rubbed away and the video ends empty:

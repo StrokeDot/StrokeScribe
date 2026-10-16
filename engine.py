@@ -331,19 +331,27 @@ def encode_mp4(folder, fps=30, background='white', audio=None):
     ffmpeg=shutil.which('ffmpeg')
     if not ffmpeg:
         raise RuntimeError('FFmpeg was not found on PATH. PNG frames have still been exported.')
-    if background not in MP4_BACKGROUNDS:
-        raise ValueError('MP4 background must be white, dark or black.')
+    from backgrounds import TEXTURES
+    textures={t.lower():t for t in TEXTURES}
+    if background not in MP4_BACKGROUNDS and background not in textures:
+        raise ValueError('MP4 background must be white, dark, black or a texture.')
     folder=Path(folder)
     info=json.loads((folder/'sequence.json').read_text())
     width,height=int(info['width']),int(info['height'])
     output=folder/f'animation_{background}_background.mp4'
-    color=f"color=c=0x{MP4_BACKGROUNDS[background]}:s={width}x{height}:r={fps}"
+    if background in textures:
+        from backgrounds import save_png
+        texture=save_png(textures[background],width,height,folder/'background.png')
+        background_input=['-loop','1','-framerate',str(fps),'-i',str(texture)]
+    else:
+        color=f"color=c=0x{MP4_BACKGROUNDS[background]}:s={width}x{height}:r={fps}"
+        background_input=['-f','lavfi','-i',color]
     audio_in=['-i',str(audio)] if audio else []
     audio_out=(['-map','[v]','-map','2:a','-c:a','aac','-b:a','192k','-shortest'] if audio
                else ['-map','[v]','-an'])
     cmd=[ffmpeg,'-n','-hide_banner','-loglevel','error',
          '-framerate',str(fps),'-i',str(folder/'frame_%06d.png'),
-         '-f','lavfi','-i',color,*audio_in,
+         *background_input,*audio_in,
          '-filter_complex','[1:v][0:v]overlay=shortest=1:format=auto,format=yuv420p[v]',
          *audio_out,'-c:v','libx264','-preset','medium','-crf','16',
          '-movflags','+faststart',str(output)]
