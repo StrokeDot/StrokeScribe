@@ -311,6 +311,7 @@ class Window(QMainWindow):
         self._preparing=False
         self.preview_sound=None
         self.audio_path=None; self.audio_seconds=None
+        self.paint_hand_path=None; self.paint_hand_tip=None
         self._camera_key=None; self._camera_path=None
         # Rapid brush-width changes should not synchronously rebuild the entire
         # paint plan for every spinbox/wheel event on the GUI thread.
@@ -532,6 +533,9 @@ class Window(QMainWindow):
                 widget.blockSignals(True); set_widget_value(widget,settings[name]); widget.blockSignals(False)
             if settings.get('audio_path')!=self.audio_path:
                 self.set_audio(settings.get('audio_path'),refresh=False)
+            self.paint_hand_path=settings.get('paint_hand_path')
+            self.paint_hand_tip=settings.get('paint_hand_tip')
+            self.update_paint_hand_label()
             self.canvas.set_background(self.preview_background.currentIndex())
             self.preserve_colors.setEnabled(self.image_animation.currentIndex()!=1)
             if self.drawing is not None and snapshot['strokes']:
@@ -757,16 +761,17 @@ class Window(QMainWindow):
                       'sound_on','sound_volume','sound_preview','preview_background','image_detail',
                       'image_style','image_animation_style','clean_faint',
                       'erase_mode','erase_time','erase_size','eraser',
-                      'camera','audio_volume','audio_offset','pen_ease')
+                      'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size')
 
     def project_state(self):
         """Everything needed to reopen this exact animation."""
         from projects import drawing_to_dict, qimage_to_b64, widget_value
+        from tools_kit import hand_to_project
         image_source=bool(self.source_type.currentIndex())
         state={'title':self.project_title,'source':'image' if image_source else 'svg',
                'drawing':drawing_to_dict(self.drawing),
                'settings':self.settings_state(),
-               'hand':'builtin' if getattr(self,'hand_builtin',False) else qimage_to_b64(self.hand),
+               'hand':hand_to_project(getattr(self,'hand_builtin',False),self.hand),
                'letter':{'ink':self.letter_ink_color,'background':self.letter_bg_color},
                'audio':str(self.audio_path or '')}
         if image_source and self.image_result:
@@ -775,6 +780,9 @@ class Window(QMainWindow):
                             'path':str(self.image_path or ''),'guide':str(self.image_guide or '')}
         else:
             state['color_png']=qimage_to_b64(self.final_image)
+        if self.paint_hand_path and Path(self.paint_hand_path).is_file():
+            import base64
+            state['paint_hand_png']=base64.b64encode(Path(self.paint_hand_path).read_bytes()).decode('ascii')
         return state
 
     def save_project(self,save_as=False):
@@ -826,12 +834,15 @@ class Window(QMainWindow):
             set_widget_value(widget,settings[name])
             widget.blockSignals(False)
         self.canvas.set_background(self.preview_background.currentIndex())
-        hand=data.get('hand')
-        if hand=='builtin': self.use_builtin_hand(refresh=False)
-        elif hand:
-            image=qimage_from_b64(hand)
-            if image is not None:
-                self.hand=image; self.hand_builtin=False; self.hand_name.setText('Hand: from project')
+        import tools_kit
+        image,builtin=tools_kit.hand_from_project(data.get('hand'))
+        if builtin=='hand': self.use_builtin_hand(refresh=False)
+        elif image is not None:
+            self.hand=image; self.hand_builtin=builtin or False; self.hand_path=None
+            self.hand_name.setText('Hand: '+(tools_kit.LABELS[builtin] if builtin else 'from project'))
+        self.paint_hand_path=tools_kit.restore_paint_hand(settings.get('paint_hand_path'),data.get('paint_hand_png'))
+        self.paint_hand_tip=settings.get('paint_hand_tip')
+        self.update_paint_hand_label()
         letter=data.get('letter',{})
         self.letter_ink_color=letter.get('ink',self.letter_ink_color)
         self.letter_bg_color=letter.get('background')
@@ -1233,6 +1244,65 @@ class Window(QMainWindow):
             self.source_type.setCurrentIndex(1)
             self.build_image(path)
 
+    def use_builtin_tool(self,name):
+        """Built-in hand, pencil or marker, with its tip and a fitting size."""
+        import tools_kit
+        if name=='hand':
+            self.use_builtin_hand(refresh=False)
+        else:
+            image=tools_kit.builtin_image(name)
+            if image.isNull(): return
+            self.hand=image; self.hand_builtin=name; self.hand_path=None
+            self.hand_name.setText('Hand: '+tools_kit.LABELS[name])
+        _,tip,size=tools_kit.BUILTIN[name]
+        for widget,value in ((self.ax,tip[0]),(self.ay,tip[1]),(self.handsize,size)):
+            widget.blockSignals(True); widget.setValue(value); widget.blockSignals(False)
+        self.note_change()
+        self.refresh()
+
+    def update_paint_hand_label(self):
+        import tools_kit
+        choice=self.paint_hand.currentText()
+        library=choice==tools_kit.PAINT_LIBRARY
+        self.paint_hand_choose.setVisible(library)
+        self.paint_hand_size.setEnabled(choice!=tools_kit.PAINT_SAME)
+        if library:
+            name=Path(self.paint_hand_path).stem if self.paint_hand_path else 'none chosen yet'
+            missing=self.paint_hand_path and not Path(self.paint_hand_path).is_file()
+            self.paint_hand_name.setText('Painting hand: '+name+(' (file missing: using the drawing hand)' if missing else ''))
+        else:
+            self.paint_hand_name.setText('')
+
+    def paint_hand_changed(self):
+        import tools_kit
+        if self.paint_hand.currentText()==tools_kit.PAINT_LIBRARY and not self.paint_hand_path:
+            self.choose_paint_hand()
+            if not self.paint_hand_path:
+                self.paint_hand.setCurrentText(tools_kit.PAINT_BRUSH)
+        self.update_paint_hand_label()
+        self.refresh()
+
+    def choose_paint_hand(self):
+        """Pick the painting hand from the Hands library."""
+        from library_dialog import LibraryDialog
+        import tools_kit
+        def chosen(category,item):
+            if category!='hands': return
+            self.set_paint_hand(str(item.path),item.tip)
+        LibraryDialog(self,'hands',chosen).exec()
+
+    def set_paint_hand(self,path,tip=None):
+        import tools_kit
+        image=QImage(str(path))
+        if image.isNull():
+            QMessageBox.warning(self,'Painting hand','Could not read this hand image.'); return
+        self.paint_hand_path=str(path)
+        self.paint_hand_tip=list(tools_kit.tip_for_image(image,tip))
+        self.paint_hand.setCurrentText(tools_kit.PAINT_LIBRARY)
+        self.update_paint_hand_label()
+        self.note_change()
+        self.refresh()
+
     def use_builtin_hand(self,refresh=True):
         """Load the bundled StrokeScribe hand (calibrated pencil tip X 0.08, Y 0.13)."""
         image=QImage(str(DEFAULT_HAND)) if DEFAULT_HAND.is_file() else QImage()
@@ -1279,6 +1349,8 @@ class Window(QMainWindow):
         from projects import widget_value
         state={name:widget_value(getattr(self,name)) for name in self.PROJECT_SETTINGS}
         state['audio_path']=self.audio_path
+        state['paint_hand_path']=self.paint_hand_path
+        state['paint_hand_tip']=self.paint_hand_tip
         return state
 
     # ------------------------------------------------- voiceover, timing

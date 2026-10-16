@@ -160,6 +160,12 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Pencil, marker and a painting hand (v0.5.3-experimental.33)
+
+- **Built-in tools** (Hand tab): **Built-in hand**, **Pencil** and **Marker** buttons. Each one sets its own pen tip and a fitting size. The pencil and marker are tools on their own, without a hand.
+- **Painting hand** (Hand tab → Painting hand): *Same as drawing hand*, *Built-in paint brush*, or *From Hands library* (for example your own hand holding a brush). The animation switches to it automatically when painting starts. **Painting hand size** sets its width. The brush tip is found automatically, or the tip saved in the library is used.
+- Saved in projects (a library painting hand is stored inside the project file too) and used by batch export. Undo works for these settings.
+
 ## Undo everything, edit lines on the preview, timing control (v0.5.3-experimental.32)
 
 - **Undo / Redo for everything** (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z, and the ↶ ↷ buttons): every setting and every line change, not only the stroke order. Changing a value several times in a row counts as one step.

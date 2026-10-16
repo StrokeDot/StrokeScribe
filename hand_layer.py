@@ -33,6 +33,10 @@ def capture():
 
 def paint(painter, rect, hand):
     """Draw the hand now, or record it while a capture is active."""
+    if getattr(hand, 'own_tip', None) is not None:
+        # A painting tool with its own tip and size (tools_kit.PaintingTool).
+        from tools_kit import place
+        rect = place(rect, hand)
     hands = getattr(_state, 'hands', None)
     if hands is None:
         painter.drawImage(rect, hand)

@@ -701,15 +701,18 @@ def build_workspace(w, Canvas, BRAND_ICON):
     hands_library=QPushButton('Hands library…')
     hands_library.clicked.connect(lambda checked=False: w.open_library('hands'))
     hand_l.addWidget(hands_library)
-    builtin_hand=QPushButton('Use built-in hand')
-    builtin_hand.clicked.connect(lambda checked=False: w.use_builtin_hand())
-    hand_l.addWidget(builtin_hand)
+    builtin_row=QHBoxLayout()
+    for text,name,tip in (('Built-in hand','hand','Hand holding a pen (default).'),
+                          ('Pencil','pencil','A pencil on its own, no hand.'),
+                          ('Marker','marker','A marker on its own, no hand.')):
+        button=QPushButton(text); button.setToolTip(tip)
+        button.clicked.connect(lambda checked=False,n=name: w.use_builtin_tool(n))
+        builtin_row.addWidget(button)
+    hand_l.addLayout(builtin_row)
     w.hand_name=caption('Hand: none')
     hand_l.addWidget(w.hand_name)
     w.showhand=QCheckBox('Show hand while drawing')
     w.showhand.setChecked(True);hand_l.addWidget(w.showhand)
-    w.show_paint_hand=QCheckBox('Show hand while painting')
-    w.show_paint_hand.setChecked(True);hand_l.addWidget(w.show_paint_hand)
     hand_l.addWidget(caption('New hands get their pen tip found automatically. '
                              'Adjust it here if lines do not start exactly at the pen.'))
     tip_row=QHBoxLayout()
@@ -727,6 +730,25 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # Defaults calibrated for the built-in hand (assets/default_hand.png).
     w.ax=w.number(0,1,.08,.005);w.ax.setDecimals(3);h.addRow('Pen tip X',w.ax)
     w.ay=w.number(0,1,.13,.005);w.ay.setDecimals(3);h.addRow('Pen tip Y',w.ay)
+    hand_l.addWidget(label('PAINTING HAND'))
+    hand_l.addWidget(caption('When painting starts, the hand can switch to a brush.'))
+    w.show_paint_hand=QCheckBox('Show hand while painting')
+    w.show_paint_hand.setChecked(True);hand_l.addWidget(w.show_paint_hand)
+    from tools_kit import PAINT_CHOICES
+    ph=form_layout();hand_l.addLayout(ph)
+    w.paint_hand=QComboBox()
+    w.paint_hand.addItems(list(PAINT_CHOICES))
+    w.paint_hand.setToolTip('Keep the drawing hand, switch to the built-in paint brush, '
+                            'or use a hand from your Hands library while painting.')
+    ph.addRow('Painting hand',w.paint_hand)
+    w.paint_hand_size=w.number(5,90,30,1);w.paint_hand_size.setDecimals(0)
+    w.paint_hand_size.setToolTip('Width of the painting hand, as a share of the video width.')
+    ph.addRow('Painting hand size (%)',w.paint_hand_size)
+    w.paint_hand_choose=QPushButton('Choose painting hand…')
+    w.paint_hand_choose.clicked.connect(lambda checked=False: w.choose_paint_hand())
+    hand_l.addWidget(w.paint_hand_choose)
+    w.paint_hand_name=caption('')
+    hand_l.addWidget(w.paint_hand_name)
     hand_l.addStretch(1)
     tabs.addTab(scroll_view(hand),'Hand')
 
@@ -862,6 +884,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.reveal_mode.currentIndexChanged.connect(w.refresh)
     w.brush_width.valueChanged.connect(w.schedule_brush_refresh)
     w.show_paint_hand.toggled.connect(w.refresh)
+    w.paint_hand.activated.connect(lambda index: w.paint_hand_changed())
+    w.paint_hand_size.valueChanged.connect(w.refresh)
     w.camera.currentIndexChanged.connect(w.refresh)
     w.pen_ease.currentIndexChanged.connect(w.refresh)
     for widget in (w.erase_mode,w.eraser):

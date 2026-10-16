@@ -52,8 +52,12 @@ def prepare(path, settings, hand):
         s = data.get('settings', {})
         drawing = drawing_from_dict(data['drawing'])
         project_hand = hand
-        if data.get('hand') and data['hand'] != 'builtin':
-            project_hand = qimage_from_b64(data['hand']) or hand
+        if data.get('hand'):
+            from tools_kit import hand_from_project, restore_paint_hand
+            project_hand = hand_from_project(data['hand'])[0] or hand
+            if data.get('paint_hand_png'):
+                s = dict(s, paint_hand_path=restore_paint_hand(s.get('paint_hand_path'),
+                                                               data['paint_hand_png']))
         if data.get('source') == 'image' and data.get('image'):
             from adaptive_hand import pil_image
             from image_regions import segment_regions

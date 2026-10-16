@@ -115,6 +115,32 @@ if _lines:
     window.line_pause.setValue(1.)
     window.pen_ease.setCurrentIndex(1)
 snapshot('line-editing.png')
+# Painting hand: the built-in hand draws, then the built-in paint brush paints.
+import tools_kit as _tk
+from engine import render as _render
+from PIL import ImageFilter as _IF
+_bx0,_by0,_bx1,_by1=_d.bounds
+_cw,_ch=max(2,round(_bx1-_bx0)),max(2,round(_by1-_by0))
+_lines=_pil(_render(_d,1.,_cw,_ch,1.,None)).convert('RGBA')
+_fill=_lines.getchannel('A').filter(_IF.MaxFilter(21)).filter(_IF.GaussianBlur(3))
+_grad=_Image.linear_gradient('L').rotate(90).resize((_cw,_ch))
+_col=_Image.merge('RGB',(_grad.point(lambda v:250-v//3),_grad.point(lambda v:150+v//4),_grad.point(lambda v:60+v*3//4)))
+_colour=_Image.new('RGBA',(_cw,_ch),(0,0,0,0)); _colour.paste(_col,(0,0),_fill)
+_colour.alpha_composite(_lines)
+from PySide6.QtGui import QImage as _QI
+_cq=_QI(_colour.tobytes(),_cw,_ch,_QI.Format.Format_RGBA8888).copy()
+_hand=_tk.builtin_image('hand')
+_brush=_tk.painting_hand(dict(paint_hand=_tk.PAINT_BRUSH,paint_hand_size=30,handsize=.75,ax=.08,ay=.13),_hand)
+_o=dict(width=640,height=360,duration=2.,fade_duration=.4,hold_duration=.4,final_image=_cq,thickness=1.,
+        hand=_hand,hand_scale=.75,anchor=(.08,.13),reveal_mode='adaptive',brush_width=.14,painting_hand=_brush,
+        stroke_spacing=.55,artwork_scale=.8)
+_frames=[]
+for _i in range(48):
+    _f=_pil(_compose(_d,_i/47,_o)).convert('RGBA')
+    _bg=_Image.new('RGBA',_f.size,(255,255,255,255)); _bg.alpha_composite(_f)
+    _frames.append(_bg.convert('RGB'))
+_frames[0].save(str(out/'painting-hand.gif'),save_all=True,append_images=_frames[1:]+[_frames[-1]]*6,
+                duration=90,loop=0)
 # Setup & system check window, with the real checks of the build machine.
 import preflight
 from setup_wizard import SetupDialog

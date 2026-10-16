@@ -34,7 +34,9 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
         reveal_mode=reveal, brush_width=float(s.get('brush_width', .14)),
         stroke_spacing=float(s.get('stroke_spacing', .55)),
         artwork_scale=float(s.get('artwork_size', 100)) / 100.,
-        painting_hand=hand if s.get('show_paint_hand', True) else None)
+        painting_hand=None)
+    from tools_kit import painting_hand
+    options['painting_hand'] = painting_hand(s, hand)
     options['erase'] = erase_from_settings(s, hand)
     if drawing is not None:
         # Timing control (stroke_timing): pauses are in seconds of drawing time.
