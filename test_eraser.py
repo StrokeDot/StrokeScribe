@@ -92,7 +92,12 @@ class EraserTests(unittest.TestCase):
             self.assertEqual(count, 32)
             last = QImage(str(folder / f'frame_{count - 1:06d}.png'))
             self.assertEqual(alpha_sum(last), 0)
-            path = soundtrack(self.drawing, dict(o, fps=8), folder / 's.wav', .8)
+            # Your eraser sound (there are no built-in sounds).
+            from sound import RATE, write_wav
+            t = np.arange(RATE) / RATE
+            tone = (np.sin(2 * np.pi * 600 * t) * 9000).astype(np.int16)
+            rub = write_wav(Path(tmp) / 'rub.wav', np.stack([tone, tone], 1))
+            path = soundtrack(self.drawing, dict(o, fps=8, sound_files=('', '', str(rub))), folder / 's.wav', .8)
             with wave.open(str(path)) as f:
                 data = np.frombuffer(f.readframes(f.getnframes()), np.int16).reshape(-1, 2)
             rate = 44100

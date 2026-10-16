@@ -335,7 +335,7 @@ class Window(QMainWindow):
         self.brush_preview_timer=QTimer(self)
         self.brush_preview_timer.setSingleShot(True)
         self.brush_preview_timer.setInterval(180)
-        self.brush_preview_timer.timeout.connect(self.refresh)
+        self.brush_preview_timer.timeout.connect(self.quiet_refresh)
         from studio_workspace import build_workspace
         build_workspace(self,Canvas,BRAND_ICON)
         self.canvas.on_click=self.click_preview
@@ -1716,8 +1716,13 @@ class Window(QMainWindow):
         # Debounce potentially expensive plan_for() rebuilds while controls
         # are changing. A single preview reflects the final requested value,
         # planned quietly in the background (no loading card).
-        self._quiet_plan=True
         self.brush_preview_timer.start()
+
+    def quiet_refresh(self):
+        """Refresh after a brush width / spacing change: plan without the loading card."""
+        self._quiet_plan=True
+        self.refresh()
+        self._quiet_plan=False
 
     def image_paint_method(self):
         mode=REVEAL_MODES[self.reveal_mode.currentIndex()]

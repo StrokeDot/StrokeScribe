@@ -34,6 +34,11 @@ def _combo_menu(parent_menu, title, combo, tip='', after=None):
             menu.addAction(action)
     menu.aboutToShow.connect(fill)
     fill()
+    owner = parent_menu.parent()
+    while owner is not None and not hasattr(owner, 'submenus'):
+        owner = owner.parent()
+    if owner is not None:
+        owner.submenus[title] = menu
     return menu
 
 
@@ -54,6 +59,7 @@ def build_menus(w):
     bar = w.menuBar()
     bar.setNativeMenuBar(False)
     w.menus = {}
+    w.submenus = {}
 
     # ---------------------------------------------------------------- File
     file = bar.addMenu('&File'); w.menus['file'] = file

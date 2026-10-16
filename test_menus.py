@@ -45,7 +45,7 @@ class MenuTests(unittest.TestCase):
             self.assertIn(wanted, file_items)
         # Effects -> Camera follow is the same setting as the Animation tab.
         fx = w.menus['effects']
-        camera = next(a.menu() for a in fx.actions() if a.text() == 'Camera follow')
+        camera = w.submenus['Camera follow']
         camera.aboutToShow.emit()
         choices = [a for a in camera.actions()]
         self.assertEqual([a.text() for a in choices], [w.camera.itemText(i) for i in range(w.camera.count())])
