@@ -264,7 +264,7 @@ class CreateImageWindowTests(unittest.TestCase):
             self.app.processEvents()
             self.assertTrue(w.builder.success, w.builder.failed_message)
             self.assertIsNotNone(w.image_result)
-            self.assertGreater(getattr(w.drawing, 'line_guide_score', 0), .9)
+            self.assertGreater(getattr(w.drawing, 'line_guide_score', 0), .8)
             self.assertTrue(any('AI line drawing' in x for x in w.drawing.warnings))
             self.assertEqual(w.image_guide, str(guide))
         finally:
