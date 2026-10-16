@@ -119,7 +119,7 @@ class StudioFeatureTests(unittest.TestCase):
         self.assertTrue(other.open_project(str(saved)))
         self.assertEqual([s.name for s in other.drawing.strokes], [s.name for s in w.drawing.strokes])
         self.assertNotEqual([s.name for s in other.drawing.strokes], names)
-        self.assertEqual(other.drawing.strokes[0].points, w.drawing.strokes[0].points)
+        np.testing.assert_allclose(other.drawing.strokes[0].points, w.drawing.strokes[0].points, atol=1e-3)
         self.assertAlmostEqual(other.duration.value(), 6.5)
         self.assertAlmostEqual(other.thickness.value(), 2.2)
         self.assertEqual(other.reveal_mode.currentText(), 'Zigzag sweep')

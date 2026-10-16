@@ -950,7 +950,8 @@ class Window(QMainWindow):
         return options_from_settings(
             self.settings_state(),self.drawing,
             color_image=None if image_source else self.final_image,hand=self.hand,
-            image_source=self.image_result.image if image_source and self.image_result else None)
+            image_source=self.image_result.image if image_source and self.image_result else None,
+            image_mode=image_source)
 
     def refresh(self,*args):
         if self._preparing:

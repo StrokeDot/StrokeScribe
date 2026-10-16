@@ -13,7 +13,7 @@ REVEAL_BY_TEXT = {'Brush painting': 'brush', 'Adaptive Hand Painting': 'adaptive
 MP4_BACKGROUNDS = ('white', 'dark', 'black')
 
 
-def options_from_settings(s, drawing, color_image=None, hand=None, image_source=None):
+def options_from_settings(s, drawing, color_image=None, hand=None, image_source=None, image_mode=None):
     """Render options for export_frames.
 
     s: settings dict (see Window.PROJECT_SETTINGS). color_image: colour PNG for
@@ -34,12 +34,15 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
         stroke_spacing=float(s.get('stroke_spacing', .55)),
         artwork_scale=float(s.get('artwork_size', 100)) / 100.,
         painting_hand=hand if s.get('show_paint_hand', True) else None)
-    if image_source is not None:
+    if image_mode is None:
+        image_mode = image_source is not None
+    if image_mode:
         paint_only = s.get('image_animation') == 'Paint Only'
         if drawing is not None:
             drawing.image_animation = 'paint_only' if paint_only else 'draw_paint'
             drawing.drawing_visibility = 'progressive'
-        options.update(final_image=image_source if (s.get('preserve_colors', True) or paint_only) else None,
+        options.update(final_image=image_source if image_source is not None
+                       and (s.get('preserve_colors', True) or paint_only) else None,
                        fade_duration=float(s.get('image_duration', 8)),
                        reveal_mode=reveal if reveal in ('adaptive', 'zigzag') else 'adaptive',
                        duration=0. if paint_only else options['duration'])
