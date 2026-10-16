@@ -21,10 +21,13 @@ jobs:
       - name: Full test suite
         id: tests
         continue-on-error: true
+        env:
+          STROKESCRIBE_TEST_TOKEN: ${{ github.token }}
+          STROKESCRIBE_TEST_BRANCH: ${{ github.head_ref || github.ref_name }}
         shell: bash
         run: |
           set -o pipefail
-          python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes 2>&1 | tee full-tests.log
+          python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater 2>&1 | tee full-tests.log
       - name: Report failing test output to pull request
         if: steps.tests.outcome == 'failure' && github.event_name == 'pull_request'
         env:
@@ -79,4 +82,4 @@ jobs:
           python -m pip install --only-binary=:all: -r requirements.txt
           python -c "import sys, numpy, cv2; from PySide6.QtWidgets import QApplication; print(sys.version, numpy.__version__, cv2.__version__)"
       - name: Test image reconstruction and existing modes on Windows
-        run: python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes
+        run: python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater

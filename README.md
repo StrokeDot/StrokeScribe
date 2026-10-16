@@ -160,6 +160,12 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Update in the app (v0.5.3-experimental.39)
+
+- **Project menu → Update StrokeScribe…**: updates this installation in place. No unzipping, no Setup.cmd. It replaces only the app's own files; your `.venv` packages, Library, projects, settings and AI models stay. New Python packages are installed only when a version needs them. The previous version is kept (**Go back to the previous version**).
+- **Online**: the newest version is read from the StrokeScribe GitHub project. Because the project is private, paste a read-only GitHub key once (the window shows the steps: fine-grained token, only StrokeDot/StrokeScribe, *Contents: Read-only*). With the key saved, StrokeScribe checks at start and shows **⬆ Update to exp.NN** in the top bar when a new version is ready.
+- **Offline**: **Update from a ZIP file…** uses a StrokeScribe ZIP you already downloaded.
+
 ## Create a sound with AI (v0.5.3-experimental.38)
 
 - **✦ Create a sound with AI…** (Export tab → Sound), or **Create a sound** in the Create window: describe a sound and **Stable Audio 3 Small-SFX** (Stability AI) makes it on your PC. Ready descriptions for **Pencil**, **Brush** and **Eraser**; change the words as you like. Choose the length (8 s is plenty: it is looped while the pen moves), click **Generate**, **▶ Listen**, and **Use as pencil sound** (or brush / eraser). Not right? Generate again: every try is different.

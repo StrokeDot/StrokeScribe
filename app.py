@@ -1,4 +1,4 @@
-import sys, time
+import os, sys, time
 from collections import OrderedDict
 from pathlib import Path
 from datetime import datetime
@@ -343,6 +343,12 @@ class Window(QMainWindow):
         self.canvas.on_click=self.click_preview
         self.watch_settings()
         self.update_sound_buttons()
+        self.latest_version=None
+        if not os.environ.get('QT_QPA_PLATFORM')=='offscreen':
+            from update_dialog import StartupCheck
+            self.update_check=StartupCheck(self)
+            self.update_check.found.connect(self.update_found)
+            QTimer.singleShot(4000,self.update_check.start)
         self.use_builtin_hand(refresh=False)
         # Setup level chosen in the setup window (Fast/Balanced/Quality/Max).
         import preflight
@@ -1912,6 +1918,29 @@ class Window(QMainWindow):
         if self.worker:
             self.worker.requestInterruption()
             self.status.setText('Cancelling after current frame. FFmpeg encoding, if started, must finish.')
+    # ------------------------------------------------------------ updates
+    def update_found(self,version):
+        self.latest_version=version
+        short=version.replace('0.5.3-','').replace('experimental','exp')
+        self.update_button.setText(f'⬆ Update to {short}')
+        self.update_button.show()
+
+    def open_updates(self):
+        from update_dialog import UpdateDialog
+        UpdateDialog(self,self.latest_version).exec()
+
+    def restart_after_update(self):
+        """Close (asking to save, like a normal close) and start the updated version."""
+        if self.drawing is not None and QMessageBox.question(self,'Restart',
+                'Save your project before restarting?')==QMessageBox.StandardButton.Yes:
+            if not self.save_project(): return
+        import updater
+        self._restart_requested=True
+        self.close()
+        if not self.isVisible():
+            updater.restart()
+            QApplication.instance().quit()
+
     def closeEvent(self,event):
         if self.preview_sound is not None: self.preview_sound.stop()
         if self.font_worker and self.font_worker.isRunning():
