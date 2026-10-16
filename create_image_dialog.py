@@ -177,13 +177,14 @@ class CreateImageDialog(QDialog):
         self.download_button.clicked.connect(self.download_model)
         form.addWidget(self.download_button, row, 0, 1, 2); row += 1
 
-        form.addWidget(QLabel('Image'), row, 0)
+        self.image_title = QLabel('Image')
+        form.addWidget(self.image_title, row, 0)
         image_row = QHBoxLayout()
         self.image_label = QLabel(); self.image_label.setObjectName('note'); self.image_label.setWordWrap(True)
         image_row.addWidget(self.image_label, 1)
         choose = QPushButton('Choose…'); choose.clicked.connect(self.choose_image)
         image_row.addWidget(choose)
-        self.image_widgets = (self.image_label, choose)
+        self.image_widgets = (self.image_title, self.image_label, choose)
         form.addLayout(image_row, row, 1); row += 1
         form.addWidget(QLabel('Prompt'), row, 0, Qt.AlignmentFlag.AlignTop)
         self.prompt = QPlainTextEdit(); self.prompt.setMinimumHeight(96)

@@ -220,7 +220,7 @@ class CreateImageWindowTests(unittest.TestCase):
             self.assertIn('Fits your PC', dialog.model_box.currentText())
             self.assertFalse(dialog.generate_button.isEnabled())      # engine not installed
             self.assertTrue(dialog.install_button.isVisibleTo(dialog))
-            self.assertIn('Q4_K_M', dialog.download_button.text())
+            self.assertIn('Q4_K_M', dialog.variant_box.currentText())
             self.assertIn('23.7 GB', dialog.download_button.text())   # model + text encoder + VAE + LoRA
             self.assertEqual(dialog.prompt.toPlainText(), LINE_ART_PROMPT)
             dialog.set_task('generate')
