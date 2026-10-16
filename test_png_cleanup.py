@@ -98,11 +98,11 @@ class WindowTests(unittest.TestCase):
             w.clean_color.setChecked(False)                     # reloads as it is
             self.assertEqual((w.final_image.width(), w.final_image.height()), (W, H))
         names = [w.inspector_tabs.tabText(i) for i in range(w.inspector_tabs.count())]
-        self.assertEqual(names, ['Animation', 'Hand', 'Export', 'Sound'])
-        sound_page = w.inspector_tabs.widget(3)
+        self.assertEqual(names, ['Animation', 'Hand', 'Sound', 'Export'])
+        sound_page = w.inspector_tabs.widget(2)
         self.assertTrue(sound_page.isAncestorOf(w.sound_on))
         self.assertTrue(sound_page.isAncestorOf(w.load_audio_button))
-        self.assertFalse(w.inspector_tabs.widget(2).isAncestorOf(w.sound_on))
+        self.assertFalse(w.inspector_tabs.widget(3).isAncestorOf(w.sound_on))
 
 
 if __name__ == '__main__':

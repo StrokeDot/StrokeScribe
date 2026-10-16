@@ -86,6 +86,8 @@ QWidget {{ background: {c['panel']}; color: {c['text']}; font-size: 12px; }}
 QMainWindow, QWidget#root {{ background: {c['window']}; }}
 QLabel {{ background: transparent; }}
 QFrame#topBar {{ background: {c['panel']}; border: 1px solid {c['border']}; border-radius: 8px; }}
+QFrame#updateBanner {{ background: {c['selection']}; border: 1px solid {c['accent']}; border-radius: 8px; margin-top: 6px; }}
+QLabel#bannerText {{ color: {c['text']}; font-weight: 600; background: transparent; }}
 QLabel#brandWordmark {{ background: transparent; }}
 QFrame#assetPanel, QFrame#inspectorPanel, QFrame#monitorPanel, QFrame#timelinePanel {{
     background: {c['panel']}; border: 1px solid {c['border']}; border-radius: 8px; }}

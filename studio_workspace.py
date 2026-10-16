@@ -53,7 +53,22 @@ def form_layout():
 
 
 class StageTimeline(QFrame):
-    """Interactive time overview, with separate draw/paint/hold phases."""
+    """Interactive time overview, like an editor's track.
+
+    Row 1: Draw / Paint / Hold / Erase clips (drag a clip's right edge to make
+    it longer or shorter). Row 2: the voiceover / music clip with its
+    waveform (drop an audio file here; drag the clip to move it in time;
+    right-click to remove).
+    """
+    stage_dragged=Signal(str,float)     # stage key, new seconds (while dragging)
+    stage_drag_done=Signal()
+    audio_moved=Signal(float)           # new start time of the audio clip (seconds)
+    audio_dropped=Signal(str)           # an audio file dropped on the timeline
+    audio_remove=Signal()
+
+    STAGE_KEYS=('draw','paint','hold','erase')
+    EDGE=6.                             # pixels: grab distance for a clip edge
+
     def __init__(self, slider, parent=None):
         super().__init__(parent)
         self.slider=slider
@@ -62,14 +77,20 @@ class StageTimeline(QFrame):
         self.hold_seconds=0.
         self.erase_seconds=0.
         self.progress=0.
-        self.setMinimumHeight(78)
-        self.setMaximumHeight(92)
+        self.setMinimumHeight(104)
+        self.setMaximumHeight(140)
         self.setMouseTracking(True)
+        self.setAcceptDrops(True)
         self.locked=False          # True while a drawing is being prepared
         self.scene_segments=None   # all-scenes preview: [(label, seconds, 'scene'|'join')]
         self.current_scene=0
+        self.audio=None            # {'start', 'seconds', 'name', 'envelope'} or None
+        self.editable=set(self.STAGE_KEYS)   # stages whose length can be dragged
+        self._drag=None
+        self._frozen=None          # time scale kept still while a clip edge is dragged
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setToolTip('Click a stage to move the playback cursor.')
+        self.setToolTip('Click to move the playhead. Drag the right edge of a clip to change its length. '
+                        'Drop a sound or music file on the lower row; drag it to move it.')
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def update_state(self, draw, paint, hold, progress, erase=0.):
@@ -86,28 +107,75 @@ class StageTimeline(QFrame):
         self.current_scene=current
         self.update()
 
+    def set_audio(self, audio):
+        self.audio=dict(audio) if audio else None
+        self.update()
+
     LEFT=12.
     RIGHT=12.
 
-    def _x(self, fraction):
-        return self.LEFT+max(1.,self.width()-self.LEFT-self.RIGHT)*fraction
+    # ------------------------------------------------------------ geometry
+    def total(self):
+        return self.draw_seconds+self.paint_seconds+self.hold_seconds+self.erase_seconds
 
+    def _rows(self):
+        ruler_h=22.; top=ruler_h+6.
+        height=max(40.,self.height()-top-6.)
+        clip_h=height*.56
+        return ruler_h,QRectF(self.LEFT,top,self._width(),clip_h),QRectF(self.LEFT,top+clip_h+4,self._width(),height-clip_h-4)
+
+    def _width(self):
+        return max(1.,self.width()-self.LEFT-self.RIGHT)
+
+    def _view_total(self):
+        return self._frozen or self.total()
+
+    def _x(self, seconds):
+        total=self._view_total()
+        return self.LEFT+self._width()*(seconds/total if total>0 else 0)
+
+    def _edges(self):
+        """[(stage key, x of its right edge, seconds before it)] of the visible stage clips."""
+        out=[]; t=0.
+        for key,secs in zip(self.STAGE_KEYS,(self.draw_seconds,self.paint_seconds,self.hold_seconds,self.erase_seconds)):
+            if secs<=0: continue
+            out.append((key,self._x(t+secs),t)); t+=secs
+        return out
+
+    def _edge_at(self, pos):
+        if self.scene_segments or self.locked: return None
+        _,clips,_=self._rows()
+        if not (clips.top()-2<=pos.y()<=clips.bottom()+2): return None
+        for key,x,_ in self._edges():
+            if key in self.editable and abs(pos.x()-x)<=self.EDGE:
+                return key
+        return None
+
+    def _audio_rect(self):
+        if not self.audio or self.scene_segments: return None
+        _,_,lane=self._rows()
+        total=self.total()
+        if total<=0: return None
+        x0=self._x(min(total,self.audio['start']))
+        x1=self._x(min(total,self.audio['start']+self.audio['seconds']))
+        return QRectF(x0,lane.top(),max(6.,x1-x0),lane.height())
+
+    # ------------------------------------------------------------ painting
     def paintEvent(self, event):
         c=theme_colors()
         p=QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        left=self.LEFT; width=max(1.,self.width()-self.LEFT-self.RIGHT)
-        ruler_h=22.; top=ruler_h+8.; height=max(26.,self.height()-top-10.)
-        total=self.draw_seconds+self.paint_seconds+self.hold_seconds+self.erase_seconds
+        left=self.LEFT; width=self._width()
+        ruler_h,clips,lane=self._rows()
+        total=self._view_total()
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(c['track']))
-        p.drawRoundedRect(QRectF(left,top,width,height),6,6)
+        p.drawRoundedRect(clips,6,6)
         small=QFont(self.font());small.setPointSizeF(8.)
         p.setFont(small)
         if total<=0:
             p.setPen(QColor(c['dim']))
-            p.drawText(QRectF(left,top,width,height),
-                Qt.AlignmentFlag.AlignCenter, 'Import artwork to begin')
+            p.drawText(clips,Qt.AlignmentFlag.AlignCenter,'Import artwork to begin')
             p.end()
             return
         # Ruler: major ticks with time labels, minor ticks between them.
@@ -134,36 +202,74 @@ class StageTimeline(QFrame):
                 ('Erase',self.erase_seconds,c.get('erase','#D9667E'))]
         if self.scene_segments:
             palette=[c['draw'],c['paint'],c['hold'],c.get('erase','#D9667E')]
-            stages=[]; n=0
+            stages=[]; k=0
             for name,secs,kind in self.scene_segments:
                 if kind=='join':
                     stages.append((name,secs,c['border_strong']))
                 else:
-                    stages.append((name,secs,palette[n%len(palette)])); n+=1
+                    stages.append((name,secs,palette[k%len(palette)])); k+=1
         x=left
+        p.save(); p.setClipRect(QRectF(left,0,width,self.height()))
         label_font=QFont(self.font());label_font.setPointSizeF(8.5);label_font.setBold(True)
         for name,secs,color in stages:
             if secs<=0:
                 continue
             part=width*secs/total
-            rect=QRectF(x+1.5,top+3,max(1.,part-3),height-6)
+            rect=QRectF(x+1.5,clips.top()+3,max(1.,part-3),clips.height()-6)
             fill=QColor(color);fill.setAlpha(215)
             p.setPen(QPen(QColor(color).lighter(125),1))
             p.setBrush(fill)
             p.drawRoundedRect(rect,5,5)
+            if not self.scene_segments and name.lower() in self.editable and part>=14:
+                # Grip on the right edge: drag it to change the length.
+                p.setPen(QPen(QColor(255,255,255,150),1.4))
+                gx=rect.right()-4
+                p.drawLine(QPointF(gx,rect.center().y()-6),QPointF(gx,rect.center().y()+6))
+                p.drawLine(QPointF(gx-3,rect.center().y()-6),QPointF(gx-3,rect.center().y()+6))
             if part>=46:
                 p.setPen(QColor(c['clip_text']))
                 p.setFont(label_font)
                 text=f'{name}  {secs:.1f}s' if part>=96 else name
-                p.drawText(rect.adjusted(9,0,-6,0),
+                p.drawText(rect.adjusted(9,0,-10,0),
                     Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft, text)
                 p.setFont(small)
             x+=part
+        p.restore()
+        # Audio lane.
+        if not self.scene_segments:
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track']))
+            p.drawRoundedRect(lane,5,5)
+            rect=self._audio_rect()
+            if rect is None:
+                p.setPen(QColor(c['dim']))
+                p.drawText(lane,Qt.AlignmentFlag.AlignCenter,'♪  Drop a voiceover or music file here')
+            else:
+                accent=QColor(c['accent'])
+                fill=QColor(accent);fill.setAlpha(70)
+                p.setPen(QPen(accent,1)); p.setBrush(fill)
+                p.save(); p.setClipRect(lane)
+                p.drawRoundedRect(rect,4,4)
+                env=self.audio.get('envelope') or []
+                if env:
+                    mid=rect.center().y(); half=rect.height()*.42
+                    p.setPen(QPen(accent.lighter(130),1))
+                    span=max(1e-6,self.audio['seconds'])
+                    px_per_sec=width/total
+                    for i,level in enumerate(env):
+                        t=i/len(env)*span
+                        xx=rect.left()+t*px_per_sec
+                        if xx>lane.right(): break
+                        h=max(.5,level*half)
+                        p.drawLine(QPointF(xx,mid-h),QPointF(xx,mid+h))
+                p.setPen(QColor(c['text']))
+                p.drawText(rect.adjusted(6,0,-4,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
+                           '♪ '+self.audio.get('name',''))
+                p.restore()
         # Playhead: a line through the track with a marker on the ruler.
         play_x=left+width*self.progress
         accent=QColor(c['accent'])
         p.setPen(QPen(accent,2))
-        p.drawLine(QPointF(play_x,ruler_h-2),QPointF(play_x,top+height))
+        p.drawLine(QPointF(play_x,ruler_h-2),QPointF(play_x,lane.bottom()))
         p.setPen(Qt.PenStyle.NoPen);p.setBrush(accent)
         from PySide6.QtGui import QPolygonF
         p.drawPolygon(QPolygonF([QPointF(play_x-6,ruler_h-13),QPointF(play_x+6,ruler_h-13),
@@ -176,26 +282,95 @@ class StageTimeline(QFrame):
         self.setCursor(Qt.CursorShape.BusyCursor if self.locked else Qt.CursorShape.PointingHandCursor)
         self.update()
 
+    # ------------------------------------------------------------ mouse
+    def _seek(self, x):
+        fraction=max(0.,min(1.,(x-self.LEFT)/self._width()))
+        self.slider.setValue(round(1000*fraction))
+
     def mousePressEvent(self,event):
         if self.locked:
             event.accept(); return
-        if (event.button()==Qt.MouseButton.LeftButton
-                and self.draw_seconds+self.paint_seconds+self.hold_seconds>0):
-            fraction=max(0.,min(1.,(event.position().x()-self.LEFT)/max(1,self.width()-self.LEFT-self.RIGHT)))
-            self.slider.setValue(round(1000*fraction))
-            event.accept()
-            return
-        super().mousePressEvent(event)
+        pos=event.position()
+        if event.button()==Qt.MouseButton.RightButton:
+            rect=self._audio_rect()
+            if rect is not None and rect.contains(pos):
+                from PySide6.QtWidgets import QMenu
+                menu=QMenu(self)
+                menu.addAction('Remove the audio track',self.audio_remove.emit)
+                menu.exec(event.globalPosition().toPoint())
+            event.accept(); return
+        if event.button()!=Qt.MouseButton.LeftButton or self.total()<=0:
+            return super().mousePressEvent(event)
+        key=self._edge_at(pos)
+        if key:
+            start=next(t for k,_,t in self._edges() if k==key)
+            self._frozen=self.total()
+            self._drag=('edge',key,start,self._width()/self.total())
+            event.accept(); return
+        rect=self._audio_rect()
+        if rect is not None and rect.contains(pos):
+            self._drag=('audio',pos.x(),self.audio['start'],self._width()/self.total())
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept(); return
+        self._drag=('seek',)
+        self._seek(pos.x())
+        event.accept()
 
     def mouseMoveEvent(self,event):
         if self.locked:
             event.accept(); return
-        if event.buttons() & Qt.MouseButton.LeftButton and self.draw_seconds+self.paint_seconds+self.hold_seconds>0:
-            fraction=max(0.,min(1.,(event.position().x()-self.LEFT)/max(1,self.width()-self.LEFT-self.RIGHT)))
-            self.slider.setValue(round(1000*fraction))
-            event.accept()
+        pos=event.position()
+        if self._drag and event.buttons() & Qt.MouseButton.LeftButton:
+            kind=self._drag[0]
+            if kind=='edge':
+                _,key,start,px_per_sec=self._drag
+                seconds=max(.1,(pos.x()-self.LEFT)/px_per_sec-start)
+                self.stage_dragged.emit(key,round(seconds,2))
+                self.setToolTip(f'{key.title()}: {seconds:.1f} s')
+            elif kind=='audio':
+                _,x0,start0,px_per_sec=self._drag
+                self.audio_moved.emit(round(max(0.,start0+(pos.x()-x0)/px_per_sec),2))
+            else:
+                self._seek(pos.x())
+            event.accept(); return
+        # Hover: show what can be grabbed.
+        if self._edge_at(pos):
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
         else:
-            super().mouseMoveEvent(event)
+            rect=self._audio_rect()
+            self.setCursor(Qt.CursorShape.OpenHandCursor if rect is not None and rect.contains(pos)
+                           else Qt.CursorShape.PointingHandCursor)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self,event):
+        if self._drag and self._drag[0]=='edge':
+            self._frozen=None
+            self.stage_drag_done.emit()
+        self._drag=None
+        self.update()
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        super().mouseReleaseEvent(event)
+
+    # ------------------------------------------------------------ drop audio
+    AUDIO_TYPES=('.mp3','.wav','.m4a','.aac','.ogg','.flac','.opus','.wma')
+
+    def _audio_url(self, event):
+        for url in event.mimeData().urls() if event.mimeData().hasUrls() else []:
+            if url.isLocalFile() and url.toLocalFile().lower().endswith(self.AUDIO_TYPES):
+                return url.toLocalFile()
+        return None
+
+    def dragEnterEvent(self, event):
+        if self._audio_url(event):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        path=self._audio_url(event)
+        if path:
+            self.audio_dropped.emit(path)
+            event.acceptProposedAction()
 
     def keyPressEvent(self,event):
         if self.locked:
@@ -320,6 +495,10 @@ class LineList(QListWidget):
         self.dropped.emit()
 
 
+# Inspector tabs, in order.
+TABS = {'animation': 0, 'hand': 1, 'sound': 2, 'export': 3}
+
+
 def build_workspace(w, Canvas, BRAND_ICON):
     """Construct UI fields expected by Window methods without altering logic."""
     w.setWindowTitle(f'{DISPLAY_NAME}  •  Studio')
@@ -430,11 +609,34 @@ def build_workspace(w, Canvas, BRAND_ICON):
     bar_l.addWidget(quick_export)
     w.quick_export=quick_export
     outer.addWidget(bar)
+    # Update banner (like a chat app): appears only when a new version is ready.
+    w.update_banner=QFrame();w.update_banner.setObjectName('updateBanner')
+    ub=QHBoxLayout(w.update_banner);ub.setContentsMargins(14,7,10,7);ub.setSpacing(8)
+    w.update_banner_text=QLabel('');w.update_banner_text.setObjectName('bannerText')
+    w.update_banner_text.setWordWrap(True)
+    ub.addWidget(w.update_banner_text,1)
+    w.banner_news=QPushButton("What's new");w.banner_news.setObjectName('subtle')
+    w.banner_news.clicked.connect(lambda checked=False: w.show_whats_new())
+    ub.addWidget(w.banner_news)
+    w.banner_update=QPushButton('Update now');w.banner_update.setObjectName('primary')
+    w.banner_update.clicked.connect(lambda checked=False: w.banner_update_clicked())
+    ub.addWidget(w.banner_update)
+    w.banner_later=QPushButton('Later');w.banner_later.setObjectName('subtle')
+    w.banner_later.clicked.connect(lambda checked=False: w.update_banner.hide())
+    ub.addWidget(w.banner_later)
+    w.update_banner.hide()
+    outer.addWidget(w.update_banner)
 
     split=QSplitter(Qt.Orientation.Horizontal)
+    split.setObjectName('workspaceSplit')
     w.workspace_splitter=split
     split.setChildrenCollapsible(False)
-    outer.addWidget(split,1)
+    # Panels above, timeline below, with a divider you can drag (like an editor).
+    w.vertical_splitter=QSplitter(Qt.Orientation.Vertical)
+    w.vertical_splitter.setObjectName('timelineSplit')
+    w.vertical_splitter.setChildrenCollapsible(False)
+    w.vertical_splitter.addWidget(split)
+    outer.addWidget(w.vertical_splitter,1)
 
     # Source and stroke order (left).
     asset_panel,asset_outer,_=panel('assetPanel','Source','Artwork & paths')
@@ -845,6 +1047,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.fast_export.setToolTip('Longer exports are rendered on several processor cores at once. '
                              'Turn off if the computer must stay responsive during an export.')
     output_l.addWidget(w.fast_export)
+    w.export_done_sound=QCheckBox('Play a sound when the export is finished')
+    w.export_done_sound.setChecked(True)
+    w.export_done_sound.setToolTip("Windows' notification sound, so you know the video is ready.")
+    output_l.addWidget(w.export_done_sound)
     w.keep_png=QCheckBox('Keep generated PNG frames')
     w.keep_png.setChecked(False)
     w.keep_png.setToolTip('If video encoding succeeds, frame PNGs can be removed.')
@@ -930,7 +1136,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.fit_audio_button.clicked.connect(lambda checked=False: w.fit_to_audio())
     sound_l.addWidget(w.fit_audio_button)
     sound_l.addStretch(1)
-    tabs.addTab(scroll_view(sound),'Sound')
+    tabs.insertTab(TABS['sound'],scroll_view(sound),'Sound')      # before Export
     split.addWidget(inspector)
     split.setStretchFactor(0,0)
     split.setStretchFactor(1,1)
@@ -1001,7 +1207,16 @@ def build_workspace(w, Canvas, BRAND_ICON):
     line_l.addWidget(w.slider)
     w.stage_timeline=StageTimeline(w.slider)
     line_l.addWidget(w.stage_timeline)
-    outer.addWidget(timeline)
+    w.stage_timeline.stage_dragged.connect(lambda key,secs: w.set_stage_seconds(key,secs))
+    w.stage_timeline.stage_drag_done.connect(lambda: w.commit_history())
+    w.stage_timeline.audio_moved.connect(lambda secs: w.audio_offset.setValue(secs))
+    w.audio_offset.valueChanged.connect(lambda value: w.stage_timeline.set_audio(w.timeline_audio()))
+    w.stage_timeline.audio_dropped.connect(lambda path: w.audio_dropped(path))
+    w.stage_timeline.audio_remove.connect(lambda: w.remove_audio())
+    w.vertical_splitter.addWidget(timeline)
+    w.vertical_splitter.setStretchFactor(0,1)
+    w.vertical_splitter.setStretchFactor(1,0)
+    w.vertical_splitter.setSizes([620,250])
     footer=QHBoxLayout()
     w.status=label('Ready  •  Import → adjust → preview → export','status')
     w.status.setWordWrap(True)

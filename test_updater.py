@@ -150,8 +150,8 @@ class UpdateWindowTests(unittest.TestCase):
                 self.assertEqual(updater.load_settings()['token'], 'github_pat_' + 'x' * 82)
                 from app import Window
                 w = Window(); w.update_found('0.5.3-experimental.999')
-                self.assertTrue(w.update_button.isVisibleTo(w))
-                self.assertIn('exp.999', w.update_button.text())
+                self.assertTrue(w.update_banner.isVisibleTo(w))
+                self.assertIn('experimental.999', w.update_banner_text.text())
                 w.close()
             finally:
                 del os.environ['STROKESCRIBE_CONFIG_DIR']

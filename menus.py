@@ -51,8 +51,9 @@ def _toggle(menu, text, box):
 
 
 def _go(w, tab):
-    """Show an Inspector tab (Animation 0, Hand 1, Export 2, Sound 3)."""
-    w.inspector_tabs.setCurrentIndex(tab)
+    """Show an Inspector tab by name (studio_workspace.TABS)."""
+    from studio_workspace import TABS
+    w.inspector_tabs.setCurrentIndex(TABS[tab])
 
 
 def build_menus(w):
@@ -66,6 +67,19 @@ def build_menus(w):
     file.addAction('Open project…\tCtrl+O', lambda: w.open_project())
     file.addAction('Save project\tCtrl+S', lambda: w.save_project())
     file.addAction('Save project as…', lambda: w.save_project(save_as=True))
+    recent_menu = file.addMenu('Recent projects')
+
+    def fill_recent():
+        import autosave
+        from pathlib import Path
+        recent_menu.clear()
+        paths = autosave.recent()
+        for p in paths:
+            recent_menu.addAction(Path(p).stem, lambda p=p: w.open_project(p)).setToolTip(p)
+        if not paths:
+            recent_menu.addAction('(none yet)').setEnabled(False)
+    recent_menu.aboutToShow.connect(fill_recent)
+    w.submenus['Recent projects'] = recent_menu
     file.addSeparator()
     file.addAction('Import SVG artwork…', w.open_svg_source)
     file.addAction('Import PNG / JPG artwork…', w.open_image_source)
@@ -108,10 +122,10 @@ def build_menus(w):
     _combo_menu(view, 'Preview background', w.preview_background)
     _combo_menu(view, 'Preview', w.preview_scope)
     view.addSeparator()
-    view.addAction('Animation settings', lambda: _go(w, 0))
-    view.addAction('Hand settings', lambda: _go(w, 1))
-    view.addAction('Export settings', lambda: _go(w, 2))
-    view.addAction('Sound settings', lambda: _go(w, 3))
+    view.addAction('Animation settings', lambda: _go(w, 'animation'))
+    view.addAction('Hand settings', lambda: _go(w, 'hand'))
+    view.addAction('Sound settings', lambda: _go(w, 'sound'))
+    view.addAction('Export settings', lambda: _go(w, 'export'))
 
     # ---------------------------------------------------------------- Effects
     fx = bar.addMenu('Effe&cts'); w.menus['effects'] = fx
@@ -126,7 +140,7 @@ def build_menus(w):
     _toggle(fx, 'Show hand while painting', w.show_paint_hand)
     fx.addSeparator()
     _toggle(fx, 'Pencil, brush and eraser sounds', w.sound_on)
-    fx.addAction('Sound settings…', lambda: _go(w, 3))
+    fx.addAction('Sound settings…', lambda: _go(w, 'sound'))
     fx.addAction('Add a pencil sound…', lambda: w.choose_sound_file('sound_pencil_file'))
     fx.addAction('Create a sound with AI…', lambda: w.open_create_image('sound'))
     fx.addSeparator()

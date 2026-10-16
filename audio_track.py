@@ -57,3 +57,40 @@ def mix(effects, voice, volume, offset, total, output):
     if result.returncode:
         raise RuntimeError('Could not mix the audio track: ' + result.stderr[-800:])
     return Path(output)
+
+
+_ENVELOPES = {}
+
+
+def envelope(path, points=600):
+    """Loudness outline of an audio file (list of 0..1, `points` long) for the timeline."""
+    path = Path(path)
+    try:
+        key = (str(path), path.stat().st_mtime, points)
+    except OSError:
+        return []
+    if key in _ENVELOPES:
+        return _ENVELOPES[key]
+    import numpy as np
+    data = None
+    ffmpeg = shutil.which('ffmpeg')
+    if ffmpeg:
+        result = subprocess.run([ffmpeg, '-v', 'error', '-i', str(path), '-ac', '1', '-ar', '8000', '-f', 's16le', '-'],
+                                capture_output=True, creationflags=NO_WINDOW)
+        if result.returncode == 0 and result.stdout:
+            data = np.abs(np.frombuffer(result.stdout, np.int16).astype(np.float32))
+    elif path.suffix.lower() == '.wav':
+        try:
+            with wave.open(str(path)) as f:
+                raw = np.frombuffer(f.readframes(f.getnframes()), np.int16).astype(np.float32)
+                data = np.abs(raw.reshape(-1, f.getnchannels()).mean(1))
+        except (wave.Error, OSError):
+            data = None
+    if data is None or not len(data):
+        out = []
+    else:
+        chunks = np.array_split(data, min(points, len(data)))
+        levels = np.array([c.max() for c in chunks])
+        out = (levels / max(1., levels.max())).round(3).tolist()
+    _ENVELOPES[key] = out
+    return out

@@ -136,6 +136,33 @@ def latest_version(token, branch=DEFAULT_BRANCH, repo=REPO):
     return version
 
 
+def whats_new(token, version, branch=DEFAULT_BRANCH, repo=REPO):
+    """The README notes of `version` (plain text), or ''."""
+    from urllib.parse import quote
+    url = f'https://api.github.com/repos/{repo}/contents/README.md?ref={quote(branch, safe="")}'
+    with _request(url, token, accept='application/vnd.github.raw') as response:
+        text = response.read().decode('utf-8', 'replace')
+    return notes_for(text, version)
+
+
+def notes_for(readme, version):
+    """The '## … (vVERSION)' section of the README, without markdown marks."""
+    lines = readme.splitlines()
+    out, inside = [], False
+    for line in lines:
+        if line.startswith('## '):
+            if inside:
+                break
+            inside = f'(v{version})' in line
+            if inside:
+                out.append(line[3:].replace(f' (v{version})', '').strip())
+            continue
+        if inside:
+            out.append(line)
+    text = '\n'.join(out).strip()
+    return re.sub(r'\*\*|`', '', text)
+
+
 def download(token, target, branch=DEFAULT_BRANCH, repo=REPO, progress=lambda done, total: None):
     """The newest StrokeScribe as a ZIP file."""
     from urllib.parse import quote

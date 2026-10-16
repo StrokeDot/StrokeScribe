@@ -19,6 +19,18 @@ BRAND_ICON = Path(__file__).resolve().parent / 'assets' / 'strokescribe_icon.png
 DEFAULT_HAND = Path(__file__).resolve().parent / 'assets' / 'default_hand.png'
 
 
+def play_finished_sound():
+    """Windows' own notification sound when an export is finished."""
+    try:
+        if sys.platform == 'win32':
+            import winsound
+            winsound.MessageBeep(winsound.MB_ICONASTERISK)
+        else:
+            QApplication.beep()
+    except Exception:
+        pass
+
+
 def format_seconds(seconds):
     """0:42 or 1:05:09 style duration for the export timer."""
     seconds=max(0,int(round(seconds)))
@@ -344,7 +356,12 @@ class Window(QMainWindow):
         self.watch_settings()
         self.update_sound_buttons()
         self.latest_version=None
+        self.autosave_timer=QTimer(self)
+        self.autosave_timer.setInterval(60000)
+        self.autosave_timer.timeout.connect(self.autosave_tick)
+        self.autosave_timer.start()
         if not os.environ.get('QT_QPA_PLATFORM')=='offscreen':
+            QTimer.singleShot(1200,self.offer_recovery)
             from update_dialog import StartupCheck
             self.update_check=StartupCheck(self)
             self.update_check.found.connect(self.update_found)
@@ -538,7 +555,8 @@ class Window(QMainWindow):
             self.status.setText(f'Setup level: {settings["label"]}  •  '
                                 f'Line art detail {settings["detail"].title()}')
     def open_export(self):
-        self.inspector_tabs.setCurrentIndex(2)
+        from studio_workspace import TABS
+        self.inspector_tabs.setCurrentIndex(TABS['export'])
         self.export.setFocus()
 
     def open_svg_source(self):
@@ -869,7 +887,7 @@ class Window(QMainWindow):
                       'sound_on','sound_volume','sound_preview','preview_background','image_detail',
                       'image_style','image_animation_style','clean_faint',
                       'erase_mode','erase_time','erase_size','eraser',
-                      'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export','export_layers','clean_color')
+                      'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export','export_layers','clean_color','export_done_sound')
 
     def project_state(self):
         """Everything needed to reopen this project: the edited scene plus all scenes."""
@@ -916,7 +934,53 @@ class Window(QMainWindow):
         self.project_path=str(path)
         self.status.setText('Project saved: '+str(path))
         self.setWindowTitle(f'{Path(path).stem}  •  {DISPLAY_NAME}')
+        self.remember_recent(path)
+        self._autosaved=self.history.current         # nothing unsaved now
+        import autosave; autosave.clear()
         return path
+
+    def remember_recent(self,path):
+        try:
+            import autosave; autosave.add_recent(path)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------ autosave
+    def autosave_tick(self):
+        """Every minute: back up the project if something changed since the last backup."""
+        if not self.drawing or self.history.current is getattr(self,'_autosaved',None):
+            return False
+        if (self.builder and self.builder.isRunning()) or self.busy:
+            return False
+        try:
+            import autosave
+            autosave.save(self.project_state(),getattr(self,'project_path',None),self.project_title)
+            self._autosaved=self.history.current
+            return True
+        except Exception as exc:
+            self.status.setText('Autosave failed: '+str(exc)[:120])
+            return False
+
+    def offer_recovery(self):
+        """After a crash: offer the work that was autosaved."""
+        import autosave
+        info=autosave.pending()
+        if not info: return False
+        when=datetime.fromtimestamp(float(info.get('time') or 0)).strftime('%H:%M, %d %b')
+        name=info.get('title') or 'your project'
+        answer=QMessageBox.question(self,'Restore your work?',
+            f'StrokeScribe did not close normally last time.\n\nRestore "{name}" as it was at {when}?',
+            QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No)
+        if answer!=QMessageBox.StandardButton.Yes:
+            autosave.clear(); return False
+        import projects
+        try:
+            self.apply_project(projects.load(info['path']))
+        except Exception as exc:
+            QMessageBox.warning(self,'Restore',f'The backup could not be opened: {exc}'); return False
+        self.project_path=info.get('project_path') or None
+        self.status.setText('Restored your work from the autosave. Save it (Ctrl+S) to keep it.')
+        return True
 
     def open_project(self,path=None):
         if (self.builder and self.builder.isRunning()) or (self.worker and self.worker.isRunning()):
@@ -933,6 +997,8 @@ class Window(QMainWindow):
         self.project_path=str(path)
         self.setWindowTitle(f'{Path(path).stem}  •  {DISPLAY_NAME}')
         self.status.setText('Opened project: '+str(path))
+        self.remember_recent(path)
+        self._autosaved=self.history.current
         return True
 
     def apply_project(self,data):
@@ -1219,7 +1285,8 @@ class Window(QMainWindow):
         from batch_export import BatchExportDialog
         if self.worker and self.worker.isRunning():
             QMessageBox.information(self,'Batch export','Please wait for the current export to finish.'); return
-        BatchExportDialog(self,self.settings_state(),self.hand).exec()
+        BatchExportDialog(self,self.settings_state(),self.hand,
+                          play_finished_sound if self.export_done_sound.isChecked() else None).exec()
 
     # ------------------------------------------------------------ AI images
     def open_create_image(self,task=None):
@@ -1769,6 +1836,30 @@ class Window(QMainWindow):
     def remove_audio(self):
         self.set_audio(None)
 
+    def audio_dropped(self,path):
+        """An audio file was dropped on the timeline."""
+        self.set_audio(self.keep_in_library('audio',path))
+        self.status.setText(f'Audio track added: {Path(path).name}. Drag it on the timeline to choose when it starts.')
+
+    def set_stage_seconds(self,key,seconds):
+        """A clip edge was dragged on the timeline."""
+        if key=='draw':
+            if not self.duration.isEnabled(): return
+            self.duration.setValue(seconds*self.speed.value())
+        elif key=='paint':
+            (self.image_duration if self.source_type.currentIndex() else self.color_fade).setValue(seconds)
+        elif key=='hold':
+            self.color_hold.setValue(seconds)
+        elif key=='erase':
+            self.erase_time.setValue(seconds)
+
+    def timeline_audio(self):
+        """The voiceover/music clip for the timeline lane."""
+        if not self.audio_path or not self.audio_seconds: return None
+        import audio_track
+        return dict(start=self.audio_offset.value(),seconds=self.audio_seconds,
+                    name=Path(self.audio_path).stem,envelope=audio_track.envelope(self.audio_path))
+
     def set_audio(self,path,refresh=True):
         import audio_track
         self.audio_path=str(path) if path else None
@@ -1870,6 +1961,9 @@ class Window(QMainWindow):
         if self.all_scenes():
             self.refresh_all_scenes(options); return
         self.stage_timeline.set_scenes(None)
+        self.stage_timeline.set_audio(self.timeline_audio())
+        self.stage_timeline.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() \
+            else {'paint','hold','erase'}
         erase=options.get('erase')
         self.stage_timeline.update_state(options['duration'],
             options['fade_duration'] if options['final_image'] is not None else 0,
@@ -1973,7 +2067,7 @@ class Window(QMainWindow):
                              mp4=self.mp4.isChecked(),
                              mp4_background=self.mp4_background.currentText().lower(),
                              sound_volume=self.sound_volume.value()/100 if self.sound_on.isChecked() else None)
-        self.worker.progress.connect(self.export_progress); self.worker.done.connect(lambda p:self.export_done('Saved: '+p)); self.worker.failed.connect(lambda e:self.export_done('Export stopped: '+e)); self.worker.finished.connect(self.export_finished)
+        self.worker.progress.connect(self.export_progress); self.worker.done.connect(lambda p:self.export_done('Saved: '+p)); self.worker.done.connect(lambda _p: self.export_done_sound.isChecked() and play_finished_sound()); self.worker.failed.connect(lambda e:self.export_done('Export stopped: '+e)); self.worker.finished.connect(self.export_finished)
         self.export.setEnabled(False); self.quick_export.setEnabled(False); self.cancel.setEnabled(True); self.status.setText('Exporting locally…')
         # Export timer: elapsed time, frame count and an estimate of time left.
         self.export_started=time.perf_counter(); self.export_step=(0,0); self.export_encoding=False
@@ -2009,10 +2103,58 @@ class Window(QMainWindow):
             self.status.setText('Cancelling after current frame. FFmpeg encoding, if started, must finish.')
     # ------------------------------------------------------------ updates
     def update_found(self,version):
+        """A new version is ready: show the update banner."""
         self.latest_version=version
         short=version.replace('0.5.3-','').replace('experimental','exp')
         self.update_button.setText(f'⬆ Update to {short}')
-        self.update_button.show()
+        self.update_banner_text.setText(f'✨  A new version of StrokeScribe is ready: {version}')
+        self.banner_update.setText('Update now'); self.banner_update.setEnabled(True)
+        self.banner_news.show(); self.banner_later.show()
+        self._banner_state='ready'
+        self.update_banner.show()
+
+    def banner_update_clicked(self):
+        """Update now → download and install; Restart now → start the new version."""
+        state=getattr(self,'_banner_state','ready')
+        if state=='updated':
+            self.restart_after_update(); return
+        if state=='failed':
+            self.open_updates(); return
+        import updater
+        from update_dialog import UpdateWorker
+        settings=updater.load_settings()
+        if not settings.get('token'):
+            self.open_updates(); return
+        self.banner_update.setEnabled(False); self.banner_later.hide(); self.banner_news.hide()
+        self.update_banner_text.setText('Downloading and installing the new version…')
+        self.banner_worker=UpdateWorker('update',token=settings['token'],branch=settings['branch'])
+        self.banner_worker.progress.connect(lambda p,text: self.update_banner_text.setText(text))
+        self.banner_worker.done.connect(self.banner_update_done)
+        self.banner_worker.failed.connect(self.banner_update_failed)
+        self.banner_worker.start()
+
+    def banner_update_done(self,result):
+        _,info=result
+        self._banner_state='updated'
+        self.update_banner_text.setText(f'✅  Updated to {info["version"]}. Restart StrokeScribe to use it.')
+        self.banner_update.setText('Restart now'); self.banner_update.setEnabled(True)
+        self.banner_later.setText('Later'); self.banner_later.show()
+
+    def banner_update_failed(self,message):
+        self._banner_state='failed'
+        self.update_banner_text.setText('The update did not finish: '+message.splitlines()[0][:160])
+        self.banner_update.setText('Details…'); self.banner_update.setEnabled(True)
+        self.banner_later.show()
+
+    def show_whats_new(self):
+        import updater
+        version=self.latest_version
+        try:
+            settings=updater.load_settings()
+            text=updater.whats_new(settings.get('token'),version,settings['branch'])
+        except Exception as exc:
+            text=''
+        QMessageBox.information(self,f"What's new in {version}",text or 'No notes for this version.')
 
     def open_updates(self):
         from update_dialog import UpdateDialog
@@ -2044,6 +2186,8 @@ class Window(QMainWindow):
         else:
             if self.ai_engine is not None:
                 self.ai_engine.stop()        # never leave the AI engine running
+            if not getattr(self,'_keep_autosave',False):
+                import autosave; autosave.clear()     # a normal close: no recovery needed
             event.accept()
 
 if __name__=='__main__':

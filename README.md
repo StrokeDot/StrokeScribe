@@ -160,6 +160,17 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Timeline, autosave and update banner (v0.5.3-experimental.44)
+
+- **Tabs in order of work:** Animation, Hand, Sound, Export.
+- **Drag the timeline:** drag the right edge of the Draw, Paint, Hold or Erase clip to make it longer or shorter.
+- **Audio lane, like a video editor:** drop a voiceover or music file on the lower row of the timeline, drag the clip to choose when it starts, right-click it to remove it.
+- **Bigger timeline, smaller preview:** drag the divider above the timeline.
+- **Sound when the export is finished** (Export tab, on by default).
+- **Autosave every minute and recovery:** if StrokeScribe closes by accident, it offers to bring your work back at the next start.
+- **File > Recent projects.**
+- **Update banner:** when a new version is ready, a banner shows at the top with "What's new", "Update now" and "Later".
+
 ## Sound tab and complete transparency (v0.5.3-experimental.43)
 
 - **Sound tab** (Inspector: Animation | Hand | Export | **Sound**): the pencil/brush/eraser sounds, Create a sound with AI, and the voiceover / music track are all here now. Also View → Sound settings.

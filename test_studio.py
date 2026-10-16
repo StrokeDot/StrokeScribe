@@ -31,9 +31,9 @@ class StudioTests(unittest.TestCase):
         self.assertIn('Studio',w.windowTitle())
         self.assertIn('Prototype',w.windowTitle())
         self.assertEqual(w.inspector_tabs.count(),4)
-        self.assertEqual([w.inspector_tabs.tabText(i) for i in range(3)],
-                         ['Animation','Hand','Export'])
-        split=w.findChild(QSplitter)
+        self.assertEqual([w.inspector_tabs.tabText(i) for i in range(4)],
+                         ['Animation','Hand','Sound','Export'])
+        split=w.findChild(QSplitter,'workspaceSplit')
         self.assertIsNotNone(split)
         self.assertEqual(split.count(),3)
         self.assertTrue(w.canvas.isVisible())
@@ -114,7 +114,7 @@ class StudioTests(unittest.TestCase):
 
     def test_image_and_export_controls_preserved(self):
         w=self.window
-        w.inspector_tabs.setCurrentIndex(2)
+        w.inspector_tabs.setCurrentIndex(3)
         self.assertTrue(w.webm.isVisible())
         self.assertTrue(w.keep_png.isVisible())
         self.assertEqual(w.webm_quality.value(),28)
@@ -144,7 +144,7 @@ class StudioTests(unittest.TestCase):
     def test_source_inspector_and_export_navigation(self):
         w=self.window
         w.quick_export.click()
-        self.assertEqual(w.inspector_tabs.currentIndex(),2)
+        self.assertEqual(w.inspector_tabs.currentIndex(),3)
         w.fps.setValue(60)
         self.assertIn('60 fps',w.output_summary.text())
         w.inspector_tabs.setCurrentIndex(0)
