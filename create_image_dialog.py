@@ -173,7 +173,7 @@ class CreateImageDialog(QDialog):
         self.accept_license = QCheckBox('I accept this model\'s license')
         self.accept_license.toggled.connect(self.license_toggled)
         form.addWidget(self.accept_license, row, 0, 1, 2); row += 1
-        self.download_button = QPushButton('Download model')
+        self.download_button = QPushButton('Download model'); self.download_button.setObjectName('primary')
         self.download_button.clicked.connect(self.download_model)
         form.addWidget(self.download_button, row, 0, 1, 2); row += 1
 
@@ -188,7 +188,8 @@ class CreateImageDialog(QDialog):
         form.addWidget(QLabel('Prompt'), row, 0, Qt.AlignmentFlag.AlignTop)
         self.prompt = QPlainTextEdit(); self.prompt.setMinimumHeight(96)
         form.addWidget(self.prompt, row, 1); row += 1
-        form.addWidget(QLabel('Size'), row, 0)
+        self.size_label = QLabel('Size')
+        form.addWidget(self.size_label, row, 0)
         self.size_box = QComboBox(); self.size_box.addItems(list(SIZES))
         form.addWidget(self.size_box, row, 1); row += 1
         form.addWidget(QLabel('Seed'), row, 0)
@@ -261,7 +262,7 @@ class CreateImageDialog(QDialog):
                                  'flat colours, white background')
         for w in self.image_widgets:
             w.setVisible(key != 'generate')
-        self.size_box.setEnabled(key == 'generate')
+        self.size_box.setVisible(key == 'generate'); self.size_label.setVisible(key == 'generate')
         self.use_button.setText('Draw it in StrokeScribe' if key == 'lineart' else 'Use as image source')
         self.refresh()
 
@@ -303,7 +304,9 @@ class CreateImageDialog(QDialog):
         files = self.model_files()
         size = sum(f.size for f in files)
         have = self.paths.has_files(files)
-        license_link = f'<a href="{model.license_url}">{model.license}</a>'
+        import theme
+        license_link = (f'<a style="color:{theme.colors()["accent"]}" href="{model.license_url}">'
+                        f'{model.license}</a>')
         note = f' {variant.note}' if variant.note else ''
         self.model_info.setText(
             f'<b>{model.maker}</b> — {model.summary}<br>License: {license_link}. {model.commercial}<br>'
@@ -326,7 +329,9 @@ class CreateImageDialog(QDialog):
         self.install_button.setVisible(not engine_ok)
         self.install_button.setEnabled(not busy)
         self.download_button.setVisible(not have)
-        self.download_button.setText(f'Download {model.name} — {variant.label} ({ai_models.gb(size)} total)')
+        self.download_button.setText(f'Download model ({ai_models.gb(size)})')
+        self.download_button.setToolTip(f'{model.name} — {variant.label}: model, text encoder and '
+                                        'helper files. Downloads continue where they stopped.')
         self.download_button.setEnabled(license_ok and not busy)
         self.image_label.setText(Path(self.image_path).name if self.image_path else 'No image chosen')
         need_image = self.task != 'generate'

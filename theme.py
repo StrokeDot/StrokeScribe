@@ -110,6 +110,7 @@ QPushButton {{ background: {c['raised']}; color: {c['text']}; border: 1px solid 
 QPushButton:hover {{ background: {c['raised_hover']}; border-color: {c['border_strong']}; }}
 QPushButton:pressed {{ background: {c['pressed']}; }}
 QPushButton:disabled {{ color: {c['dim']}; background: {c['header']}; border-color: {c['border']}; }}
+QPushButton:checked {{ background: {c['selection']}; border-color: {c['accent']}; color: {c['text']}; }}
 QPushButton#primary {{ background: {c['accent']}; color: {c['accent_text']}; border-color: {c['accent']}; }}
 QPushButton#primary:hover {{ background: {c['accent_hover']}; border-color: {c['accent_hover']}; }}
 QPushButton#primary:disabled {{ background: {c['raised']}; color: {c['dim']}; border-color: {c['border']}; }}
