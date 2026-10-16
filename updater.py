@@ -33,7 +33,7 @@ REPO = 'StrokeDot/StrokeScribe'
 DEFAULT_BRANCH = 'fix/svg-guide-coverage-experimental12'      # where new versions are published
 BACKUP = '_previous_version'
 # Never copied from an update: your packages, the backup, and repository-only parts.
-SKIP_TOP = {'.venv', 'venv', BACKUP, '.git', '.github', 'dist', '__pycache__', 'test-output'}
+SKIP_TOP = {'.venv', 'venv', 'runtime', BACKUP, '.git', '.github', 'dist', '__pycache__', 'test-output', 'build'}
 TOKEN_HELP = 'https://github.com/settings/personal-access-tokens/new'
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
@@ -251,7 +251,7 @@ def roll_back(app_dir=APP_DIR):
 
 def install_requirements(app_dir=APP_DIR, log=lambda text: None):
     """New Python packages for the updated version, into the .venv already in use."""
-    cmd = [sys.executable, '-m', 'pip', 'install', '--only-binary=:all:', '-r', str(Path(app_dir) / 'requirements.txt')]
+    cmd = [console_python(), '-m', 'pip', 'install', '--only-binary=:all:', '-r', str(Path(app_dir) / 'requirements.txt')]
     proc = subprocess.Popen(cmd, cwd=str(app_dir), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             errors='replace', creationflags=NO_WINDOW)
     for line in proc.stdout:
@@ -261,8 +261,17 @@ def install_requirements(app_dir=APP_DIR, log=lambda text: None):
                           'Running Setup.cmd once fixes this.')
 
 
+def console_python():
+    """python.exe next to pythonw.exe (the installed app runs windowless)."""
+    exe = Path(sys.executable)
+    if exe.name.lower() == 'pythonw.exe' and (exe.parent / 'python.exe').is_file():
+        return str(exe.parent / 'python.exe')
+    return sys.executable
+
+
 def restart(app_dir=APP_DIR):
     """Start the updated StrokeScribe (the caller then closes this one)."""
-    flags = getattr(subprocess, 'CREATE_NEW_CONSOLE', 0)
+    windowless = Path(sys.executable).name.lower() == 'pythonw.exe'     # installed version
+    flags = 0 if windowless else getattr(subprocess, 'CREATE_NEW_CONSOLE', 0)
     subprocess.Popen([sys.executable, '-u', str(Path(app_dir) / 'startup.py')], cwd=str(app_dir),
                      creationflags=flags)

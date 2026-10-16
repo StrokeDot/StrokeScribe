@@ -160,6 +160,13 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Windows installer (v0.5.3-experimental.42)
+
+- **StrokeScribe-Setup-<version>.exe** (GitHub → Releases): a normal Windows installer with the StrokeScribe logo. It needs no Python and no Setup.cmd: a private Python with every package is included. It installs for your user only (no administrator), into `%LOCALAPPDATA%\Programs\StrokeScribe`, adds StrokeScribe to the Start menu (and the desktop if you like), and appears in *Settings → Apps* to uninstall.
+- StrokeScribe starts without a console window and has its own taskbar icon. If it ever cannot start, a message box says why.
+- After installing, updates come through the app (File → Update StrokeScribe…). Running a newer installer over it also works.
+- Your Library, projects, settings and AI models are never touched by installing or uninstalling.
+
 ## Menu bar, no built-in sounds, check marks, quieter loading (v0.5.3-experimental.40)
 
 - **Menu bar** like other programs: **File** (open, save, import, Library, export, batch export, update, exit), **Edit** (undo, redo, delete/reverse lines, add/delete scene), **View** (dark mode, preview background, this scene / all scenes), **Effects** (paint mode, pen movement, camera follow, erase at the end, painting hand, sounds, Hand only export, MP4 background, Auto timing, AI) and **Help** (setup, updates, about). Menu choices are the same settings as in the panels.

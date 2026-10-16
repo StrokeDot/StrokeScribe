@@ -5,11 +5,34 @@ from pathlib import Path
 root=Path(__file__).resolve().parent
 
 
+def _error_box(text):
+    """The installed app has no console: show start-up problems in a window."""
+    if sys.platform=='win32':
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None,text,'StrokeScribe could not start',0x10)
+        except Exception:
+            pass
+
+
 def main():
     # Only when started by the launcher: export worker processes import this
     # file under another name and must not open a window or touch the log.
     os.chdir(root)
-    log=(root/'startup.log').open('w',encoding='utf-8')
+    if sys.platform=='win32':
+        try:
+            # Own taskbar icon (matches the Start menu shortcut of the installer).
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('StrokeDot.StrokeScribe')
+        except Exception:
+            pass
+    log_dir=root
+    try:
+        (root/'startup.log').open('a').close()
+    except OSError:
+        log_dir=Path(os.environ.get('LOCALAPPDATA',str(Path.home())))/'StrokeScribe'
+        log_dir.mkdir(parents=True,exist_ok=True)
+    log=(log_dir/'startup.log').open('w',encoding='utf-8')
     def stage(message):
         print(message,flush=True)
         log.write(message+'\n'); log.flush()
@@ -40,8 +63,11 @@ def main():
         result=app.exec()
         log.close(); sys.exit(result)
     except Exception:
-        traceback.print_exc(); traceback.print_exc(file=log); log.flush()
+        if sys.stderr is not None: traceback.print_exc()
+        traceback.print_exc(file=log); log.flush()
         print('Startup failed. Details are saved in startup.log beside this launcher.',flush=True)
+        _error_box('StrokeScribe could not start.\n\n'+traceback.format_exc()[-1500:]+
+                   '\n\nDetails: '+str(log_dir/'startup.log'))
         sys.exit(1)
 
 
