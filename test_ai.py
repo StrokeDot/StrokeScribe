@@ -319,6 +319,9 @@ class CreateImageWindowTests(unittest.TestCase):
         s = ai_engine.load_settings()
         s['root'] = str(Path(self.tmp.name) / 'engine')
         ai_engine.save_settings(s)
+        import library
+        ls = library.load_settings(); ls['root'] = str(Path(self.tmp.name) / 'Library')
+        library.save_settings(ls)
 
     def tearDown(self):
         del os.environ['STROKESCRIBE_CONFIG_DIR']
@@ -379,7 +382,13 @@ class CreateImageWindowTests(unittest.TestCase):
             dialog.on_result(str(out))
             self.assertTrue(dialog.use_button.isEnabled())
             dialog.use()
-            self.assertEqual(used, [('lineart', str(out), str(image))])
+            # The picture is drawn from its copy in the Library → Images (the engine folder is temporary).
+        import library
+        self.assertEqual(len(used), 1)
+        kind, kept, original = used[0]
+        self.assertEqual((kind, original), ('lineart', str(image)))
+        self.assertEqual(Path(kept).parent, library.Library().folder('images'))
+        self.assertEqual(Path(kept).read_bytes(), out.read_bytes())
         finally:
             dialog.close()
 
