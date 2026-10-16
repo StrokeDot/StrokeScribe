@@ -160,6 +160,13 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Create a sound with AI (v0.5.3-experimental.38)
+
+- **✦ Create a sound with AI…** (Export tab → Sound), or **Create a sound** in the Create window: describe a sound and **Stable Audio 3 Small-SFX** (Stability AI) makes it on your PC. Ready descriptions for **Pencil**, **Brush** and **Eraser**; change the words as you like. Choose the length (8 s is plenty: it is looped while the pen moves), click **Generate**, **▶ Listen**, and **Use as pencil sound** (or brush / eraser). Not right? Generate again: every try is different.
+- Download: 3.5 GB once (model 2.3 GB + text encoder 1.2 GB), in the same AI engine as Create image. It is small enough to run without a graphics card; with an NVIDIA card it is faster.
+- License: Stability AI Community License — free for personal use, and for creators and businesses under US$1 million revenue a year; you own the sounds. You accept it once before the download.
+- Sounds you use are kept in the Library (Audio).
+
 ## Mute button and Hand-only export (v0.5.3-experimental.37)
 
 - **Mute button** (speaker, next to the play controls): sound on / off for the pencil, brush and eraser sounds, in the preview and in the exported video. It is the same switch as Export tab → *Pencil and brush sounds*. (A voiceover/music track is separate: remove it in the Export tab.)

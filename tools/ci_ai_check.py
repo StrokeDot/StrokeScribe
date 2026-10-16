@@ -90,6 +90,20 @@ def check_workflows(comfy, base):
         assert 'UnetLoaderGGUF' in info, 'ComfyUI-GGUF custom node not loaded'
         count = 0
         for model in ai_models.MODELS:
+            if 'sound' in model.tasks:
+                for variant in model.variants:
+                    wf = build(model, variant, 'pencil on paper', 1, seconds=4)
+                    body = json.dumps({'prompt': wf, 'client_id': 'ci'}).encode()
+                    req = urllib.request.Request(f'http://127.0.0.1:{port}/prompt', data=body,
+                                                 headers={'Content-Type': 'application/json'})
+                    try:
+                        reply = json.loads(urllib.request.urlopen(req, timeout=30).read())
+                    except urllib.error.HTTPError as exc:
+                        sys.exit(f'{model.id}/{variant.id}: rejected: ' + exc.read().decode()[:2000])
+                    assert reply.get('prompt_id') and not reply.get('node_errors'), reply
+                    count += 1
+                    print(f'OK  {model.id} {variant.id} sound')
+                continue
             for variant in model.variants:
                 for ram in (16, 128):
                     for image in ((None, 'in.png') if 'generate' in model.tasks else ('in.png',)):

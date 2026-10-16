@@ -7,7 +7,17 @@ inputs.
 """
 from __future__ import annotations
 
-from ai_models import FLUX2_DEV, FLUX2_KLEIN, QWEN_EDIT
+from ai_models import FLUX2_DEV, FLUX2_KLEIN, QWEN_EDIT, STABLE_AUDIO_SFX
+
+# Ready descriptions for the three drawing sounds (Create sound).
+SOUND_PROMPTS = {
+    'Pencil': 'close-up recording of a graphite pencil drawing and scratching on paper, dry crisp '
+              'paper texture, steady strokes, quiet room, no music, no voices',
+    'Brush': 'close-up recording of a soft paintbrush painting on thick paper, gentle wet bristle '
+             'swishes, quiet room, no music, no voices',
+    'Eraser': 'close-up recording of a rubber eraser rubbing back and forth on paper, quiet room, '
+              'no music, no voices',
+}
 
 LINE_ART_PROMPT = (
     'Redraw this image as clean black line art on a pure white background, like a '
@@ -114,9 +124,30 @@ def _flux2(model, variant, prompt, seed, width, height, image_name, ram_gb, pref
     return g
 
 
+def stable_audio(variant, prompt, seed, seconds=6., prefix='StrokeScribe-sound'):
+    """Stable Audio 3 (official template audio_stable_audio_3_*: distilled = 8 steps, cfg 1, lcm)."""
+    m = STABLE_AUDIO_SFX
+    return {
+        '1': {'class_type': 'CheckpointLoaderSimple', 'inputs': {'ckpt_name': variant.diffusion.name}},
+        '2': {'class_type': 'CLIPLoader', 'inputs': {
+            'clip_name': _shared(m, None, 'text_encoders').name, 'type': 'stable_audio', 'device': 'default'}},
+        '3': {'class_type': 'CLIPTextEncode', 'inputs': {'clip': ['2', 0], 'text': prompt}},
+        '4': {'class_type': 'CLIPTextEncode', 'inputs': {'clip': ['2', 0], 'text': ''}},
+        '5': {'class_type': 'EmptyLatentAudio', 'inputs': {'seconds': float(seconds), 'batch_size': 1}},
+        '6': {'class_type': 'KSampler', 'inputs': {
+            'model': ['1', 0], 'seed': int(seed), 'steps': m.steps, 'cfg': 1.0, 'sampler_name': 'lcm',
+            'scheduler': 'simple', 'positive': ['3', 0], 'negative': ['4', 0], 'latent_image': ['5', 0],
+            'denoise': 1.0}},
+        '7': {'class_type': 'VAEDecodeAudio', 'inputs': {'samples': ['6', 0], 'vae': ['1', 2]}},
+        '8': {'class_type': 'SaveAudio', 'inputs': {'audio': ['7', 0], 'filename_prefix': prefix}},
+    }
+
+
 def build(model, variant, prompt, seed, image_name=None, width=1344, height=768, ram_gb=None,
-          prefix='StrokeScribe'):
+          prefix='StrokeScribe', seconds=6.):
     """Workflow for a task: with image_name it edits that image, otherwise it creates one."""
+    if model is STABLE_AUDIO_SFX:
+        return stable_audio(variant, prompt, seed, seconds)
     if model is QWEN_EDIT:
         if not image_name:
             raise ValueError('Qwen-Image-Edit edits an image: choose an image first.')

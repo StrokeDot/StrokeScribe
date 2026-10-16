@@ -1157,17 +1157,30 @@ class Window(QMainWindow):
         BatchExportDialog(self,self.settings_state(),self.hand,play_done_sound).exec()
 
     # ------------------------------------------------------------ AI images
-    def open_create_image(self):
+    def open_create_image(self,task=None):
         from create_image_dialog import CreateImageDialog
         import ai_engine
         if self.ai_engine is None:
             self.ai_engine=ai_engine.Engine()
         current=self.image_path if self.source_type.currentIndex() else None
-        dialog=CreateImageDialog(self,current,self.use_ai_result,self.ai_engine)
+        dialog=CreateImageDialog(self,current,self.use_ai_result,self.ai_engine,task=task)
         dialog.exec()
 
     def use_ai_result(self,kind,path,original=None):
-        """Line art: trace it over `original`; image: import it as the image source."""
+        """Line art: trace it over `original`; image: import it as the image source;
+        sound: use it as the pencil/brush/eraser sound (original = which one)."""
+        if kind=='sound':
+            # Keep a copy in the Library: the engine's output folder is not a safe home.
+            import library
+            try:
+                kept=str(library.Library().add('audio',path).path)
+            except Exception:
+                kept=str(path)
+            self.set_sound_file(original or 'sound_pencil_file',kept)
+            self.status.setText('New '+{'sound_pencil_file':'pencil','sound_brush_file':'brush',
+                                       'sound_eraser_file':'eraser'}.get(original,'pencil')
+                                +' sound in use (saved in the Library → Audio). Press Play to hear it.')
+            return
         self.source_type.setCurrentIndex(1)
         if kind=='lineart' and original:
             self.build_image(original,line_guide=path)

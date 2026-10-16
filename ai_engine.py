@@ -348,7 +348,7 @@ class Engine:
         return name
 
     def run(self, workflow, timeout=3600, cancelled=lambda: False):
-        """Queue a workflow and return the path of the first saved image."""
+        """Queue a workflow and return the path of the first saved image (or sound)."""
         self.percent = 0
         reply = self._post('/prompt', {'prompt': workflow, 'client_id': 'strokescribe'})
         if reply.get('node_errors'):
@@ -372,7 +372,7 @@ class Engine:
                     detail = messages[0][1].get('exception_message', '') if messages else ''
                     raise RuntimeError('The AI engine failed: ' + (detail or 'see the engine log')[:600])
                 for output in entry.get('outputs', {}).values():
-                    for image in output.get('images', []):
+                    for image in output.get('images', []) + output.get('audio', []):
                         return self.paths.output / image.get('subfolder', '') / image['filename']
                 if status.get('completed'):
                     raise RuntimeError('The AI engine finished without an image.')

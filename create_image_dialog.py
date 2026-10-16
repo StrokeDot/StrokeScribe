@@ -24,10 +24,11 @@ from PySide6.QtWidgets import (
 
 import ai_engine
 import ai_models
-from ai_workflows import LINE_ART_PROMPT, SIZES, build
+from ai_workflows import LINE_ART_PROMPT, SIZES, SOUND_PROMPTS, build
 
 TASKS = (('lineart', 'Line art for my image'), ('generate', 'Create from text'),
-         ('edit', 'Edit an image'))
+         ('edit', 'Edit an image'), ('sound', 'Create a sound'))
+SOUND_SETTINGS = {'Pencil': 'sound_pencil_file', 'Brush': 'sound_brush_file', 'Eraser': 'sound_eraser_file'}
 
 
 class AIWorker(QThread):
@@ -98,7 +99,7 @@ class AIWorker(QThread):
         while thread.is_alive():
             thread.join(.5)
             if engine.percent is not None:
-                self.progress.emit(engine.percent, f'Creating the image… {engine.percent}%')
+                self.progress.emit(engine.percent, f'Creating… {engine.percent}%')
         if 'error' in result:
             raise result['error']
         self.done.emit(str(result['path']))
@@ -108,9 +109,9 @@ class CreateImageDialog(QDialog):
     """use_result(kind, path, original) is called with kind 'lineart' or 'image'."""
 
     def __init__(self, parent=None, current_image=None, use_result=None, engine=None,
-                 hardware=None):
+                 hardware=None, task=None):
         super().__init__(parent)
-        self.setWindowTitle('Create Image (AI)')
+        self.setWindowTitle('Create Image or Sound (AI)')
         self.resize(980, 720)
         self.use_result = use_result
         self.settings = ai_engine.load_settings()
@@ -193,6 +194,20 @@ class CreateImageDialog(QDialog):
         form.addWidget(self.size_label, row, 0)
         self.size_box = QComboBox(); self.size_box.addItems(list(SIZES))
         form.addWidget(self.size_box, row, 1); row += 1
+        # Create a sound: what the sound is for, and how long.
+        self.sound_for_label = QLabel('Sound for')
+        form.addWidget(self.sound_for_label, row, 0)
+        self.sound_for = QComboBox(); self.sound_for.addItems(list(SOUND_PROMPTS))
+        self.sound_for.setToolTip('Fills in a description for that sound; you can change the words.')
+        self.sound_for.activated.connect(lambda i: self.prompt.setPlainText(SOUND_PROMPTS[self.sound_for.currentText()]))
+        self.sound_for.activated.connect(lambda i: self.use_button.setText(self.use_text()))
+        form.addWidget(self.sound_for, row, 1); row += 1
+        self.length_label = QLabel('Length (s)')
+        form.addWidget(self.length_label, row, 0)
+        self.sound_seconds = QSpinBox(); self.sound_seconds.setRange(2, 30); self.sound_seconds.setValue(8)
+        self.sound_seconds.setToolTip('A few seconds is enough: StrokeScribe loops it while the pen moves.')
+        form.addWidget(self.sound_seconds, row, 1); row += 1
+        self.sound_widgets = (self.sound_for_label, self.sound_for, self.length_label, self.sound_seconds)
         form.addWidget(QLabel('Seed'), row, 0)
         seed_row = QHBoxLayout()
         self.seed = QSpinBox(); self.seed.setRange(1, 2**31 - 1); self.seed.setValue(ai_engine.new_seed() % (2**31 - 1))
@@ -214,8 +229,11 @@ class CreateImageDialog(QDialog):
         self.use_button = QPushButton('Draw it in StrokeScribe'); self.use_button.setObjectName('primary')
         self.use_button.clicked.connect(self.use)
         self.save_button = QPushButton('Save image…'); self.save_button.clicked.connect(self.save)
+        self.play_button = QPushButton('▶ Listen'); self.play_button.clicked.connect(self.listen)
+        actions.addWidget(self.play_button)
         actions.addWidget(self.use_button, 1); actions.addWidget(self.save_button)
         right.addLayout(actions)
+        self.player = None
 
         bottom = QHBoxLayout()
         self.status = QLabel('Ready.'); self.status.setObjectName('status'); self.status.setWordWrap(True)
@@ -238,11 +256,11 @@ class CreateImageDialog(QDialog):
         root.addWidget(self.log_view)
 
         self.task = None
-        self.set_task('lineart' if current_image else 'generate')
+        self.set_task(task or ('lineart' if current_image else 'generate'))
 
     # ------------------------------------------------------------ state
     def models_for_task(self):
-        need = 'generate' if self.task == 'generate' else 'edit'
+        need = self.task if self.task in ('generate', 'sound') else 'edit'
         return [m for m in ai_models.MODELS if need in m.tasks]
 
     def set_task(self, key):
@@ -259,13 +277,25 @@ class CreateImageDialog(QDialog):
         self.model_box.setCurrentIndex(best)
         self.prompt.setPlainText(LINE_ART_PROMPT if key == 'lineart' else
                                  'Make the background plain white.' if key == 'edit' else
+                                 SOUND_PROMPTS[self.sound_for.currentText()] if key == 'sound' else
                                  'A friendly cartoon coffee cup with steam, bold clean shapes, '
                                  'flat colours, white background')
         for w in self.image_widgets:
-            w.setVisible(key != 'generate')
+            w.setVisible(key not in ('generate', 'sound'))
         self.size_box.setVisible(key == 'generate'); self.size_label.setVisible(key == 'generate')
-        self.use_button.setText('Draw it in StrokeScribe' if key == 'lineart' else 'Use as image source')
+        for w in self.sound_widgets:
+            w.setVisible(key == 'sound')
+        self.play_button.setVisible(key == 'sound')
+        self.result_path = None
+        self.preview.setPixmap(QPixmap()); self.preview.setText('The result appears here.')
+        self.use_button.setText(self.use_text())
+        self.save_button.setText('Save sound…' if key == 'sound' else 'Save image…')
         self.refresh()
+
+    def use_text(self):
+        if self.task == 'sound':
+            return f'Use as {self.sound_for.currentText().lower()} sound'
+        return 'Draw it in StrokeScribe' if self.task == 'lineart' else 'Use as image source'
 
     def model(self):
         return ai_models.BY_ID.get(self.model_box.currentData()) or self.models_for_task()[0]
@@ -335,7 +365,9 @@ class CreateImageDialog(QDialog):
                                         'helper files. Downloads continue where they stopped.')
         self.download_button.setEnabled(license_ok and not busy)
         self.image_label.setText(Path(self.image_path).name if self.image_path else 'No image chosen')
-        need_image = self.task != 'generate'
+        need_image = self.task not in ('generate', 'sound')
+        self.use_button.setText(self.use_text())
+        self.play_button.setEnabled(self.result_path is not None and not busy)
         ready = engine_ok and have and license_ok and (self.image_path or not need_image)
         self.generate_button.setEnabled(bool(ready) and not busy)
         self.cancel_button.setEnabled(busy)
@@ -393,7 +425,7 @@ class CreateImageDialog(QDialog):
         self.refresh()
 
     def install_engine(self):
-        if not self.hw.nvidia and QMessageBox.question(
+        if not self.hw.nvidia and self.task != 'sound' and QMessageBox.question(
                 self, 'No NVIDIA graphics card',
                 'No NVIDIA graphics card was found. The engine can be installed for the processor '
                 'only, but making an image will be very slow (many minutes). Install anyway?') \
@@ -422,9 +454,11 @@ class CreateImageDialog(QDialog):
             self.seed.setValue(ai_engine.new_seed() % (2**31 - 1))
         width, height = SIZES[self.size_box.currentText()]
         image = self.image_path if self.task != 'generate' else None
+        if self.task == 'sound':
+            image = None
         workflow = build(model, variant, self.prompt.toPlainText().strip(), self.seed.value(),
                          image_name='input.png' if image else None, width=width, height=height,
-                         ram_gb=self.hw.ram_gb)
+                         ram_gb=self.hw.ram_gb, seconds=self.sound_seconds.value())
         self.result_path = None
         self._start(AIWorker('generate', engine=self.engine, workflow=workflow, image_path=image),
                     self.on_result)
@@ -451,6 +485,15 @@ class CreateImageDialog(QDialog):
     def on_result(self, path):
         self.result_path = path
         self.progress.setRange(0, 100); self.progress.setValue(100)
+        if self.task == 'sound':
+            self.status.setText('Done. Click ▶ Listen; if you like it, click “' + self.use_text() + '”. '
+                                'Not right? Generate again (new seed) or change the words.')
+            self.preview.setPixmap(waveform(path, self.preview.width(), self.preview.height()))
+            self.refresh()
+            from PySide6.QtGui import QGuiApplication
+            if QGuiApplication.platformName() != 'offscreen':
+                self.listen()                     # play it right away
+            return
         self.status.setText('Done. ' + ('Click “Draw it in StrokeScribe” to trace these lines and paint '
                                         'your original colours.' if self.task == 'lineart' else
                                         'Use it as an image source or save it.'))
@@ -460,8 +503,26 @@ class CreateImageDialog(QDialog):
                                               Qt.TransformationMode.SmoothTransformation))
         self.refresh()
 
+    def listen(self):
+        if not self.result_path:
+            return
+        try:
+            if self.player is None:
+                from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
+                self.player = QMediaPlayer(self); self.audio_out = QAudioOutput(self)
+                self.player.setAudioOutput(self.audio_out)
+            self.player.stop()
+            self.player.setSource(QUrl.fromLocalFile(str(self.result_path)))
+            self.player.play()
+        except Exception as exc:
+            self.status.setText('Cannot play here: ' + str(exc)[:120] + ' — use Save sound… to listen.')
+
     def use(self):
         if not self.result_path or not self.use_result:
+            return
+        if self.task == 'sound':
+            self.use_result('sound', self.result_path, SOUND_SETTINGS[self.sound_for.currentText()])
+            self.accept()
             return
         if self.task == 'lineart':
             self.use_result('lineart', self.result_path, self.image_path)
@@ -472,14 +533,48 @@ class CreateImageDialog(QDialog):
     def save(self):
         if not self.result_path:
             return
-        name, _ = QFileDialog.getSaveFileName(self, 'Save image', Path(self.result_path).name, 'PNG (*.png)')
+        sound = self.task == 'sound'
+        kind = Path(self.result_path).suffix.lower().lstrip('.') or 'flac'
+        name, _ = QFileDialog.getSaveFileName(self, 'Save sound' if sound else 'Save image',
+                                              Path(self.result_path).name,
+                                              f'{kind.upper()} (*.{kind})' if sound else 'PNG (*.png)')
         if name:
             import shutil
             shutil.copy(self.result_path, name)
             self.status.setText('Saved ' + name)
 
     def closeEvent(self, event):
+        if self.player is not None:
+            self.player.stop()
         if self.worker and self.worker.isRunning():
             self.worker.cancel()
             self.worker.wait(3000)
         super().closeEvent(event)
+
+
+def waveform(path, width, height):
+    """A simple picture of the sound (loudness over time)."""
+    from PySide6.QtGui import QColor, QPainter, QPen
+    import numpy as np
+    import theme
+    from sound import RATE, load_recording
+    width, height = max(200, width), max(120, height)
+    pix = QPixmap(width, height); pix.fill(QColor(theme.colors().get('panel', '#1d2430')))
+    data = load_recording(path)
+    p = QPainter(pix)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    if data is None or not len(data):
+        p.setPen(QColor(theme.colors()['muted']))
+        p.drawText(pix.rect(), Qt.AlignmentFlag.AlignCenter, 'The sound could not be read.')
+        p.end(); return pix
+    columns = np.array_split(np.abs(data), width - 20)
+    peak = max(1e-6, float(np.abs(data).max()))
+    p.setPen(QPen(QColor(theme.colors()['accent']), 1))
+    mid = height / 2
+    for x, col in enumerate(columns):
+        h = (float(col.max()) if len(col) else 0) / peak * (height * .42)
+        p.drawLine(10 + x, int(mid - h), 10 + x, int(mid + h))
+    p.setPen(QColor(theme.colors()['muted']))
+    p.drawText(12, height - 10, f'{len(data) / RATE:.1f} s')
+    p.end()
+    return pix

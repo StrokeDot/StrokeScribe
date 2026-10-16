@@ -30,7 +30,7 @@ class ModelChoiceTests(unittest.TestCase):
                 self.assertTrue(f.url.startswith('https://huggingface.co/'), f.url)
                 self.assertIn('/resolve/main/', f.url)
                 self.assertGreater(f.size, 1e8)
-                self.assertIn(f.folder, ('diffusion_models', 'text_encoders', 'vae', 'loras'))
+                self.assertIn(f.folder, ('diffusion_models', 'text_encoders', 'vae', 'loras', 'checkpoints'))
                 names.add((f.folder, f.name))
             for v in m.variants:
                 self.assertEqual(v.loader == 'gguf', v.diffusion.name.endswith('.gguf'))
@@ -58,8 +58,27 @@ class ModelChoiceTests(unittest.TestCase):
         self.assertIn(ai_models.DEV_TEXT_SMALL, low)
         self.assertIn(ai_models.DEV_TEXT, d.files(d.variants[3], 64))
 
+    def test_sound_model(self):
+        from ai_workflows import SOUND_PROMPTS
+        s = ai_models.STABLE_AUDIO_SFX
+        self.assertTrue(s.needs_acceptance)
+        self.assertEqual(ai_models.choose_variant(s, pc(None, 16))[1], ai_models.FIT_SLOW)  # no GPU: still runs
+        self.assertEqual(ai_models.choose_variant(s, pc(12, 32))[1], FIT_GOOD)
+        self.assertEqual(ai_models.choose_variant(s, pc(12, 4))[1], ai_models.FIT_NO)
+        self.assertLess(ai_models.download_size(s, s.variants[0]), 4e9)
+        g = build(s, s.variants[0], SOUND_PROMPTS['Pencil'], 5, seconds=7)
+        types = {n['class_type'] for n in g.values()}
+        self.assertTrue({'CheckpointLoaderSimple', 'EmptyLatentAudio', 'VAEDecodeAudio', 'SaveAudio'} <= types)
+        self.assertEqual(g['5']['inputs']['seconds'], 7.)
+        for node in g.values():
+            for value in node['inputs'].values():
+                if isinstance(value, list):
+                    self.assertIn(value[0], g)
+
     def test_workflows_are_complete_graphs(self):
         for model in ai_models.MODELS:
+            if 'sound' in model.tasks:
+                continue
             for variant in model.variants:
                 for image in ((None, 'in.png') if 'generate' in model.tasks else ('in.png',)):
                     g = build(model, variant, LINE_ART_PROMPT, 123, image_name=image, ram_gb=64)
@@ -246,6 +265,37 @@ class CreateImageWindowTests(unittest.TestCase):
             self.assertTrue(dialog.use_button.isEnabled())
             dialog.use()
             self.assertEqual(used, [('lineart', str(out), str(image))])
+        finally:
+            dialog.close()
+
+    def test_create_a_sound(self):
+        import numpy as np
+        import sound
+        from create_image_dialog import CreateImageDialog
+        from ai_workflows import SOUND_PROMPTS
+        used = []
+        dialog = CreateImageDialog(None, None, lambda *a: used.append(a), hardware=pc(None, 16), task='sound')
+        try:
+            self.assertEqual(dialog.task, 'sound')
+            self.assertIn('Stable Audio 3', dialog.model_box.currentText())
+            self.assertIn('slower', dialog.model_box.currentText())        # no graphics card: CPU
+            self.assertEqual(dialog.prompt.toPlainText(), SOUND_PROMPTS['Pencil'])
+            self.assertTrue(dialog.sound_for.isVisibleTo(dialog))
+            self.assertFalse(dialog.size_box.isVisibleTo(dialog))
+            self.assertIn('3.5 GB', dialog.download_button.text())
+            self.assertFalse(dialog.download_button.isEnabled())             # license first
+            dialog.accept_license.setChecked(True)
+            self.assertTrue(dialog.download_button.isEnabled())
+            dialog.sound_for.setCurrentText('Eraser'); dialog.sound_for.activated.emit(2)
+            self.assertIn('eraser', dialog.prompt.toPlainText())
+            self.assertEqual(dialog.use_button.text(), 'Use as eraser sound')
+            t = np.arange(sound.RATE * 2) / sound.RATE
+            mono = (np.sin(2 * np.pi * 500 * t) * 8000).astype(np.int16)
+            out = sound.write_wav(Path(self.tmp.name) / 'made.wav', np.stack([mono, mono], 1))
+            dialog.on_result(str(out))
+            self.assertTrue(dialog.play_button.isEnabled())
+            dialog.use()
+            self.assertEqual(used, [('sound', str(out), 'sound_eraser_file')])
         finally:
             dialog.close()
 

@@ -821,6 +821,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     output_l.addWidget(w.sound_on)
     output_l.addWidget(caption('Use real recordings: a few seconds of a pencil on paper (also brush and '
                                'eraser if you like). They play only while the pen moves.'))
+    create_sound=QPushButton('✦ Create a sound with AI…')
+    create_sound.setToolTip('Describe a sound (pencil on paper, brush, eraser) and let a free AI model '
+                            'make it on your PC.')
+    create_sound.clicked.connect(lambda checked=False: w.open_create_image('sound'))
+    output_l.addWidget(create_sound)
     w.sound_file_buttons={}
     for key,text in (('sound_pencil_file','Pencil'),('sound_brush_file','Brush'),('sound_eraser_file','Eraser')):
         row=QHBoxLayout()

@@ -166,7 +166,29 @@ FLUX2_DEV = ImageModel(
     min_ram_gb=32, good_ram_gb=64, steps=8,
 )
 
-MODELS = (QWEN_EDIT, FLUX2_KLEIN, FLUX2_DEV)
+# Sound effects (pencil, brush, eraser…) from a text description.
+SA3_TEXT = _f('Comfy-Org/stable-audio-3/resolve/main/text_encoders/t5gemma_b_b_ul2.safetensors',
+              'text_encoders', 1187264003)
+
+STABLE_AUDIO_SFX = ImageModel(
+    id='stable_audio_3_sfx', name='Stable Audio 3 Small-SFX', maker='Stability AI',
+    license='Stability AI Community License', license_url='https://stability.ai/license',
+    commercial='Free for personal use, and for creators and businesses under US$1 million revenue '
+               'a year; you own the sounds you make.',
+    needs_acceptance=True,
+    tasks=('sound',),
+    summary='Makes sound effects from a description: a pencil on paper, a brush, an eraser… '
+            'Small (433M); runs even without a graphics card.',
+    variants=(
+        Variant('small_sfx', 'Small SFX', 0,
+                _f('Comfy-Org/stable-audio-3/resolve/main/checkpoints/stable_audio_3_small_sfx.safetensors',
+                   'checkpoints', 2270384940), 'checkpoint'),
+    ),
+    shared=(SA3_TEXT,),
+    min_ram_gb=8, good_ram_gb=12, steps=8,
+)
+
+MODELS = (QWEN_EDIT, FLUX2_KLEIN, FLUX2_DEV, STABLE_AUDIO_SFX)
 BY_ID = {m.id: m for m in MODELS}
 
 
@@ -227,6 +249,11 @@ def choose_variant(model, hw):
     memory at all (or no NVIDIA card).
     """
     smallest = model.variants[-1]
+    if 'sound' in model.tasks:
+        # Small enough for the processor; a graphics card only makes it faster.
+        if hw.ram_gb is not None and hw.ram_gb < model.min_ram_gb:
+            return smallest, FIT_NO
+        return smallest, FIT_GOOD if hw.nvidia else FIT_SLOW
     if not hw.nvidia or not hw.vram_gb:
         return smallest, FIT_NO
     usable = hw.vram_gb - .5          # the desktop uses a little of the card
