@@ -195,16 +195,10 @@ def _reuse_frame(source,target):
     shutil.copyfile(source,target)
 
 
-def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0, camera_zoom=1.0):
+def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0, camera_zoom=1.0, erase=None):
     folder=Path(folder)
     folder.mkdir(parents=True,exist_ok=False)
     use_color = final_image is not None and not final_image.isNull()
-    if use_color:
-        from color_reveal import timeline_duration, render_color_timeline
-        total=timeline_duration(duration,final_image,fade_duration,hold_duration)
-    else:
-        total=duration
-    count=max(2,round(total*fps))
     # Artwork scaling transforms the completed frame. Counter-scale the hand
     # first so the final hand width is governed ONLY by Hand Size, not artwork
     # magnification. This applies to preview and all export formats equally.
@@ -216,7 +210,10 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
                  hold_duration=hold_duration,final_image=final_image if use_color else None,
                  thickness=thickness,hand=hand,hand_scale=preview_hand_scale,anchor=anchor,
                  reveal_mode=reveal_mode,brush_width=brush_width,painting_hand=painting_hand,
-                 stroke_spacing=stroke_spacing,artwork_scale=artwork_scale)
+                 stroke_spacing=stroke_spacing,artwork_scale=artwork_scale,erase=erase)
+    from frame_render import timeline_seconds
+    total=timeline_seconds(drawing,options)
+    count=max(2,round(total*fps))
     camera_path=camera_for(drawing,options,float(camera_zoom))
     previous=None
     for i in range(count):
@@ -242,6 +239,7 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
         stroke_spacing=stroke_spacing if reveal_mode in ('adaptive','zigzag') else None,
         artwork_scale=artwork_scale,
         camera_zoom=float(camera_zoom),
+        erase=({k:v for k,v in erase.items() if k in ('mode','seconds','size')} if erase and erase.get('mode') else None),
         drawing_visibility=getattr(drawing,'drawing_visibility','progressive'),
         contour_transition=getattr(drawing,'contour_transition','legacy'),
         retirement_direction=getattr(drawing,'retirement_direction','forward'),

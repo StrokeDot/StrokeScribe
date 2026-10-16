@@ -22,14 +22,14 @@ jobs:
         shell: bash
         run: |
           set -e
-          mkdir -p /tmp/previews && cp samples/studio-preview/*.png /tmp/previews/
+          mkdir -p /tmp/previews && cp samples/studio-preview/*.png samples/studio-preview/*.gif /tmp/previews/ 2>/dev/null || true
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
           git fetch origin ui-previews || true
           git checkout --orphan ui-previews-new
           git rm -rfq . >/dev/null
           rm -rf ./*
-          cp /tmp/previews/*.png .
+          cp /tmp/previews/* .
           echo "Screenshots for ${GITHUB_SHA}" > README.md
           git add -A
           git commit -qm "UI previews for ${GITHUB_SHA}"

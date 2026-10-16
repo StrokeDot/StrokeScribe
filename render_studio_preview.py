@@ -84,6 +84,25 @@ _d.grab().save(str(out/'library-images.png'))
 _d.set_category('hands'); app.processEvents(); _d.grab().save(str(out/'library-hands.png')); _d.close()
 _t=PenTipDialog(window,_QImage('assets/default_hand.png')); _t.show(); app.processEvents()
 _t.grab().save(str(out/'pen-tip.png')); _t.close()
+# Eraser preview GIFs (erase stage only) for both styles.
+from frame_render import compose_frame as _compose
+from export_job import builtin_eraser as _be
+from eraser import ERASER_TIP as _tip
+from adaptive_hand import pil_image as _pil
+from engine import import_svg as _import
+_d=_import('samples/drawing.svg')
+for _mode in ('zigzag','lines'):
+    _o=dict(width=640,height=360,duration=1.,fade_duration=.4,hold_duration=.5,final_image=None,thickness=1.,
+            hand=None,hand_scale=.2,anchor=(.1,.1),reveal_mode='adaptive',brush_width=.14,painting_hand=None,
+            stroke_spacing=.55,artwork_scale=1.,
+            erase=dict(mode=_mode,seconds=3.,size=.08,image=_be(),anchor=_tip,width=.18))
+    _frames=[]
+    for _i in range(40):
+        _f=_pil(_compose(_d,.25+.75*_i/39,_o)).convert('RGBA')
+        _bg=_Image.new('RGBA',_f.size,(255,255,255,255)); _bg.alpha_composite(_f)
+        _frames.append(_bg.convert('RGB'))
+    _frames[0].save(str(out/f'eraser-{_mode}.gif'),save_all=True,append_images=_frames[1:]+[_frames[-1]]*5,
+                    duration=80,loop=0)
 # Setup & system check window, with the real checks of the build machine.
 import preflight
 from setup_wizard import SetupDialog

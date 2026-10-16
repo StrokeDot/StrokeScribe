@@ -160,6 +160,15 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Eraser (v0.5.3-experimental.30)
+
+Animation tab → **Erase at the end** adds an **Erase** stage after the hold (Draw → Paint → Hold → Erase), so the picture is rubbed away and the video ends empty:
+
+- **Zigzag (follows the shapes)** — the eraser finds where the picture actually is and scrubs back and forth over it along one route (the same planner as Zigzag sweep painting), so it never wastes time on empty areas.
+- **Along the lines** — the eraser follows the drawn lines backwards, last line first; anything left between lines fades away at the very end.
+
+Settings: erase time, eraser size, and what is shown rubbing (the built-in eraser or your pen hand). The rubbed edge is soft, the eraser makes a rubbing sound in the soundtrack, and the stage is saved in projects and used by batch export.
+
 ## Library and automatic pen tip (v0.5.3-experimental.29)
 
 - **▤ Library** (top bar; **Hands library…** in the Hand tab): a safe home for your images, SVGs and hands, like Canva uploads. Files are *copied* into a folder you choose (default `Documents/StrokeScribe Library`, with `Images` and `Hands` sub-folders), so moving or deleting the originals is safe. Upload, drag and drop, search, rename, show in folder, and delete (deleted items go to a *Deleted items* folder, so they can be recovered). With **Keep a copy of every file I import or load** (on by default), everything you import is added automatically.

@@ -510,7 +510,8 @@ class Window(QMainWindow):
                       'use_color','preserve_colors','showhand','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
                       'sound_on','sound_volume','sound_preview','preview_background','image_detail',
-                      'image_style','image_animation_style','clean_faint')
+                      'image_style','image_animation_style','clean_faint',
+                      'erase_mode','erase_time','erase_size','eraser')
 
     def project_state(self):
         """Everything needed to reopen this exact animation."""
@@ -1008,11 +1009,8 @@ class Window(QMainWindow):
         self.refresh()
     def effective_duration(self): return self.duration.value()/self.speed.value()
     def timeline_length(self):
-        options=self.options()
-        if (self.source_type.currentIndex() and self.image_animation.currentIndex()==1
-                and options['final_image'] is not None):
-            return max(.001,options['fade_duration'])+max(0.,options['hold_duration'])
-        return timeline_duration(options['duration'],options['final_image'],options['fade_duration'],options['hold_duration'])
+        from frame_render import timeline_seconds
+        return timeline_seconds(self.drawing,self.options())
     def change_image_animation(self,*args):
         # Direct painting has to retain its color source; never let the user
         # accidentally request an invisible, no-color animation.
@@ -1054,10 +1052,11 @@ class Window(QMainWindow):
         options=self.options()
         if not (self.builder and self.builder.isRunning()):
             self.ensure_brush_plan(options)
+        erase=options.get('erase')
         self.stage_timeline.update_state(options['duration'],
             options['fade_duration'] if options['final_image'] is not None else 0,
             options['hold_duration'] if options['final_image'] is not None else 0,
-            self.position)
+            self.position,erase['seconds'] if erase else 0)
         options.pop('fps')
         size=options['artwork_scale']
         # The artwork is scaled after rasterization. Compensating the hand

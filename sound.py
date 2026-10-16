@@ -1,4 +1,4 @@
-"""Pencil and brush sounds that follow the pen.
+"""Pencil, brush and eraser sounds that follow the pen.
 
 The soundtrack is synthesised from the pen track (motion.py), so it always
 matches the animation: a scratchy pencil sound only while the pen is down and
@@ -37,7 +37,7 @@ def envelopes(samples, width, height):
     """Per-sample (time, draw_level, paint_level, pan) from motion.track() output."""
     times = np.array([t for t, _ in samples], np.float64)
     n = len(samples)
-    draw = np.zeros(n); paint = np.zeros(n); pan = np.zeros(n)
+    draw = np.zeros(n); paint = np.zeros(n); rub = np.zeros(n); pan = np.zeros(n)
     last = None
     for i, (_, s) in enumerate(samples):
         if s.point is None:
@@ -45,15 +45,17 @@ def envelopes(samples, width, height):
             continue
         x, y = s.point[0] / width, s.point[1] / height
         pan[i] = max(-1., min(1., (x - .5) * 2))
-        if last is not None and s.kind in ('draw', 'paint'):
+        if last is not None and s.kind in ('draw', 'paint', 'erase'):
             dt = max(1e-6, times[i] - times[i - 1])
             speed = np.hypot(x - last[0], y - last[1]) / dt        # frame widths per second
             if s.kind == 'draw':
                 draw[i] = min(1., speed / .35) ** .6
+            elif s.kind == 'erase':
+                rub[i] = min(1., speed / .5) ** .5
             else:
                 paint[i] = min(1., speed / .6) ** .5
-        last = (x, y) if s.kind in ('draw', 'paint') else None
-    return times, draw, paint, pan
+        last = (x, y) if s.kind in ('draw', 'paint', 'erase') else None
+    return times, draw, paint, rub, pan
 
 
 def synthesize(samples, total_seconds, width, height, volume=.8, seed=11):
@@ -62,7 +64,7 @@ def synthesize(samples, total_seconds, width, height, volume=.8, seed=11):
     t_audio = np.arange(count) / RATE
     if not samples:
         return np.zeros((count, 2), np.int16)
-    times, draw, paint, pan = envelopes(samples, width, height)
+    times, draw, paint, rub, pan = envelopes(samples, width, height)
     rng = np.random.default_rng(seed)
     # Envelopes at audio rate, with ~12 ms attack/release.
     env_draw = _smooth(np.interp(t_audio, times, draw), int(.012 * RATE))
@@ -80,7 +82,13 @@ def synthesize(samples, total_seconds, width, height, volume=.8, seed=11):
     swish = _band(rng.standard_normal(count), 250, 2200)
     flutter = 1 + .3 * np.sin(2 * np.pi * 7 * t_audio + rng.uniform(0, 6))
     brush = swish * flutter * env_paint * .8
-    mono = pencil + brush
+    # Eraser: a rougher, lower rubbing with a fast back-and-forth grain.
+    env_rub = _smooth(np.interp(t_audio, times, rub), int(.02 * RATE))
+    rubbing = _band(rng.standard_normal(count), 350, 2600)
+    rough = _band(rng.standard_normal(count), 20, 60)
+    rough = 1 + 1.2 * np.abs(rough) / (np.abs(rough).max() + 1e-9)
+    eraser = rubbing * rough * env_rub * .9
+    mono = pencil + brush + eraser
     peak = np.abs(mono).max()
     if peak > 0:
         mono = mono / peak * .7 * max(0., min(1., volume))

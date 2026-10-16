@@ -98,10 +98,43 @@ def _plan_pen(drawing, image, progress, width, height, brush_width, stroke_spaci
     return PenSample(point, PAINT if segment.painting else LIFT)
 
 
+ERASE = 'erase'
+
+
+def strokes_on_canvas(drawing, width, height, artwork_scale=1.0):
+    """Every stroke's points in output pixels (after Artwork size), in drawing order."""
+    cx, cy = width / 2, height / 2
+    font = getattr(drawing, 'source_kind', None) == 'font' and getattr(drawing, 'font_ink', None) is not None
+    if font:
+        iw, ih = drawing.font_ink.size
+        scale = min(width * .82 / max(1, iw), height * .78 / max(1, ih))
+        ox, oy = (width - iw * scale) / 2, (height - ih * scale) / 2
+        to = lambda p: (ox + p[0] * scale, oy + p[1] * scale)
+    else:
+        to = lambda p: _to_canvas(drawing, p, width, height)
+    out = []
+    for stroke in drawing.strokes:
+        pts = [to(p) for p in stroke.points]
+        out.append([(cx + (x - cx) * artwork_scale, cy + (y - cy) * artwork_scale) for x, y in pts])
+    return out
+
+
 def pen_at(drawing, fraction, width=1920, height=1080, duration=4, fade_duration=.4,
            hold_duration=.6, final_image=None, reveal_mode='adaptive', brush_width=.14,
-           stroke_spacing=.55, artwork_scale=1.0, **_ignored):
+           stroke_spacing=.55, artwork_scale=1.0, erase=None, **_ignored):
     """The pen at a timeline position 0..1 (same rules as render_color_timeline)."""
+    if erase and erase.get('mode'):
+        from frame_render import erase_setup, split_erase
+        options = dict(width=width, height=height, duration=duration, fade_duration=fade_duration,
+                       hold_duration=hold_duration, final_image=final_image, reveal_mode=reveal_mode,
+                       brush_width=brush_width, stroke_spacing=stroke_spacing,
+                       artwork_scale=artwork_scale, erase=erase, **_ignored)
+        opts, erase, base_fraction, progress = split_erase(drawing, fraction, options)
+        if progress is not None:
+            _, plan = erase_setup(drawing, opts, erase)
+            point, rubbing = plan.state(progress)
+            return PenSample(point, ERASE if rubbing else (LIFT if point else None))
+        fraction = base_fraction
     sample = _pen_canvas(drawing, fraction, width, height, duration, fade_duration, hold_duration,
                          final_image, reveal_mode, brush_width, stroke_spacing)
     if sample.point is None or abs(artwork_scale - 1.) < 1e-9:

@@ -60,6 +60,7 @@ class StageTimeline(QFrame):
         self.draw_seconds=4.
         self.paint_seconds=0.
         self.hold_seconds=0.
+        self.erase_seconds=0.
         self.progress=0.
         self.setMinimumHeight(78)
         self.setMaximumHeight(92)
@@ -69,10 +70,11 @@ class StageTimeline(QFrame):
         self.setToolTip('Click a stage to move the playback cursor.')
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-    def update_state(self, draw, paint, hold, progress):
+    def update_state(self, draw, paint, hold, progress, erase=0.):
         self.draw_seconds=max(0.,float(draw))
         self.paint_seconds=max(0.,float(paint))
         self.hold_seconds=max(0.,float(hold))
+        self.erase_seconds=max(0.,float(erase))
         self.progress=max(0.,min(1.,float(progress)))
         self.update()
 
@@ -88,7 +90,7 @@ class StageTimeline(QFrame):
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         left=self.LEFT; width=max(1.,self.width()-self.LEFT-self.RIGHT)
         ruler_h=22.; top=ruler_h+8.; height=max(26.,self.height()-top-10.)
-        total=self.draw_seconds+self.paint_seconds+self.hold_seconds
+        total=self.draw_seconds+self.paint_seconds+self.hold_seconds+self.erase_seconds
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(c['track']))
         p.drawRoundedRect(QRectF(left,top,width,height),6,6)
@@ -120,7 +122,8 @@ class StageTimeline(QFrame):
         # Clips for each phase, like clips on an editor track.
         stages=[('Draw',self.draw_seconds,c['draw']),
                 ('Paint',self.paint_seconds,c['paint']),
-                ('Hold',self.hold_seconds,c['hold'])]
+                ('Hold',self.hold_seconds,c['hold']),
+                ('Erase',self.erase_seconds,c.get('erase','#D9667E'))]
         x=left
         label_font=QFont(self.font());label_font.setPointSizeF(8.5);label_font.setBold(True)
         for name,secs,color in stages:
@@ -616,6 +619,21 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stroke_spacing.setToolTip('Lower values add more overlap between brush strokes.')
     a2.addRow('Stroke spacing',w.stroke_spacing)
     w.color_hold=w.number(0,30,.6,.1);a2.addRow('Hold (s)',w.color_hold)
+    animation_l.addWidget(label('ERASE AT THE END'))
+    a3=form_layout();animation_l.addLayout(a3)
+    w.erase_mode=QComboBox()
+    w.erase_mode.addItems(['Off','Zigzag (follows the shapes)','Along the lines'])
+    w.erase_mode.setToolTip('After the hold, an eraser rubs the picture away. Zigzag finds where the '
+                            'picture is and scrubs back and forth over it; Along the lines rubs along '
+                            'the drawn lines, last line first.')
+    a3.addRow('Eraser',w.erase_mode)
+    w.erase_time=w.number(.5,30,3,.5);a3.addRow('Erase time (s)',w.erase_time)
+    w.erase_size=QSpinBox();w.erase_size.setRange(2,30);w.erase_size.setValue(8);w.erase_size.setSuffix('%')
+    w.erase_size.setToolTip('Width of the rubbing area, as a share of the video width.')
+    a3.addRow('Eraser size',w.erase_size)
+    w.eraser=QComboBox();w.eraser.addItems(['Built-in eraser','Pen hand'])
+    w.eraser.setToolTip('What is shown rubbing: the built-in eraser, or the same hand as for drawing.')
+    a3.addRow('Eraser shown',w.eraser)
     animation_l.addStretch(1)
     tabs.addTab(scroll_view(animation),'Animation')
 
@@ -761,6 +779,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.reveal_mode.currentIndexChanged.connect(w.refresh)
     w.brush_width.valueChanged.connect(w.schedule_brush_refresh)
     w.show_paint_hand.toggled.connect(w.refresh)
+    for widget in (w.erase_mode,w.eraser):
+        widget.currentIndexChanged.connect(w.refresh)
+    for widget in (w.erase_time,w.erase_size):
+        widget.valueChanged.connect(w.refresh)
     w.stroke_spacing.valueChanged.connect(w.schedule_brush_refresh)
     w.preserve_colors.toggled.connect(w.refresh)
     w.image_duration.valueChanged.connect(w.refresh)

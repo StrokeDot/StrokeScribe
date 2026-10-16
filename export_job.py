@@ -34,6 +34,7 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
         stroke_spacing=float(s.get('stroke_spacing', .55)),
         artwork_scale=float(s.get('artwork_size', 100)) / 100.,
         painting_hand=hand if s.get('show_paint_hand', True) else None)
+    options['erase'] = erase_from_settings(s, hand)
     if image_mode is None:
         image_mode = image_source is not None
     if image_mode:
@@ -47,6 +48,32 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
                        reveal_mode=reveal if reveal in ('adaptive', 'zigzag') else 'adaptive',
                        duration=0. if paint_only else options['duration'])
     return options
+
+
+_ERASER_IMAGE = None
+
+
+def builtin_eraser():
+    global _ERASER_IMAGE
+    if _ERASER_IMAGE is None:
+        from PySide6.QtGui import QImage
+        from eraser import DEFAULT_ERASER
+        _ERASER_IMAGE = QImage(str(DEFAULT_ERASER))
+    return _ERASER_IMAGE
+
+
+def erase_from_settings(s, hand=None):
+    """Erase-stage settings for the renderer, or None when erasing is off."""
+    from eraser import ERASER_TIP, MODES
+    mode = MODES.get(s.get('erase_mode') or 'Off')
+    if not mode:
+        return None
+    size = float(s.get('erase_size', 8)) / 100.
+    use_hand = s.get('eraser') == 'Pen hand' and hand is not None and not hand.isNull()
+    return dict(mode=mode, seconds=float(s.get('erase_time', 3)), size=size,
+                image=hand if use_hand else builtin_eraser(),
+                anchor=(float(s.get('ax', .08)), float(s.get('ay', .13))) if use_hand else ERASER_TIP,
+                width=float(s.get('handsize', .75)) if use_hand else max(.1, size * 2.2))
 
 
 def formats_from_settings(s):
