@@ -26,6 +26,25 @@ def _blank(like):
     return out
 
 
+def offset_of(opts):
+    """(dx, dy) of the picture's position on the page, as fractions of the frame."""
+    dx, dy = opts.get('offset') or (0., 0.)
+    return float(dx), float(dy)
+
+
+def shift(frame, dx, dy):
+    """The frame moved by (dx, dy) fractions of its size (Position on the page)."""
+    if abs(dx) < 1e-6 and abs(dy) < 1e-6:
+        return frame
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QPainter
+    out = _blank(frame)
+    p = QPainter(out)
+    p.drawImage(QPointF(round(dx * frame.width()), round(dy * frame.height())), frame)
+    p.end()
+    return out
+
+
 def _ghosted(art, top, opacity):
     """`top` over a faint copy of `art` (preview of Hand only: you still see what is written)."""
     from PySide6.QtGui import QPainter
@@ -44,6 +63,7 @@ def _core(drawing, fraction, opts, camera_path=None):
     from hand_layer import capture
     layers = opts.get('layers', 'all')
     ghost = float(opts.get('ghost', 0) or 0)
+    dx, dy = offset_of(opts)
     opts = {k: v for k, v in opts.items() if k in RENDER_KEYS}
     scale = opts.pop('artwork_scale', 1.0)
     width, height = opts['width'], opts['height']
@@ -66,6 +86,7 @@ def _core(drawing, fraction, opts, camera_path=None):
         frame = scale_animation_frame(frame, scale, None)
     else:
         frame = scale_animation_frame(frame, scale, hands)
+    frame = shift(frame, dx, dy)
     return crop(frame, width, height, zoom, cx, cy)
 
 
@@ -102,6 +123,7 @@ def erase_setup(drawing, opts, erase):
     """(finished frame, ErasePlan) for these options, cached."""
     import eraser
     import motion
+    opts = dict(opts, offset=(0., 0.))      # planned in place; compose_frame moves the result
     key = _erase_key(drawing, opts, erase)
     if key in _ERASE_CACHE:
         return _ERASE_CACHE[key]
@@ -139,10 +161,11 @@ def compose_frame(drawing, fraction, options, camera_path=None):
         if layers != 'art':
             frame = eraser.draw_eraser(frame, point, erase.get('image'), erase.get('anchor', eraser.ERASER_TIP),
                                        float(erase.get('width', .18)))
+        frame = shift(frame, *offset_of(opts))
         if camera_path is not None:
             frame = _camera_view(frame, *camera_path.at(fraction))
-    if opts.get('layers', 'all') == 'hand':
-        return frame                  # stays transparent, to lay over your own text
+    if opts.get('layers', 'all') == 'hand' or opts.get('background') is False:
+        return frame                  # stays transparent (hand only, or a picture added to a page)
     return apply_lettering_background(frame, drawing)
 
 
@@ -174,7 +197,11 @@ def camera_for(drawing, options, zoom, rate=30.):
     total = timeline_seconds(drawing, options)
     w, h = options.get('width', 1920), options.get('height', 1080)
     samples = motion.track(drawing, dict(options, width=w, height=h), total, rate)
-    return camera.plan(samples, total, w, h, zoom)
+    path = camera.plan(samples, total, w, h, zoom)
+    dx, dy = offset_of(options)
+    if path is not None and (dx or dy):
+        path = camera.ShiftedPath(path, dx, dy)     # follow the picture where it was moved to
+    return path
 
 
 def timeline_seconds(drawing, options):

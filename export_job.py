@@ -34,6 +34,7 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
         reveal_mode=reveal, brush_width=float(s.get('brush_width', .14)),
         stroke_spacing=float(s.get('stroke_spacing', .55)),
         artwork_scale=float(s.get('artwork_size', 100)) / 100.,
+        offset=(float(s.get('picture_x', 0)) / 100., float(s.get('picture_y', 0)) / 100.),
         painting_hand=None)
     from tools_kit import painting_hand
     options['painting_hand'] = painting_hand(s, hand)

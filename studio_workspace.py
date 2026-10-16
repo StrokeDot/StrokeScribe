@@ -867,6 +867,18 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.artwork_size.setSuffix('%')
     w.artwork_size.setToolTip('Scale only the artwork, not the hand. The hand size stays controlled by Hand Size. Above 100% may crop the artwork.')
     a.addRow('Artwork size',w.artwork_size)
+    # Position on the page: drag the picture on the preview, or type it here.
+    w.picture_x=w.number(-100,100,0,1); w.picture_x.setSuffix('%')
+    w.picture_y=w.number(-100,100,0,1); w.picture_y.setSuffix('%')
+    for box,side in ((w.picture_x,'right (minus: left)'),(w.picture_y,'down (minus: up)')):
+        box.setToolTip(f'Move the picture {side}, in % of the video size. '
+                       'Easier: drag the picture on the preview.')
+    w.picture_center=QPushButton('Center'); w.picture_center.setObjectName('subtle')
+    w.picture_center.setToolTip('Put the picture back in the middle.')
+    w.picture_center.clicked.connect(lambda checked=False: (w.picture_x.setValue(0), w.picture_y.setValue(0)))
+    position=QHBoxLayout(); position.setSpacing(6)
+    position.addWidget(w.picture_x,1); position.addWidget(w.picture_y,1); position.addWidget(w.picture_center)
+    a.addRow('Position X / Y',position)
     w.pen_ease=QComboBox()
     w.pen_ease.addItems(['Constant speed','Natural (ease in and out)'])
     w.pen_ease.setToolTip('Natural: every line starts and ends a little slower, like a real hand.')
@@ -1174,7 +1186,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.scene_add=QPushButton('+ Add scene')
     w.scene_add.setToolTip('A new scene after this one (a copy of it: then import its own SVG or image).')
     w.scene_add.clicked.connect(lambda checked=False: w.add_scene())
-    scene_buttons.addWidget(w.scene_add)
+    w.scene_picture=QPushButton('+ Add picture')
+    w.scene_picture.setToolTip('Another picture on the SAME page: the hand draws it next to the pictures before it. '
+                               'Import its artwork, then drag it on the preview to place it.')
+    w.scene_picture.clicked.connect(lambda checked=False: w.add_picture())
+    add_row=QHBoxLayout();add_row.setSpacing(4)
+    add_row.addWidget(w.scene_add); add_row.addWidget(w.scene_picture)
+    scene_buttons.addLayout(add_row)
     move_row=QHBoxLayout();move_row.setSpacing(4)
     w.scene_left=QPushButton('◀');w.scene_left.setToolTip('Move this scene earlier')
     w.scene_left.clicked.connect(lambda checked=False: w.move_scene(-1))
@@ -1227,7 +1245,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     outer.addLayout(footer)
 
     # Retain the existing preview/export signal wiring.
-    for widget in (w.duration,w.speed,w.thickness,w.artwork_size,w.handsize,w.ax,w.ay):
+    for widget in (w.duration,w.speed,w.thickness,w.artwork_size,w.picture_x,w.picture_y,w.handsize,w.ax,w.ay):
         widget.valueChanged.connect(w.refresh)
     w.showhand.toggled.connect(w.refresh)
     w.res.currentIndexChanged.connect(w.refresh)

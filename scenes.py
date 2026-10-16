@@ -20,7 +20,10 @@ from pathlib import Path
 
 import numpy as np
 
-TRANSITIONS = ('Camera move', 'Pan left', 'Pan right', 'Pan up', 'Pan down', 'Zoom in', 'Fade', 'Cut')
+# 'Same page': the next scene is another picture drawn on the same page; the
+# pictures before it stay on the page (several pictures in one place).
+SAME_PAGE = 'Same page'
+TRANSITIONS = ('Camera move', 'Pan left', 'Pan right', 'Pan up', 'Pan down', 'Zoom in', 'Fade', 'Cut', SAME_PAGE)
 DEFAULT_TRANSITION = 'Camera move'
 DEFAULT_TRANSITION_SECONDS = 1.2
 # Output settings shared by all scenes (taken from the scene being edited).
@@ -30,7 +33,7 @@ GLOBAL_SETTINGS = ('res', 'fps', 'webm', 'webm_quality', 'mov', 'mp4', 'mp4_back
 
 
 def transition_seconds(kind, seconds):
-    return 0. if kind == 'Cut' else max(0., float(seconds))
+    return 0. if kind in ('Cut', SAME_PAGE) else max(0., float(seconds))
 
 
 def _ease(t):
@@ -76,6 +79,45 @@ def transition_frame(a, b, kind, t):
         for image, world in ((a, 0.), (b, distance)):
             put(image, (world - camera) * zoom, 0, zoom)
     p.end()
+    return out
+
+
+# ------------------------------------------------------------ pictures on one page
+
+def on_page(scenes, k):
+    """True when scene k is a picture added to the page of scene k-1."""
+    return k > 0 and scenes[k - 1].get('transition') == SAME_PAGE
+
+
+def finished_art(drawing, options, background=True):
+    """The finished picture (no hand) at the options' size, as it stays on the page."""
+    from frame_render import compose_frame
+    opts = {k: v for k, v in options.items() if k not in ('fps', 'audio', 'workers')}
+    opts.update(layers='art', ghost=0, background=background)
+    return compose_frame(drawing, 1., opts)
+
+
+def stack(base, top):
+    """`top` over `base` (either may be None)."""
+    if base is None:
+        return top
+    if top is None:
+        return base
+    from PySide6.QtGui import QImage, QPainter
+    out = base.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+    if out is base:
+        out = base.copy()
+    p = QPainter(out)
+    p.drawImage(0, 0, top)
+    p.end()
+    return out
+
+
+def for_page(options):
+    """Options of a picture added to a page: no own background, no camera follow."""
+    out = dict(options)
+    out['background'] = False
+    out['camera_zoom'] = 1.
     return out
 
 
@@ -138,6 +180,8 @@ def plan(scenes, hand=None, overrides=None):
     out = []
     for i, scene in enumerate(scenes):
         drawing, options, settings = job_from_state(scene['state'], hand, overrides)
+        if on_page(scenes, i):
+            options = for_page(options)
         last = i == len(scenes) - 1
         kind = scene.get('transition', DEFAULT_TRANSITION)
         out.append(dict(drawing=drawing, options=options, settings=settings,
@@ -177,6 +221,7 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
     index = 0
     ranges = []
     previous_last = None
+    page = None                    # finished pictures of the current page (QImage)
     work = folder / '_scenes'
     work.mkdir()
     try:
@@ -193,6 +238,16 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
             frames = sorted(part.glob('frame_*.png'))
             done = base + len(frames)
             from PySide6.QtGui import QImage
+            layers = options.get('layers', 'all')
+            if on_page(scenes, k) and page is not None and layers != 'hand':
+                for frame in frames:                  # this picture over the ones already on the page
+                    if not stack(page, QImage(str(frame))).save(str(frame), 'PNG', 80):
+                        raise OSError('Unable to save PNG frame.')
+            if k < len(prepared) - 1 and prepared[k]['transition'] == SAME_PAGE and layers != 'hand':
+                art = finished_art(scene['drawing'], options, background=not on_page(scenes, k))
+                page = stack(page if on_page(scenes, k) else None, art)
+            else:
+                page = None
             if previous_last is not None and joins[k - 1] > 0:
                 a = QImage(str(previous_last))
                 b = QImage(str(frames[0]))

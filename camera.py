@@ -89,6 +89,17 @@ def plan(samples, total, width, height, zoom):
     return CameraPath(times, z, xs, ys, total)
 
 
+class ShiftedPath:
+    """A camera path for a picture moved on the page (offset: fractions of the frame)."""
+
+    def __init__(self, path, dx, dy):
+        self.path, self.dx, self.dy = path, float(dx), float(dy)
+
+    def at(self, fraction):
+        z, x, y = self.path.at(fraction)
+        return z, x + self.dx, y + self.dy
+
+
 def crop(frame, width, height, zoom, cx, cy):
     """Cut the camera view (output size) out of a frame rendered at zoom x size."""
     if zoom <= 1.0001:

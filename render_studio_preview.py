@@ -177,6 +177,32 @@ window.slider.setValue(550)
 snapshot('hand-only.png')
 window.export_layers.setCurrentText('Drawing and hand')
 window.inspector_tabs.setCurrentIndex(0)
+# Several pictures on one page: picture 2 is drawn next to picture 1.
+import time as _time
+_page=Window(); _page.resize(1490,890); _page.apply_theme('dark'); _page.show(); app.processEvents()
+_page.duration.setValue(2.)
+_page.artwork_size.setValue(60); _page.picture_x.setValue(-20)
+_page.add_picture()
+_page.set_drawing(_imp('samples/arthur-headset-traced.svg'))
+_page.duration.setValue(2.); _page.artwork_size.setValue(55); _page.picture_x.setValue(24)
+_page.slider.setValue(600); app.processEvents()
+_page.grab().save(str(out/'same-page.png'))
+# Playback smoothness on this machine: drawing each frame vs ready-made frames.
+_page.slider.setValue(0); app.processEvents()
+_n=_page.frame_index(1.)[1]
+_t=_time.perf_counter()
+for _i in range(_n+1): _page.render_view(_i/_n,_page.PREVIEW_WIDTH)
+_draw=(_time.perf_counter()-_t)/(_n+1)
+for _i in range(_n+1): _page.prerender_step()
+_page.playing=True
+_t=_time.perf_counter()
+for _i in range(_n+1): _page.preview_frame(_i/_n,playing=True)
+_ready=(_time.perf_counter()-_t)/(_n+1)
+_page.playing=False
+(out/'playback-timing.txt').write_text(
+    f'frames: {_n+1}\nready-made frames: {_page.ready_frames()[0]}\n'
+    f'drawing a frame: {_draw*1000:.1f} ms\nready-made frame: {_ready*1000:.2f} ms\n')
+_page.close()
 # Setup & system check window, with the real checks of the build machine.
 import preflight
 from setup_wizard import SetupDialog

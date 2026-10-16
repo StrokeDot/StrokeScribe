@@ -56,19 +56,61 @@ class Canvas(QWidget):
         self._spinner=QTimer(self); self._spinner.setInterval(40)
         self._spinner.timeout.connect(self._advance)
         self.on_click=None          # on_click(x, y, add) in frame pixels
+        self.on_drag=None           # on_drag('start'|'move'|'done', dx, dy): dx, dy in fractions of the frame
+        self._press=None
         self.highlight=[]           # selected lines: polylines in frame pixels
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-    def mousePressEvent(self,event):
-        if self.frame is None or self.on_click is None or self.busy_text is not None:
-            return super().mousePressEvent(event)
+    DRAG_START=6                    # pixels the mouse moves before a click becomes a drag
+    def _frame_point(self,pos):
         x,y,size=self.frame_rect()
-        pos=event.position()
-        fx=(pos.x()-x)*self.frame.width()/max(1,size.width())
-        fy=(pos.y()-y)*self.frame.height()/max(1,size.height())
+        return ((pos.x()-x)*self.frame.width()/max(1,size.width()),
+                (pos.y()-y)*self.frame.height()/max(1,size.height()))
+    def mousePressEvent(self,event):
+        self._press=None
+        if self.frame is None or self.busy_text is not None or event.button()!=Qt.MouseButton.LeftButton:
+            return super().mousePressEvent(event)
+        self._press=(event.position(),False)
+        self.setFocus()
+    def mouseMoveEvent(self,event):
+        press=getattr(self,'_press',None)
+        if press is None or self.on_drag is None or not event.buttons()&Qt.MouseButton.LeftButton:
+            return super().mouseMoveEvent(event)
+        start,dragging=press
+        d=event.position()-start
+        if not dragging and abs(d.x())+abs(d.y())<self.DRAG_START: return
+        if not dragging:
+            if self.on_drag('start',0.,0.) is False:
+                self._press=None; return
+            self._press=(start,True)
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+        _,_,size=self.frame_rect()
+        self.on_drag('move',d.x()/max(1,size.width()),d.y()/max(1,size.height()))
+    def mouseReleaseEvent(self,event):
+        press=getattr(self,'_press',None); self._press=None
+        if press is None: return super().mouseReleaseEvent(event)
+        start,dragging=press
+        if dragging:
+            self.unsetCursor()
+            if self.on_drag is not None: self.on_drag('done',0.,0.)
+            return
+        if self.on_click is None or self.frame is None: return
+        fx,fy=self._frame_point(start)
         if 0<=fx<=self.frame.width() and 0<=fy<=self.frame.height():
             mods=event.modifiers()
             self.on_click(fx,fy,bool(mods&(Qt.KeyboardModifier.ControlModifier|Qt.KeyboardModifier.ShiftModifier)))
-        self.setFocus()
+    def _checker(self,w,h,a,b):
+        """Transparency grid, made once per size and theme."""
+        key=(w,h,a,b)
+        if getattr(self,'_checker_key',None)!=key:
+            from PySide6.QtGui import QPixmap
+            pix=QPixmap(max(1,w),max(1,h)); pix.fill(QColor(b))
+            p=QPainter(pix)
+            for i,xx in enumerate(range(0,w,20)):
+                for j,yy in enumerate(range(0,h,20)):
+                    if (i+j)%2==0: p.fillRect(xx,yy,20,20,QColor(a))
+            p.end()
+            self._checker_pix=pix; self._checker_key=key
+        return self._checker_pix
     def set_background(self,index):
         self.background=index; self.update()
     def set_busy(self,text,percent=None,detail=''):
@@ -96,14 +138,17 @@ class Canvas(QWidget):
             p.save(); p.setClipRect(x,y,size.width(),size.height())
             if self.background>=3:
                 from backgrounds import TEXTURES, texture_qimage
-                p.drawImage(x,y,texture_qimage(TEXTURES[self.background-3],size.width(),size.height()))
+                key=(TEXTURES[self.background-3],size.width(),size.height())
+                if getattr(self,'_texture_key',None)!=key:
+                    self._texture=texture_qimage(*key); self._texture_key=key
+                p.drawImage(x,y,self._texture)
             elif self.background:
                 p.fillRect(x,y,size.width(),size.height(),QColor('#ffffff' if self.background==1 else c['preview_dark']))
             else:
-                for a in range(x,x+size.width(),20):
-                    for b in range(y,y+size.height(),20):
-                        p.fillRect(a,b,20,20,QColor(c['checker_a'] if ((a-x)//20+(b-y)//20)%2==0 else c['checker_b']))
-            p.drawImage(x,y,self.frame.scaled(size,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+                p.drawPixmap(x,y,self._checker(size.width(),size.height(),c['checker_a'],c['checker_b']))
+            # Scaled while painting (no copy of the frame every time).
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            p.drawImage(QRectF(x,y,size.width(),size.height()),self.frame)
             if self.highlight:
                 from PySide6.QtGui import QPainterPath, QPen
                 from PySide6.QtCore import QPointF
@@ -342,6 +387,7 @@ class Window(QMainWindow):
         self.scene_index=0
         self._scene_cache={}           # preview of other scenes: id(state) -> prepared scene
         self._camera_key=None; self._camera_path=None
+        self._frames=OrderedDict(); self._frame_bytes=0; self._view=None
         # Rapid brush-width changes should not synchronously rebuild the entire
         # paint plan for every spinbox/wheel event on the GUI thread.
         self.brush_preview_timer=QTimer(self)
@@ -351,6 +397,7 @@ class Window(QMainWindow):
         from studio_workspace import build_workspace
         build_workspace(self,Canvas,BRAND_ICON)
         self.canvas.on_click=self.click_preview
+        self.canvas.on_drag=self.drag_picture
         from menus import build_menus
         build_menus(self)
         self.watch_settings()
@@ -378,6 +425,7 @@ class Window(QMainWindow):
             QTimer.singleShot(400,self.open_setup)
         self.set_drawing(import_svg(Path(__file__).parent/'samples'/'drawing.svg'))
         self.timer=QTimer(self)
+        self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.timeout.connect(self.tick)
         self.timer.start(33)
         self.analysis_timer=QTimer(self)
@@ -705,6 +753,9 @@ class Window(QMainWindow):
         if self._lines_cache is None or self._lines_cache[0]!=key:
             self._lines_cache=(key,strokes_on_canvas(self.drawing,w,h,scale))
         lines=self._lines_cache[1]
+        ox,oy=self.picture_x.value()/100.*w,self.picture_y.value()/100.*h
+        if ox or oy:
+            lines=[[(x+ox,y+oy) for x,y in line] for line in lines]
         camera=self._camera_path if self.camera.currentIndex() else None
         if camera is not None:
             z,cx,cy=camera.at(self.position)
@@ -735,6 +786,22 @@ class Window(QMainWindow):
                 d=float(np.hypot(a[:,0]+ab[:,0]*t-x,a[:,1]+ab[:,1]*t-y).min())
             if d<best_d: best,best_d=i,d
         return best
+
+    def drag_picture(self,kind,dx,dy):
+        """Drag on the preview: move the picture on the page (Position X / Y)."""
+        if kind=='start':
+            if not self.drawing or self.all_scenes() or self.busy: return False
+            self._drag_from=(self.picture_x.value(),self.picture_y.value())
+            self.playing=False
+            return True
+        if kind=='move':
+            x0,y0=getattr(self,'_drag_from',(0.,0.))
+            self.picture_x.setValue(round(x0+dx*100,1))
+            self.picture_y.setValue(round(y0+dy*100,1))
+        else:
+            self.commit_history()
+            self.status.setText(f'Picture moved to X {self.picture_x.value():.0f}%, Y {self.picture_y.value():.0f}%. '
+                                'Click "Center" (Animation tab) to put it back in the middle.')
 
     def click_preview(self,x,y,add=False):
         if self.all_scenes(): return          # lines are edited in "This scene" preview
@@ -880,7 +947,7 @@ class Window(QMainWindow):
         self.quick_export.setEnabled(self.drawing is not None)
         self.refresh()
     # ------------------------------------------------------------ projects
-    PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','reveal_mode','color_fade',
+    PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
                       'use_color','preserve_colors','showhand','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
@@ -911,7 +978,9 @@ class Window(QMainWindow):
             state['image']={'png':qimage_to_b64(r.image),'filename':r.filename,'detail':r.detail,
                             'path':str(self.image_path or ''),'guide':str(self.image_guide or '')}
         else:
-            state['color_png']=qimage_to_b64(self.final_image)
+            original=getattr(self,'color_original',None)
+            keep=original if (not getattr(self,'color_path',None) and original is not None) else self.final_image
+            state['color_png']=qimage_to_b64(keep)
         if self.paint_hand_path and Path(self.paint_hand_path).is_file():
             import base64
             state['paint_hand_png']=base64.b64encode(Path(self.paint_hand_path).read_bytes()).decode('ascii')
@@ -1063,7 +1132,17 @@ class Window(QMainWindow):
         else:
             self.source_type.blockSignals(True); self.source_type.setCurrentIndex(0); self.source_type.blockSignals(False)
             self.image_controls.hide(); self.import_button.setText('Import SVG…')
-            self.final_image=qimage_from_b64(data.get('color_png'))
+            # The colour picture as saved; cleaned like a newly loaded PNG (an older
+            # project may have kept a painted checkerboard or faint leftovers).
+            self.color_path=None
+            self.color_original=qimage_from_b64(data.get('color_png'))
+            self.final_image=self.color_original
+            if self.final_image is not None and (data.get('settings') or {}).get('clean_color',True):
+                try:
+                    from color_reveal import clean_qimage
+                    self.final_image=clean_qimage(self.final_image)
+                except Exception:
+                    self.final_image=self.color_original
             self.use_color.setEnabled(self.final_image is not None)
             if self.final_image is None:
                 self.use_color.blockSignals(True); self.use_color.setChecked(False); self.use_color.blockSignals(False)
@@ -1104,7 +1183,9 @@ class Window(QMainWindow):
         for k,scene in enumerate(self.scenes):
             if k==self.scene_index and self.drawing is not None and scene.get('thumb') is None:
                 self.store_scene()
-            item=QListWidgetItem(f'{k+1} · {self.scene_label(k)}'[:22])
+            from scenes import on_page
+            # "+": a picture added to the page of the scene before it.
+            item=QListWidgetItem(f'{k+1} {"+" if on_page(self.scenes,k) else "·"} {self.scene_label(k)}'[:22])
             thumb=scene.get('thumb')
             if thumb is not None and not thumb.isNull():
                 from PySide6.QtGui import QImage, QPainter
@@ -1129,7 +1210,7 @@ class Window(QMainWindow):
             else: widget.setValue(value)
             widget.blockSignals(False)
         self.scene_transition.setEnabled(not last)
-        self.scene_transition_time.setEnabled(not last and scene['transition']!='Cut')
+        self.scene_transition_time.setEnabled(not last and scene['transition'] not in ('Cut','Same page'))
         self.preview_scope.setEnabled(many)
         if not many and self.preview_scope.currentIndex():
             self.preview_scope.blockSignals(True); self.preview_scope.setCurrentIndex(0); self.preview_scope.blockSignals(False)
@@ -1184,6 +1265,31 @@ class Window(QMainWindow):
         self.status.setText(f'Scene {self.scene_index+1} added as a copy. Import an SVG or image for it '
                             '(Import, Library or Create image); its settings are its own.')
 
+    def add_picture(self):
+        """Another picture on the same page: a new scene joined by 'Same page'.
+
+        It starts as a smaller copy at the right; import its own artwork, then drag it
+        on the preview to where it belongs."""
+        if not self.drawing or (self.builder and self.builder.isRunning()): return
+        import copy
+        self.playing=False
+        self._leave_scene()
+        current=self.scenes[self.scene_index]
+        state=copy.deepcopy(current['state'])
+        settings=state.setdefault('settings',{})
+        size=float(settings.get('artwork_size',100))
+        settings['artwork_size']=max(25.,min(100.,size*.6))
+        settings['picture_x']=max(-100.,min(100.,float(settings.get('picture_x',0))+28.))
+        if 'erase_mode' in settings: settings['erase_mode']='Off'   # the page stays until it is finished
+        new=dict(state=state,transition=current['transition'],transition_seconds=current['transition_seconds'],
+                 name=f'Picture {self.scene_index+2}',thumb=current.get('thumb'))
+        current['transition']='Same page'
+        self.scenes.insert(self.scene_index+1,new)
+        self._page_cache={}
+        self._enter_scene(self.scene_index+1)
+        self.status.setText('Picture added on the same page. Import its SVG or image (Import, Library or Create image), '
+                            'then drag it on the preview to place it. The pictures before it stay on the page.')
+
     def delete_scene(self):
         if len(self.scenes)<2: return
         answer=QMessageBox.question(self,'Delete scene',
@@ -1206,8 +1312,10 @@ class Window(QMainWindow):
         scene=self.scenes[self.scene_index]
         scene['transition']=self.scene_transition.currentText()
         scene['transition_seconds']=self.scene_transition_time.value()
-        self.scene_transition_time.setEnabled(scene['transition']!='Cut'
+        self.scene_transition_time.setEnabled(scene['transition'] not in ('Cut','Same page')
                                               and self.scene_index<len(self.scenes)-1)
+        self._page_cache={}
+        self.fill_scenes()
         self.refresh()
 
     def all_scenes(self):
@@ -1225,18 +1333,21 @@ class Window(QMainWindow):
     def preview_scene(self,k,width,height):
         """(drawing, options, seconds, camera) of scene k for the preview, at preview size."""
         from scenes import job_from_state, seconds_of
+        from scenes import on_page, for_page
         if k==self.scene_index:
             options=self.options(); options.pop('fps',None)
+            if on_page(self.scenes,k): options=for_page(options)
             options['hand_scale']/=options['artwork_scale']
             options['width'],options['height']=width,height
             options['ghost']=.22
             return self.drawing,options,seconds_of(self.drawing,options),self.preview_camera(options)
         state=self.scenes[k]['state']
-        key=(id(state),width,height)
+        key=(id(state),width,height,on_page(self.scenes,k))
         cached=self._scene_cache.get(id(state))
         if cached is None or cached[0]!=key:
             drawing,options,_=job_from_state(state,self.hand)
             options.pop('fps',None); options.pop('audio',None)
+            if on_page(self.scenes,k): options=for_page(options)
             options['hand_scale']/=options['artwork_scale']
             options['width'],options['height']=width,height
             options['ghost']=.22
@@ -1259,6 +1370,24 @@ class Window(QMainWindow):
             self._scene_cache[id(state)]=cached
         return cached[1]
 
+    def page_base(self,k,width,height):
+        """The pictures already on scene k's page (finished, no hand), or None."""
+        from scenes import on_page, finished_art, stack
+        if not on_page(self.scenes,k): return None
+        edited=self.scene_index<k                   # the page includes the picture being edited
+        key=(k,width,height,tuple(id(s['state']) for s in self.scenes[:k]),
+             tuple(s['transition'] for s in self.scenes[:k]),self.scene_index,
+             id(self.history.current) if edited else None,
+             (self.picture_x.value(),self.picture_y.value(),self.artwork_size.value()) if edited else None)
+        cache=self.__dict__.setdefault('_page_cache',{})
+        if key in cache: return cache[key]
+        below=self.page_base(k-1,width,height)
+        drawing,options,_,_=self.preview_scene(k-1,width,height)
+        base=stack(below,finished_art(drawing,options,background=not on_page(self.scenes,k-1)))
+        if len(cache)>12: cache.clear()
+        cache[key]=base
+        return base
+
     def scene_timeline(self,width=960,height=540):
         """Lengths of all scenes and the moves between them (seconds)."""
         from scenes import transition_seconds
@@ -1267,16 +1396,18 @@ class Window(QMainWindow):
                transition_seconds(s['transition'],s['transition_seconds']) for k,s in enumerate(self.scenes)]
         return lengths,joins
 
-    def all_scenes_frame(self,width,height):
-        """Preview frame of the whole video at the playhead."""
+    def all_scenes_frame(self,width,height,fraction=None):
+        """Preview frame of the whole video at the playhead (or at `fraction`)."""
         from frame_render import compose_frame
         from scenes import locate, transition_frame
         lengths,joins=self.scene_timeline(width,height)
         total=sum(lengths)+sum(joins)
-        where,k,f=locate(lengths,joins,self.position*total)
+        where,k,f=locate(lengths,joins,(self.position if fraction is None else fraction)*total)
+        from scenes import stack
         def frame(n,fraction):
             drawing,options,_,camera=self.preview_scene(n,width,height)
-            return compose_frame(drawing,fraction,options,camera)
+            frame=compose_frame(drawing,fraction,options,camera)
+            return frame if options.get('layers')=='hand' else stack(self.page_base(n,width,height),frame)
         if where=='join':
             return transition_frame(frame(k,1.),frame(k+1,0.),self.scenes[k]['transition'],f),k,lengths,joins
         return frame(k,f),k,lengths,joins
@@ -1756,8 +1887,17 @@ class Window(QMainWindow):
     def reload_color(self):
         """(Re)load the matching colored PNG, cleaned or not."""
         name=getattr(self,'color_path',None)
-        if not name or self.source_type.currentIndex(): return False
+        if self.source_type.currentIndex(): return False
         clean=self.clean_color.isChecked()
+        original=getattr(self,'color_original',None)
+        if not name and original is not None and not original.isNull():
+            # Colour picture from a project file: clean it, or show it as saved.
+            from color_reveal import clean_qimage
+            self.final_image=clean_qimage(original) if clean else original
+            self.color_note.setText('Colour image from project'+(' • background cleaned' if clean else ''))
+            self.refresh()
+            return True
+        if not name: return False
         try:
             self.final_image=load_color_image(name,clean=clean)
         except Exception as e:
@@ -1928,7 +2068,7 @@ class Window(QMainWindow):
         zoom=options.get('camera_zoom',1.)
         if zoom<=1.0001: return None
         key=(id(self.drawing),len(self.drawing.strokes),zoom,
-             repr({k:v for k,v in options.items() if isinstance(v,(int,float,str,tuple))}),
+             repr({k:v for k,v in options.items() if isinstance(v,(int,float,str,tuple)) and k not in ('width','height')}),
              repr(options.get('erase') and {k:v for k,v in options['erase'].items() if k!='image'}),
              options.get('final_image') is not None)
         if key!=self._camera_key:
@@ -1946,20 +2086,78 @@ class Window(QMainWindow):
             image_source=self.image_result.image if image_source and self.image_result else None,
             image_mode=image_source)
 
+    # ------------------------------------------------------------ preview
+    PREVIEW_WIDTH=960
+    PREVIEW_FPS=30                    # playback shows the frames the export will have
+    FRAME_BUDGET=600*1024*1024        # memory for ready-made preview frames
+
+    def _view_token(self):
+        """Things that change the picture without a settings signal."""
+        d=self.drawing
+        return (id(d),id(getattr(d,'strokes',None)),len(getattr(d,'strokes',()) or ()),self.scene_index,
+                self.all_scenes(),self.source_type.currentIndex(),id(self.final_image),
+                self.hand.cacheKey() if self.hand is not None else None,len(self.scenes))
+
+    def clear_frames(self):
+        """Forget the ready-made preview frames (something changed)."""
+        self._frames=OrderedDict(); self._frame_bytes=0
+        if hasattr(self,'prerender_timer'): self.prerender_timer.stop()
+
     def refresh(self,*args):
+        """Show the frame at the playhead. Any change rebuilds the view; moving the
+        playhead (scrub, play) only draws a frame, from the ready-made ones if it can."""
+        playhead=getattr(self,'_playhead_only',False); self._playhead_only=False
         if self._preparing:
             return
+        view=getattr(self,'_view',None)
+        if not playhead or view is None or view['token']!=self._view_token() or not self.drawing:
+            if not self.build_view(): return
+            view=self._view
+        try:
+            frame=self.preview_frame(self.position,playing=self.playing)
+        except Exception as exc:
+            # An invalid/expensive brush configuration must not throw out of
+            # the Qt signal handler and terminate the application.
+            self.status.setText('Preview could not be updated: '+str(exc)[:220])
+            return
+        self.canvas.frame=frame
+        if view['all']: self.canvas.highlight=[]
+        self.canvas.update()
+        self.stage_timeline.progress=max(0.,min(1.,self.position)); self.stage_timeline.update()
+        if not view['all'] and self.order.selectedItems(): self.update_highlight()
+        length=view['length']
+        self.clock.setText(timecode(self.position*length))
+        self.clock_total.setText(timecode(length))
+        if not self.playing: self.start_prerender()
+
+    def build_view(self):
+        """Options and timeline for the current state (after any change)."""
+        self.clear_frames(); self._view=None
         self.sync_workspace()
         if not self.drawing:
             self.stage_timeline.update_state(0,0,0,0)
             self.clock.setText(timecode(0)); self.clock_total.setText(timecode(0))
-            return
+            return False
         options=self.options()
         if not (self.builder and self.builder.isRunning()):
             if self.ensure_brush_plan(options) is False:
-                return                    # the new brush route is being planned
+                return False              # the new brush route is being planned
+        ratio=options['height']/options['width']
         if self.all_scenes():
-            self.refresh_all_scenes(options); return
+            width,height=self.PREVIEW_WIDTH,round(self.PREVIEW_WIDTH*ratio)
+            try:
+                lengths,joins=self.scene_timeline(width,height)
+            except Exception as exc:
+                self.status.setText('Preview could not be updated: '+str(exc)[:220]); return False
+            segments=[]
+            for n,(length,join) in enumerate(zip(lengths,joins)):
+                segments.append((f'{n+1} · {self.scene_label(n)}',length,'scene'))
+                if join>0: segments.append((self.scenes[n]['transition'],join,'join'))
+            self.stage_timeline.set_scenes(segments,current=self.scene_index)
+            total=sum(lengths)+sum(joins)
+            self.stage_timeline.update_state(total,0,0,self.position)
+            self._view=dict(all=True,length=total,ratio=ratio,token=self._view_token())
+            return True
         self.stage_timeline.set_scenes(None)
         self.stage_timeline.set_audio(self.timeline_audio())
         self.stage_timeline.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() \
@@ -1970,49 +2168,98 @@ class Window(QMainWindow):
             options['hold_duration'] if options['final_image'] is not None else 0,
             self.position,erase['seconds'] if erase else 0)
         options.pop('fps')
-        size=options['artwork_scale']
         # The artwork is scaled after rasterization. Compensating the hand
         # before that transform keeps its FINAL size independent of Artwork
         # Size, while its pen-tip coordinates move with the artwork.
-        options['hand_scale']/=size
-        ratio=options['height']/options['width']
-        options['width']=960; options['height']=round(960*ratio)
+        options['hand_scale']/=options['artwork_scale']
         options['ghost']=.22            # Hand only: still show faintly what is being written
-        try:
-            # Same frame composition as the export (hand layer, artwork size).
-            from frame_render import compose_frame
-            self.canvas.frame=compose_frame(self.drawing,self.position,options,self.preview_camera(options))
-            self.canvas.update()
-        except Exception as exc:
-            # An invalid/expensive brush configuration must not throw out of
-            # the Qt signal handler and terminate the application.
-            self.status.setText('Preview could not be updated: '+str(exc)[:220])
+        from scenes import on_page, for_page
+        page=on_page(self.scenes,self.scene_index) and options.get('layers')!='hand'
+        if page: options=for_page(options)  # pictures before it stay on the page
+        self._view=dict(all=False,options=options,page=page,ratio=ratio,length=self.timeline_length(),
+                        token=self._view_token())
+        return True
+
+    def render_view(self,fraction,width):
+        """One preview frame of the current view at this width."""
+        view=self._view
+        height=round(width*view['ratio'])
+        if view['all']:
+            return self.all_scenes_frame(width,height,fraction)[0]
+        from frame_render import compose_frame
+        options=dict(view['options'],width=width,height=height)
+        if view['page']:
+            from scenes import stack
+            return stack(self.page_base(self.scene_index,width,height),
+                         compose_frame(self.drawing,fraction,options,None))
+        return compose_frame(self.drawing,fraction,options,self.preview_camera(options))
+
+    def frame_index(self,fraction):
+        count=max(1,round(self._view['length']*self.PREVIEW_FPS))
+        return max(0,min(count,round(fraction*count))),count
+
+    def preview_frame(self,fraction,playing=False):
+        """Paused: the exact frame. Playing: the nearest video frame, ready-made when possible,
+        else drawn smaller if the computer cannot keep up."""
+        if not playing:
+            return self.render_view(fraction,self.PREVIEW_WIDTH)
+        index,count=self.frame_index(fraction)
+        cached=self._frames.get(index)
+        if cached is not None:
+            self._frames.move_to_end(index)
+            return cached
+        cost=getattr(self,'_play_cost',0.)
+        width=self.PREVIEW_WIDTH if cost<.03 else 768 if cost<.045 else 640
+        began=time.perf_counter()
+        frame=self.render_view(index/count,width)
+        spent=time.perf_counter()-began
+        self._play_cost=spent if not cost else .7*cost+.3*spent*self.PREVIEW_WIDTH/width
+        if width==self.PREVIEW_WIDTH: self.keep_frame(index,frame)
+        return frame
+
+    def keep_frame(self,index,frame):
+        size=frame.sizeInBytes()
+        while self._frames and self._frame_bytes+size>self.FRAME_BUDGET:
+            _,old=self._frames.popitem(last=False); self._frame_bytes-=old.sizeInBytes()
+        self._frames[index]=frame; self._frame_bytes+=size
+
+    def start_prerender(self):
+        """When the preview is idle, make the next frames ready so Play is smooth."""
+        if not hasattr(self,'prerender_timer'):
+            self.prerender_timer=QTimer(self); self.prerender_timer.setSingleShot(True)
+            self.prerender_timer.timeout.connect(self.prerender_step)
+        self.prerender_timer.start(450)
+
+    def prerender_step(self):
+        view=getattr(self,'_view',None)
+        if (view is None or not self.isVisible() or self.playing or self.busy or self._preparing or not self.drawing
+                or (self.builder and self.builder.isRunning()) or (self.worker and self.worker.isRunning())
+                or view['token']!=self._view_token()):
             return
-        if self.order.selectedItems(): self.update_highlight()
-        length=self.timeline_length()
-        self.clock.setText(timecode(self.position*length))
-        self.clock_total.setText(timecode(length))
-    def refresh_all_scenes(self,options):
-        ratio=options['height']/options['width']
-        width,height=960,round(960*ratio)
+        if QApplication.mouseButtons()!=Qt.MouseButton.NoButton:
+            self.prerender_timer.start(200); return     # the user is dragging something
+        index,count=self.frame_index(self.position)
+        frame_bytes=max(1,next(iter(self._frames.values())).sizeInBytes()) if self._frames else 0
+        if frame_bytes and self._frame_bytes+frame_bytes>self.FRAME_BUDGET: return
+        # From the playhead to the end, then from the start.
+        target=next((i for i in list(range(index,count+1))+list(range(0,index)) if i not in self._frames),None)
+        if target is None: return
         try:
-            frame,k,lengths,joins=self.all_scenes_frame(width,height)
-        except Exception as exc:
-            self.status.setText('Preview could not be updated: '+str(exc)[:220]); return
-        self.canvas.frame=frame; self.canvas.highlight=[]; self.canvas.update()
-        segments=[]
-        for n,(length,join) in enumerate(zip(lengths,joins)):
-            segments.append((f'{n+1} · {self.scene_label(n)}',length,'scene'))
-            if join>0: segments.append((self.scenes[n]['transition'],join,'join'))
-        self.stage_timeline.set_scenes(segments,current=self.scene_index)
-        self.stage_timeline.update_state(sum(lengths)+sum(joins),0,0,self.position)
-        total=sum(lengths)+sum(joins)
-        self.clock.setText(timecode(self.position*total))
-        self.clock_total.setText(timecode(total))
+            self.keep_frame(target,self.render_view(target/count,self.PREVIEW_WIDTH))
+        except Exception:
+            return
+        self.prerender_timer.start(1)
+
+    def ready_frames(self):
+        """(frames ready, frames in the video) of the preview (for tests and the status)."""
+        if getattr(self,'_view',None) is None: return 0,0
+        return len(self._frames),self.frame_index(1.)[1]+1
+
     def scrub(self,value):
         self.position=value/1000
         if self.playing and self.preview_sound is not None:
             self.sync_preview_sound()     # user moved the playhead while playing
+        self._playhead_only=True
         self.refresh()
     def toggle(self):
         if not self.drawing or self.busy: return
@@ -2041,8 +2288,11 @@ class Window(QMainWindow):
         self.sync_preview_sound()
     def tick(self):
         if not self.playing or not self.drawing or self.busy: return
-        now=time.perf_counter(); self.position=min(1,self.position+(now-self.last)/self.timeline_length()); self.last=now
-        self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False); self.refresh()
+        view=getattr(self,'_view',None)
+        length=view['length'] if view is not None and view['token']==self._view_token() else self.timeline_length()
+        now=time.perf_counter(); self.position=min(1,self.position+(now-self.last)/max(1e-3,length)); self.last=now
+        self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False)
+        self._playhead_only=True; self.refresh()
         if self.position>=1:
             self.playing=False; self.sync_workspace()
             if self.preview_sound is not None: self.preview_sound.stop()

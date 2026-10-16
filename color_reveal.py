@@ -44,6 +44,23 @@ def load_color_image(filename, clean=False):
     return qimage.copy(left, top, right - left, bottom - top)
 
 
+def clean_qimage(image):
+    """A colored picture (QImage) with complete transparency (png_cleanup), cropped."""
+    if image is None or image.isNull():
+        return image
+    from png_cleanup import clean_background
+    rgba = image.convertToFormat(QImage.Format.Format_RGBA8888)
+    pil = Image.frombuffer('RGBA', (rgba.width(), rgba.height()), bytes(rgba.constBits()),
+                           'raw', 'RGBA', rgba.bytesPerLine(), 1)
+    cleaned = clean_background(pil)
+    bbox = cleaned.getchannel('A').point(lambda value: 255 if value >= 8 else 0).getbbox()
+    if bbox is None:
+        return image                    # nothing would be left: keep the picture as it is
+    cleaned = cleaned.crop(bbox)
+    return QImage(cleaned.tobytes('raw', 'RGBA'), cleaned.width, cleaned.height,
+                  QImage.Format.Format_RGBA8888).copy()
+
+
 def timeline_duration(draw_duration, final_image=None, fade_duration=.4, hold_duration=.6):
     base = max(.001, float(draw_duration))
     if final_image is None or final_image.isNull():

@@ -160,6 +160,13 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Several pictures on one page, smoother playback (v0.5.3-experimental.45)
+
+- **Several pictures on one page:** in the scene strip, click **+ Add picture**. The new picture is drawn on the same page, and the pictures before it stay there. Import its artwork, then drag it on the preview to place it. In the strip, a "+" marks a picture on the same page. You can also choose "Same page" under "Then" for any scene.
+- **Move a picture:** drag it on the preview, or set Position X / Y in the Animation tab. Click "Center" to put it back.
+- **Smoother playback:** while the preview is idle, StrokeScribe makes the next frames ready, so Play runs smoothly at the video's frame rate. If a frame is not ready and your computer is busy, it is drawn a little smaller while playing.
+- **Clean colour picture in saved projects:** the background clean-up (fake checkerboard, faint leftovers) also works on the colour picture stored in older projects. Untick "Clean the PNG's background" to see it as saved.
+
 ## Timeline, autosave and update banner (v0.5.3-experimental.44)
 
 - **Tabs in order of work:** Animation, Hand, Sound, Export.
