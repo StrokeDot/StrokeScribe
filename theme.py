@@ -137,7 +137,7 @@ QPushButton#playButton:disabled {{ background: {c['raised']}; color: {c['dim']};
 QToolButton {{ background: {c['raised']}; color: {c['text']}; border: 1px solid transparent;
     border-radius: 7px; padding: 6px 10px; font-weight: 600; }}
 QToolButton:hover {{ background: {c['raised_hover']}; }}
-QToolButton::menu-indicator {{ image: none; width: 0px; }}
+QToolButton::menu-indicator, QPushButton::menu-indicator {{ image: none; width: 0px; }}
 QMenu {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['border_strong']}; padding: 4px; }}
 QMenu::item {{ padding: 6px 18px; border-radius: 4px; }}
 QMenu::item:selected {{ background: {c['selection']}; }}
