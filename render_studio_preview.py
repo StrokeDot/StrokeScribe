@@ -28,6 +28,8 @@ for theme_name in ('dark','light'):
     snapshot(f'studio-{theme_name}-hand.png')
     window.inspector_tabs.setCurrentIndex(2)
     snapshot(f'studio-{theme_name}-export.png')
+    window.inspector_tabs.setCurrentIndex(3)
+    snapshot(f'studio-{theme_name}-sound.png')
     window.inspector_tabs.setCurrentIndex(0)
     window.set_busy('Preparing your drawing',62,'Planning the brush route…')
     snapshot(f'studio-{theme_name}-loading.png')

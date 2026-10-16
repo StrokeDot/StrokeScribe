@@ -58,7 +58,7 @@ def prepare(path, settings, hand):
         s = dict(settings)
         image = None
         if color is not None:
-            image = load_color_image(str(color))
+            image = load_color_image(str(color), clean=bool(settings.get('clean_color', True)))
             s['use_color'] = True
         else:
             s['use_color'] = False

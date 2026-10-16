@@ -160,6 +160,12 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Sound tab and complete transparency (v0.5.3-experimental.43)
+
+- **Sound tab** (Inspector: Animation | Hand | Export | **Sound**): the pencil/brush/eraser sounds, Create a sound with AI, and the voiceover / music track are all here now. Also View → Sound settings.
+- **Clean the PNG's background** (Animation tab, under *Load matching colored PNG…*, on by default): the matching colored PNG of an SVG gets complete transparency. A painted checkerboard ("fake transparency") or a plain sheet behind the artwork, and faint leftovers, become transparent. Only background connected to the picture's edges is removed, so white or grey parts inside the artwork stay; photos and textured paper are left alone. The note under the button says how much was cleaned. Untick it to use the PNG exactly as it is.
+- The image import option is now **Clean the background (fake transparency, leftovers)** and does the same, plus the faint-pixel clean-up it did before.
+
 ## Windows installer (v0.5.3-experimental.42)
 
 - **StrokeScribe-Setup-<version>.exe** (GitHub → Releases): a normal Windows installer with the StrokeScribe logo. It needs no Python and no Setup.cmd: a private Python with every package is included. It installs for your user only (no administrator), into `%LOCALAPPDATA%\Programs\StrokeScribe`, adds StrokeScribe to the Start menu (and the desktop if you like), and appears in *Settings → Apps* to uninstall.

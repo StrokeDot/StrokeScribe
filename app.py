@@ -869,7 +869,7 @@ class Window(QMainWindow):
                       'sound_on','sound_volume','sound_preview','preview_background','image_detail',
                       'image_style','image_animation_style','clean_faint',
                       'erase_mode','erase_time','erase_size','eraser',
-                      'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export','export_layers')
+                      'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export','export_layers','clean_color')
 
     def project_state(self):
         """Everything needed to reopen this project: the edited scene plus all scenes."""
@@ -1684,16 +1684,36 @@ class Window(QMainWindow):
         self.hand=image; self.hand_builtin=True; self.hand_path=None
         self.hand_name.setText('Hand: StrokeScribe built-in hand')
         if refresh: self.refresh()
+    def reload_color(self):
+        """(Re)load the matching colored PNG, cleaned or not."""
+        name=getattr(self,'color_path',None)
+        if not name or self.source_type.currentIndex(): return False
+        clean=self.clean_color.isChecked()
+        try:
+            self.final_image=load_color_image(name,clean=clean)
+        except Exception as e:
+            QMessageBox.warning(self,'Final artwork',str(e)); return False
+        note=''
+        if clean:
+            try:
+                from PIL import Image
+                from png_cleanup import clean_background, report
+                with Image.open(name) as im:
+                    rgba=im.convert('RGBA')
+                    note=' • '+report(rgba,clean_background(rgba))
+            except Exception:
+                note=''
+        self.color_note.setText(Path(name).name+note)
+        self.refresh()
+        return True
+
     def load_color(self):
         if self.source_type.currentIndex():
             QMessageBox.information(self,'Image colors','Image mode uses the imported image. Switch to SVG to load a matching colored PNG.'); return
         name,_=QFileDialog.getOpenFileName(self,'Load final colored artwork','','PNG (*.png)')
         if not name: return
-        try:
-            self.final_image=load_color_image(name)
-        except Exception as e:
-            QMessageBox.warning(self,'Final artwork',str(e)); return
-        self.color_note.setText(Path(name).name+' • use a transparent PNG that matches the SVG drawing')
+        self.color_path=name
+        if not self.reload_color(): return
         self.use_color.setEnabled(True)
         self.use_color.setChecked(True)
         self.refresh()

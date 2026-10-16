@@ -69,9 +69,11 @@ FAINT_ALPHA=64  # pixels under ~25% visible: background-removal leftovers
 
 
 def clean_faint_pixels(image, with_box=False):
-    """Make nearly invisible leftover pixels fully transparent."""
-    alpha=image.getchannel('A').point(lambda a:0 if a<FAINT_ALPHA else a)
-    cleaned=image.copy(); cleaned.putalpha(alpha)
+    """Make the transparency complete: painted checkerboards or plain sheets behind
+    the artwork and nearly invisible leftover pixels become fully transparent."""
+    from png_cleanup import clean_background
+    cleaned=clean_background(image)
+    alpha=cleaned.getchannel('A')
     bbox=alpha.getbbox() or (0,0,image.width,image.height)
     result=cleaned.crop(bbox)
     return (result,bbox) if with_box else result

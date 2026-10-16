@@ -11,9 +11,25 @@ from PySide6.QtGui import QImage, QPainter, QPainterPath, QPen, QColor
 from engine import render
 
 
-def load_color_image(filename):
-    """Load a PNG without changing its colors; crop only transparent margins."""
+def load_color_image(filename, clean=False):
+    """Load a PNG without changing its colors; crop only transparent margins.
+
+    clean: make the transparency complete first (png_cleanup): a painted
+    checkerboard or plain sheet behind the artwork and faint leftovers become
+    transparent."""
     filename = Path(filename)
+    if clean:
+        from png_cleanup import clean_background
+        with Image.open(filename) as im:
+            if im.format != 'PNG':
+                raise ValueError('Choose a PNG image (preferably with transparency).')
+            cleaned = clean_background(im.convert('RGBA'))
+        bbox = cleaned.getchannel('A').point(lambda value: 255 if value >= 8 else 0).getbbox()
+        if bbox is None:
+            raise ValueError('The PNG contains no visible artwork.')
+        cleaned = cleaned.crop(bbox)
+        data = cleaned.tobytes('raw', 'RGBA')
+        return QImage(data, cleaned.width, cleaned.height, QImage.Format.Format_RGBA8888).copy()
     with Image.open(filename) as im:
         if im.format != 'PNG':
             raise ValueError('Choose a PNG image (preferably with transparency).')

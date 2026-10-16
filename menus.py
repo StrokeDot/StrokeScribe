@@ -51,7 +51,7 @@ def _toggle(menu, text, box):
 
 
 def _go(w, tab):
-    """Show an Inspector tab (Animation 0, Hand 1, Export 2)."""
+    """Show an Inspector tab (Animation 0, Hand 1, Export 2, Sound 3)."""
     w.inspector_tabs.setCurrentIndex(tab)
 
 
@@ -111,6 +111,7 @@ def build_menus(w):
     view.addAction('Animation settings', lambda: _go(w, 0))
     view.addAction('Hand settings', lambda: _go(w, 1))
     view.addAction('Export settings', lambda: _go(w, 2))
+    view.addAction('Sound settings', lambda: _go(w, 3))
 
     # ---------------------------------------------------------------- Effects
     fx = bar.addMenu('Effe&cts'); w.menus['effects'] = fx
@@ -125,6 +126,7 @@ def build_menus(w):
     _toggle(fx, 'Show hand while painting', w.show_paint_hand)
     fx.addSeparator()
     _toggle(fx, 'Pencil, brush and eraser sounds', w.sound_on)
+    fx.addAction('Sound settings…', lambda: _go(w, 3))
     fx.addAction('Add a pencil sound…', lambda: w.choose_sound_file('sound_pencil_file'))
     fx.addAction('Create a sound with AI…', lambda: w.open_create_image('sound'))
     fx.addSeparator()
