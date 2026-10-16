@@ -16,21 +16,7 @@ from version import APP_VERSION, DISPLAY_NAME, RELEASE_DATE
 BRAND_ICON = Path(__file__).resolve().parent / 'assets' / 'strokescribe_icon.png'
 
 
-DONE_SOUND = Path(__file__).resolve().parent / 'assets' / 'export_done.wav'
 DEFAULT_HAND = Path(__file__).resolve().parent / 'assets' / 'default_hand.png'
-
-
-def play_done_sound():
-    """Short chime when an export finishes successfully (never on failure)."""
-    try:
-        if sys.platform == 'win32' and DONE_SOUND.is_file():
-            import winsound
-            winsound.PlaySound(str(DONE_SOUND),
-                               winsound.SND_FILENAME | winsound.SND_ASYNC)
-        else:
-            QApplication.beep()
-    except Exception:
-        pass  # A missing sound must never disturb a finished export.
 
 
 def format_seconds(seconds):
@@ -219,6 +205,18 @@ class Exporter(QThread):
                 progress=self.progress.emit,interrupted=self.isInterruptionRequested))
         except Exception as e: self.failed.emit(str(e))
 
+class PlanWorker(QThread):
+    """Plans a brush route in the background (brush width / spacing changes)."""
+    def __init__(self,drawing,image,brush_width,spacing):
+        super().__init__()
+        self.args=(drawing,image,brush_width,spacing)
+    def run(self):
+        try:
+            from adaptive_hand import plan_for
+            plan_for(*self.args)
+        except Exception:
+            pass
+
 class SceneExporter(QThread):
     """All scenes as one video (scenes.export_scenes), off the UI thread."""
     progress=Signal(int,int); done=Signal(str); failed=Signal(str)
@@ -341,6 +339,8 @@ class Window(QMainWindow):
         from studio_workspace import build_workspace
         build_workspace(self,Canvas,BRAND_ICON)
         self.canvas.on_click=self.click_preview
+        from menus import build_menus
+        build_menus(self)
         self.watch_settings()
         self.update_sound_buttons()
         self.latest_version=None
@@ -452,7 +452,14 @@ class Window(QMainWindow):
         from adaptive_hand import plan_ready, plan_for
         bw,sp=options.get('brush_width',.14),options.get('stroke_spacing',.55)
         if plan_ready(self.drawing,image,bw,sp):
-            return
+            return True
+        quiet=getattr(self,'_quiet_plan',False)
+        self._quiet_plan=False
+        if quiet and self.canvas.frame is not None:
+            # Small change (brush width / spacing): plan in the background and
+            # keep showing the last picture; no loading card.
+            self.plan_in_background(image,bw,sp)
+            return False
         self._preparing=True
         try:
             self.show_busy_now('Preparing brush route',
@@ -461,6 +468,58 @@ class Window(QMainWindow):
         finally:
             self._preparing=False
             self.clear_busy()
+        return True
+
+    def plan_in_background(self,image,bw,sp):
+        key=(id(self.drawing),image.cacheKey(),round(bw,4),round(sp,4))
+        worker=getattr(self,'plan_worker',None)
+        if worker is not None and worker.isRunning():
+            self._plan_pending=True
+            return
+        if getattr(self,'_plan_key',None)==key and worker is not None:
+            return
+        self._plan_key=key; self._plan_pending=False
+        self.plan_worker=PlanWorker(self.drawing,image,bw,sp)
+        self.plan_worker.finished.connect(self.plan_finished)
+        self.timeline_status.setText('Updating the brush route…')
+        self.plan_worker.start()
+
+    def plan_finished(self):
+        self.timeline_status.setText('')
+        if getattr(self,'_plan_pending',False):
+            self._quiet_plan=True
+        self.refresh()
+
+    def prepare_eraser(self,*args):
+        """Choosing an eraser style: plan it now behind the loading card."""
+        if self._preparing or not self.drawing or not self.erase_mode.currentIndex():
+            self.refresh(); return
+        options=self.preview_options()
+        if options is None or not options.get('erase'):
+            self.refresh(); return
+        from frame_render import split_erase, erase_setup
+        opts,erase,_,_=split_erase(self.drawing,1.,options)
+        self._preparing=True
+        try:
+            self.show_busy_now('Preparing the eraser','Finding where the picture is…')
+            erase_setup(self.drawing,opts,erase)
+        except Exception as exc:
+            self.status.setText('Eraser could not be prepared: '+str(exc)[:160])
+        finally:
+            self._preparing=False
+            self.clear_busy()
+        self.refresh()
+
+    def preview_options(self):
+        """The options the preview renders with (preview size, hand scale compensated)."""
+        if not self.drawing: return None
+        options=self.options()
+        options.pop('fps',None)
+        options['hand_scale']/=options['artwork_scale']
+        ratio=options['height']/options['width']
+        options['width']=960; options['height']=round(960*ratio)
+        options['ghost']=.22
+        return options
 
     def open_setup(self):
         """Setup & system check window (also opened from the ⚙ button)."""
@@ -1160,7 +1219,7 @@ class Window(QMainWindow):
         from batch_export import BatchExportDialog
         if self.worker and self.worker.isRunning():
             QMessageBox.information(self,'Batch export','Please wait for the current export to finish.'); return
-        BatchExportDialog(self,self.settings_state(),self.hand,play_done_sound).exec()
+        BatchExportDialog(self,self.settings_state(),self.hand).exec()
 
     # ------------------------------------------------------------ AI images
     def open_create_image(self,task=None):
@@ -1598,7 +1657,7 @@ class Window(QMainWindow):
     def update_sound_buttons(self):
         for key,(button,text) in self.sound_file_buttons.items():
             path=self.sound_files.get(key)
-            button.setText(f'{text}: {Path(path).stem[:22]}' if path else f'{text}: built-in sound — choose recording…')
+            button.setText(f'{text}: {Path(path).stem[:22]}' if path else f'{text}: no sound — add a sound…')
 
     def choose_sound_file(self,key):
         import audio_track
@@ -1655,7 +1714,9 @@ class Window(QMainWindow):
 
     def schedule_brush_refresh(self,*args):
         # Debounce potentially expensive plan_for() rebuilds while controls
-        # are changing. A single preview reflects the final requested value.
+        # are changing. A single preview reflects the final requested value,
+        # planned quietly in the background (no loading card).
+        self._quiet_plan=True
         self.brush_preview_timer.start()
 
     def image_paint_method(self):
@@ -1777,7 +1838,8 @@ class Window(QMainWindow):
             return
         options=self.options()
         if not (self.builder and self.builder.isRunning()):
-            self.ensure_brush_plan(options)
+            if self.ensure_brush_plan(options) is False:
+                return                    # the new brush route is being planned
         if self.all_scenes():
             self.refresh_all_scenes(options); return
         self.stage_timeline.set_scenes(None)
@@ -1884,7 +1946,7 @@ class Window(QMainWindow):
                              mp4=self.mp4.isChecked(),
                              mp4_background=self.mp4_background.currentText().lower(),
                              sound_volume=self.sound_volume.value()/100 if self.sound_on.isChecked() else None)
-        self.worker.progress.connect(self.export_progress); self.worker.done.connect(lambda p:self.export_done('Saved: '+p)); self.worker.done.connect(lambda _p:play_done_sound()); self.worker.failed.connect(lambda e:self.export_done('Export stopped: '+e)); self.worker.finished.connect(self.export_finished)
+        self.worker.progress.connect(self.export_progress); self.worker.done.connect(lambda p:self.export_done('Saved: '+p)); self.worker.failed.connect(lambda e:self.export_done('Export stopped: '+e)); self.worker.finished.connect(self.export_finished)
         self.export.setEnabled(False); self.quick_export.setEnabled(False); self.cancel.setEnabled(True); self.status.setText('Exporting locally…')
         # Export timer: elapsed time, frame count and an estimate of time left.
         self.export_started=time.perf_counter(); self.export_step=(0,0); self.export_encoding=False

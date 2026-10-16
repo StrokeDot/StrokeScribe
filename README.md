@@ -160,6 +160,13 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Menu bar, no built-in sounds, check marks, quieter loading (v0.5.3-experimental.40)
+
+- **Menu bar** like other programs: **File** (open, save, import, Library, export, batch export, update, exit), **Edit** (undo, redo, delete/reverse lines, add/delete scene), **View** (dark mode, preview background, this scene / all scenes), **Effects** (paint mode, pen movement, camera follow, erase at the end, painting hand, sounds, Hand only export, MP4 background, Auto timing, AI) and **Help** (setup, updates, about). Menu choices are the same settings as in the panels.
+- **No built-in sounds**: the generated pencil/brush/eraser sounds and the export chime are gone. Sound comes only from sounds you add (Export tab or Effects menu) or make with Create sound; a tool without a sound is silent.
+- **Check marks**: ticked boxes and menu choices now show a white ✓.
+- **Less loading**: changing Brush width or Stroke spacing re-plans the brush quietly in the background (the last picture stays; *Updating the brush route…* on the timeline). The loading card appears only for bigger changes: a new paint mode, a new image, or choosing an eraser style.
+
 ## Update in the app (v0.5.3-experimental.39)
 
 - **Project menu → Update StrokeScribe…**: updates this installation in place. No unzipping, no Setup.cmd. It replaces only the app's own files; your `.venv` packages, Library, projects, settings and AI models stay. New Python packages are installed only when a version needs them. The previous version is kept (**Go back to the previous version**).

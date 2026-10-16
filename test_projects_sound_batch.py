@@ -22,7 +22,11 @@ class Pen:
 
 
 class SoundTests(unittest.TestCase):
-    def test_scratch_only_while_drawing_softer_brush_when_painting(self):
+    def tone(self, hz, seconds=2.):
+        t = np.arange(int(seconds * sound.RATE)) / sound.RATE
+        return (np.sin(2 * np.pi * hz * t) * .5).astype(np.float32)
+
+    def test_sounds_only_while_the_pen_moves_and_none_built_in(self):
         samples = []
         for i in range(6 * 120 + 1):
             t = i / 120
@@ -37,16 +41,20 @@ class SoundTests(unittest.TestCase):
             else:
                 s = Pen(None, None)
             samples.append((t, s))
-        audio = sound.synthesize(samples, 6, 1920, 1080)
+        # No recordings: complete silence (there are no built-in sounds).
+        self.assertEqual(np.abs(sound.synthesize(samples, 6, 1920, 1080)).max(), 0)
+        recordings = {'draw': self.tone(900), 'paint': self.tone(300)}
+        audio = sound.synthesize(samples, 6, 1920, 1080, recordings=recordings)
         self.assertEqual(audio.shape, (6 * sound.RATE, 2))
         mono = audio.astype(float).mean(1)
         rms = lambda a, b: float(np.sqrt((mono[int(a * sound.RATE):int(b * sound.RATE)] ** 2).mean()))
         self.assertGreater(rms(.2, 1.8), 1000)               # pencil
         self.assertLess(rms(2.1, 2.4), 5)                    # pen lift: silent
         self.assertGreater(rms(4.2, 5.3), 200)               # brush
-        self.assertLess(rms(4.2, 5.3), rms(.2, 1.8))         # brush is softer
         self.assertLess(rms(5.7, 5.95), 5)                   # after painting: silent
-        quiet = sound.synthesize(samples, 6, 1920, 1080, volume=.25)
+        only_pencil = sound.synthesize(samples, 6, 1920, 1080, recordings={'draw': self.tone(900)})
+        self.assertLess(np.abs(only_pencil[int(4.3 * sound.RATE):int(5.2 * sound.RATE)]).max(), 5)  # no brush sound
+        quiet = sound.synthesize(samples, 6, 1920, 1080, volume=.25, recordings=recordings)
         self.assertLess(np.abs(quiet).max(), np.abs(audio).max())
 
     def test_recorded_pencil_sound_is_used(self):
@@ -213,6 +221,10 @@ class StudioFeatureTests(unittest.TestCase):
         options = w.options()
         options.pop('fps')
         options.update(width=480, height=270, duration=2.)
+        t = np.arange(sound.RATE) / sound.RATE
+        mono = (np.sin(2 * np.pi * 800 * t) * 9000).astype(np.int16)
+        pencil = sound.write_wav(self.dir / 'pencil.wav', np.stack([mono, mono], 1))
+        options['sound_files'] = (str(pencil), '', '')
         path = soundtrack(w.drawing, options, self.dir / 's.wav', .8)
         with wave.open(str(path)) as f:
             frames = f.getnframes()

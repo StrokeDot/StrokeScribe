@@ -827,8 +827,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.sound_on.setToolTip('A pencil sound while the pen draws (silent during pen lifts), a brush sound '
                           'while painting and an eraser sound while erasing, matched to the animation.')
     output_l.addWidget(w.sound_on)
-    output_l.addWidget(caption('Use real recordings: a few seconds of a pencil on paper (also brush and '
-                               'eraser if you like). They play only while the pen moves.'))
+    output_l.addWidget(caption('Add your own sounds: a few seconds of a pencil on paper (and a brush or an '
+                               'eraser if you like). They play only while the pen moves. No sound is added '
+                               'until you choose one.'))
     create_sound=QPushButton('✦ Create a sound with AI…')
     create_sound.setToolTip('Describe a sound (pencil on paper, brush, eraser) and let a free AI model '
                             'make it on your PC.')
@@ -841,8 +842,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
         button.setToolTip(f'Choose a recording (MP3, WAV, M4A…) for the {text.lower()}.')
         button.clicked.connect(lambda checked=False,k=key: w.choose_sound_file(k))
         row.addWidget(button,1)
-        reset=QPushButton('Built-in')
-        reset.setToolTip('Use the built-in (generated) sound instead of a recording.')
+        reset=QPushButton('Remove')
+        reset.setToolTip(f'No {text.lower()} sound.')
         reset.clicked.connect(lambda checked=False,k=key: w.set_sound_file(k,None))
         row.addWidget(reset)
         output_l.addLayout(row)
@@ -1014,8 +1015,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.paint_hand_size.valueChanged.connect(w.refresh)
     w.camera.currentIndexChanged.connect(w.refresh)
     w.pen_ease.currentIndexChanged.connect(w.refresh)
-    for widget in (w.erase_mode,w.eraser):
-        widget.currentIndexChanged.connect(w.refresh)
+    w.erase_mode.currentIndexChanged.connect(w.prepare_eraser)
+    w.eraser.currentIndexChanged.connect(w.refresh)
     for widget in (w.erase_time,w.erase_size):
         widget.valueChanged.connect(w.refresh)
     w.stroke_spacing.valueChanged.connect(w.schedule_brush_refresh)

@@ -1,10 +1,10 @@
 """Pencil, brush and eraser sounds that follow the pen.
 
-The soundtrack is synthesised from the pen track (motion.py), so it always
-matches the animation: a scratchy pencil sound only while the pen is down and
-moving (louder when it moves faster, silent during pen lifts), and a soft brush
-sound while the colours are painted. Sounds pan gently with the hand's left /
-right position. Generated with numpy; no sound files or extra packages.
+The sounds are YOUR recordings (or sounds made with Create sound): the
+soundtrack plays them only while the pen is down and moving (louder when it
+moves faster, silent during pen lifts), following the pen track (motion.py) so
+it always matches the animation, and pans gently with the hand's position.
+There are no built-in sounds.
 """
 from __future__ import annotations
 
@@ -15,14 +15,6 @@ import numpy as np
 
 RATE = 44100
 TRACK_RATE = 120.
-
-
-def _band(noise, low, high, rate=RATE):
-    spectrum = np.fft.rfft(noise)
-    freqs = np.fft.rfftfreq(len(noise), 1 / rate)
-    # Soft-edged band so the sound is not 'ringing'.
-    gain = 1 / (1 + (low / np.maximum(freqs, 1)) ** 4) / (1 + (freqs / high) ** 4)
-    return np.fft.irfft(spectrum * gain, len(noise))
 
 
 def _smooth(values, samples):
@@ -61,45 +53,23 @@ def envelopes(samples, width, height):
 def synthesize(samples, total_seconds, width, height, volume=.8, seed=11, recordings=None):
     """Stereo int16 soundtrack (n, 2) for the animation.
 
-    recordings: {'draw'|'paint'|'rub': mono samples}; a recorded sound replaces
-    the built-in (generated) one for that tool."""
-    recordings = recordings or {}
+    recordings: {'draw'|'paint'|'rub': mono samples} — YOUR recordings (or sounds
+    made with Create sound). There are no built-in sounds: a tool without a
+    recording is silent.
+    """
+    recordings = {k: v for k, v in (recordings or {}).items() if v is not None}
     count = max(1, int(round(total_seconds * RATE)))
-    t_audio = np.arange(count) / RATE
-    if not samples:
+    if not samples or not recordings:
         return np.zeros((count, 2), np.int16)
+    t_audio = np.arange(count) / RATE
     times, draw, paint, rub, pan = envelopes(samples, width, height)
     rng = np.random.default_rng(seed)
-    # Envelopes at audio rate, with ~12 ms attack/release.
-    env_draw = _smooth(np.interp(t_audio, times, draw), int(.012 * RATE))
-    env_paint = _smooth(np.interp(t_audio, times, paint), int(.03 * RATE))
     pan_a = _smooth(np.interp(t_audio, times, pan), int(.05 * RATE))
-    # Pencil: bright grainy scratch over a little paper body.
-    noise = rng.standard_normal(count)
-    scratch = _band(noise, 1200, 5500)
-    body = _band(rng.standard_normal(count), 250, 1000) * .45
-    grain = _band(rng.standard_normal(count), 15, 70)
-    grain = 1 + .9 * np.abs(grain) / (np.abs(grain).max() + 1e-9)
-    variation = 1 + .25 * _band(rng.standard_normal(count), .5, 3) / (1e-9 + np.abs(_band(rng.standard_normal(count), .5, 3)).max())
-    pencil = (scratch * grain + body) * env_draw * variation
-    if recordings.get('draw') is not None:
-        # Real pencil: full level while drawing at normal speed.
-        pencil = _bed(recordings['draw'], count, rng) * np.clip(env_draw * 1.5, 0, 1) * 1.4
-    # Brush: soft, darker swish with a slow bristle flutter.
-    swish = _band(rng.standard_normal(count), 250, 2200)
-    flutter = 1 + .3 * np.sin(2 * np.pi * 7 * t_audio + rng.uniform(0, 6))
-    brush = swish * flutter * env_paint * .8
-    if recordings.get('paint') is not None:
-        brush = _bed(recordings['paint'], count, rng) * np.clip(env_paint * 1.5, 0, 1)
-    # Eraser: a rougher, lower rubbing with a fast back-and-forth grain.
-    env_rub = _smooth(np.interp(t_audio, times, rub), int(.02 * RATE))
-    rubbing = _band(rng.standard_normal(count), 350, 2600)
-    rough = _band(rng.standard_normal(count), 20, 60)
-    rough = 1 + 1.2 * np.abs(rough) / (np.abs(rough).max() + 1e-9)
-    eraser = rubbing * rough * env_rub * .9
-    if recordings.get('rub') is not None:
-        eraser = _bed(recordings['rub'], count, rng) * np.clip(env_rub * 1.5, 0, 1)
-    mono = pencil + brush + eraser
+    mono = np.zeros(count)
+    for kind, level, attack, gain in (('draw', draw, .012, 1.4), ('paint', paint, .03, 1.), ('rub', rub, .02, 1.)):
+        if kind in recordings:
+            env = _smooth(np.interp(t_audio, times, level), int(attack * RATE))
+            mono += _bed(recordings[kind], count, rng) * np.clip(env * 1.5, 0, 1) * gain
     peak = np.abs(mono).max()
     if peak > 0:
         mono = mono / peak * .7 * max(0., min(1., volume))

@@ -74,6 +74,9 @@ def stylesheet(name, assets):
     c = PALETTES[name]
     light = name == 'light'
 
+    check = (Path(assets) / 'check.png').as_posix()
+    check_off = (Path(assets) / 'check_disabled.png').as_posix()
+
     def arrow(kind, disabled=False):
         stem = f'spin_{kind}' + ('_light' if light else '') + ('_disabled' if disabled else '')
         return (Path(assets) / f'{stem}.png').as_posix()
@@ -132,6 +135,14 @@ QToolButton::menu-indicator {{ image: none; width: 0px; }}
 QMenu {{ background: {c['panel']}; color: {c['text']}; border: 1px solid {c['border_strong']}; padding: 4px; }}
 QMenu::item {{ padding: 6px 18px; border-radius: 4px; }}
 QMenu::item:selected {{ background: {c['selection']}; }}
+QMenu::item:disabled {{ color: {c['dim']}; }}
+QMenu::separator {{ height: 1px; background: {c['border']}; margin: 4px 8px; }}
+QMenu::indicator {{ width: 14px; height: 14px; margin-left: 6px; border-radius: 3px; }}
+QMenu::indicator:checked {{ background: {c['accent']}; image: url({check}); }}
+QMenu::indicator:unchecked {{ background: transparent; }}
+QMenuBar {{ background: {c['window']}; color: {c['text']}; padding: 2px 6px; }}
+QMenuBar::item {{ padding: 5px 10px; background: transparent; border-radius: 4px; }}
+QMenuBar::item:selected {{ background: {c['selection']}; }}
 QComboBox, QDoubleSpinBox, QSpinBox, QPlainTextEdit, QListWidget {{
     background: {c['input']}; color: {c['text']}; border: 1px solid {c['border']};
     border-radius: 5px; padding: 5px 7px; selection-background-color: {c['selection']};
@@ -150,7 +161,8 @@ QListWidget::item:hover {{ background: {c['raised']}; }}
 QToolTip {{ background: {c['tooltip']}; color: {c['text']}; border: 1px solid {c['border_strong']}; padding: 6px; }}
 QCheckBox {{ spacing: 9px; padding: 4px 0px; background: transparent; }}
 QCheckBox::indicator {{ width: 16px; height: 16px; border-radius: 4px; }}
-QCheckBox::indicator:checked {{ background: {c['accent']}; border: 1px solid {c['accent']}; }}
+QCheckBox::indicator:checked {{ background: {c['accent']}; border: 1px solid {c['accent']}; image: url({check}); }}
+QCheckBox::indicator:checked:disabled {{ background: {c['border_strong']}; border: 1px solid {c['border_strong']}; image: url({check_off}); }}
 QCheckBox::indicator:unchecked {{ background: {c['input']}; border: 1px solid {c['border_strong']}; }}
 QCheckBox:disabled {{ color: {c['dim']}; }}
 QSlider::groove:horizontal {{ background: {c['border']}; height: 4px; border-radius: 2px; }}

@@ -82,7 +82,7 @@ class StudioTests(unittest.TestCase):
 
     def test_export_panel_additions(self):
         w=self.window
-        from app import format_seconds, play_done_sound, DONE_SOUND
+        from app import format_seconds
         # MP4 option follows the preview background choice.
         self.assertEqual([w.mp4_background.itemText(i) for i in range(3)],
                          ['White','Dark','Black'])
@@ -93,11 +93,9 @@ class StudioTests(unittest.TestCase):
         w.mp4.setChecked(True); APP.processEvents()
         self.assertTrue(w.mp4_background.isEnabled())
         self.assertTrue(w.keep_png.isEnabled())
-        # Timer formatting and the finish chime.
+        # Timer formatting.
         self.assertEqual(format_seconds(176.57),'2:57')
         self.assertEqual(format_seconds(3725),'1:02:05')
-        self.assertTrue(DONE_SOUND.is_file())
-        play_done_sound()
         # Number boxes get real arrow buttons whose images exist.
         style=w.styleSheet()
         self.assertIn('QAbstractSpinBox::up-arrow',style)
