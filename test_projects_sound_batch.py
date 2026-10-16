@@ -230,6 +230,7 @@ class StudioFeatureTests(unittest.TestCase):
         image = self.colour_image('photo.png')
         import projects
         w.fps.setValue(6); w.duration.setValue(.6)        # keep the saved project quick to export
+        w.sound_on.setChecked(True)                      # projects keep their own sound setting
         project = projects.save(self.dir / 'saved', w.project_state())
         settings = w.settings_state()
         settings.update(res='1920 × 1080', fps=6, duration=.6, speed=1., color_fade=.4, color_hold=.2,
