@@ -2373,11 +2373,9 @@ class Window(QMainWindow):
         import updater
         from update_dialog import UpdateWorker
         settings=updater.load_settings()
-        if not settings.get('token'):
-            self.open_updates(); return
         self.banner_update.setEnabled(False); self.banner_later.hide(); self.banner_news.hide()
         self.update_banner_text.setText('Downloading and installing the new version…')
-        self.banner_worker=UpdateWorker('update',token=settings['token'],branch=settings['branch'])
+        self.banner_worker=UpdateWorker('update',token=settings.get('token') or None,branch=settings['branch'])
         self.banner_worker.progress.connect(lambda p,text: self.update_banner_text.setText(text))
         self.banner_worker.done.connect(self.banner_update_done)
         self.banner_worker.failed.connect(self.banner_update_failed)

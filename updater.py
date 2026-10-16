@@ -1,8 +1,9 @@
 """Update StrokeScribe in place: no unzipping, no Setup.
 
 The newest version is read straight from the GitHub project (the branch where
-new versions are published). The project is private, so a read-only GitHub
-token is needed once; it is kept in this PC's StrokeScribe settings.
+new versions are published). The project is public, so no key is needed; a
+read-only GitHub key (token) is only used if the project is made private again.
+It is kept in this PC's StrokeScribe settings.
 
 Updating:
   1. download the version as a ZIP (or use a ZIP you already have),
@@ -114,10 +115,22 @@ def _request(url, token, accept='application/vnd.github+json', timeout=30):
     try:
         return urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=timeout)
     except urllib.error.HTTPError as exc:
-        if exc.code in (401, 403):
+        if token and exc.code in (401, 403, 404):
+            # An old or wrong key: the public project can still be read without it.
+            try:
+                return _request(url, None, accept, timeout)
+            except UpdateError:
+                pass
+        if exc.code == 403 and exc.headers.get('X-RateLimit-Remaining') == '0':
+            raise UpdateError('GitHub is busy: too many checks from this internet connection this hour. '
+                              'Try again later.') from exc
+        if exc.code in (401, 403) and token:
             raise UpdateError('GitHub did not accept the key (token). Check that it is copied completely '
                               'and that it may read the StrokeScribe project.') from exc
-        if exc.code == 404:
+        if exc.code in (401, 403, 404):
+            if not token:
+                raise UpdateError('StrokeScribe could not be read on GitHub. If the project is private, '
+                                  'add a GitHub key (Key… button).') from exc
             raise UpdateError('StrokeScribe was not found on GitHub with this key. The key needs '
                               f'read access to {REPO} (Contents: Read-only).') from exc
         raise UpdateError(f'GitHub answered {exc.code}.') from exc

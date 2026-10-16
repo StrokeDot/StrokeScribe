@@ -127,7 +127,7 @@ class CreateImageDialog(QDialog):
         self.engine = engine or ai_engine.Engine(self.paths)
         self.hw = hardware or ai_models.detect_hardware()
         self.image_path = current_image
-        self.result_path = None
+        self.result_path = None; self.kept_path = None
         self.worker = None
 
         root = QVBoxLayout(self)
@@ -239,7 +239,10 @@ class CreateImageDialog(QDialog):
         self.save_button = QPushButton('Save image…'); self.save_button.clicked.connect(self.save)
         self.play_button = QPushButton('▶ Listen'); self.play_button.clicked.connect(self.listen)
         actions.addWidget(self.play_button)
-        actions.addWidget(self.use_button, 1); actions.addWidget(self.save_button)
+        self.folder_button = QPushButton('Show in folder'); self.folder_button.setObjectName('subtle')
+        self.folder_button.setToolTip('Every picture you create is kept in your Library → Images.')
+        self.folder_button.clicked.connect(self.show_in_folder)
+        actions.addWidget(self.use_button, 1); actions.addWidget(self.save_button); actions.addWidget(self.folder_button)
         right.addLayout(actions)
         self.player = None
 
@@ -294,7 +297,7 @@ class CreateImageDialog(QDialog):
         for w in self.sound_widgets:
             w.setVisible(key == 'sound')
         self.play_button.setVisible(key == 'sound')
-        self.result_path = None
+        self.result_path = None; self.kept_path = None
         self.preview.setPixmap(QPixmap()); self.preview.setText('The result appears here.')
         self.use_button.setText(self.use_text())
         self.save_button.setText('Save sound…' if key == 'sound' else 'Save image…')
@@ -381,6 +384,7 @@ class CreateImageDialog(QDialog):
         self.cancel_button.setEnabled(busy)
         self.use_button.setEnabled(self.result_path is not None and not busy)
         self.save_button.setEnabled(self.result_path is not None and not busy)
+        self.folder_button.setVisible(bool(getattr(self, 'kept_path', None)))
         if not busy:
             if not engine_ok:
                 self.status.setText('Step 1: install the AI engine.')
@@ -467,7 +471,7 @@ class CreateImageDialog(QDialog):
         workflow = build(model, variant, self.prompt.toPlainText().strip(), self.seed.value(),
                          image_name='input.png' if image else None, width=width, height=height,
                          ram_gb=self.hw.ram_gb, seconds=self.sound_seconds.value())
-        self.result_path = None
+        self.result_path = None; self.kept_path = None
         self._start(AIWorker('generate', engine=self.engine, workflow=workflow, image_path=image),
                     self.on_result)
 
@@ -508,9 +512,11 @@ class CreateImageDialog(QDialog):
             if QGuiApplication.platformName() != 'offscreen':
                 self.listen()                     # play it right away
             return
-        self.status.setText('Done. ' + ('Click “Draw it in StrokeScribe” to trace these lines and paint '
-                                        'your original colours.' if self.task == 'lineart' else
-                                        'Use it as an image source or save it.'))
+        self.kept_path = keep_in_library(path, self.task, self.prompt.toPlainText())
+        kept = ' Kept in your Library → Images.' if self.kept_path else ''
+        self.status.setText('Done.' + kept + ' ' + ('Click “Draw it in StrokeScribe” to trace these lines and paint '
+                                                   'your original colours.' if self.task == 'lineart' else
+                                                   'Use it as an image source.'))
         pix = QPixmap(path)
         if not pix.isNull():
             self.preview.setPixmap(pix.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio,
@@ -538,10 +544,11 @@ class CreateImageDialog(QDialog):
             self.use_result('sound', self.result_path, SOUND_SETTINGS[self.sound_for.currentText()])
             self.accept()
             return
+        stable = str(getattr(self, 'kept_path', None) or self.result_path)   # the Library copy stays
         if self.task == 'lineart':
-            self.use_result('lineart', self.result_path, self.image_path)
+            self.use_result('lineart', stable, self.image_path)
         else:
-            self.use_result('image', self.result_path, None)
+            self.use_result('image', stable, None)
         self.accept()
 
     def save(self):
@@ -557,6 +564,19 @@ class CreateImageDialog(QDialog):
             shutil.copy(self.result_path, name)
             self.status.setText('Saved ' + name)
 
+    def show_in_folder(self):
+        path = getattr(self, 'kept_path', None)
+        if not path:
+            return
+        import subprocess, sys
+        try:
+            if sys.platform == 'win32':
+                subprocess.Popen(['explorer', '/select,', str(path)])
+            else:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
+        except Exception:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
+
     def closeEvent(self, event):
         if self.player is not None:
             self.player.stop()
@@ -564,6 +584,33 @@ class CreateImageDialog(QDialog):
             self.worker.cancel()
             self.worker.wait(3000)
         super().closeEvent(event)
+
+
+KIND_NAMES = {'generate': 'AI picture', 'edit': 'AI edit', 'lineart': 'AI line art'}
+
+
+def picture_name(task, prompt, when=None):
+    """A readable file name: 'AI line art - a cat reading - 2026-10-17 07.31.png'."""
+    import re
+    when = when or time.localtime()
+    words = re.sub(r'[^\w\s-]', '', ' '.join((prompt or '').split()[:6]), flags=re.UNICODE).strip()
+    words = words[:48].strip()
+    stamp = time.strftime('%Y-%m-%d %H.%M.%S', when)
+    return ' - '.join(x for x in (KIND_NAMES.get(task, 'AI picture'), words, stamp) if x) + '.png'
+
+
+def keep_in_library(path, task, prompt=''):
+    """Copy a created picture into Library → Images (the engine's folder is only a work folder)."""
+    try:
+        import shutil, tempfile
+        import library
+        named = Path(tempfile.mkdtemp()) / picture_name(task, prompt)
+        shutil.copy2(path, named)
+        item = library.Library().add('images', named, name=named.stem)
+        shutil.rmtree(named.parent, ignore_errors=True)
+        return item.path
+    except Exception:
+        return None
 
 
 def waveform(path, width, height):

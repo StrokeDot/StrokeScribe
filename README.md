@@ -160,6 +160,12 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Cleaner look, simple update window, pictures kept (v0.5.3-experimental.48)
+
+- **Cleaner design:** calmer colours, no outlines around panels, buttons and boxes, and softer corners.
+- **Update window:** a green ✓ "Connected to GitHub" or a red ✗ "Not connected". The key is never shown. StrokeScribe is public, so no key is needed; "Key…" opens a small pop-up only if you make the project private again. An old or wrong key no longer blocks updates.
+- **Created pictures are kept:** every picture and line art made in Create image is copied into your Library → Images (Documents\StrokeScribe Library\Images), with a readable name. "Show in folder" opens it.
+
 ## Downloads: no waiting for one slow piece (v0.5.3-experimental.47)
 
 - When a connection has nothing left to do, it takes over half of the slowest piece still downloading, so one slow piece no longer keeps the whole file waiting. Tested on the real Hugging Face servers.

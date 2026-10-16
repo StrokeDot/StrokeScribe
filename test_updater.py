@@ -115,6 +115,17 @@ class UpdaterTests(unittest.TestCase):
             with self.assertRaises(updater.UpdateError) as caught:
                 updater.latest_version('bad')
             self.assertIn('key', str(caught.exception))
+        # A wrong or expired key: the public project is read without it.
+        tried = []
+        def public(request, timeout=0):
+            tried.append(request.get_header('Authorization'))
+            if request.get_header('Authorization'):
+                raise urllib.error.HTTPError(request.full_url, 401, 'bad key', {}, None)
+            return Reply(version_py('0.5.3-experimental.48').encode())
+        with mock.patch.object(updater.urllib.request, 'urlopen', public):
+            self.assertEqual(updater.latest_version('github_pat_old'), '0.5.3-experimental.48')
+            self.assertEqual(updater.latest_version(''), '0.5.3-experimental.48')
+        self.assertEqual(tried[:2], ['Bearer github_pat_old', None])
 
     @unittest.skipUnless(os.environ.get('STROKESCRIBE_TEST_TOKEN'), 'needs a GitHub token (CI)')
     def test_real_github_check_and_download(self):
@@ -140,12 +151,30 @@ class UpdateWindowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             os.environ['STROKESCRIBE_CONFIG_DIR'] = tmp
             try:
-                from update_dialog import UpdateDialog
-                d = UpdateDialog(None, latest='0.5.3-experimental.999')
-                self.assertFalse(d.update_button.isEnabled())             # no key yet
-                d.token.setText('github_pat_' + 'x' * 82); d.refresh()
-                self.assertTrue(d.update_button.isEnabled())
+                from update_dialog import UpdateDialog, KeyDialog
+                from PySide6.QtWidgets import QLineEdit
+                d = UpdateDialog(None, latest='0.5.3-experimental.999', auto_check=False)
+                self.assertTrue(d.update_button.isEnabled())              # public project: no key needed
                 self.assertIn('999', d.version_label.text())
+                self.assertEqual(d.key_button.text(), 'Key…')
+                # The key is never shown in the update window itself.
+                self.assertEqual(d.findChildren(QLineEdit), [])
+                d.connected = True; d.refresh()
+                self.assertTrue(d.connection.text().startswith('✓'))
+                self.assertEqual(d.connection.objectName(), 'good')
+                d.connected, d.connection_text = False, 'No connection to GitHub.'; d.refresh()
+                self.assertTrue(d.connection.text().startswith('✗'))
+                self.assertEqual(d.connection.objectName(), 'bad')
+                # The key pop-up checks the key before saving it.
+                k = KeyDialog(d, '')
+                k.token.setText('hello'); k.save()
+                self.assertTrue(k.problem.text().startswith('✗'))
+                self.assertNotEqual(k.result(), KeyDialog.DialogCode.Accepted)
+                k.token.setText('github_pat_' + 'x' * 82); k.save()
+                self.assertEqual(k.result(), KeyDialog.DialogCode.Accepted)
+                self.assertEqual(k.token.echoMode(), QLineEdit.EchoMode.Password)
+                d.settings['token'] = k.value(); d.save(); d.refresh()
+                self.assertEqual(d.key_button.text(), 'Change key…')
                 d.close()
                 self.assertEqual(updater.load_settings()['token'], 'github_pat_' + 'x' * 82)
                 from app import Window

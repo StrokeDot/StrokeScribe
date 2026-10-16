@@ -324,6 +324,23 @@ class CreateImageWindowTests(unittest.TestCase):
         del os.environ['STROKESCRIBE_CONFIG_DIR']
         self.tmp.cleanup()
 
+    def test_created_pictures_are_kept_in_library(self):
+        import time as _t
+        import library
+        from create_image_dialog import keep_in_library, picture_name
+        settings = library.load_settings(); settings['root'] = str(Path(self.tmp.name) / 'Library')
+        library.save_settings(settings)
+        self.assertEqual(picture_name('lineart', 'A cat, reading a book! in the park with friends', _t.localtime(0))
+                         [:31], 'AI line art - A cat reading a b')
+        made = Path(self.tmp.name) / 'ComfyUI_00001_.png'
+        drawing_pair()[0].save(made)
+        kept = keep_in_library(made, 'generate', 'a lighthouse at night')
+        self.assertTrue(Path(kept).is_file())
+        self.assertEqual(Path(kept).parent, library.Library().folder('images'))
+        self.assertTrue(Path(kept).name.startswith('AI picture - a lighthouse at night - '))
+        names = [i.name for i in library.Library().items('images')]
+        self.assertTrue(any(n.startswith('AI picture') for n in names))
+
     def test_window_guides_through_setup(self):
         from create_image_dialog import CreateImageDialog
         image = Path(self.tmp.name) / 'art.png'

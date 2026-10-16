@@ -212,6 +212,18 @@ setup.show(); app.processEvents()
 if not setup.grab().save(str(out/'setup-window.png')):
     raise RuntimeError('Unable to save setup window screenshot')
 setup.close()
+# Update window: ✓ connected, and the key pop-up.
+from update_dialog import UpdateDialog, KeyDialog
+for theme_name in ('dark','light'):
+    window.apply_theme(theme_name)
+    upd=UpdateDialog(window,'0.5.3-experimental.99',auto_check=False)
+    upd.connected=True; upd.refresh(); upd.show(); app.processEvents()
+    upd.grab().save(str(out/f'update-{theme_name}.png'))
+    upd.connected,upd.connection_text=False,'No connection to GitHub. Check the internet connection.'
+    upd.refresh(); app.processEvents(); upd.grab().save(str(out/f'update-offline-{theme_name}.png'))
+    key=KeyDialog(upd,''); key.show(); app.processEvents()
+    key.grab().save(str(out/f'update-key-{theme_name}.png')); key.close(); upd.close()
+window.apply_theme('dark')
 window.close()
 print('Generated original Studio interface screenshots:', out)
 
