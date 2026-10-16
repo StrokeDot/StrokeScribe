@@ -76,11 +76,15 @@ def main(comfy, base, out):
             if not path or not path.is_file():
                 sys.exit(f'{name}: no sound was saved')
             took = time.time() - started
-            target = out / f'{name}{path.suffix}'
-            shutil.copy(path, target)
+            # As the app does: brought to a normal level, silent ends cut.
+            target = sound.normalized_copy(path, out / f'{name}.wav')
+            if target is None:
+                sys.exit(f'{name}: the sound is silent or unreadable')
             if shutil.which('ffmpeg'):
                 subprocess.run(['ffmpeg', '-y', '-v', 'error', '-i', str(target), '-b:a', '192k',
                                 str(out / f'{name}.mp3')], check=True)
+                target.unlink()
+                target = out / f'{name}.mp3'
             data = sound.load_recording(target)
             if data is None:
                 sys.exit(f'{name}: the sound is silent or unreadable')
@@ -92,8 +96,8 @@ def main(comfy, base, out):
                     f'loudness {rms:.3f}, brightness {centroid:.0f} Hz, made in {took:.0f} s on the CPU')
             print(line, flush=True)
             lines.append(line)
-            if rms < .003:
-                sys.exit(f'{name}: almost silent')
+            if rms < .02:
+                sys.exit(f'{name}: almost silent even after raising the level')
     finally:
         proc.terminate()
     (out / 'samples.txt').write_text('\n'.join(lines) + '\n')

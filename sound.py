@@ -186,6 +186,24 @@ def _bed(recording, count, rng):
     return out / rms * .25
 
 
+def normalized_copy(source, target, peak=.89):
+    """A WAV of the recording at a normal level (AI sounds come out very quiet),
+    with the silent start/end cut off. Returns the target path, or None."""
+    data = load_recording(source)
+    if data is None:
+        return None
+    top = float(np.abs(data).max())
+    if top <= 0:
+        return None
+    mono = np.clip(data / top * peak, -1, 1)
+    fade = min(len(mono) // 4, int(.01 * RATE))
+    if fade:
+        ramp = np.linspace(0, 1, fade)
+        mono[:fade] *= ramp; mono[-fade:] *= ramp[::-1]
+    pcm = (mono * 32767).astype(np.int16)
+    return write_wav(target, np.stack([pcm, pcm], 1))
+
+
 def write_wav(path, stereo):
     path = Path(path)
     with wave.open(str(path), 'wb') as out:

@@ -483,6 +483,12 @@ class CreateImageDialog(QDialog):
             QMessageBox.warning(self, 'Create Image', message[:1500])
 
     def on_result(self, path):
+        if self.task == 'sound':
+            # AI sounds come out quiet: bring them to a normal level first.
+            from sound import normalized_copy
+            louder = normalized_copy(path, Path(path).with_name(Path(path).stem + '_normal.wav'))
+            if louder is not None:
+                path = str(louder)
         self.result_path = path
         self.progress.setRange(0, 100); self.progress.setValue(100)
         if self.task == 'sound':

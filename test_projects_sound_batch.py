@@ -72,6 +72,10 @@ class SoundTests(unittest.TestCase):
             self.assertAlmostEqual(peak_hz, 900, delta=15)                    # the recording, not noise
             self.assertLess(np.sqrt((mono_out[int(2.3 * sound.RATE):] ** 2).mean()), 5)   # pen up: silent
             self.assertIsNone(sound.load_recording(Path(tmp) / 'missing.wav'))
+            # Quiet AI sounds are brought to a normal level.
+            quiet_path = sound.write_wav(Path(tmp) / 'quiet.wav', np.stack([mono // 25, mono // 25], 1))
+            louder = sound.load_recording(sound.normalized_copy(quiet_path, Path(tmp) / 'loud.wav'))
+            self.assertAlmostEqual(float(np.abs(louder).max()), .89, delta=.02)
 
     def test_wav_file(self):
         with tempfile.TemporaryDirectory() as tmp:
