@@ -160,6 +160,11 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Sharp logo, rounder purple design (v0.5.3-experimental.49)
+
+- **Sharp logo:** the logo in the app, the window and the taskbar is now made from the large 1024 px logo, and drawn with your screen's real pixels, so it is sharp at 100 %, 125 %, 150 % and 200 % screen scaling. The Windows icon (.ico) has every size from 16 to 256 px.
+- **Rounder, polished design:** the logo's purple is the app's colour (buttons, Play, timeline, tabs), with the logo's purple-to-indigo gradient on the main buttons. Rounder panels, buttons, boxes, menus and preview; tabs look like rounded pills.
+
 ## Cleaner look, simple update window, pictures kept (v0.5.3-experimental.48)
 
 - **Cleaner design:** calmer colours, no outlines around panels, buttons and boxes, and softer corners.

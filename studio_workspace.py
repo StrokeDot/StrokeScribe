@@ -170,7 +170,7 @@ class StageTimeline(QFrame):
         total=self._view_total()
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(c['track']))
-        p.drawRoundedRect(clips,6,6)
+        p.drawRoundedRect(clips,9,9)
         small=QFont(self.font());small.setPointSizeF(8.)
         p.setFont(small)
         if total<=0:
@@ -219,7 +219,7 @@ class StageTimeline(QFrame):
             fill=QColor(color);fill.setAlpha(215)
             p.setPen(QPen(QColor(color).lighter(125),1))
             p.setBrush(fill)
-            p.drawRoundedRect(rect,5,5)
+            p.drawRoundedRect(rect,7,7)
             if not self.scene_segments and name.lower() in self.editable and part>=14:
                 # Grip on the right edge: drag it to change the length.
                 p.setPen(QPen(QColor(255,255,255,150),1.4))
@@ -238,7 +238,7 @@ class StageTimeline(QFrame):
         # Audio lane.
         if not self.scene_segments:
             p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track']))
-            p.drawRoundedRect(lane,5,5)
+            p.drawRoundedRect(lane,8,8)
             rect=self._audio_rect()
             if rect is None:
                 p.setPen(QColor(c['dim']))
@@ -248,7 +248,7 @@ class StageTimeline(QFrame):
                 fill=QColor(accent);fill.setAlpha(70)
                 p.setPen(QPen(accent,1)); p.setBrush(fill)
                 p.save(); p.setClipRect(lane)
-                p.drawRoundedRect(rect,4,4)
+                p.drawRoundedRect(rect,6,6)
                 env=self.audio.get('envelope') or []
                 if env:
                     mid=rect.center().y(); half=rect.height()*.42
@@ -441,9 +441,34 @@ def transport_icon(kind, color, size=18):
 
 
 def wordmark_html():
-    """'StrokeScribe' with the brand blue; the first half follows the theme."""
-    return (f'<span style="color:{theme_colors()["wordmark"]}">Stroke</span>'
-            '<span style="color:#58A7FF">Scribe</span>')
+    """'StrokeScribe' with the logo's purple; the first half follows the theme."""
+    c=theme_colors()
+    return (f'<span style="color:{c["wordmark"]}">Stroke</span>'
+            f'<span style="color:{c["brand"]}">Scribe</span>')
+
+
+def brand_icon(path):
+    """Window / taskbar icon in every size, made from the large logo (sharp everywhere)."""
+    master=QPixmap(str(path))
+    icon=QIcon()
+    if master.isNull():
+        return icon
+    for size in (16,20,24,32,40,48,64,96,128,256):
+        icon.addPixmap(master.scaled(size,size,Qt.AspectRatioMode.KeepAspectRatio,
+                                     Qt.TransformationMode.SmoothTransformation))
+    return icon
+
+
+def crisp_pixmap(path, size, widget=None):
+    """The logo at `size` points, drawn with the screen's real pixels (no blur on 125–200 % screens)."""
+    from PySide6.QtGui import QGuiApplication
+    ratio=widget.devicePixelRatioF() if widget is not None else (QGuiApplication.primaryScreen().devicePixelRatio()
+                                                                 if QGuiApplication.primaryScreen() else 1.)
+    ratio=max(1.,float(ratio))
+    pix=QPixmap(str(path)).scaled(round(size*ratio),round(size*ratio),Qt.AspectRatioMode.KeepAspectRatio,
+                                  Qt.TransformationMode.SmoothTransformation)
+    pix.setDevicePixelRatio(ratio)
+    return pix
 
 
 def fit_to_width(content, stacked=False):
@@ -511,20 +536,21 @@ def build_workspace(w, Canvas, BRAND_ICON):
     root=QWidget();root.setObjectName('root')
     w.setCentralWidget(root)
     outer=QVBoxLayout(root)
-    outer.setContentsMargins(8,8,8,8)
-    outer.setSpacing(8)
+    outer.setContentsMargins(10,8,10,10)
+    outer.setSpacing(10)
 
     # Original compact StrokeScribe branding, drawn using native Qt widgets.
     # The three brand dots are decoration, NOT fake OS close/minimize buttons.
     bar=QFrame(); bar.setObjectName('topBar')
-    bar_l=QHBoxLayout(bar); bar_l.setContentsMargins(12,6,10,6)
+    bar_l=QHBoxLayout(bar); bar_l.setContentsMargins(12,7,10,7)
     bar_l.setSpacing(8)
     if BRAND_ICON.is_file():
-        w.setWindowIcon(QIcon(str(BRAND_ICON)))
-        QApplication.instance().setWindowIcon(QIcon(str(BRAND_ICON)))
-        logo=QLabel()
-        logo.setPixmap(QPixmap(str(BRAND_ICON)).scaled(
-            26,26,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+        icon=brand_icon(BRAND_ICON)
+        w.setWindowIcon(icon)
+        QApplication.instance().setWindowIcon(icon)
+        logo=QLabel(); logo.setObjectName('brandLogo')
+        logo.setPixmap(crisp_pixmap(BRAND_ICON,30,w))
+        w.brand_logo=logo
         bar_l.addWidget(logo)
     title=QHBoxLayout();title.setSpacing(10)
     w.brand_wordmark=QLabel(wordmark_html())

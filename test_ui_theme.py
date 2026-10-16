@@ -73,7 +73,7 @@ class ThemeAndBusyTests(unittest.TestCase):
         self.assertIn(theme.PALETTES['light']['window'], w.styleSheet())
         self.assertIn('spin_up_light', w.styleSheet())
         self.assertEqual(w.theme_button.text(), '☾')
-        self.assertIn('#58A7FF', w.brand_wordmark.text())
+        self.assertIn(theme.PALETTES['light']['brand'], w.brand_wordmark.text())
         self.assertEqual(theme.load_saved(), 'light')
         w.theme_button.click()
         self.assertEqual(theme.current(), 'dark')

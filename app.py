@@ -13,7 +13,7 @@ from color_reveal import load_color_image, render_color_timeline, timeline_durat
 from version import APP_VERSION, DISPLAY_NAME, RELEASE_DATE
 
 # Shared application branding asset (path independent of the working directory).
-BRAND_ICON = Path(__file__).resolve().parent / 'assets' / 'strokescribe_icon.png'
+BRAND_ICON = Path(__file__).resolve().parent / 'assets' / 'strokescribe_logo.png'   # 1024 px master
 
 
 DEFAULT_HAND = Path(__file__).resolve().parent / 'assets' / 'default_hand.png'
@@ -135,7 +135,9 @@ class Canvas(QWidget):
         p.fillRect(self.rect(),QColor(c['monitor']))
         if self.frame:
             x,y,size=self.frame_rect()
-            p.save(); p.setClipRect(x,y,size.width(),size.height())
+            from PySide6.QtGui import QPainterPath as _Path
+            rounded=_Path(); rounded.addRoundedRect(QRectF(x,y,size.width(),size.height()),10,10)
+            p.save(); p.setClipPath(rounded)
             if self.background>=3:
                 from backgrounds import TEXTURES, texture_qimage
                 key=(TEXTURES[self.background-3],size.width(),size.height())
@@ -174,7 +176,7 @@ class Canvas(QWidget):
             w=min(360.,self.width()-40.); h=112.
             card=QRectF((self.width()-w)/2,(self.height()-h)/2,w,h)
             p.setPen(QColor(c['border_strong'])); p.setBrush(QColor(c['panel']))
-            p.drawRoundedRect(card,10,10)
+            p.drawRoundedRect(card,14,14)
             title=QFont(self.font()); title.setPointSizeF(10.5); title.setBold(True)
             p.setFont(title); p.setPen(QColor(c['text']))
             p.drawText(card.adjusted(20,16,-20,-h+40),Qt.AlignmentFlag.AlignLeft|Qt.AlignmentFlag.AlignVCenter,self.busy_text)
