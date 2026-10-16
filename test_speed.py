@@ -108,10 +108,11 @@ class ParallelExportTests(unittest.TestCase):
         start = time.perf_counter()
         export_frames(drawing, self.dir / 'seq', workers=1, **options)
         single = time.perf_counter() - start
-        start = time.perf_counter()
-        export_frames(drawing, self.dir / 'par', workers=0, **options)
-        multi = time.perf_counter() - start
         cores = os.cpu_count() or 1
+        start = time.perf_counter()
+        # Automatic choice on bigger machines; on 2-core machines try 2 workers anyway.
+        export_frames(drawing, self.dir / 'par', workers=0 if cores >= 4 else 2, **options)
+        multi = time.perf_counter() - start
         print(f'\nEXPORT SPEED: {cores} cores, one core {single:.1f} s, all cores {multi:.1f} s, '
               f'x{single / max(multi, 1e-6):.2f}')
         if cores >= 4:

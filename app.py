@@ -766,7 +766,7 @@ class Window(QMainWindow):
         self.update_project_title(self.project_title)
         self.refresh()
         self.reset_history()
-        if getattr(self,'scenes',None):
+        if getattr(self,'scenes',None) and not getattr(self,'_entering_scene',False):
             self.scenes[self.scene_index]['thumb']=None      # new artwork: new thumbnail
             if hasattr(self,'scene_list'): QTimer.singleShot(0,self.fill_scenes)
     def change_source(self,index):
@@ -1000,11 +1000,14 @@ class Window(QMainWindow):
 
     def _enter_scene(self,k):
         state=self.scenes[k]['state']
+        self._entering_scene=True                  # loading a scene is not new artwork
         try:
             self.apply_scene_state(state)
         except Exception as exc:
             QMessageBox.warning(self,'Scene',f'Scene {k+1} could not be opened: {exc}')
             self.fill_scenes(); return
+        finally:
+            self._entering_scene=False
         self.scene_index=k
         self.scenes[k]['state']=None              # lives in the editor now
         self._scene_cache={key:v for key,v in self._scene_cache.items()
