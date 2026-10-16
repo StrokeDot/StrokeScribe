@@ -1,0 +1,91 @@
+"""Shared export steps (single export and batch export) and settings → options.
+
+`options_from_settings` turns the Studio settings (the values of the inspector
+controls, as saved in projects) into render options, so the window, project
+files and batch export always produce the same animation.
+"""
+from __future__ import annotations
+
+from pathlib import Path
+
+REVEAL_BY_TEXT = {'Brush painting': 'brush', 'Adaptive Hand Painting': 'adaptive',
+                  'Zigzag sweep': 'zigzag'}
+MP4_BACKGROUNDS = ('white', 'dark', 'black')
+
+
+def options_from_settings(s, drawing, color_image=None, hand=None, image_source=None):
+    """Render options for export_frames.
+
+    s: settings dict (see Window.PROJECT_SETTINGS). color_image: colour PNG for
+    SVG sources. image_source: QImage of an image source (then its colours are
+    painted and the Image source rules apply).
+    """
+    width, height = [int(x.strip()) for x in str(s.get('res', '1920 × 1080')).split('×')]
+    reveal = REVEAL_BY_TEXT.get(s.get('reveal_mode'), 'adaptive')
+    options = dict(
+        duration=float(s.get('duration', 4)) / max(.01, float(s.get('speed', 1))),
+        fps=int(s.get('fps', 30)), width=width, height=height,
+        thickness=float(s.get('thickness', 1)),
+        hand=hand if s.get('showhand', True) else None,
+        hand_scale=float(s.get('handsize', .75)), anchor=(float(s.get('ax', .08)), float(s.get('ay', .13))),
+        final_image=color_image if s.get('use_color', False) else None,
+        fade_duration=float(s.get('color_fade', .4)), hold_duration=float(s.get('color_hold', .6)),
+        reveal_mode=reveal, brush_width=float(s.get('brush_width', .14)),
+        stroke_spacing=float(s.get('stroke_spacing', .55)),
+        artwork_scale=float(s.get('artwork_size', 100)) / 100.,
+        painting_hand=hand if s.get('show_paint_hand', True) else None)
+    if image_source is not None:
+        paint_only = s.get('image_animation') == 'Paint Only'
+        if drawing is not None:
+            drawing.image_animation = 'paint_only' if paint_only else 'draw_paint'
+            drawing.drawing_visibility = 'progressive'
+        options.update(final_image=image_source if (s.get('preserve_colors', True) or paint_only) else None,
+                       fade_duration=float(s.get('image_duration', 8)),
+                       reveal_mode=reveal if reveal in ('adaptive', 'zigzag') else 'adaptive',
+                       duration=0. if paint_only else options['duration'])
+    return options
+
+
+def formats_from_settings(s):
+    return dict(mov=bool(s.get('mov')), webm=bool(s.get('webm')),
+                webm_quality=int(s.get('webm_quality', 28)), keep_png=bool(s.get('keep_png')),
+                mp4=bool(s.get('mp4')),
+                mp4_background=(s.get('mp4_background') or 'White').lower(),
+                sound_volume=(int(s.get('sound_volume', 80)) / 100) if s.get('sound_on', True) else None)
+
+
+def run_export(drawing, folder, options, mov=False, webm=False, webm_quality=28, keep_png=True,
+               mp4=False, mp4_background='white', sound_volume=None, progress=lambda i, n: None,
+               interrupted=lambda: False):
+    """Frames, optional soundtrack, then the chosen videos. Returns a summary."""
+    from engine import export_frames, encode_mov, encode_mp4, encode_webm
+    folder = Path(folder)
+
+    def tick(i, n):
+        progress(i, n)
+        return not interrupted()
+    export_frames(drawing, folder, callback=tick, **options)
+    audio = None
+    if sound_volume is not None:
+        progress(0, 0)
+        from sound import soundtrack
+        audio = soundtrack(drawing, options, folder / 'soundtrack.wav', sound_volume)
+    videos = []
+    for wanted, make in ((webm, lambda: encode_webm(folder, options['fps'], webm_quality, audio)),
+                         (mov, lambda: encode_mov(folder, options['fps'], audio)),
+                         (mp4, lambda: encode_mp4(folder, options['fps'], mp4_background, audio))):
+        if not wanted:
+            continue
+        if interrupted():
+            raise InterruptedError('Export cancelled; completed files were retained.')
+        progress(0, 0)
+        videos.append(make())
+    if videos and not keep_png:
+        # Only remove intermediate frames once every selected format encoded
+        # successfully. Never remove user-supplied artwork.
+        for frame in folder.glob('frame_*.png'):
+            frame.unlink()
+    if videos:
+        details = ', '.join(f'{v.name} ({v.stat().st_size / 1048576:.1f} MB)' for v in videos)
+        return f'Saved: {details} in {folder}'
+    return f'Saved PNG sequence: {folder}'

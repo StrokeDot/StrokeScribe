@@ -160,6 +160,12 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Projects, pencil sound and batch export (v0.5.3-experimental.28)
+
+- **Save / open projects** (project menu, Ctrl+S / Ctrl+O): one `.strokescribe` file keeps the drawing with your stroke order, the colour image, the hand and every setting. Images are stored inside the file, so it still opens if the originals move.
+- **Pencil and brush sounds** (Export tab → Sound): a pencil scratch while the pen draws (silent during pen lifts, louder when it moves faster) and a soft brush sound while painting, panned with the hand. Generated to match the animation exactly; included in MP4, WebM and MOV, and saved as `soundtrack.wav` with PNG exports. You can hear it in the preview while playing.
+- **Batch export** (project menu or Export tab): queue images, SVGs and projects and export them all, each into its own folder. Images and SVGs use the current settings (an SVG is coloured with `name_color.png` or `name.png` next to it); projects use their own. Failed items are reported and the batch continues; a chime plays at the end.
+
 ## Create Image: local AI models (v0.5.3-experimental.27)
 
 **✦ Create image** (top bar, or **AI line art for this image…** in the Image source panel) runs open image models on your own PC:

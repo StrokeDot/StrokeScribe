@@ -120,43 +120,53 @@ class Canvas(QWidget):
                        self.busy_detail or 'The timeline unlocks when the drawing is ready.')
         p.end()
 
+class PreviewSound:
+    """Plays the pencil/brush soundtrack in sync with the preview."""
+    def __init__(self):
+        self.player=None; self.key=None; self.path=None
+        try:
+            from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+            self.player=QMediaPlayer(); self.output=QAudioOutput()
+            self.player.setAudioOutput(self.output)
+        except Exception:
+            self.player=None            # no audio support: preview stays silent
+    def play(self,drawing,options,volume,seconds):
+        if self.player is None or drawing is None: return
+        import tempfile,hashlib
+        signature=repr((tuple(id(s) for s in drawing.strokes),id(drawing),
+                        {k:v for k,v in options.items() if isinstance(v,(int,float,str,tuple))},
+                        round(volume,2)))
+        key=hashlib.sha1(signature.encode()).hexdigest()
+        if key!=self.key:
+            from sound import soundtrack
+            folder=Path(tempfile.gettempdir())/'strokescribe-sound'
+            folder.mkdir(exist_ok=True)
+            self.path=soundtrack(drawing,options,folder/f'preview_{key[:12]}.wav',volume)
+            self.key=key
+            self.player.setSource(QUrl.fromLocalFile(str(self.path)))
+        self.player.setPosition(int(seconds*1000))
+        self.player.play()
+    def stop(self):
+        if self.player is not None:
+            self.player.stop()
+
+
 class Exporter(QThread):
     progress=Signal(int,int); done=Signal(str); failed=Signal(str)
     def __init__(self,drawing,folder,options,mov,webm=False,webm_quality=28,keep_png=True,
-                 mp4=False,mp4_background='white'):
+                 mp4=False,mp4_background='white',sound_volume=None):
         super().__init__()
+        self.sound_volume=sound_volume
         self.drawing=drawing; self.folder=Path(folder); self.options=options
         self.mov=mov; self.webm=webm; self.webm_quality=webm_quality
         self.keep_png=keep_png; self.mp4=mp4; self.mp4_background=mp4_background
     def run(self):
         try:
-            def tick(i,n):
-                self.progress.emit(i,n)
-                return not self.isInterruptionRequested()
-            export_frames(self.drawing,self.folder,callback=tick,**self.options)
-            videos=[]
-            if self.webm:
-                if self.isInterruptionRequested(): raise InterruptedError('Export cancelled; PNG frames were retained.')
-                self.progress.emit(0,0)
-                videos.append(encode_webm(self.folder,self.options['fps'],self.webm_quality))
-            if self.mov:
-                if self.isInterruptionRequested(): raise InterruptedError('Export cancelled; completed files were retained.')
-                self.progress.emit(0,0)
-                videos.append(encode_mov(self.folder,self.options['fps']))
-            if self.mp4:
-                if self.isInterruptionRequested(): raise InterruptedError('Export cancelled; completed files were retained.')
-                self.progress.emit(0,0)
-                videos.append(encode_mp4(self.folder,self.options['fps'],self.mp4_background))
-            if videos and not self.keep_png:
-                # Only remove intermediate frames once every selected format
-                # encoded successfully. Never remove user-supplied artwork.
-                for frame in self.folder.glob('frame_*.png'):
-                    frame.unlink()
-            if videos:
-                details=', '.join(f'{v.name} ({v.stat().st_size/1048576:.1f} MB)' for v in videos)
-                self.done.emit(f'Saved: {details} in {self.folder}')
-            else:
-                self.done.emit(f'Saved PNG sequence: {self.folder}')
+            from export_job import run_export
+            self.done.emit(run_export(
+                self.drawing,self.folder,self.options,self.mov,self.webm,self.webm_quality,
+                self.keep_png,self.mp4,self.mp4_background,self.sound_volume,
+                progress=self.progress.emit,interrupted=self.isInterruptionRequested))
         except Exception as e: self.failed.emit(str(e))
 
 class FontInstaller(QThread):
@@ -247,6 +257,7 @@ class Window(QMainWindow):
         self.reorder_redo=[]
         self.busy=False
         self._preparing=False
+        self.preview_sound=None
         # Rapid brush-width changes should not synchronously rebuild the entire
         # paint plan for every spinbox/wheel event on the GUI thread.
         self.brush_preview_timer=QTimer(self)
@@ -311,6 +322,7 @@ class Window(QMainWindow):
         """Loading card on the monitor; the timeline stays locked until ready."""
         self.busy=True
         self.playing=False
+        if self.preview_sound is not None: self.preview_sound.stop()
         self.canvas.set_busy(text,percent,detail)
         self.stage_timeline.set_locked(True)
         for button in (self.play,self.restart_button,self.to_start,self.to_end):
@@ -492,6 +504,122 @@ class Window(QMainWindow):
         self.export.setEnabled(self.drawing is not None)
         self.quick_export.setEnabled(self.drawing is not None)
         self.refresh()
+    # ------------------------------------------------------------ projects
+    PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','reveal_mode','color_fade',
+                      'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
+                      'use_color','preserve_colors','showhand','show_paint_hand','handsize','ax','ay',
+                      'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
+                      'sound_on','sound_volume','sound_preview','preview_background','image_detail',
+                      'image_style','image_animation_style','clean_faint')
+
+    def project_state(self):
+        """Everything needed to reopen this exact animation."""
+        from projects import drawing_to_dict, qimage_to_b64, widget_value
+        image_source=bool(self.source_type.currentIndex())
+        state={'title':self.project_title,'source':'image' if image_source else 'svg',
+               'drawing':drawing_to_dict(self.drawing),
+               'settings':self.settings_state(),
+               'hand':'builtin' if getattr(self,'hand_builtin',False) else qimage_to_b64(self.hand),
+               'letter':{'ink':self.letter_ink_color,'background':self.letter_bg_color}}
+        if image_source and self.image_result:
+            r=self.image_result
+            state['image']={'png':qimage_to_b64(r.image),'filename':r.filename,'detail':r.detail,
+                            'path':str(self.image_path or ''),'guide':str(self.image_guide or '')}
+        else:
+            state['color_png']=qimage_to_b64(self.final_image)
+        return state
+
+    def save_project(self,save_as=False):
+        if not self.drawing or (self.builder and self.builder.isRunning()):
+            QMessageBox.information(self,'Save project','There is no finished drawing to save yet.'); return None
+        import projects
+        path=getattr(self,'project_path',None)
+        if save_as or not path:
+            suggested=str(Path(path).parent if path else Path.home())+'/'+ \
+                ''.join(c if c.isalnum() or c in ' -_' else '_' for c in self.project_title).strip()+projects.SUFFIX
+            path,_=QFileDialog.getSaveFileName(self,'Save project',suggested,'StrokeScribe project (*.strokescribe)')
+            if not path: return None
+        try:
+            path=projects.save(path,self.project_state())
+        except Exception as exc:
+            QMessageBox.warning(self,'Save project',str(exc)); return None
+        self.project_path=str(path)
+        self.status.setText('Project saved: '+str(path))
+        self.setWindowTitle(f'{Path(path).stem}  •  {DISPLAY_NAME}')
+        return path
+
+    def open_project(self,path=None):
+        if (self.builder and self.builder.isRunning()) or (self.worker and self.worker.isRunning()):
+            QMessageBox.information(self,'Open project','Please wait for the current job to finish.'); return False
+        import projects
+        if path is None:
+            path,_=QFileDialog.getOpenFileName(self,'Open project','','StrokeScribe project (*.strokescribe)')
+            if not path: return False
+        try:
+            data=projects.load(path)
+            self.apply_project(data)
+        except Exception as exc:
+            QMessageBox.warning(self,'Open project',str(exc)); return False
+        self.project_path=str(path)
+        self.setWindowTitle(f'{Path(path).stem}  •  {DISPLAY_NAME}')
+        self.status.setText('Opened project: '+str(path))
+        return True
+
+    def apply_project(self,data):
+        from projects import drawing_from_dict, qimage_from_b64, set_widget_value
+        self.playing=False
+        drawing=drawing_from_dict(data['drawing'])
+        settings=data.get('settings',{})
+        # Settings first (without a refresh storm), then the drawing.
+        for name in self.PROJECT_SETTINGS:
+            widget=getattr(self,name,None)
+            if widget is None or name not in settings: continue
+            widget.blockSignals(True)
+            set_widget_value(widget,settings[name])
+            widget.blockSignals(False)
+        self.canvas.set_background(self.preview_background.currentIndex())
+        hand=data.get('hand')
+        if hand=='builtin': self.use_builtin_hand(refresh=False)
+        elif hand:
+            image=qimage_from_b64(hand)
+            if image is not None:
+                self.hand=image; self.hand_builtin=False; self.hand_name.setText('Hand: from project')
+        letter=data.get('letter',{})
+        self.letter_ink_color=letter.get('ink',self.letter_ink_color)
+        self.letter_bg_color=letter.get('background')
+        if data.get('source')=='image' and data.get('image'):
+            from image_reconstruct import Reconstruction
+            from image_regions import segment_regions
+            from adaptive_hand import pil_image
+            info=data['image']
+            image=qimage_from_b64(info['png'])
+            if image is None: raise ValueError('The project image is damaged.')
+            detail=info.get('detail','medium')
+            regions=segment_regions(pil_image(image),'high' if detail=='max' else detail)
+            drawing.image_regions=regions
+            self.image_result=Reconstruction(drawing,image,regions,'line_art',detail,info.get('filename','image'))
+            self.image_path=info.get('path') or None
+            self.image_guide=info.get('guide') or None
+            self.source_type.blockSignals(True); self.source_type.setCurrentIndex(1); self.source_type.blockSignals(False)
+            self.image_controls.show(); self.import_button.setText('Import image…')
+            self.color_note.setText(self.image_result.filename+' • original colors')
+        else:
+            self.source_type.blockSignals(True); self.source_type.setCurrentIndex(0); self.source_type.blockSignals(False)
+            self.image_controls.hide(); self.import_button.setText('Import SVG…')
+            self.final_image=qimage_from_b64(data.get('color_png'))
+            self.use_color.setEnabled(self.final_image is not None)
+            if self.final_image is None:
+                self.use_color.blockSignals(True); self.use_color.setChecked(False); self.use_color.blockSignals(False)
+            self.color_note.setText('Colour image from project' if self.final_image is not None else 'No original PNG loaded')
+        self.project_title=data.get('title') or 'Project'
+        self.set_drawing(drawing)
+
+    def open_batch_export(self):
+        from batch_export import BatchExportDialog
+        if self.worker and self.worker.isRunning():
+            QMessageBox.information(self,'Batch export','Please wait for the current export to finish.'); return
+        BatchExportDialog(self,self.settings_state(),self.hand,play_done_sound).exec()
+
     # ------------------------------------------------------------ AI images
     def open_create_image(self):
         from create_image_dialog import CreateImageDialog
@@ -765,13 +893,15 @@ class Window(QMainWindow):
         if name:
             image=QImage(name)
             if image.isNull(): QMessageBox.warning(self,'Hand','Could not read PNG.'); return
-            self.hand=image; self.hand_name.setText('Hand: '+Path(name).name); self.refresh()
+            self.hand=image; self.hand_builtin=False
+            self.hand_name.setText('Hand: '+Path(name).name); self.refresh()
     def use_builtin_hand(self,refresh=True):
         """Load the bundled StrokeScribe hand (calibrated pencil tip X 0.08, Y 0.13)."""
         image=QImage(str(DEFAULT_HAND)) if DEFAULT_HAND.is_file() else QImage()
         if image.isNull():
             self.hand_name.setText('Hand: none (built-in hand file missing)'); return
-        self.hand=image; self.hand_name.setText('Hand: StrokeScribe built-in hand')
+        self.hand=image; self.hand_builtin=True
+        self.hand_name.setText('Hand: StrokeScribe built-in hand')
         if refresh: self.refresh()
     def load_color(self):
         if self.source_type.currentIndex():
@@ -810,27 +940,18 @@ class Window(QMainWindow):
         mode=REVEAL_MODES[self.reveal_mode.currentIndex()]
         return mode if mode in ('adaptive','zigzag') else 'adaptive'
 
+    def settings_state(self):
+        from projects import widget_value
+        return {name:widget_value(getattr(self,name)) for name in self.PROJECT_SETTINGS}
+
     def options(self):
-        if self.drawing is not None and getattr(self.drawing,'source_kind',None)=='image':
-            self.drawing.image_animation=['draw_paint','paint_only'][self.image_animation.currentIndex()]
-            self.drawing.drawing_visibility='progressive'
-        width,height=[int(x.strip()) for x in self.res.currentText().split('×')]
-        options=dict(duration=self.effective_duration(),fps=self.fps.value(),width=width,height=height,
-                    thickness=self.thickness.value(),hand=self.hand if self.showhand.isChecked() else None,
-                    hand_scale=self.handsize.value(),anchor=(self.ax.value(),self.ay.value()),
-                    final_image=self.final_image if self.use_color.isChecked() else None,
-                    fade_duration=self.color_fade.value(),hold_duration=self.color_hold.value(),
-                    reveal_mode=REVEAL_MODES[self.reveal_mode.currentIndex()],
-                    brush_width=self.brush_width.value(),stroke_spacing=self.stroke_spacing.value(),
-                    artwork_scale=self.artwork_size.value()/100.0,
-                    painting_hand=self.hand if self.show_paint_hand.isChecked() else None)
-        if self.source_type.currentIndex():
-            paint_only=self.image_animation.currentIndex()==1
-            options.update(final_image=self.image_result.image if self.image_result
-                           and (self.preserve_colors.isChecked() or paint_only) else None,
-                           fade_duration=self.image_duration.value(),reveal_mode=self.image_paint_method(),
-                           duration=0. if paint_only else options['duration'])
-        return options
+        from export_job import options_from_settings
+        image_source=bool(self.source_type.currentIndex())
+        return options_from_settings(
+            self.settings_state(),self.drawing,
+            color_image=None if image_source else self.final_image,hand=self.hand,
+            image_source=self.image_result.image if image_source and self.image_result else None)
+
     def refresh(self,*args):
         if self._preparing:
             return
@@ -846,8 +967,8 @@ class Window(QMainWindow):
             options['fade_duration'] if options['final_image'] is not None else 0,
             options['hold_duration'] if options['final_image'] is not None else 0,
             self.position)
-        duration=options.pop('duration'); options.pop('fps')
-        size=options.pop('artwork_scale')
+        options.pop('fps')
+        size=options['artwork_scale']
         # The artwork is scaled after rasterization. Compensating the hand
         # before that transform keeps its FINAL size independent of Artwork
         # Size, while its pen-tip coordinates move with the artwork.
@@ -855,16 +976,9 @@ class Window(QMainWindow):
         ratio=options['height']/options['width']
         options['width']=960; options['height']=round(960*ratio)
         try:
-            from hand_layer import capture
-            with capture() as hands:
-                if options['final_image'] is not None:
-                    frame=render_color_timeline(self.drawing,self.position,duration=duration,**options)
-                else:
-                    for key in ('final_image','fade_duration','hold_duration','reveal_mode','brush_width','painting_hand','stroke_spacing'):
-                        options.pop(key)
-                    frame=render(self.drawing,self.position,**options)
-            frame=scale_animation_frame(frame,size,hands)
-            self.canvas.frame=apply_lettering_background(frame,self.drawing)
+            # Same frame composition as the export (hand layer, artwork size).
+            from frame_render import compose_frame
+            self.canvas.frame=compose_frame(self.drawing,self.position,options)
             self.canvas.update()
         except Exception as exc:
             # An invalid/expensive brush configuration must not throw out of
@@ -874,19 +988,42 @@ class Window(QMainWindow):
         length=self.timeline_length()
         self.clock.setText(timecode(self.position*length))
         self.clock_total.setText(timecode(length))
-    def scrub(self,value): self.position=value/1000; self.refresh()
+    def scrub(self,value):
+        self.position=value/1000
+        if self.playing and self.preview_sound is not None:
+            self.sync_preview_sound()     # user moved the playhead while playing
+        self.refresh()
     def toggle(self):
         if not self.drawing or self.busy: return
         if self.position>=1: self.slider.setValue(0)
         self.playing=not self.playing; self.last=time.perf_counter(); self.sync_workspace()
+        self.sync_preview_sound()
+    def sync_preview_sound(self):
+        """Start the soundtrack at the playhead when playing; stop it otherwise."""
+        if not self.playing or not self.sound_on.isChecked() or not self.sound_preview.isChecked():
+            if self.preview_sound is not None: self.preview_sound.stop()
+            return
+        try:
+            if self.preview_sound is None: self.preview_sound=PreviewSound()
+            options=self.options(); options.pop('fps',None)
+            ratio=options['height']/options['width']
+            options['width']=960; options['height']=round(960*ratio)
+            self.preview_sound.play(self.drawing,options,self.sound_volume.value()/100,
+                                    self.position*self.timeline_length())
+            self.last=time.perf_counter()     # sound preparation must not skip frames
+        except Exception as exc:
+            self.status.setText('Preview sound unavailable: '+str(exc)[:160])
     def restart(self):
         if not self.drawing or self.busy: return
         self.slider.setValue(0); self.playing=True; self.last=time.perf_counter(); self.sync_workspace()
+        self.sync_preview_sound()
     def tick(self):
         if not self.playing or not self.drawing or self.busy: return
         now=time.perf_counter(); self.position=min(1,self.position+(now-self.last)/self.timeline_length()); self.last=now
         self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False); self.refresh()
-        if self.position>=1: self.playing=False; self.sync_workspace()
+        if self.position>=1:
+            self.playing=False; self.sync_workspace()
+            if self.preview_sound is not None: self.preview_sound.stop()
     def save(self):
         if not self.drawing or (self.builder and self.builder.isRunning()) or (self.worker and self.worker.isRunning()): return
         parent=QFileDialog.getExistingDirectory(self,'Choose destination; a new sequence folder will be created')
@@ -898,7 +1035,8 @@ class Window(QMainWindow):
                              self.mov.isChecked(),self.webm.isChecked(),
                              self.webm_quality.value(),self.keep_png.isChecked(),
                              mp4=self.mp4.isChecked(),
-                             mp4_background=('white','dark','black')[self.mp4_background.currentIndex()])
+                             mp4_background=('white','dark','black')[self.mp4_background.currentIndex()],
+                             sound_volume=self.sound_volume.value()/100 if self.sound_on.isChecked() else None)
         self.worker.progress.connect(self.export_progress); self.worker.done.connect(lambda p:self.export_done('Saved: '+p)); self.worker.done.connect(lambda _p:play_done_sound()); self.worker.failed.connect(lambda e:self.export_done('Export stopped: '+e)); self.worker.finished.connect(self.export_finished)
         self.export.setEnabled(False); self.quick_export.setEnabled(False); self.cancel.setEnabled(True); self.status.setText('Exporting locally…')
         # Export timer: elapsed time, frame count and an estimate of time left.
@@ -934,6 +1072,7 @@ class Window(QMainWindow):
             self.worker.requestInterruption()
             self.status.setText('Cancelling after current frame. FFmpeg encoding, if started, must finish.')
     def closeEvent(self,event):
+        if self.preview_sound is not None: self.preview_sound.stop()
         if self.font_worker and self.font_worker.isRunning():
             QMessageBox.information(self,'Font downloads',
                 'Please wait for the current font download to finish.')

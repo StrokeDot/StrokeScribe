@@ -195,7 +195,7 @@ def _reuse_frame(source,target):
     shutil.copyfile(source,target)
 
 
-def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0):
+def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0, camera_zoom=1.0):
     folder=Path(folder)
     folder.mkdir(parents=True,exist_ok=False)
     use_color = final_image is not None and not final_image.isNull()
@@ -211,19 +211,17 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
     if not .25<=float(artwork_scale)<=2.0 or not math.isfinite(float(artwork_scale)):
         raise ValueError('Artwork size must be between 25% and 200%.')
     preview_hand_scale=hand_scale/float(artwork_scale)
+    from frame_render import compose_frame, camera_for
+    options=dict(width=width,height=height,duration=duration,fade_duration=fade_duration,
+                 hold_duration=hold_duration,final_image=final_image if use_color else None,
+                 thickness=thickness,hand=hand,hand_scale=preview_hand_scale,anchor=anchor,
+                 reveal_mode=reveal_mode,brush_width=brush_width,painting_hand=painting_hand,
+                 stroke_spacing=stroke_spacing,artwork_scale=artwork_scale)
+    camera_path=camera_for(drawing,options,float(camera_zoom))
     previous=None
     for i in range(count):
         fraction=i/(count-1)
-        from hand_layer import capture
-        with capture() as hands:
-            if use_color:
-                img=render_color_timeline(drawing,fraction,width,height,duration,fade_duration,hold_duration,
-                                          final_image,thickness,hand,preview_hand_scale,anchor,
-                                          reveal_mode,brush_width,painting_hand,stroke_spacing)
-            else:
-                img=render(drawing,fraction,width,height,thickness,hand,preview_hand_scale,anchor)
-        img=scale_animation_frame(img,artwork_scale,hands)
-        img=apply_lettering_background(img,drawing)
+        img=compose_frame(drawing,fraction,options,camera_path)
         path=folder/f'frame_{i:06d}.png'
         pixels=_frame_bytes(img)
         if previous is not None and pixels==previous[0]:
@@ -243,6 +241,7 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
         painting_hand=bool(use_color and reveal_mode in ('brush','continue','guided','clean','adaptive','zigzag') and painting_hand is not None and not painting_hand.isNull()),
         stroke_spacing=stroke_spacing if reveal_mode in ('adaptive','zigzag') else None,
         artwork_scale=artwork_scale,
+        camera_zoom=float(camera_zoom),
         drawing_visibility=getattr(drawing,'drawing_visibility','progressive'),
         contour_transition=getattr(drawing,'contour_transition','legacy'),
         retirement_direction=getattr(drawing,'retirement_direction','forward'),
@@ -254,16 +253,24 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
         last_frame='original_color_png' if use_color else 'complete'),indent=2))
     return count
 
-def encode_mov(folder, fps=30):
+def _audio_args(audio, codec):
+    """FFmpeg arguments that add a soundtrack WAV as the second input."""
+    if not audio:
+        return [], ['-an']
+    return ['-i', str(audio)], ['-map', '0:v', '-map', '1:a', '-c:a', *codec, '-shortest']
+
+
+def encode_mov(folder, fps=30, audio=None):
     ffmpeg=shutil.which('ffmpeg')
     if not ffmpeg: raise RuntimeError('FFmpeg was not found on PATH. PNG frames have still been exported.')
     output=Path(folder)/'animation_prores4444.mov'
-    cmd=[ffmpeg,'-n','-hide_banner','-loglevel','error','-framerate',str(fps),'-i',str(Path(folder)/'frame_%06d.png'),'-c:v','prores_ks','-profile:v','4','-pix_fmt','yuva444p10le','-alpha_bits','16',str(output)]
+    extra_in,audio_out=_audio_args(audio,['pcm_s16le'])
+    cmd=[ffmpeg,'-n','-hide_banner','-loglevel','error','-framerate',str(fps),'-i',str(Path(folder)/'frame_%06d.png'),*extra_in,'-c:v','prores_ks','-profile:v','4','-pix_fmt','yuva444p10le','-alpha_bits','16',*(audio_out if audio else []),str(output)]
     result=subprocess.run(cmd,capture_output=True,text=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     if result.returncode: raise RuntimeError(result.stderr[-2000:])
     return output
 
-def encode_webm(folder, fps=30, quality=28):
+def encode_webm(folder, fps=30, quality=28, audio=None):
     """Create a smaller, genuinely alpha-bearing VP9 WebM from PNG frames.
 
     Filmora import of external VP9 alpha files must still be visually tested.
@@ -278,9 +285,10 @@ def encode_webm(folder, fps=30, quality=28):
         raise ValueError('WebM quality must be in the range 18–42.')
     folder=Path(folder)
     output=folder/'animation_vp9_alpha.webm'
+    extra_in,audio_out=_audio_args(audio,['libopus','-b:a','128k'])
     cmd=[ffmpeg,'-n','-hide_banner','-loglevel','error',
-         '-framerate',str(fps),'-i',str(folder/'frame_%06d.png'),
-         '-an','-c:v','libvpx-vp9','-deadline','good','-cpu-used','4',
+         '-framerate',str(fps),'-i',str(folder/'frame_%06d.png'),*extra_in,
+         *audio_out,'-c:v','libvpx-vp9','-deadline','good','-cpu-used','4',
          '-row-mt','1','-b:v','0','-crf',str(quality),
          '-auto-alt-ref','0','-pix_fmt','yuva420p',str(output)]
     result=subprocess.run(cmd,capture_output=True,text=True,
@@ -315,7 +323,7 @@ def encode_webm(folder, fps=30, quality=28):
 MP4_BACKGROUNDS={'white':'FFFFFF','dark':'242D3B','black':'000000'}
 
 
-def encode_mp4(folder, fps=30, background='white'):
+def encode_mp4(folder, fps=30, background='white', audio=None):
     """Standard H.264 MP4 of the animation on a solid background color.
 
     MP4 has no transparency, so frames are composited over the chosen color
@@ -332,11 +340,14 @@ def encode_mp4(folder, fps=30, background='white'):
     width,height=int(info['width']),int(info['height'])
     output=folder/f'animation_{background}_background.mp4'
     color=f"color=c=0x{MP4_BACKGROUNDS[background]}:s={width}x{height}:r={fps}"
+    audio_in=['-i',str(audio)] if audio else []
+    audio_out=(['-map','[v]','-map','2:a','-c:a','aac','-b:a','192k','-shortest'] if audio
+               else ['-map','[v]','-an'])
     cmd=[ffmpeg,'-n','-hide_banner','-loglevel','error',
          '-framerate',str(fps),'-i',str(folder/'frame_%06d.png'),
-         '-f','lavfi','-i',color,
-         '-filter_complex','[1:v][0:v]overlay=shortest=1:format=auto,format=yuv420p',
-         '-an','-c:v','libx264','-preset','medium','-crf','16',
+         '-f','lavfi','-i',color,*audio_in,
+         '-filter_complex','[1:v][0:v]overlay=shortest=1:format=auto,format=yuv420p[v]',
+         *audio_out,'-c:v','libx264','-preset','medium','-crf','16',
          '-movflags','+faststart',str(output)]
     result=subprocess.run(cmd,capture_output=True,text=True,
                           creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
