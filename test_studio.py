@@ -30,7 +30,7 @@ class StudioTests(unittest.TestCase):
         w=self.window
         self.assertIn('Studio',w.windowTitle())
         self.assertIn('Prototype',w.windowTitle())
-        self.assertEqual(w.inspector_tabs.count(),3)
+        self.assertEqual(w.inspector_tabs.count(),4)
         self.assertEqual([w.inspector_tabs.tabText(i) for i in range(3)],
                          ['Animation','Hand','Export'])
         split=w.findChild(QSplitter)

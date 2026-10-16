@@ -51,10 +51,10 @@ def background_colours(rgb, alpha):
             break
     if covered < .85 * len(flat):
         return []                                   # busy edges: a photo, not a background
-    if len(chosen) > 1:
-        # A checkerboard is greys (no colour); a coloured multi-tone edge is artwork.
-        if any(np.ptp(c) > 24 for c in chosen):
-            return []
+    # Backgrounds are white, grey or black (a sheet or a checkerboard); a coloured
+    # edge belongs to the artwork.
+    if any(np.ptp(c) > 24 for c in chosen):
+        return []
     return [np.array(c) for c in chosen]
 
 
@@ -83,6 +83,8 @@ def clean_background(image, faint=True, fake=True):
                 fade = np.clip((distance - TOLERANCE) / (3 * TOLERANCE), 0, 1)
                 data[..., 3] = np.where(near, (alpha * fade).astype(np.uint8), data[..., 3])
             data[..., 3][background] = 0
+            if (data[..., 3] > 0).sum() < .03 * max(1, (alpha > 0).sum()):
+                data = np.asarray(image).copy()    # nothing would be left: it is not a background
     if faint:
         data[..., 3][data[..., 3] < FAINT_ALPHA] = 0
     data[..., :3][data[..., 3] == 0] = 0           # no hidden colour in transparent pixels

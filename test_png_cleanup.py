@@ -56,6 +56,12 @@ class CleanupTests(unittest.TestCase):
         self.assertEqual(alpha(clean_background(faint))[20, 20], 0)
         self.assertEqual(alpha(clean_background(faint, faint=False))[20, 20], 30)
 
+    def test_solid_colour_pictures_are_kept(self):
+        red = Image.new('RGBA', (200, 150), (200, 60, 60, 255))
+        self.assertTrue((alpha(clean_background(red)) == 255).all())
+        grey = Image.new('RGBA', (200, 150), (128, 128, 128, 255))      # all grey: nothing would be left
+        self.assertTrue((alpha(clean_background(grey)) == 255).all())
+
     def test_real_pictures_are_left_alone(self):
         photo = Image.fromarray((np.random.default_rng(3).random((H, W, 3)) * 255).astype(np.uint8)).convert('RGBA')
         self.assertEqual(background_colours(np.asarray(photo)[..., :3].astype(int), alpha(photo)), [])
@@ -87,7 +93,7 @@ class WindowTests(unittest.TestCase):
             self.assertTrue(w.clean_color.isChecked())
             self.assertTrue(w.reload_color())
             self.assertLess(w.final_image.width(), W - 50)      # cropped to the artwork
-            self.assertEqual(w.final_image.pixelColor(2, w.final_image.height() // 2).alpha(), 0)
+            self.assertEqual(w.final_image.pixelColor(2, 2).alpha(), 0)      # corner outside the oval
             self.assertIn('cleaned', w.color_note.text())
             w.clean_color.setChecked(False)                     # reloads as it is
             self.assertEqual((w.final_image.width(), w.final_image.height()), (W, H))
