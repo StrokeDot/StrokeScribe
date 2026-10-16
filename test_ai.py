@@ -295,7 +295,7 @@ class CreateImageWindowTests(unittest.TestCase):
             dialog.on_result(str(out))
             self.assertTrue(dialog.play_button.isEnabled())
             dialog.use()
-            self.assertEqual(used, [('sound', str(out), 'sound_eraser_file')])
+            self.assertEqual(used, [('sound', str(out.with_name('made_normal.wav')), 'sound_eraser_file')])
         finally:
             dialog.close()
 
