@@ -12,11 +12,38 @@ RENDER_KEYS = {'width', 'height', 'duration', 'fade_duration', 'hold_duration', 
                'stroke_spacing', 'artwork_scale'}
 
 
+# What a frame shows (Export tab -> Export): everything, only the moving hand
+# (to put over your own text or picture in a video editor), or only the
+# artwork without any hand.
+LAYERS = {'Drawing and hand': 'all', 'Hand only (no drawing)': 'hand', 'Drawing only (no hand)': 'art'}
+
+
+def _blank(like):
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage
+    out = QImage(like.size(), QImage.Format.Format_ARGB32_Premultiplied)
+    out.fill(Qt.GlobalColor.transparent)
+    return out
+
+
+def _ghosted(art, top, opacity):
+    """`top` over a faint copy of `art` (preview of Hand only: you still see what is written)."""
+    from PySide6.QtGui import QPainter
+    out = _blank(top)
+    p = QPainter(out)
+    p.setOpacity(opacity); p.drawImage(0, 0, art)
+    p.setOpacity(1.); p.drawImage(0, 0, top)
+    p.end()
+    return out
+
+
 def _core(drawing, fraction, opts, camera_path=None):
     """Artwork + hand, without the erase stage or lettering background."""
     from camera import crop, render_size
     from engine import render, scale_animation_frame
     from hand_layer import capture
+    layers = opts.get('layers', 'all')
+    ghost = float(opts.get('ghost', 0) or 0)
     opts = {k: v for k, v in opts.items() if k in RENDER_KEYS}
     scale = opts.pop('artwork_scale', 1.0)
     width, height = opts['width'], opts['height']
@@ -30,7 +57,15 @@ def _core(drawing, fraction, opts, camera_path=None):
         else:
             frame = render(drawing, fraction, big_w, big_h, opts.get('thickness', 1.),
                            opts.get('hand'), opts.get('hand_scale', .18), opts.get('anchor', (.1, .1)))
-    frame = scale_animation_frame(frame, scale, hands)
+    if layers == 'hand':
+        hand_only = scale_animation_frame(_blank(frame), scale, hands)
+        if ghost > 0:
+            hand_only = _ghosted(scale_animation_frame(frame, scale, None), hand_only, ghost)
+        frame = hand_only
+    elif layers == 'art':
+        frame = scale_animation_frame(frame, scale, None)
+    else:
+        frame = scale_animation_frame(frame, scale, hands)
     return crop(frame, width, height, zoom, cx, cy)
 
 
@@ -70,7 +105,7 @@ def erase_setup(drawing, opts, erase):
     key = _erase_key(drawing, opts, erase)
     if key in _ERASE_CACHE:
         return _ERASE_CACHE[key]
-    hold = _core(drawing, 1., opts)
+    hold = _core(drawing, 1., dict(opts, layers='all', ghost=0))     # the real picture
     size = float(erase.get('size', .08))
     if erase.get('mode') == 'lines':
         strokes = motion.strokes_on_canvas(drawing, opts['width'], opts['height'],
@@ -97,10 +132,17 @@ def compose_frame(drawing, fraction, options, camera_path=None):
         point, _ = plan.state(progress)
         if frame is hold:
             frame = hold.copy()
-        frame = eraser.draw_eraser(frame, point, erase.get('image'), erase.get('anchor', eraser.ERASER_TIP),
-                                   float(erase.get('width', .18)))
+        layers = opts.get('layers', 'all')
+        if layers == 'hand':
+            ghost = float(opts.get('ghost', 0) or 0)
+            frame = _ghosted(frame, _blank(frame), ghost) if ghost > 0 else _blank(frame)
+        if layers != 'art':
+            frame = eraser.draw_eraser(frame, point, erase.get('image'), erase.get('anchor', eraser.ERASER_TIP),
+                                       float(erase.get('width', .18)))
         if camera_path is not None:
             frame = _camera_view(frame, *camera_path.at(fraction))
+    if opts.get('layers', 'all') == 'hand':
+        return frame                  # stays transparent, to lay over your own text
     return apply_lettering_background(frame, drawing)
 
 

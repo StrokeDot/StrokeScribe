@@ -160,6 +160,11 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Mute button and Hand-only export (v0.5.3-experimental.37)
+
+- **Mute button** (speaker, next to the play controls): sound on / off for the pencil, brush and eraser sounds, in the preview and in the exported video. It is the same switch as Export tab → *Pencil and brush sounds*. (A voiceover/music track is separate: remove it in the Export tab.)
+- **Export tab → Export**: *Drawing and hand* (as before), **Hand only (no drawing)** or **Drawing only (no hand)**. Hand only exports just the moving hand on a transparent background (PNG, WebM, MOV), so you can lay it over your own text or picture in Filmora, for example your name in any font. The preview shows the drawing faintly so you can see what the hand writes; the export does not contain it.
+
 ## Real recorded pencil sounds (v0.5.3-experimental.36)
 
 - **Export tab → Sound**: choose a real recording for the **Pencil**, and if you like the **Brush** and **Eraser** (MP3, WAV, M4A…). A few seconds is enough: quiet parts at the start and end are cut off, and the recording is looped from different places so it never sounds repeated. It plays only while the pen moves (louder when it moves faster), silent during pen lifts.

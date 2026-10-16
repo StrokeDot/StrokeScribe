@@ -388,6 +388,12 @@ class Window(QMainWindow):
         for button,kind in ((self.to_start,'start'),(self.restart_button,'restart'),(self.to_end,'end')):
             button.setIcon(transport_icon(kind,c['text'] if button.isEnabled() else c['dim']))
             button.setIconSize(QSize(18,18))
+        if not hasattr(self,'sound_on'): return
+        on=self.sound_on.isChecked()
+        self.mute_button.setIcon(transport_icon('sound' if on else 'mute',c['text'] if on else c['dim']))
+        self.mute_button.setIconSize(QSize(18,18))
+        self.mute_button.setToolTip(('Sound is ON. Click to mute' if on else 'Sound is OFF (muted). Click for sound')
+                                    +' — pencil, brush and eraser sounds in the preview and the exported video.')
 
     def update_theme_button(self):
         import theme
@@ -798,7 +804,7 @@ class Window(QMainWindow):
                       'sound_on','sound_volume','sound_preview','preview_background','image_detail',
                       'image_style','image_animation_style','clean_faint',
                       'erase_mode','erase_time','erase_size','eraser',
-                      'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export')
+                      'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export','export_layers')
 
     def project_state(self):
         """Everything needed to reopen this project: the edited scene plus all scenes."""
@@ -1092,6 +1098,7 @@ class Window(QMainWindow):
             options=self.options(); options.pop('fps',None)
             options['hand_scale']/=options['artwork_scale']
             options['width'],options['height']=width,height
+            options['ghost']=.22
             return self.drawing,options,seconds_of(self.drawing,options),self.preview_camera(options)
         state=self.scenes[k]['state']
         key=(id(state),width,height)
@@ -1101,6 +1108,7 @@ class Window(QMainWindow):
             options.pop('fps',None); options.pop('audio',None)
             options['hand_scale']/=options['artwork_scale']
             options['width'],options['height']=width,height
+            options['ghost']=.22
             camera=None
             if options.get('camera_zoom',1.)>1.0001:
                 from frame_render import camera_for
@@ -1767,6 +1775,7 @@ class Window(QMainWindow):
         options['hand_scale']/=size
         ratio=options['height']/options['width']
         options['width']=960; options['height']=round(960*ratio)
+        options['ghost']=.22            # Hand only: still show faintly what is being written
         try:
             # Same frame composition as the export (hand layer, artwork size).
             from frame_render import compose_frame

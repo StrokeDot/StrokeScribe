@@ -145,3 +145,63 @@ class PaintingHandTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+@unittest.skipIf(SKIP, 'needs Qt')
+class LayerTests(unittest.TestCase):
+    """Export -> Hand only / Drawing only."""
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def alpha(self, image):
+        import numpy as np
+        from adaptive_hand import pil_image
+        return np.asarray(pil_image(image).getchannel('A'), int)
+
+    def test_hand_only_and_drawing_only(self):
+        from engine import import_svg
+        from frame_render import compose_frame
+        from export_job import builtin_eraser
+        from eraser import ERASER_TIP
+        import tools_kit
+        drawing = import_svg(Path(__file__).parent / 'samples' / 'drawing.svg')
+        hand = tools_kit.builtin_image('pencil')
+        base = dict(width=480, height=270, duration=2., hand=hand, hand_scale=.3, anchor=(.054, .077),
+                    final_image=None, artwork_scale=1.)
+        everything = self.alpha(compose_frame(drawing, .8, dict(base, layers='all')))
+        hand_only = self.alpha(compose_frame(drawing, .8, dict(base, layers='hand')))
+        art_only = self.alpha(compose_frame(drawing, .8, dict(base, layers='art')))
+        no_hand = self.alpha(compose_frame(drawing, .8, dict(base, hand=None)))
+        self.assertTrue((art_only == no_hand).all())                  # drawing only = no hand
+        self.assertGreater(hand_only.sum(), 0)                         # the hand is there
+        ink = (no_hand > 0) & (hand_only == 0)
+        self.assertGreater(ink.sum(), 100)                             # ...but none of the drawing
+        self.assertGreater(everything.sum(), art_only.sum())
+        ghost = self.alpha(compose_frame(drawing, .8, dict(base, layers='hand', ghost=.22)))
+        self.assertGreater(ghost[ink].max(), 0)                        # preview shows it faintly
+        self.assertLess(ghost[ink].max(), 90)
+        # Erasing in Hand only: the eraser moves, the picture is not shown.
+        erase = dict(mode='zigzag', seconds=1., size=.1, image=builtin_eraser(), anchor=ERASER_TIP, width=.18)
+        rub = self.alpha(compose_frame(drawing, .85, dict(base, layers='hand', erase=erase, duration=1.)))
+        full = self.alpha(compose_frame(drawing, .85, dict(base, layers='all', erase=erase, duration=1.)))
+        self.assertGreater(rub.sum(), 0)
+        self.assertLess(rub.sum(), full.sum())
+
+    def test_mute_button_and_hand_only_setting(self):
+        from app import Window
+        w = Window(); self.addCleanup(w.close)
+        self.assertFalse(w.sound_on.isChecked())
+        w.mute_button.click()
+        self.assertTrue(w.sound_on.isChecked())
+        self.assertIn('ON', w.mute_button.toolTip())
+        w.mute_button.click()
+        self.assertFalse(w.sound_on.isChecked())
+        self.assertEqual(w.options()['layers'], 'all')
+        w.export_layers.setCurrentText('Hand only (no drawing)')
+        self.assertEqual(w.options()['layers'], 'hand')
+        w.slider.setValue(500); self.app.processEvents()
+        self.assertFalse(w.canvas.frame.isNull())
+        w.undo()
+        self.assertEqual(w.options()['layers'], 'all')

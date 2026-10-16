@@ -126,7 +126,7 @@ def thumbnail(drawing, options, width=192):
     from frame_render import compose_frame
     opts = {k: v for k, v in options.items() if k not in ('fps', 'audio', 'workers')}
     ratio = opts['height'] / opts['width']
-    opts.update(width=width, height=max(2, round(width * ratio)), erase=None)
+    opts.update(width=width, height=max(2, round(width * ratio)), erase=None, layers='all')
     opts['hand_scale'] = opts.get('hand_scale', .75) / max(.01, opts.get('artwork_scale', 1.))
     return compose_frame(drawing, 1., opts)
 

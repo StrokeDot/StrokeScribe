@@ -39,6 +39,8 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     options['painting_hand'] = painting_hand(s, hand)
     options['erase'] = erase_from_settings(s, hand)
     options['workers'] = 0 if s.get('fast_export', True) else 1
+    from frame_render import LAYERS
+    options['layers'] = LAYERS.get(s.get('export_layers') or '', 'all')
     # Recorded pencil / brush / eraser sounds (paths, '' = built-in sound).
     options['sound_files'] = tuple(str(s.get(k) or '') for k in ('sound_pencil_file', 'sound_brush_file',
                                                                     'sound_eraser_file'))

@@ -242,6 +242,17 @@ def transport_icon(kind, color, size=18):
     elif kind=='end':
         p.drawRoundedRect(QRectF(s*.7,s*.24,s*.1,s*.52),1,1)
         p.drawPolygon(QPolygonF([QPointF(s*.22,s*.24),QPointF(s*.22,s*.76),QPointF(s*.66,s*.5)]))
+    elif kind in ('sound','mute'):
+        p.drawPolygon(QPolygonF([QPointF(s*.14,s*.38),QPointF(s*.3,s*.38),QPointF(s*.5,s*.2),
+                                 QPointF(s*.5,s*.8),QPointF(s*.3,s*.62),QPointF(s*.14,s*.62)]))
+        pen=QPen(col,s*.08);pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        p.setPen(pen);p.setBrush(Qt.BrushStyle.NoBrush)
+        if kind=='sound':
+            p.drawArc(QRectF(s*.42,s*.32,s*.24,s*.36),-50*16,100*16)
+            p.drawArc(QRectF(s*.42,s*.18,s*.4,s*.64),-50*16,100*16)
+        else:
+            p.drawLine(QPointF(s*.6,s*.36),QPointF(s*.86,s*.64))
+            p.drawLine(QPointF(s*.86,s*.36),QPointF(s*.6,s*.64))
     elif kind=='restart':
         pen=QPen(col,s*.11);pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(pen);p.setBrush(Qt.BrushStyle.NoBrush)
@@ -611,6 +622,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.to_end.setToolTip('Go to end (End)')
     w.to_end.clicked.connect(lambda checked=False: w.slider.setValue(1000))
     tr.addWidget(w.to_end)
+    w.mute_button=QPushButton();w.mute_button.setObjectName('transportButton')
+    w.mute_button.setToolTip('Sound on / off: pencil, brush and eraser sounds, in the preview and the exported video')
+    w.mute_button.clicked.connect(lambda checked=False: w.sound_on.setChecked(not w.sound_on.isChecked()))
+    tr.addWidget(w.mute_button)
     tr.addStretch(1)
     w.clock_total=label('','timeTotal')
     w.clock_total.setMinimumWidth(104)
@@ -855,6 +870,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.fit_audio_button.setToolTip('Stretch draw, paint, hold and erase times so the video ends when the track ends.')
     w.fit_audio_button.clicked.connect(lambda checked=False: w.fit_to_audio())
     output_l.addWidget(w.fit_audio_button)
+    from frame_render import LAYERS
+    w.export_layers=QComboBox();w.export_layers.addItems(list(LAYERS))
+    w.export_layers.setToolTip('Hand only: just the moving hand on a transparent background, to lay over '
+                               'your own text or picture in Filmora. The preview shows the drawing faintly.')
+    w.export_layers.currentIndexChanged.connect(w.refresh)
+    el=form_layout();el.addRow('Export',w.export_layers)
+    output_l.addLayout(el)
     w.export_all_scenes=QCheckBox('Export all scenes as one video')
     w.export_all_scenes.setChecked(True)
     w.export_all_scenes.setToolTip('With several scenes: one video with every scene and the moves between them. '
@@ -974,6 +996,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.reveal_mode.currentIndexChanged.connect(w.refresh)
     w.brush_width.valueChanged.connect(w.schedule_brush_refresh)
     w.show_paint_hand.toggled.connect(w.refresh)
+    w.sound_on.toggled.connect(lambda checked: (w.update_transport_icons(), w.sync_preview_sound()))
     w.paint_hand.activated.connect(lambda index: w.paint_hand_changed())
     w.paint_hand_size.valueChanged.connect(w.refresh)
     w.camera.currentIndexChanged.connect(w.refresh)

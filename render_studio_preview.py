@@ -168,6 +168,13 @@ for _i in range(1,13):
     _bg.alpha_composite(_f); _frames.append(_bg.convert('RGB'))
 _frames[0].save(str(out/'scene-transitions.gif'),save_all=True,append_images=_frames[1:],duration=70,loop=0)
 window.preview_scope.setCurrentIndex(0)
+# Export -> Hand only: the preview shows the drawing faintly under the hand.
+window.export_layers.setCurrentText('Hand only (no drawing)')
+window.inspector_tabs.setCurrentIndex(2)
+window.slider.setValue(550)
+snapshot('hand-only.png')
+window.export_layers.setCurrentText('Drawing and hand')
+window.inspector_tabs.setCurrentIndex(0)
 # Setup & system check window, with the real checks of the build machine.
 import preflight
 from setup_wizard import SetupDialog
