@@ -354,6 +354,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.settings_button.setObjectName('subtle')
     w.settings_button.clicked.connect(w.open_setup)
     bar_l.addWidget(w.settings_button)
+    w.create_image_button=QPushButton('✦  Create image')
+    w.create_image_button.setToolTip('AI line art for your image, new images from text, or edits '
+                                     '(local models; runs on your graphics card).')
+    w.create_image_button.clicked.connect(lambda checked=False: w.open_create_image())
+    bar_l.addWidget(w.create_image_button)
     w.theme_button=QPushButton()
     w.theme_button.setObjectName('subtle')
     w.theme_button.clicked.connect(lambda checked=False: w.toggle_theme())
@@ -419,6 +424,16 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.rebuild_button=QPushButton('Apply image settings')
     w.rebuild_button.clicked.connect(w.rebuild_image)
     image_form.addRow(w.rebuild_button)
+    w.ai_lineart_button=QPushButton('✦  AI line art for this image…')
+    w.ai_lineart_button.setToolTip('An AI model redraws the image as clean line art; StrokeScribe '
+                                   'traces those lines and paints your original colours.')
+    w.ai_lineart_button.clicked.connect(lambda checked=False: w.open_create_image())
+    image_form.addRow(w.ai_lineart_button)
+    w.own_lines_button=QPushButton('Use my own line drawing…')
+    w.own_lines_button.setToolTip('Already have a black line drawing of this image (for example from '
+                                  'ChatGPT)? StrokeScribe lines it up with the image and traces it.')
+    w.own_lines_button.clicked.connect(lambda checked=False: w.use_own_line_drawing())
+    image_form.addRow(w.own_lines_button)
     w.export_svg_button=QPushButton('Export drawing as SVG…')
     w.export_svg_button.setToolTip('Save the strokes as an editable SVG plus the matching colour PNG. '
                                    'Fix any line in Inkscape, then import with SVG source.')

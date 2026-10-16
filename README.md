@@ -160,6 +160,25 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Create Image: local AI models (v0.5.3-experimental.27)
+
+**✦ Create image** (top bar, or **AI line art for this image…** in the Image source panel) runs open image models on your own PC:
+
+- **Line art for my image** — the AI redraws your image as clean black line art; StrokeScribe lines it up with your image, traces each drawn line as one pen stroke, and paints your original colours. Best for objects (TVs, headphones, products).
+- **Create from text** and **Edit an image** — new images or instruction-based edits, which you can then draw in StrokeScribe.
+
+Models (chosen version depends on your graphics card memory and system RAM; you can override it):
+
+| Model | License | Use |
+|---|---|---|
+| Qwen-Image-Edit 2511 (Alibaba) | Apache 2.0 | Line art and edits; best free editor |
+| FLUX.2 [klein] 4B (Black Forest Labs) | Apache 2.0 | Fast text-to-image and edits |
+| FLUX.2 [dev] (Black Forest Labs) | FLUX Non-Commercial (accept before download) | Highest quality, very large |
+
+The first time, click **Install AI engine** (about 5 GB: ComfyUI v0.41.1 with PyTorch for NVIDIA cards, kept in its own folder that you can move to another drive), then **Download** a model (4–40 GB, resumable). The engine runs hidden on 127.0.0.1 only while you make an image and stops with the app. Nothing is sent to the internet when generating.
+
+**Use my own line drawing…** traces a black line drawing you already have (for example from ChatGPT) over your colour image the same way.
+
 ## New look: dark and light themes (v0.5.3-experimental.26)
 
 The Studio has a calmer, video-editor style layout: panels with title strips (Source, Program, Inspector, Timeline), a program monitor with transport buttons and a timecode underneath, and a timeline with a time ruler, coloured Draw / Paint / Hold clips and a playhead you can click or drag. **Dark mode is the default**; the ☀ / ☾ button in the top bar switches to light mode and the choice is remembered. Space plays and pauses.

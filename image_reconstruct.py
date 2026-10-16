@@ -49,6 +49,20 @@ def line_art_drawing(original,detail='medium',style='clean'):
         'Strokes approximate an artist\'s drawing; original colors are painted afterwards.'])
 
 
+def guide_drawing(guide,detail='medium'):
+    """Pen strokes traced from an aligned line drawing (see ai_lineart)."""
+    from engine import Drawing, Stroke
+    from lineart import line_drawing_strokes
+    strokes,outlines=line_drawing_strokes(guide,detail)
+    width=max(guide.size)*.0025
+    named=[Stroke(('outline' if i<outlines else 'line')+f' {i+1}',points,'#303946',width)
+           for i,points in enumerate(strokes)]
+    if not named:
+        return line_art_drawing(guide,detail,'clean')
+    return Drawing(named,(0.,0.,float(guide.width),float(guide.height)),[
+        'Line art from an AI line drawing: each drawn line becomes one pen stroke.'])
+
+
 FAINT_ALPHA=64  # pixels under ~25% visible: background-removal leftovers
 
 
@@ -79,7 +93,13 @@ def artist_drawing(original,detail='medium'):
 
 
 def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False,style='clean',
-                animation='standard'):
+                animation='standard',line_guide=None):
+    """Pen strokes + colours from an image.
+
+    line_guide: optional clean line drawing of the same image (for example
+    made by an AI model). It is lined up with the image and traced instead of
+    the image itself; the image still supplies the colours.
+    """
     if mode!='line_art':
         raise ValueError('Line art is the image method.')
     if detail not in ('low','medium','high','max'):
@@ -90,11 +110,25 @@ def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False,style
     regions=segment_regions(original,'high' if detail=='max' else detail)
     if animation not in ('standard','artist'):
         raise ValueError('Choose the Standard or Artist animation.')
-    if animation=='artist':
-        drawing=artist_drawing(original,detail)
+    source=original
+    guide_score=None
+    if line_guide is not None:
+        from ai_lineart import guide_image
+        guide=line_guide if isinstance(line_guide,Image.Image) else Image.open(line_guide)
+        source,guide_score=guide_image(original,guide)
+    if guide_score is not None:
+        drawing=guide_drawing(source,detail)
+    elif animation=='artist':
+        drawing=artist_drawing(source,detail)
         style='clean'
     else:
-        drawing=line_art_drawing(original,detail,style)
+        drawing=line_art_drawing(source,detail,style)
+    if guide_score is not None:
+        drawing.warnings=list(drawing.warnings)+[
+            'Strokes traced from the AI line drawing'+(
+                f' (lined up with the image, match {guide_score:.0%}).' if guide_score>0 else
+                ' (could not be lined up automatically; check that the lines match the colours).')]
+        drawing.line_guide_score=guide_score
     drawing.line_style=style
     drawing.animation_style=animation
     drawing.image_regions=regions

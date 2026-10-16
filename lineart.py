@@ -617,6 +617,58 @@ def line_art_strokes(image, detail='medium', style='detailed'):
     return [[(x * inverse + ox, y * inverse + oy) for x, y in s] for s in ordered], len(outline)
 
 
+def line_drawing_strokes(image, detail='medium'):
+    """Strokes from a clean black-on-white line drawing (for example AI line art).
+
+    No edge detection: the dark lines themselves are thinned to centre lines
+    and traced, so each drawn line becomes one smooth pen stroke. The outer
+    outline still comes from the image's transparency, if it has any.
+    """
+    size_limit = {'low': 1100, 'medium': 1400, 'high': 1700, 'max': 2000}[detail]
+    rgb, support, scale, (ox, oy) = prepare(image, size_limit)
+    h, w = support.shape
+    size = max(h, w)
+    outline = []
+    if not support.all():
+        contours, _ = cv2.findContours(support.astype(np.uint8), cv2.RETR_EXTERNAL,
+                                       cv2.CHAIN_APPROX_NONE)
+        for contour in sorted(contours, key=cv2.contourArea, reverse=True):
+            if cv2.contourArea(contour) < size * size * .004:
+                continue
+            pts = [(float(x), float(y)) for x, y in contour.reshape(-1, 2)]
+            pts = smooth(simplify([(y, x) for x, y in pts], 1.0), 1)
+            if pts and pts[0] != pts[-1]:
+                pts.append(pts[0])
+            outline.append(pts)
+    gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    ink = (gray < 150) & support
+    if outline:
+        border = cv2.morphologyEx(support.astype(np.uint8), cv2.MORPH_GRADIENT,
+                                  np.ones((3, 3), np.uint8))
+        ink &= ~(cv2.dilate(border, np.ones((7, 7), np.uint8)) > 0)
+    ink = cv2.morphologyEx(ink.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8)) > 0
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(ink.astype(np.uint8), 8)
+    keep = np.zeros(count, bool)
+    keep[1:] = stats[1:, cv2.CC_STAT_AREA] >= max(6, size * .004)    # specks out
+    ink = keep[labels]
+    skeleton = thin(ink)
+    traced = trace(skeleton, max(4, int(size * .006)))
+    traced = [[(float(x), float(y)) for y, x in pts] for pts in traced if len(pts) >= 3]
+    traced = link_strokes(traced, size * .015, min_alignment=.4)
+    min_len = size * {'low': .03, 'medium': .018, 'high': .012, 'max': .008}[detail]
+    strokes = []
+    for pts in traced:
+        pts = [(y, x) for x, y in pts]
+        if len(pts) < 3:
+            continue
+        shaped = smooth(simplify(pts, 1.0), 1)
+        if length(shaped) >= min_len:
+            strokes.append(shaped)
+    ordered = order_strokes(outline, strokes, size * .06)
+    inverse = 1. / scale
+    return [[(x * inverse + ox, y * inverse + oy) for x, y in s] for s in ordered], len(outline)
+
+
 # ---------------------------------------------------------------- artist
 
 ARTIST_COLORS = {'guide': '#A3ABB6', 'line': '#303946', 'accent': '#121820'}

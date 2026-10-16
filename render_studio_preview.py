@@ -48,6 +48,21 @@ window.artwork_size.setValue(100)
 # Keep the original file names for older review scripts.
 import shutil
 shutil.copy(out/'studio-dark-animation.png',out/'studio-animation.png')
+# Create Image (AI) window, as on a PC with a 16 GB graphics card.
+from ai_models import Hardware
+from create_image_dialog import CreateImageDialog
+for theme_name in ('dark','light'):
+    window.apply_theme(theme_name)
+    dialog=CreateImageDialog(window,str(Path('samples/drawing.svg').resolve()),None,
+                             hardware=Hardware('NVIDIA GeForce RTX 4070 Ti SUPER',16.,32.,True))
+    dialog.image_path=None
+    dialog.set_task('generate')
+    dialog.show(); app.processEvents()
+    dialog.grab().save(str(out/f'create-image-{theme_name}.png'))
+    dialog.set_task('lineart'); app.processEvents()
+    dialog.grab().save(str(out/f'create-image-lineart-{theme_name}.png'))
+    dialog.close()
+window.apply_theme('dark')
 # Setup & system check window, with the real checks of the build machine.
 import preflight
 from setup_wizard import SetupDialog

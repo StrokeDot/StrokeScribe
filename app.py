@@ -181,9 +181,10 @@ class ImageBuilder(QThread):
     failed=Signal(str)
     stage=Signal(str,int,bool)
     def __init__(self,path,detail,brush_width,spacing,clean_faint=False,style='clean',
-                 animation='standard',paint_method='adaptive'):
+                 animation='standard',paint_method='adaptive',line_guide=None):
         super().__init__()
         self.paint_method=paint_method
+        self.line_guide=line_guide
         self.path=path; self.detail=detail; self.mode='line_art'; self.style=style
         self.animation=animation
         self.brush_width=brush_width; self.spacing=spacing
@@ -197,8 +198,11 @@ class ImageBuilder(QThread):
             from adaptive_hand import plan_for
             self.stage.emit('Drawing line art from the image',20,False)
             started=time.perf_counter()
+            if self.line_guide:
+                self.stage.emit('Lining up the line drawing with the image',20,False)
             result=reconstruct(self.path,'line_art',self.detail,clean_faint=self.clean_faint,
-                               style=self.style,animation=self.animation)
+                               style=self.style,animation=self.animation,
+                               line_guide=self.line_guide)
             self.timings['lines']=time.perf_counter()-started
             self.stage.emit('Preparing animation and brush routes',85,False)
             started=time.perf_counter()
@@ -222,6 +226,8 @@ class Window(QMainWindow):
         QApplication.instance().setFont(QFont('Segoe UI',10))
         self.image_result=None
         self.image_path=None
+        self.image_guide=None          # optional line drawing traced instead of the image
+        self.ai_engine=None
         self.builder=None
         self.analysis_started=0.
         self.analysis_stage=''
@@ -486,6 +492,33 @@ class Window(QMainWindow):
         self.export.setEnabled(self.drawing is not None)
         self.quick_export.setEnabled(self.drawing is not None)
         self.refresh()
+    # ------------------------------------------------------------ AI images
+    def open_create_image(self):
+        from create_image_dialog import CreateImageDialog
+        import ai_engine
+        if self.ai_engine is None:
+            self.ai_engine=ai_engine.Engine()
+        current=self.image_path if self.source_type.currentIndex() else None
+        dialog=CreateImageDialog(self,current,self.use_ai_result,self.ai_engine)
+        dialog.exec()
+
+    def use_ai_result(self,kind,path,original=None):
+        """Line art: trace it over `original`; image: import it as the image source."""
+        self.source_type.setCurrentIndex(1)
+        if kind=='lineart' and original:
+            self.build_image(original,line_guide=path)
+        else:
+            self.build_image(path)
+
+    def use_own_line_drawing(self):
+        """Trace a line drawing you already have (black lines on white) over the image."""
+        if not self.image_path:
+            QMessageBox.information(self,'Line drawing','Import the colour image first.'); return
+        name,_=QFileDialog.getOpenFileName(self,'Choose the line drawing of this image','',
+                                           'Images (*.png *.jpg *.jpeg *.webp *.bmp)')
+        if name:
+            self.build_image(self.image_path,line_guide=name)
+
     def rebuild_image(self):
         if self.image_path: self.build_image(self.image_path)
 
@@ -507,16 +540,19 @@ class Window(QMainWindow):
         elif self.analysis_stage:
             self.status.setText(self.analysis_stage)
 
-    def build_image(self,path):
+    def build_image(self,path,line_guide=None):
         if self.builder and self.builder.isRunning(): return
         self.playing=False
+        if path!=self.image_path or line_guide is not None:
+            self.image_guide=line_guide
         self.image_path=path
         self.builder=ImageBuilder(path,self.image_detail.currentText().lower(),
                                   self.brush_width.value(),self.stroke_spacing.value(),
                                   clean_faint=self.clean_faint.isChecked(),
                                   style=('clean','detailed')[self.image_style.currentIndex()],
                                   animation=('artist','standard')[self.image_animation_style.currentIndex()],
-                                  paint_method=self.image_paint_method())
+                                  paint_method=self.image_paint_method(),
+                                  line_guide=self.image_guide)
         self.builder.ready.connect(self.image_ready)
         self.builder.failed.connect(self.image_failed)
         self.builder.stage.connect(self.image_stage)
@@ -907,7 +943,10 @@ class Window(QMainWindow):
             QMessageBox.information(self,'Image analysis','Please wait for image analysis to finish.'); event.ignore(); return
         if self.worker and self.worker.isRunning():
             self.cancel_export(); QMessageBox.information(self,'Export running','Please wait for the current export to stop before closing.'); event.ignore()
-        else: event.accept()
+        else:
+            if self.ai_engine is not None:
+                self.ai_engine.stop()        # never leave the AI engine running
+            event.accept()
 
 if __name__=='__main__':
     app=QApplication(sys.argv); app.setStyle('Fusion'); window=Window()
