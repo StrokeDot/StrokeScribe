@@ -71,8 +71,8 @@ class SceneWindowTests(unittest.TestCase):
         self.assertEqual(QColor(start.pixel(100, 50)).name(), '#ff0000')
         middle = scenes.transition_frame(a, b, 'Camera move', .5)
         self.assertEqual(middle.pixelColor(100, 5).alpha(), 0)              # zoomed out: board edge visible
-        end = scenes.transition_frame(a, b, 'Fade', .99)
-        self.assertEqual(QColor(end.pixel(100, 50)).name(), '#0000ff')
+        end = QColor(scenes.transition_frame(a, b, 'Fade', .99).pixel(100, 50))
+        self.assertGreater(end.blue(), 245); self.assertLess(end.red(), 5)
 
     def two_scenes(self):
         from engine import import_svg

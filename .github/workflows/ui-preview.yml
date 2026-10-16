@@ -19,7 +19,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python render_studio_preview.py | grep -v STUDIO_REVIEW_BASE64
       - name: Export speed (one core vs all cores)
-        run: QT_QPA_PLATFORM=offscreen python -m unittest test_speed.ParallelExportTests.test_speed 2>&1 | tee samples/studio-preview/export-speed.txt || true
+        run: STROKESCRIBE_BENCHMARK=1 QT_QPA_PLATFORM=offscreen python -m unittest test_speed.ParallelExportTests.test_speed 2>&1 | tee samples/studio-preview/export-speed.txt || true
       - name: Publish screenshots to the ui-previews branch
         shell: bash
         run: |

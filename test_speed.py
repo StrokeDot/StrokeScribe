@@ -104,7 +104,9 @@ class ParallelExportTests(unittest.TestCase):
         """Not a strict test (shared CI machines vary): prints the speed-up."""
         from engine import export_frames
         drawing, options = self.scene()
-        options.update(duration=5., fps=24, width=960, height=540, erase=None)
+        heavy = os.environ.get('STROKESCRIBE_BENCHMARK') == '1'     # longer run for the speed report
+        options.update(duration=12. if heavy else 5., fps=30 if heavy else 24,
+                       width=1920 if heavy else 960, height=1080 if heavy else 540, erase=None)
         start = time.perf_counter()
         export_frames(drawing, self.dir / 'seq', workers=1, **options)
         single = time.perf_counter() - start
