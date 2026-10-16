@@ -31,11 +31,15 @@ def main(comfy, base, out):
     out.mkdir(parents=True, exist_ok=True)
     model = ai_models.STABLE_AUDIO_SFX
     variant = model.variants[0]
+    report = []
     for f in model.files(variant):
         target = base / 'models' / f.folder / f.name
         started = time.time()
-        ai_engine.download(f.url, target, f.size)
-        print(f'downloaded {f.name} ({f.size / 1e9:.2f} GB) in {time.time() - started:.0f} s', flush=True)
+        ai_engine.download(f.url, target, f.size)        # the app's downloader (several connections)
+        took = max(.1, time.time() - started)
+        line = f'downloaded {f.name} ({f.size / 1e9:.2f} GB) in {took:.0f} s = {f.size / took / 1e6:.0f} MB/s'
+        print(line, flush=True); report.append(line)
+    (out / 'downloads.txt').write_text('\n'.join(report) + '\n')
     (base / 'custom_nodes').mkdir(parents=True, exist_ok=True)     # the app always has this folder
     port = 8198
     proc = subprocess.Popen([sys.executable, str(comfy / 'main.py'), '--cpu', '--listen', '127.0.0.1',

@@ -113,22 +113,35 @@ class ModelChoiceTests(unittest.TestCase):
 class RangeHandler(http.server.SimpleHTTPRequestHandler):
     payload = bytes(range(256)) * 4000
     fail_after = None
+    slow = 0.
+    requests = []
 
     def do_GET(self):
-        start = 0
+        start, end = 0, None
         header = self.headers.get('Range')
         if header:
-            start = int(header.split('=')[1].split('-')[0])
+            first, last = header.split('=')[1].split('-')
+            start = int(first); end = int(last) if last else None
             self.send_response(206)
         else:
             self.send_response(200)
-        body = self.payload[start:]
+        RangeHandler.requests.append(header)
+        body = self.payload[start:None if end is None else end + 1]
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
         limit = RangeHandler.fail_after
         if limit is not None:
             RangeHandler.fail_after = None
             self.wfile.write(body[:limit])
+            return
+        if RangeHandler.slow:
+            import time as _t
+            for k in range(0, len(body), 4096):
+                _t.sleep(RangeHandler.slow)
+                try:
+                    self.wfile.write(body[k:k + 4096])
+                except OSError:
+                    return
             return
         self.wfile.write(body)
 
@@ -160,6 +173,67 @@ class DownloadTests(unittest.TestCase):
                     ai_engine.download(url, Path(tmp) / 'b.bin', size, cancelled=lambda: True)
         finally:
             server.shutdown()
+
+
+class ParallelDownloadTests(unittest.TestCase):
+    """Big model files: several connections at once, resumable pieces, quick Cancel."""
+
+    def setUp(self):
+        self.old = (ai_engine.SEGMENT, ai_engine.PARALLEL_FROM, ai_engine.BLOCK)
+        ai_engine.SEGMENT, ai_engine.PARALLEL_FROM, ai_engine.BLOCK = 64 << 10, 0, 16 << 10
+        RangeHandler.slow = 0.; RangeHandler.fail_after = None; RangeHandler.requests = []
+        self.server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), RangeHandler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f'http://127.0.0.1:{self.server.server_address[1]}/file.bin'
+        self.size = len(RangeHandler.payload)
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        ai_engine.SEGMENT, ai_engine.PARALLEL_FROM, ai_engine.BLOCK = self.old
+        RangeHandler.slow = 0.
+        self.server.shutdown()
+        self.tmp.cleanup()
+
+    def test_pieces_over_several_connections(self):
+        target = Path(self.tmp.name) / 'a.bin'
+        seen = []
+        ai_engine.download(self.url, target, self.size, progress=lambda d, t: seen.append(d))
+        self.assertEqual(target.read_bytes(), RangeHandler.payload)
+        self.assertEqual(seen[-1], self.size)
+        pieces = [r for r in RangeHandler.requests if r and r != 'bytes=0-0']
+        self.assertGreaterEqual(len(pieces), self.size // (64 << 10))
+        self.assertFalse(target.with_name('a.bin.part.json').exists())
+
+    def test_cut_piece_is_fetched_again(self):
+        target = Path(self.tmp.name) / 'c.bin'
+        RangeHandler.fail_after = 1000          # the first connection drops part way
+        ai_engine.download(self.url, target, self.size)
+        self.assertEqual(target.read_bytes(), RangeHandler.payload)
+
+    def test_cancel_is_quick_and_resumes(self):
+        import time as _t
+        target = Path(self.tmp.name) / 'b.bin'
+        RangeHandler.slow = .05                  # a slow server
+        began = _t.time()
+        stop_at = began + .8
+        with self.assertRaises(ai_engine.Cancelled):
+            ai_engine.download(self.url, target, self.size, cancelled=lambda: _t.time() > stop_at)
+        self.assertLess(_t.time() - began, 5.)   # stops within a few seconds
+        sidecar = target.with_name('b.bin.part.json')
+        self.assertTrue(sidecar.exists())
+        RangeHandler.slow = 0.
+        RangeHandler.requests = []
+        ai_engine.download(self.url, target, self.size)
+        self.assertEqual(target.read_bytes(), RangeHandler.payload)
+
+    def test_old_single_download_continues(self):
+        target = Path(self.tmp.name) / 'd.bin'
+        part = target.with_name('d.bin.part')
+        part.write_bytes(RangeHandler.payload[:300000])          # left by an older version
+        ai_engine.download(self.url, target, self.size)
+        self.assertEqual(target.read_bytes(), RangeHandler.payload)
+        asked = [r for r in RangeHandler.requests if r and r != 'bytes=0-0']
+        self.assertFalse(any(r.startswith('bytes=0-') for r in asked))   # the start was not fetched again
 
 
 def drawing_pair(dx=0, dy=0, s=1.):

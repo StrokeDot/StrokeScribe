@@ -107,8 +107,27 @@ class Cancelled(Exception):
     pass
 
 
-def download(url, target, size=None, progress=None, cancelled=lambda: False, chunk=1 << 20):
-    """Download with resume (.part file), progress(done, total) and size check."""
+CONNECTIONS = 8                  # parallel connections for a big model file
+SEGMENT = 32 << 20               # bytes per piece (each piece is resumable)
+BLOCK = 256 << 10                # read size: small, so Cancel works within a moment
+SOCKET_TIMEOUT = 20              # seconds without data before a connection is retried
+PARALLEL_FROM = 64 << 20         # files smaller than this use one connection
+
+
+def _open(url, start=None, end=None, timeout=SOCKET_TIMEOUT):
+    request = urllib.request.Request(url, headers={'User-Agent': 'StrokeScribe'})
+    if start is not None:
+        request.add_header('Range', f'bytes={start}-{"" if end is None else end}')
+    return urllib.request.urlopen(request, timeout=timeout)
+
+
+def download(url, target, size=None, progress=None, cancelled=lambda: False, connections=None):
+    """Download with resume, progress(done, total) and size check.
+
+    Big files with a known size are fetched in pieces over several connections
+    at once (much faster where one connection is slowed down, as with Hugging
+    Face from some countries); finished pieces are remembered in <name>.part.json,
+    so a stopped download continues where it stopped."""
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     if size and target.is_file() and target.stat().st_size == size:
@@ -116,17 +135,46 @@ def download(url, target, size=None, progress=None, cancelled=lambda: False, chu
             progress(size, size)
         return target
     part = target.with_name(target.name + '.part')
+    connections = CONNECTIONS if connections is None else connections
+    if size and size >= PARALLEL_FROM and connections > 1:
+        try:
+            final = _resolve(url)
+        except Cancelled:
+            raise
+        except Exception:
+            final = None
+        if final:
+            _download_pieces(final, url, part, size, progress, cancelled, connections)
+            part.replace(target)
+            return target
+    _download_single(url, part, size, progress, cancelled)
+    if size and part.stat().st_size != size:
+        raise RuntimeError(f'{target.name} is incomplete ({part.stat().st_size} of {size} bytes). '
+                           'Try again to resume.')
+    part.replace(target)
+    return target
+
+
+def _resolve(url):
+    """The file's real address after redirects, if the server sends pieces (Range); else None."""
+    with _open(url, 0, 0) as response:
+        if response.status != 206:
+            return None
+        return response.geturl()
+
+
+def _download_single(url, part, size, progress, cancelled):
     done = part.stat().st_size if part.is_file() else 0
     if size and done > size:
         part.unlink(); done = 0
-    request = urllib.request.Request(url, headers={'User-Agent': 'StrokeScribe'})
-    if done:
-        request.add_header('Range', f'bytes={done}-')
+    sidecar = part.with_name(part.name + '.json')
+    if sidecar.is_file():                       # pieces of a parallel download: start again
+        sidecar.unlink(); part.unlink(missing_ok=True); done = 0
     try:
-        response = urllib.request.urlopen(request, timeout=60)
+        response = _open(url, done if done else None, timeout=60)
     except urllib.error.HTTPError as exc:
         if exc.code == 416 and size and done == size:     # already complete
-            part.replace(target); return target
+            return
         raise RuntimeError(f'Download failed ({exc.code}) for {url}') from exc
     with response:
         if done and response.status != 206:                # server ignored the resume
@@ -136,18 +184,133 @@ def download(url, target, size=None, progress=None, cancelled=lambda: False, chu
             while True:
                 if cancelled():
                     raise Cancelled('Download paused; it continues where it stopped next time.')
-                block = response.read(chunk)
+                block = response.read(BLOCK)
                 if not block:
                     break
                 out.write(block)
                 done += len(block)
                 if progress:
                     progress(done, total)
-    if size and part.stat().st_size != size:
-        raise RuntimeError(f'{target.name} is incomplete ({part.stat().st_size} of {size} bytes). '
-                           'Try again to resume.')
-    part.replace(target)
-    return target
+
+
+def _download_pieces(final, original, part, size, progress, cancelled, connections):
+    import threading
+    pieces = [(i, a, min(size, a + SEGMENT) - 1) for i, a in enumerate(range(0, size, SEGMENT))]
+    sidecar = part.with_name(part.name + '.json')
+    finished = set()
+    if part.is_file():
+        try:
+            info = json.loads(sidecar.read_text())
+            if info.get('size') == size and info.get('segment') == SEGMENT:
+                finished = set(info.get('done', []))
+        except Exception:
+            # An older one-connection download: the start of the file is already there.
+            have = part.stat().st_size
+            finished = {i for i, a, b in pieces if b < have}
+    mode = 'r+b' if part.is_file() else 'w+b'
+    with open(part, mode) as f:
+        f.truncate(size)
+    lock = threading.Lock()
+    state = dict(url=final, error=None, live={}, progress={})
+    stop = threading.Event()
+    todo = [p for p in pieces if p[0] not in finished]
+
+    def save():
+        sidecar.write_text(json.dumps(dict(size=size, segment=SEGMENT, done=sorted(finished))))
+
+    def fetch(piece, out):
+        i, a, b = piece
+        tries = 0
+        while not stop.is_set():
+            got = 0
+            try:
+                response = _open(state['url'], a, b)
+                with lock:
+                    state['live'][i] = response
+                with response:
+                    if response.status != 206:
+                        raise RuntimeError('The server stopped sending pieces.')
+                    out.seek(a)
+                    while not stop.is_set():
+                        block = response.read(BLOCK)
+                        if not block:
+                            break
+                        out.write(block)
+                        got += len(block)
+                        with lock:
+                            state['progress'][i] = got
+                if stop.is_set():
+                    return
+                if got != b - a + 1:
+                    raise RuntimeError('A piece of the download was cut off.')
+                with lock:
+                    finished.add(i); state['progress'].pop(i, None); state['live'].pop(i, None)
+                    save()
+                return
+            except Exception as exc:
+                with lock:
+                    state['live'].pop(i, None); state['progress'].pop(i, None)
+                if stop.is_set():
+                    return
+                tries += 1
+                if tries > 6:
+                    state['error'] = exc
+                    stop.set(); return
+                code = getattr(exc, 'code', None)
+                if code in (401, 403, 404, 410):              # the signed address expired: ask again
+                    try:
+                        state['url'] = _resolve(original) or state['url']
+                    except Exception:
+                        pass
+                stop.wait(min(30, 2 ** tries))
+
+    def worker():
+        with open(part, 'r+b') as out:
+            while not stop.is_set():
+                with lock:
+                    if not todo:
+                        return
+                    piece = todo.pop(0)
+                fetch(piece, out)
+
+    threads = [threading.Thread(target=worker, daemon=True) for _ in range(max(1, min(connections, len(todo))))]
+    for t in threads:
+        t.start()
+    try:
+        while any(t.is_alive() for t in threads):
+            if cancelled():
+                stop.set()
+                with lock:
+                    for response in list(state['live'].values()):
+                        try:
+                            response.close()               # wakes a connection that waits for data
+                        except Exception:
+                            pass
+                for t in threads:
+                    t.join(2)
+                with lock:
+                    save()
+                raise Cancelled('Download paused; it continues where it stopped next time.')
+            if progress:
+                with lock:
+                    done = sum(min(SEGMENT, size - i * SEGMENT) for i in finished) + sum(state['progress'].values())
+                progress(done, size)
+            for t in threads:
+                t.join(.25)
+                break
+    finally:
+        stop.set()
+    if state['error'] is not None:
+        with lock:
+            save()
+        raise RuntimeError(f'Download failed for {part.name[:-5]}: {state["error"]}. '
+                           'Try again: it continues where it stopped.')
+    if len(finished) != len(pieces):
+        save()
+        raise RuntimeError(f'{part.name[:-5]} is incomplete. Try again: it continues where it stopped.')
+    if progress:
+        progress(size, size)
+    sidecar.unlink(missing_ok=True)
 
 
 def free_space_gb(path):

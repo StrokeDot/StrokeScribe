@@ -160,6 +160,12 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Faster AI model downloads (v0.5.3-experimental.46)
+
+- **8 connections at once:** big model files download in pieces over 8 connections. This is much faster where one connection is slow, as Hugging Face often is from Asia.
+- **Cancel works right away**, and a stopped download continues where it stopped, piece by piece (also from a download started by an older version).
+- The speed shown is the current speed (last few seconds).
+
 ## Several pictures on one page, smoother playback (v0.5.3-experimental.45)
 
 - **Several pictures on one page:** in the scene strip, click **+ Add picture**. The new picture is drawn on the same page, and the pictures before it stay there. Import its artwork, then drag it on the preview to place it. In the strip, a "+" marks a picture on the same page. You can also choose "Same page" under "Then" for any scene.

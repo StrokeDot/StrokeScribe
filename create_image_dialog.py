@@ -66,10 +66,18 @@ class AIWorker(QThread):
         self.done.emit('installed')
 
     def _download(self, paths, files, name):
-        started = time.time()
+        recent = []                      # (time, bytes): speed over the last few seconds
 
         def report(done, total, file_name):
-            rate = done / max(1., time.time() - started) / 1e6
+            now = time.time()
+            recent.append((now, done))
+            while len(recent) > 2 and now - recent[0][0] > 5:
+                recent.pop(0)
+            span = now - recent[0][0]
+            rate = (done - recent[0][1]) / span / 1e6 if span > .5 else 0.
+            if recent and now - getattr(report, 'shown', 0) < .4 and done < total:
+                return                   # update the window a few times a second
+            report.shown = now
             self.progress.emit(round(100 * done / max(1, total)),
                                f'Downloading {name}: {done / 1e9:.1f} of {total / 1e9:.1f} GB '
                                f'({rate:.0f} MB/s) — {file_name}')
