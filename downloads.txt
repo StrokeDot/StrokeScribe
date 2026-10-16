@@ -1,0 +1,2 @@
+downloaded stable_audio_3_small_sfx.safetensors (2.27 GB) in 0 s = 22704 MB/s
+downloaded t5gemma_b_b_ul2.safetensors (1.19 GB) in 0 s = 11873 MB/s
