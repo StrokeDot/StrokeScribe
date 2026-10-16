@@ -36,6 +36,7 @@ def main(comfy, base, out):
         started = time.time()
         ai_engine.download(f.url, target, f.size)
         print(f'downloaded {f.name} ({f.size / 1e9:.2f} GB) in {time.time() - started:.0f} s', flush=True)
+    (base / 'custom_nodes').mkdir(parents=True, exist_ok=True)     # the app always has this folder
     port = 8198
     proc = subprocess.Popen([sys.executable, str(comfy / 'main.py'), '--cpu', '--listen', '127.0.0.1',
                              '--port', str(port), '--base-directory', str(base), '--disable-auto-launch'],
