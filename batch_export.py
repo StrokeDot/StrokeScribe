@@ -47,27 +47,8 @@ def prepare(path, settings, hand):
     kind = item_kind(path)
     if kind == 'Project':
         import projects
-        from projects import drawing_from_dict, qimage_from_b64
-        data = projects.load(path)
-        s = data.get('settings', {})
-        drawing = drawing_from_dict(data['drawing'])
-        project_hand = hand
-        if data.get('hand'):
-            from tools_kit import hand_from_project, restore_paint_hand
-            project_hand = hand_from_project(data['hand'])[0] or hand
-            if data.get('paint_hand_png'):
-                s = dict(s, paint_hand_path=restore_paint_hand(s.get('paint_hand_path'),
-                                                               data['paint_hand_png']))
-        if data.get('source') == 'image' and data.get('image'):
-            from adaptive_hand import pil_image
-            from image_regions import segment_regions
-            image = qimage_from_b64(data['image']['png'])
-            detail = data['image'].get('detail', 'medium')
-            drawing.image_regions = segment_regions(pil_image(image), 'high' if detail == 'max' else detail)
-            options = options_from_settings(s, drawing, hand=project_hand, image_source=image)
-        else:
-            options = options_from_settings(s, drawing, color_image=qimage_from_b64(data.get('color_png')),
-                                            hand=project_hand)
+        from scenes import job_from_state
+        drawing, options, s = job_from_state(projects.load(path), hand)
         return drawing, options, formats_from_settings(s)
     if kind == 'SVG':
         from color_reveal import load_color_image
@@ -100,6 +81,20 @@ def prepare(path, settings, hand):
     raise ValueError('Unsupported file type')
 
 
+def project_scenes(path):
+    """Scene list of a multi-scene project (None for anything else)."""
+    if item_kind(path) != 'Project':
+        return None
+    import projects
+    from scenes import scenes_from_project
+    data = projects.load(path)
+    scene_list = scenes_from_project(data)
+    if len(scene_list) < 2:
+        return None
+    scene_list[0]['project'] = data
+    return scene_list
+
+
 class BatchWorker(QThread):
     item_state = Signal(int, str)          # row, status text
     item_progress = Signal(int, int)       # frame i of n (0, 0 = encoding)
@@ -123,16 +118,26 @@ class BatchWorker(QThread):
             started = time.perf_counter()
             try:
                 self.item_state.emit(row, 'Preparing…')
-                drawing, options, formats = prepare(path, self.settings, self.hand)
                 folder = self.destination / f'{Path(path).stem}_{stamp}'
                 n = 1
                 while folder.exists():
                     n += 1
                     folder = self.destination / f'{Path(path).stem}_{stamp}_{n}'
-                self.item_state.emit(row, 'Exporting…')
-                message = run_export(drawing, folder, options, **formats,
-                                     progress=self.item_progress.emit,
-                                     interrupted=self.isInterruptionRequested)
+                scene_list = project_scenes(path)
+                if scene_list:
+                    # A project with several scenes becomes one video with all of them.
+                    from scenes import export_scenes
+                    self.item_state.emit(row, f'Exporting {len(scene_list)} scenes…')
+                    data = scene_list[0]['project']
+                    message = export_scenes(scene_list, folder, data.get('settings', {}), self.hand,
+                                            progress=self.item_progress.emit,
+                                            interrupted=self.isInterruptionRequested)
+                else:
+                    drawing, options, formats = prepare(path, self.settings, self.hand)
+                    self.item_state.emit(row, 'Exporting…')
+                    message = run_export(drawing, folder, options, **formats,
+                                         progress=self.item_progress.emit,
+                                         interrupted=self.isInterruptionRequested)
                 done += 1
                 from app import format_seconds
                 self.item_state.emit(row, f'Done in {format_seconds(time.perf_counter() - started)} — '

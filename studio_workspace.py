@@ -66,6 +66,8 @@ class StageTimeline(QFrame):
         self.setMaximumHeight(92)
         self.setMouseTracking(True)
         self.locked=False          # True while a drawing is being prepared
+        self.scene_segments=None   # all-scenes preview: [(label, seconds, 'scene'|'join')]
+        self.current_scene=0
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setToolTip('Click a stage to move the playback cursor.')
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -76,6 +78,12 @@ class StageTimeline(QFrame):
         self.hold_seconds=max(0.,float(hold))
         self.erase_seconds=max(0.,float(erase))
         self.progress=max(0.,min(1.,float(progress)))
+        self.update()
+
+    def set_scenes(self, segments, current=0):
+        """Show scene blocks instead of Draw/Paint/Hold/Erase (None: back to stages)."""
+        self.scene_segments=list(segments) if segments else None
+        self.current_scene=current
         self.update()
 
     LEFT=12.
@@ -124,6 +132,14 @@ class StageTimeline(QFrame):
                 ('Paint',self.paint_seconds,c['paint']),
                 ('Hold',self.hold_seconds,c['hold']),
                 ('Erase',self.erase_seconds,c.get('erase','#D9667E'))]
+        if self.scene_segments:
+            palette=[c['draw'],c['paint'],c['hold'],c.get('erase','#D9667E')]
+            stages=[]; n=0
+            for name,secs,kind in self.scene_segments:
+                if kind=='join':
+                    stages.append((name,secs,c['border_strong']))
+                else:
+                    stages.append((name,secs,palette[n%len(palette)])); n+=1
         x=left
         label_font=QFont(self.font());label_font.setPointSizeF(8.5);label_font.setBold(True)
         for name,secs,color in stages:
@@ -824,6 +840,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.fit_audio_button.setToolTip('Stretch draw, paint, hold and erase times so the video ends when the track ends.')
     w.fit_audio_button.clicked.connect(lambda checked=False: w.fit_to_audio())
     output_l.addWidget(w.fit_audio_button)
+    w.export_all_scenes=QCheckBox('Export all scenes as one video')
+    w.export_all_scenes.setChecked(True)
+    w.export_all_scenes.setToolTip('With several scenes: one video with every scene and the moves between them. '
+                                   'Off: only the scene you are editing.')
+    output_l.addWidget(w.export_all_scenes)
     w.fast_export=QCheckBox('Use all CPU cores (faster export)')
     w.fast_export.setChecked(True)
     w.fast_export.setToolTip('Longer exports are rendered on several processor cores at once. '
@@ -861,6 +882,55 @@ def build_workspace(w, Canvas, BRAND_ICON):
     line_l=QVBoxLayout(body)
     line_l.setContentsMargins(6,4,6,6);line_l.setSpacing(4)
     timeline_outer.addWidget(body)
+    # Scenes: several drawings in one video, joined by camera moves.
+    from scenes import TRANSITIONS
+    from PySide6.QtCore import QSize
+    scene_row=QHBoxLayout();scene_row.setSpacing(6)
+    scene_row.addWidget(label('SCENES'))
+    w.scene_list=QListWidget()
+    w.scene_list.setObjectName('sceneStrip')
+    w.scene_list.setFlow(QListWidget.Flow.LeftToRight)
+    w.scene_list.setWrapping(False)
+    w.scene_list.setViewMode(QListWidget.ViewMode.IconMode)
+    w.scene_list.setMovement(QListWidget.Movement.Static)
+    w.scene_list.setIconSize(QSize(72,40))
+    w.scene_list.setGridSize(QSize(118,62))
+    w.scene_list.setFixedHeight(70)
+    w.scene_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    w.scene_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    w.scene_list.setToolTip('Click a scene to edit it. Every scene has its own drawing and settings.')
+    w.scene_list.currentRowChanged.connect(lambda row: w.select_scene(row))
+    scene_row.addWidget(w.scene_list,1)
+    scene_buttons=QVBoxLayout();scene_buttons.setSpacing(4)
+    w.scene_add=QPushButton('+ Add scene')
+    w.scene_add.setToolTip('A new scene after this one (a copy of it: then import its own SVG or image).')
+    w.scene_add.clicked.connect(lambda checked=False: w.add_scene())
+    scene_buttons.addWidget(w.scene_add)
+    move_row=QHBoxLayout();move_row.setSpacing(4)
+    w.scene_left=QPushButton('◀');w.scene_left.setToolTip('Move this scene earlier')
+    w.scene_left.clicked.connect(lambda checked=False: w.move_scene(-1))
+    w.scene_right=QPushButton('▶');w.scene_right.setToolTip('Move this scene later')
+    w.scene_right.clicked.connect(lambda checked=False: w.move_scene(1))
+    w.scene_delete=QPushButton('Delete');w.scene_delete.setToolTip('Delete this scene')
+    w.scene_delete.clicked.connect(lambda checked=False: w.delete_scene())
+    for b in (w.scene_left,w.scene_right,w.scene_delete): move_row.addWidget(b)
+    scene_buttons.addLayout(move_row)
+    scene_row.addLayout(scene_buttons)
+    trans=QFormLayout();trans.setSpacing(4)
+    w.scene_transition=QComboBox();w.scene_transition.addItems(list(TRANSITIONS))
+    w.scene_transition.setToolTip('How the video moves from this scene to the next one.')
+    w.scene_transition.activated.connect(lambda index: w.scene_transition_changed())
+    trans.addRow('Then',w.scene_transition)
+    w.scene_transition_time=w.number(.2,6,1.2,.1)
+    w.scene_transition_time.setToolTip('Length of the move to the next scene (seconds).')
+    w.scene_transition_time.valueChanged.connect(lambda value: w.scene_transition_changed())
+    trans.addRow('Move (s)',w.scene_transition_time)
+    w.preview_scope=QComboBox();w.preview_scope.addItems(['This scene','All scenes'])
+    w.preview_scope.setToolTip('Play and scrub only the scene you edit, or the whole video.')
+    w.preview_scope.currentIndexChanged.connect(lambda index: w.preview_scope_changed())
+    trans.addRow('Preview',w.preview_scope)
+    scene_row.addLayout(trans)
+    line_l.addLayout(scene_row)
     # The slider keeps the position; the timeline is what you see and drag.
     w.slider=QSlider(Qt.Orientation.Horizontal)
     w.slider.setRange(0,1000);w.slider.valueChanged.connect(w.scrub)

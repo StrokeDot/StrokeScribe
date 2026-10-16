@@ -102,7 +102,7 @@ def run_export(drawing, folder, options, mov=False, webm=False, webm_quality=28,
                mp4=False, mp4_background='white', sound_volume=None, progress=lambda i, n: None,
                interrupted=lambda: False):
     """Frames, optional soundtrack, then the chosen videos. Returns a summary."""
-    from engine import export_frames, encode_mov, encode_mp4, encode_webm
+    from engine import export_frames
     folder = Path(folder)
     options = dict(options)
     voice = options.pop('audio', None)
@@ -125,10 +125,20 @@ def run_export(drawing, folder, options, mov=False, webm=False, webm_quality=28,
         from frame_render import timeline_seconds
         audio = mix(audio, voice['path'], voice['volume'], voice['offset'],
                     timeline_seconds(drawing, options), folder / 'soundtrack.wav')
+    return encode_outputs(folder, options['fps'], mov, webm, webm_quality, keep_png, mp4, mp4_background,
+                          audio=audio, progress=progress, interrupted=interrupted)
+
+
+def encode_outputs(folder, fps, mov=False, webm=False, webm_quality=28, keep_png=True, mp4=False,
+                   mp4_background='white', sound_volume=None, audio=None, progress=lambda i, n: None,
+                   interrupted=lambda: False):
+    """Encode the PNG frames in `folder` into the chosen videos. Returns a summary."""
+    from engine import encode_mov, encode_mp4, encode_webm
+    folder = Path(folder)
     videos = []
-    for wanted, make in ((webm, lambda: encode_webm(folder, options['fps'], webm_quality, audio)),
-                         (mov, lambda: encode_mov(folder, options['fps'], audio)),
-                         (mp4, lambda: encode_mp4(folder, options['fps'], mp4_background, audio))):
+    for wanted, make in ((webm, lambda: encode_webm(folder, fps, webm_quality, audio)),
+                         (mov, lambda: encode_mov(folder, fps, audio)),
+                         (mp4, lambda: encode_mp4(folder, fps, mp4_background, audio))):
         if not wanted:
             continue
         if interrupted():

@@ -160,6 +160,17 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Scenes: several drawings in one video (v0.5.3-experimental.35)
+
+The **Scenes** strip in the Timeline panel holds the drawings of one video, in order:
+
+- **+ Add scene** adds a scene after the current one. It starts as a copy; import its own SVG or image (Import, Library or Create image). Every scene keeps its own drawing, colours, hand, timing, painting, eraser, camera and voiceover.
+- Click a scene to edit it. **◀ ▶** change the order, **Delete** removes a scene.
+- **Then** sets how the video moves to the next scene: *Camera move* (zoom out, travel along the board, zoom in, like VideoScribe), *Pan left/right/up/down*, *Zoom in*, *Fade* or *Cut*. **Move (s)** sets how long the move takes.
+- **Preview → All scenes** plays and scrubs the whole video, with one block per scene on the timeline. (That preview has no sound; the export does.)
+- **Export → Export all N scenes as one video** (on by default with several scenes): one video with every scene and the moves. Each scene's pencil sounds and voiceover play with that scene. Resolution, frame rate, formats, background and sound settings come from the scene you are editing. Uses all CPU cores.
+- Scenes are saved in the project file. Batch export turns a multi-scene project into one video. Older StrokeScribe versions open such a project as the edited scene only.
+
 ## Faster export on all CPU cores (v0.5.3-experimental.34)
 
 - Longer exports (from about 4 seconds of video) are rendered on several processor cores at once, one group of frames per core. The frames are exactly the same as before, only faster. **Export tab → Use all CPU cores (faster export)** is on by default; turn it off if you need the computer to stay quick while exporting. Batch export uses it too.

@@ -141,6 +141,33 @@ for _i in range(48):
     _frames.append(_bg.convert('RGB'))
 _frames[0].save(str(out/'painting-hand.gif'),save_all=True,append_images=_frames[1:]+[_frames[-1]]*6,
                 duration=90,loop=0)
+# Scenes: two scenes, the whole video previewed during the camera move.
+from engine import import_svg as _imp
+window.apply_theme('dark'); window.resize(1490,890)
+window.add_scene()
+window.set_drawing(_imp('samples/arthur-headset-traced.svg'))
+window.scene_list.setCurrentRow(0)
+window.preview_scope.setCurrentIndex(1)
+_lengths,_joins=window.scene_timeline()
+window.slider.setValue(round(1000*(_lengths[0]+_joins[0]*.5)/(sum(_lengths)+sum(_joins))))
+snapshot('scenes.png')
+# A GIF of each transition between the two finished scenes.
+from scenes import transition_frame as _tf, TRANSITIONS as _TR
+_a=window.preview_scene(0,640,360); _b=window.preview_scene(1,640,360)
+_fa=_compose(_a[0],1.,_a[1],_a[3]); _fb=_compose(_b[0],0.,_b[1],_b[3])   # the next scene starts empty
+_frames=[]
+for _kind in ('Camera move','Pan right','Zoom in'):
+    for _i in range(16):
+        _img=_tf(_fa,_fb,_kind,_i/15) if _i else _fa
+        _f=_pil(_img).convert('RGBA'); _bg=_Image.new('RGBA',_f.size,(255,255,255,255)); _bg.alpha_composite(_f)
+        _frames.append(_bg.convert('RGB'))
+    _frames+= [_frames[-1]]*4
+# After the last move, the next scene is drawn.
+for _i in range(1,13):
+    _f=_pil(_compose(_b[0],_i/12*.6,_b[1],_b[3])).convert('RGBA'); _bg=_Image.new('RGBA',_f.size,(255,255,255,255))
+    _bg.alpha_composite(_f); _frames.append(_bg.convert('RGB'))
+_frames[0].save(str(out/'scene-transitions.gif'),save_all=True,append_images=_frames[1:],duration=70,loop=0)
+window.preview_scope.setCurrentIndex(0)
 # Setup & system check window, with the real checks of the build machine.
 import preflight
 from setup_wizard import SetupDialog

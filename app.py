@@ -219,6 +219,19 @@ class Exporter(QThread):
                 progress=self.progress.emit,interrupted=self.isInterruptionRequested))
         except Exception as e: self.failed.emit(str(e))
 
+class SceneExporter(QThread):
+    """All scenes as one video (scenes.export_scenes), off the UI thread."""
+    progress=Signal(int,int); done=Signal(str); failed=Signal(str)
+    def __init__(self,scene_list,folder,settings,hand):
+        super().__init__()
+        self.scene_list=scene_list; self.folder=Path(folder); self.settings=settings; self.hand=hand
+    def run(self):
+        try:
+            from scenes import export_scenes
+            self.done.emit(export_scenes(self.scene_list,self.folder,self.settings,self.hand,
+                                         progress=self.progress.emit,interrupted=self.isInterruptionRequested))
+        except Exception as e: self.failed.emit(str(e))
+
 class FontInstaller(QThread):
     complete=Signal(object); update=Signal(str)
     def __init__(self,families):
@@ -312,6 +325,11 @@ class Window(QMainWindow):
         self.preview_sound=None
         self.audio_path=None; self.audio_seconds=None
         self.paint_hand_path=None; self.paint_hand_tip=None
+        from scenes import DEFAULT_TRANSITION, DEFAULT_TRANSITION_SECONDS
+        self.scenes=[dict(state=None,transition=DEFAULT_TRANSITION,
+                          transition_seconds=DEFAULT_TRANSITION_SECONDS,name=None,thumb=None)]
+        self.scene_index=0
+        self._scene_cache={}           # preview of other scenes: id(state) -> prepared scene
         self._camera_key=None; self._camera_path=None
         # Rapid brush-width changes should not synchronously rebuild the entire
         # paint plan for every spinbox/wheel event on the GUI thread.
@@ -626,6 +644,7 @@ class Window(QMainWindow):
         return best
 
     def click_preview(self,x,y,add=False):
+        if self.all_scenes(): return          # lines are edited in "This scene" preview
         index=self.line_at(x,y)
         if index is None:
             if not add: self.order.clearSelection()
@@ -747,6 +766,9 @@ class Window(QMainWindow):
         self.update_project_title(self.project_title)
         self.refresh()
         self.reset_history()
+        if getattr(self,'scenes',None):
+            self.scenes[self.scene_index]['thumb']=None      # new artwork: new thumbnail
+            if hasattr(self,'scene_list'): QTimer.singleShot(0,self.fill_scenes)
     def change_source(self,index):
         self.playing=False
         if index:
@@ -775,7 +797,13 @@ class Window(QMainWindow):
                       'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export')
 
     def project_state(self):
-        """Everything needed to reopen this exact animation."""
+        """Everything needed to reopen this project: the edited scene plus all scenes."""
+        from scenes import scenes_to_project
+        self.store_scene(thumbnail=False)
+        return scenes_to_project(self.scene_state(),self.scenes,self.scene_index)
+
+    def scene_state(self):
+        """Everything needed to reopen the scene being edited."""
         from projects import drawing_to_dict, qimage_to_b64, widget_value
         from tools_kit import hand_to_project
         image_source=bool(self.source_type.currentIndex())
@@ -833,6 +861,20 @@ class Window(QMainWindow):
         return True
 
     def apply_project(self,data):
+        """Open project data: its scenes, then the scene that was being edited."""
+        from scenes import scenes_from_project
+        scene_list=scenes_from_project(data)
+        index=max(0,min(len(scene_list)-1,int(data.get('scene_index',0) or 0)))
+        main={k:v for k,v in data.items() if k not in ('scenes','scene_index')}
+        for k,scene in enumerate(scene_list):
+            scene['thumb']=None
+            if k==index: scene['state']=None          # lives in the editor
+        self.scenes=scene_list; self.scene_index=index
+        self._scene_cache={}
+        self.apply_scene_state(main)
+        self.fill_scenes()
+
+    def apply_scene_state(self,data):
         from projects import drawing_from_dict, qimage_from_b64, set_widget_value
         self.playing=False
         drawing=drawing_from_dict(data['drawing'])
@@ -887,6 +929,207 @@ class Window(QMainWindow):
             self.status.setText('The project audio track was not found: '+audio); audio=None
         self.set_audio(audio,refresh=False)
         self.set_drawing(drawing)
+
+    # ------------------------------------------------------------ scenes
+    def scene_label(self,k):
+        scene=self.scenes[k]
+        if scene.get('name'): return scene['name']
+        state=scene.get('state')
+        title=self.project_title if state is None else state.get('title')
+        return title or f'Scene {k+1}'
+
+    def store_scene(self,thumbnail=True):
+        """Keep the edited scene's state (and a fresh thumbnail) in the scene list."""
+        if not self.drawing: return
+        scene=self.scenes[self.scene_index]
+        scene['name']=scene.get('name') or None
+        if thumbnail:
+            try:
+                from scenes import thumbnail as make_thumb
+                scene['thumb']=make_thumb(self.drawing,self.options())
+            except Exception:
+                scene['thumb']=None
+
+    def fill_scenes(self):
+        """Rebuild the scene strip."""
+        from PySide6.QtWidgets import QListWidgetItem
+        from PySide6.QtGui import QIcon, QPixmap
+        self.scene_list.blockSignals(True)
+        self.scene_list.clear()
+        for k,scene in enumerate(self.scenes):
+            if k==self.scene_index and self.drawing is not None and scene.get('thumb') is None:
+                self.store_scene()
+            item=QListWidgetItem(f'{k+1} · {self.scene_label(k)}'[:22])
+            thumb=scene.get('thumb')
+            if thumb is not None and not thumb.isNull():
+                from PySide6.QtGui import QImage, QPainter
+                card=QImage(thumb.size(),QImage.Format.Format_ARGB32_Premultiplied)
+                card.fill(QColor('white'))
+                painter=QPainter(card); painter.drawImage(0,0,thumb); painter.end()
+                item.setIcon(QIcon(QPixmap.fromImage(card)))
+            item.setToolTip(f'Scene {k+1}: {self.scene_label(k)}')
+            self.scene_list.addItem(item)
+        self.scene_list.setCurrentRow(self.scene_index)
+        self.scene_list.blockSignals(False)
+        many=len(self.scenes)>1
+        last=self.scene_index==len(self.scenes)-1
+        self.scene_delete.setEnabled(many)
+        self.scene_left.setEnabled(self.scene_index>0)
+        self.scene_right.setEnabled(not last)
+        scene=self.scenes[self.scene_index]
+        for widget,value in ((self.scene_transition,scene['transition']),
+                             (self.scene_transition_time,scene['transition_seconds'])):
+            widget.blockSignals(True)
+            if widget is self.scene_transition: widget.setCurrentText(value)
+            else: widget.setValue(value)
+            widget.blockSignals(False)
+        self.scene_transition.setEnabled(not last)
+        self.scene_transition_time.setEnabled(not last and scene['transition']!='Cut')
+        self.preview_scope.setEnabled(many)
+        if not many and self.preview_scope.currentIndex():
+            self.preview_scope.blockSignals(True); self.preview_scope.setCurrentIndex(0); self.preview_scope.blockSignals(False)
+        self.export_all_scenes.setEnabled(many)
+        self.export_all_scenes.setText(f'Export all {len(self.scenes)} scenes as one video' if many
+                                       else 'Export all scenes as one video')
+
+    def _leave_scene(self):
+        """Save the edited scene into the list before editing another one."""
+        self.store_scene()
+        self.scenes[self.scene_index]['state']=self.scene_state()
+        self._scene_cache.pop(id(self.scenes[self.scene_index]['state']),None)
+
+    def _enter_scene(self,k):
+        state=self.scenes[k]['state']
+        try:
+            self.apply_scene_state(state)
+        except Exception as exc:
+            QMessageBox.warning(self,'Scene',f'Scene {k+1} could not be opened: {exc}')
+            self.fill_scenes(); return
+        self.scene_index=k
+        self.scenes[k]['state']=None              # lives in the editor now
+        self._scene_cache={key:v for key,v in self._scene_cache.items()
+                           if any(id(s['state'])==key for s in self.scenes)}
+        self.fill_scenes()
+        self.refresh()
+
+    def select_scene(self,row):
+        if row<0 or row==self.scene_index or row>=len(self.scenes): return
+        if (self.builder and self.builder.isRunning()) or not self.drawing:
+            self.fill_scenes(); return
+        self.playing=False
+        self._leave_scene()
+        self._enter_scene(row)
+        self.status.setText(f'Editing scene {row+1} of {len(self.scenes)}: {self.scene_label(row)}')
+
+    def add_scene(self):
+        """A new scene after the current one (starts as a copy; import its own artwork)."""
+        if not self.drawing or (self.builder and self.builder.isRunning()): return
+        import copy
+        self.playing=False
+        self._leave_scene()
+        current=self.scenes[self.scene_index]
+        new=dict(state=copy.deepcopy(current['state']),transition=current['transition'],
+                 transition_seconds=current['transition_seconds'],name=f'Scene {len(self.scenes)+1}',
+                 thumb=current.get('thumb'))
+        self.scenes.insert(self.scene_index+1,new)
+        self._enter_scene(self.scene_index+1)
+        self.status.setText(f'Scene {self.scene_index+1} added as a copy. Import an SVG or image for it '
+                            '(Import, Library or Create image); its settings are its own.')
+
+    def delete_scene(self):
+        if len(self.scenes)<2: return
+        answer=QMessageBox.question(self,'Delete scene',
+            f'Delete scene {self.scene_index+1} ({self.scene_label(self.scene_index)})?')
+        if answer!=QMessageBox.StandardButton.Yes: return
+        self.playing=False
+        removed=self.scene_index
+        del self.scenes[removed]
+        self._enter_scene(min(removed,len(self.scenes)-1))
+        self.status.setText(f'Scene {removed+1} deleted.')
+
+    def move_scene(self,direction):
+        k=self.scene_index; j=k+direction
+        if not 0<=j<len(self.scenes): return
+        self.scenes[k],self.scenes[j]=self.scenes[j],self.scenes[k]
+        self.scene_index=j
+        self.fill_scenes(); self.refresh()
+
+    def scene_transition_changed(self):
+        scene=self.scenes[self.scene_index]
+        scene['transition']=self.scene_transition.currentText()
+        scene['transition_seconds']=self.scene_transition_time.value()
+        self.scene_transition_time.setEnabled(scene['transition']!='Cut'
+                                              and self.scene_index<len(self.scenes)-1)
+        self.refresh()
+
+    def all_scenes(self):
+        return self.preview_scope.currentIndex()==1 and len(self.scenes)>1
+
+    def preview_scope_changed(self):
+        self.playing=False
+        if self.preview_sound is not None: self.preview_sound.stop()
+        if self.all_scenes():
+            self.status.setText('Previewing all scenes (no sound in this preview; the export has it). '
+                                'Lines can be clicked again in "This scene" preview.')
+            self.order.clearSelection()
+        self.refresh()
+
+    def preview_scene(self,k,width,height):
+        """(drawing, options, seconds, camera) of scene k for the preview, at preview size."""
+        from scenes import job_from_state, seconds_of
+        if k==self.scene_index:
+            options=self.options(); options.pop('fps',None)
+            options['hand_scale']/=options['artwork_scale']
+            options['width'],options['height']=width,height
+            return self.drawing,options,seconds_of(self.drawing,options),self.preview_camera(options)
+        state=self.scenes[k]['state']
+        key=(id(state),width,height)
+        cached=self._scene_cache.get(id(state))
+        if cached is None or cached[0]!=key:
+            drawing,options,_=job_from_state(state,self.hand)
+            options.pop('fps',None); options.pop('audio',None)
+            options['hand_scale']/=options['artwork_scale']
+            options['width'],options['height']=width,height
+            camera=None
+            if options.get('camera_zoom',1.)>1.0001:
+                from frame_render import camera_for
+                camera=camera_for(drawing,options,options['camera_zoom'],rate=20.)
+            if options.get('final_image') is not None and options.get('reveal_mode') in ('adaptive','zigzag'):
+                from adaptive_hand import plan_ready, plan_for
+                drawing.paint_method=options['reveal_mode']
+                if not plan_ready(drawing,options['final_image'],options['brush_width'],options['stroke_spacing']):
+                    self._preparing=True
+                    try:
+                        self.show_busy_now(f'Preparing scene {k+1}','Planning how the hand paints the colours…')
+                        plan_for(drawing,options['final_image'],options['brush_width'],options['stroke_spacing'])
+                    finally:
+                        self._preparing=False
+                        self.clear_busy()
+            cached=(key,(drawing,options,seconds_of(drawing,options),camera))
+            self._scene_cache[id(state)]=cached
+        return cached[1]
+
+    def scene_timeline(self,width=960,height=540):
+        """Lengths of all scenes and the moves between them (seconds)."""
+        from scenes import transition_seconds
+        lengths=[self.preview_scene(k,width,height)[2] for k in range(len(self.scenes))]
+        joins=[0. if k==len(self.scenes)-1 else
+               transition_seconds(s['transition'],s['transition_seconds']) for k,s in enumerate(self.scenes)]
+        return lengths,joins
+
+    def all_scenes_frame(self,width,height):
+        """Preview frame of the whole video at the playhead."""
+        from frame_render import compose_frame
+        from scenes import locate, transition_frame
+        lengths,joins=self.scene_timeline(width,height)
+        total=sum(lengths)+sum(joins)
+        where,k,f=locate(lengths,joins,self.position*total)
+        def frame(n,fraction):
+            drawing,options,_,camera=self.preview_scene(n,width,height)
+            return compose_frame(drawing,fraction,options,camera)
+        if where=='join':
+            return transition_frame(frame(k,1.),frame(k+1,0.),self.scenes[k]['transition'],f),k,lengths,joins
+        return frame(k,f),k,lengths,joins
 
     def open_batch_export(self):
         from batch_export import BatchExportDialog
@@ -1338,6 +1581,9 @@ class Window(QMainWindow):
     def effective_duration(self): return self.duration.value()/self.speed.value()
     def timeline_length(self):
         from frame_render import timeline_seconds
+        if self.all_scenes():
+            lengths,joins=self.scene_timeline()
+            return sum(lengths)+sum(joins)
         return timeline_seconds(self.drawing,self.options())
     def change_image_animation(self,*args):
         # Direct painting has to retain its color source; never let the user
@@ -1471,6 +1717,9 @@ class Window(QMainWindow):
         options=self.options()
         if not (self.builder and self.builder.isRunning()):
             self.ensure_brush_plan(options)
+        if self.all_scenes():
+            self.refresh_all_scenes(options); return
+        self.stage_timeline.set_scenes(None)
         erase=options.get('erase')
         self.stage_timeline.update_state(options['duration'],
             options['fade_duration'] if options['final_image'] is not None else 0,
@@ -1498,6 +1747,23 @@ class Window(QMainWindow):
         length=self.timeline_length()
         self.clock.setText(timecode(self.position*length))
         self.clock_total.setText(timecode(length))
+    def refresh_all_scenes(self,options):
+        ratio=options['height']/options['width']
+        width,height=960,round(960*ratio)
+        try:
+            frame,k,lengths,joins=self.all_scenes_frame(width,height)
+        except Exception as exc:
+            self.status.setText('Preview could not be updated: '+str(exc)[:220]); return
+        self.canvas.frame=frame; self.canvas.highlight=[]; self.canvas.update()
+        segments=[]
+        for n,(length,join) in enumerate(zip(lengths,joins)):
+            segments.append((f'{n+1} · {self.scene_label(n)}',length,'scene'))
+            if join>0: segments.append((self.scenes[n]['transition'],join,'join'))
+        self.stage_timeline.set_scenes(segments,current=self.scene_index)
+        self.stage_timeline.update_state(sum(lengths)+sum(joins),0,0,self.position)
+        total=sum(lengths)+sum(joins)
+        self.clock.setText(timecode(self.position*total))
+        self.clock_total.setText(timecode(total))
     def scrub(self,value):
         self.position=value/1000
         if self.playing and self.preview_sound is not None:
@@ -1511,7 +1777,7 @@ class Window(QMainWindow):
     def sync_preview_sound(self):
         """Start the soundtrack at the playhead when playing; stop it otherwise."""
         wants=self.sound_on.isChecked() or self.audio_path
-        if not self.playing or not wants or not self.sound_preview.isChecked():
+        if not self.playing or not wants or not self.sound_preview.isChecked() or self.all_scenes():
             if self.preview_sound is not None: self.preview_sound.stop()
             return
         try:
@@ -1542,7 +1808,15 @@ class Window(QMainWindow):
         import copy
         folder=Path(parent)/datetime.now().strftime('StrokeScribe_%Y%m%d_%H%M%S_%f')
         options=self.options()
-        self.worker=Exporter(copy.deepcopy(self.drawing),folder,options,
+        if len(self.scenes)>1 and self.export_all_scenes.isChecked():
+            self._leave_scene()
+            scene_list=[dict(state=copy.deepcopy(s['state']),transition=s['transition'],
+                             transition_seconds=s['transition_seconds']) for s in self.scenes]
+            self.scenes[self.scene_index]['state']=None       # still edited here
+            self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand)
+        else:
+            self.worker=None
+        if self.worker is None: self.worker=Exporter(copy.deepcopy(self.drawing),folder,options,
                              self.mov.isChecked(),self.webm.isChecked(),
                              self.webm_quality.value(),self.keep_png.isChecked(),
                              mp4=self.mp4.isChecked(),
