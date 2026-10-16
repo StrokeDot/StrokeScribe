@@ -383,12 +383,12 @@ class CreateImageWindowTests(unittest.TestCase):
             self.assertTrue(dialog.use_button.isEnabled())
             dialog.use()
             # The picture is drawn from its copy in the Library → Images (the engine folder is temporary).
-        import library
-        self.assertEqual(len(used), 1)
-        kind, kept, original = used[0]
-        self.assertEqual((kind, original), ('lineart', str(image)))
-        self.assertEqual(Path(kept).parent, library.Library().folder('images'))
-        self.assertEqual(Path(kept).read_bytes(), out.read_bytes())
+            import library
+            self.assertEqual(len(used), 1)
+            kind, kept, original = used[0]
+            self.assertEqual((kind, original), ('lineart', str(image)))
+            self.assertEqual(Path(kept).parent, library.Library().folder('images'))
+            self.assertEqual(Path(kept).read_bytes(), out.read_bytes())
         finally:
             dialog.close()
 
