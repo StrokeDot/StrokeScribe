@@ -103,6 +103,18 @@ for _mode in ('zigzag','lines'):
         _frames.append(_bg.convert('RGB'))
     _frames[0].save(str(out/f'eraser-{_mode}.gif'),save_all=True,append_images=_frames[1:]+[_frames[-1]]*5,
                     duration=80,loop=0)
+# Line editing: a line clicked on the preview, slowed down, with a pause.
+window.apply_theme('dark'); window.resize(1490,890)
+window.inspector_tabs.setCurrentIndex(0)
+window.slider.setValue(1000); app.processEvents()
+_lines=window.preview_lines()
+if _lines:
+    _i=min(2,len(_lines)-1); _mid=_lines[_i][len(_lines[_i])//2]
+    window.click_preview(*_mid)
+    window.line_pace.setCurrentText('Slow'); window.set_line_pace()
+    window.line_pause.setValue(1.)
+    window.pen_ease.setCurrentIndex(1)
+snapshot('line-editing.png')
 # Setup & system check window, with the real checks of the build machine.
 import preflight
 from setup_wizard import SetupDialog

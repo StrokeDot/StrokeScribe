@@ -160,6 +160,13 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Undo everything, edit lines on the preview, timing control (v0.5.3-experimental.32)
+
+- **Undo / Redo for everything** (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z, and the ↶ ↷ buttons): every setting and every line change, not only the stroke order. Changing a value several times in a row counts as one step.
+- **Click a line on the preview** to select it (Ctrl+click or Shift+click for more). It is outlined, with a dot where the pen starts. The **Lines & order** panel then offers **Delete** (or the Delete key), **Reverse** (draw it from the other end), **Line pace** (Very slow to Very fast) and **Pause after** (the pen rests before the next line). Drag lines in the list to change the drawing order.
+- **Pen movement → Natural (ease in and out)** (Animation tab): every line starts and ends a little slower, like a real hand.
+- Line changes are saved in projects and used by every export, the camera and the sound.
+
 ## Voiceover, camera follow, backgrounds and Auto timing (v0.5.3-experimental.31)
 
 - **Voiceover / music** (Export tab): **Load audio…** (MP3, WAV, M4A, AAC, OGG, FLAC, Opus, WMA) or pick one from the new **Audio** section of the Library. Set the track volume and when it starts. It is mixed with the pencil/brush sounds into every video (and `soundtrack.wav`), cut at the end of the animation, heard in the preview, and saved in projects. **Fit animation to audio** stretches draw, paint, hold and erase times (keeping their proportions) so the video ends when the track ends.

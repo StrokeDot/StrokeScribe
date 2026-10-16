@@ -101,7 +101,8 @@ def drawing_to_dict(drawing):
             attributes[name] = encoded
     return {
         'strokes': [{'name': s.name, 'points': [[round(x, 3), round(y, 3)] for x, y in s.points],
-                     'color': s.color, 'width': s.width, 'pace': getattr(s, 'pace', 1.)}
+                     'color': s.color, 'width': s.width, 'pace': getattr(s, 'pace', 1.),
+                     'pause': getattr(s, 'pause', 0.), 'reversed': bool(getattr(s, 'reversed', False))}
                     for s in drawing.strokes],
         'bounds': list(drawing.bounds),
         'warnings': list(drawing.warnings),
@@ -113,6 +114,9 @@ def drawing_from_dict(data):
     from engine import Drawing, Stroke
     strokes = [Stroke(s['name'], [tuple(p) for p in s['points']], s.get('color', '#153c54'),
                       s.get('width', 3), s.get('pace', 1.)) for s in data['strokes']]
+    for stroke, s in zip(strokes, data['strokes']):
+        stroke.pause = float(s.get('pause', 0.) or 0.)
+        stroke.reversed = bool(s.get('reversed', False))
     drawing = Drawing(strokes, tuple(data['bounds']), list(data.get('warnings', [])))
     for name, value in data.get('attributes', {}).items():
         setattr(drawing, name, _decode(value))

@@ -100,6 +100,10 @@ def render(drawing, progress, width=1920, height=1080, thickness=1.0, hand=None,
     if image_timing and getattr(drawing,'source_kind',None)=='image':
         from image_drawing import render_image_lines
         return render_image_lines(drawing,progress,width,height,thickness,hand,hand_scale,anchor)
+    if image_timing:
+        # Per-line pace, pauses and pen ease (no change without custom timing).
+        from stroke_timing import ink_progress
+        progress=ink_progress(drawing,progress)
     image=QImage(width,height,QImage.Format.Format_ARGB32)
     image.fill(Qt.GlobalColor.transparent)
     painter=QPainter(image)

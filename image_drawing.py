@@ -13,8 +13,11 @@ def drawing_state(drawing,fraction):
     strokes=drawing.strokes
     ink=sum(s.length for s in strokes)
     if ink<=0: return DrawState(0.,False)
+    from stroke_timing import ease, pauses
+    rests=pauses(drawing)
+    natural=getattr(drawing,'pen_ease','off')=='natural'
     phases=[]; previous=None
-    for stroke in strokes:
+    for index,stroke in enumerate(strokes):
         if previous is not None:
             distance=math.dist(previous,stroke.points[0])
             if distance>1e-6:
@@ -23,13 +26,21 @@ def drawing_state(drawing,fraction):
         pace=max(.05,float(getattr(stroke,'pace',1.) or 1.))
         phases.append((stroke.length*pace,stroke.length,True,None))
         previous=stroke.points[-1]
+        if rests[index]>0:
+            phases.append((rests[index],0.,False,(previous,previous),'pause'))
+    # Pauses are shares of the drawing time; convert them to phase units.
+    moving=sum(p[0] for p in phases if len(p)==4)
+    share=sum(rests)
+    if share>0:
+        unit=moving/max(1e-6,1.-share)
+        phases=[p if len(p)==4 else (p[0]*unit,)+p[1:4] for p in phases]
     remaining=max(0.,min(1.,float(fraction)))*sum(p[0] for p in phases)
     done=0.
     for duration,paint_length,painting,travel in phases:
         if remaining<duration:
             f=remaining/duration
             if painting:
-                return DrawState((done+paint_length*f)/ink,True)
+                return DrawState((done+paint_length*(ease(f) if natural else f))/ink,True)
             # Pen lift: no ink, but the hand glides to the next stroke start.
             (ax,ay),(bx,by)=travel
             return DrawState(done/ink,False,(ax+(bx-ax)*f,ay+(by-ay)*f))

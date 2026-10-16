@@ -36,6 +36,10 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
         artwork_scale=float(s.get('artwork_size', 100)) / 100.,
         painting_hand=hand if s.get('show_paint_hand', True) else None)
     options['erase'] = erase_from_settings(s, hand)
+    if drawing is not None:
+        # Timing control (stroke_timing): pauses are in seconds of drawing time.
+        drawing.draw_seconds = options['duration']
+        drawing.pen_ease = 'natural' if str(s.get('pen_ease') or '').startswith('Natural') else 'off'
     audio_path = s.get('audio_path')
     options['audio'] = (dict(path=audio_path, volume=float(s.get('audio_volume', 100)) / 100.,
                              offset=float(s.get('audio_offset', 0)))

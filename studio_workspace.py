@@ -7,7 +7,7 @@ existing modules. No third-party product assets or lookalike trade dress.
 from __future__ import annotations
 
 from pathlib import Path
-from PySide6.QtCore import Qt, QPointF, QRectF
+from PySide6.QtCore import Qt, QPointF, QRectF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QWidget, QFrame, QScrollArea, QSplitter, QVBoxLayout,
@@ -285,6 +285,14 @@ def panel(object_name, title, hint=None):
     return frame,outer,header_l
 
 
+class LineList(QListWidget):
+    """Line list that reports when lines were dragged to a new place."""
+    dropped=Signal()
+    def dropEvent(self,event):
+        super().dropEvent(event)
+        self.dropped.emit()
+
+
 def build_workspace(w, Canvas, BRAND_ICON):
     """Construct UI fields expected by Window methods without altering logic."""
     w.setWindowTitle(f'{DISPLAY_NAME}  •  Studio')
@@ -342,13 +350,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.output_summary=label('1920 × 1080  •  30 fps','micro')
     bar_l.addWidget(w.output_summary)
     w.undo_button=QPushButton('↶')
-    w.undo_button.setToolTip('Undo last stroke order change')
+    w.undo_button.setToolTip('Undo (Ctrl+Z): settings and line changes')
     w.undo_button.setObjectName('subtle')
     w.undo_button.setEnabled(False)
     w.undo_button.clicked.connect(w.undo_stroke_order)
     bar_l.addWidget(w.undo_button)
     w.redo_button=QPushButton('↷')
-    w.redo_button.setToolTip('Redo last stroke order change')
+    w.redo_button.setToolTip('Redo (Ctrl+Y)')
     w.redo_button.setObjectName('subtle')
     w.redo_button.setEnabled(False)
     w.redo_button.clicked.connect(w.redo_stroke_order)
@@ -497,10 +505,16 @@ def build_workspace(w, Canvas, BRAND_ICON):
     asset_l.addWidget(browse_fonts)
     w.font_note=caption('Built-in pen works offline. Google Fonts are downloaded only when requested; license files are saved too.')
     asset_l.addWidget(w.font_note)
-    asset_l.addWidget(label('STROKE ORDER'))
-    asset_l.addWidget(caption('Select a path to change the drawing order.'))
-    w.order=QListWidget()
+    asset_l.addWidget(label('LINES & ORDER'))
+    asset_l.addWidget(caption('Click a line on the preview (Ctrl+click for more) or in the list. '
+                              'Drag in the list to change the drawing order.'))
+    w.order=LineList()
+    w.order.dropped.connect(lambda: w.order_dragged())
     w.order.setMinimumHeight(155)
+    w.order.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+    w.order.setDragDropMode(QListWidget.DragDropMode.InternalMove)
+    w.order.setDefaultDropAction(Qt.DropAction.MoveAction)
+    w.order.itemSelectionChanged.connect(lambda: w.lines_selected())
     asset_l.addWidget(w.order,1)
     reorder=QHBoxLayout()
     for text,direction in [('Move up',-1),('Move down',1)]:
@@ -508,6 +522,31 @@ def build_workspace(w, Canvas, BRAND_ICON):
         button.clicked.connect(lambda checked=False,d=direction:w.move(d))
         reorder.addWidget(button)
     asset_l.addLayout(reorder)
+    edit_row=QHBoxLayout()
+    w.reverse_button=QPushButton('Reverse')
+    w.reverse_button.setToolTip('Draw the selected line(s) from the other end.')
+    w.reverse_button.clicked.connect(lambda checked=False: w.reverse_lines())
+    edit_row.addWidget(w.reverse_button)
+    w.delete_button=QPushButton('Delete')
+    w.delete_button.setToolTip('Remove the selected line(s) from the animation (Delete key). Undo brings them back.')
+    w.delete_button.clicked.connect(lambda checked=False: w.delete_lines())
+    edit_row.addWidget(w.delete_button)
+    asset_l.addLayout(edit_row)
+    lt=form_layout()
+    from stroke_timing import PACES
+    w.line_pace=QComboBox()
+    w.line_pace.addItems([name for name,_ in PACES])
+    w.line_pace.setCurrentText('Normal')
+    w.line_pace.setToolTip('Slow down detailed areas or speed through simple lines.')
+    w.line_pace.activated.connect(lambda index: w.set_line_pace())
+    lt.addRow('Line pace',w.line_pace)
+    w.line_pause=w.number(0,10,0,.25)
+    w.line_pause.setToolTip('The pen rests at the end of the line before going on.')
+    w.line_pause.valueChanged.connect(lambda value: w.set_line_pause())
+    lt.addRow('Pause after (s)',w.line_pause)
+    asset_l.addLayout(lt)
+    for widget in (w.reverse_button,w.delete_button,w.line_pace,w.line_pause):
+        widget.setEnabled(False)
     w.note=caption('Ready.')
     asset_l.addWidget(w.note)
     asset_outer.addWidget(scroll_view(asset),1)
@@ -587,6 +626,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.artwork_size.setSuffix('%')
     w.artwork_size.setToolTip('Scale only the artwork, not the hand. The hand size stays controlled by Hand Size. Above 100% may crop the artwork.')
     a.addRow('Artwork size',w.artwork_size)
+    w.pen_ease=QComboBox()
+    w.pen_ease.addItems(['Constant speed','Natural (ease in and out)'])
+    w.pen_ease.setToolTip('Natural: every line starts and ends a little slower, like a real hand.')
+    a.addRow('Pen movement',w.pen_ease)
     w.camera=QComboBox()
     w.camera.addItems(['Off','Gentle zoom','Close-up zoom'])
     w.camera.setToolTip('Camera follow: the view zooms in and glides after the pen, then pulls back '
@@ -820,6 +863,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.brush_width.valueChanged.connect(w.schedule_brush_refresh)
     w.show_paint_hand.toggled.connect(w.refresh)
     w.camera.currentIndexChanged.connect(w.refresh)
+    w.pen_ease.currentIndexChanged.connect(w.refresh)
     for widget in (w.erase_mode,w.eraser):
         widget.currentIndexChanged.connect(w.refresh)
     for widget in (w.erase_time,w.erase_size):
@@ -848,5 +892,17 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.space_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
     w.space_shortcut.activated.connect(
         lambda: None if isinstance(QApplication.focusWidget(),(QPlainTextEdit,QComboBox)) else w.toggle())
+    w.undo_shortcut=QShortcut(QKeySequence(QKeySequence.StandardKey.Undo),w)
+    w.undo_shortcut.activated.connect(lambda: w.undo())
+    w.redo_shortcuts=[]
+    for keys in (QKeySequence(QKeySequence.StandardKey.Redo),QKeySequence('Ctrl+Y')):
+        shortcut=QShortcut(keys,w); shortcut.activated.connect(lambda: w.redo())
+        w.redo_shortcuts.append(shortcut)
+    w.delete_shortcuts=[]
+    for target in (w.canvas,w.order):
+        shortcut=QShortcut(QKeySequence(QKeySequence.StandardKey.Delete),target)
+        shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+        shortcut.activated.connect(lambda: w.delete_lines())
+        w.delete_shortcuts.append(shortcut)
     w.update_theme_button()
     w.sync_workspace()

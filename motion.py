@@ -77,8 +77,13 @@ def _drawing_pen(drawing, fraction, width, height):
         if state.lift_point is not None:
             return PenSample(_to_canvas(drawing, state.lift_point, width, height), LIFT)
         return PenSample(None, None)
-    tip = _ink_tip(drawing, fraction)
-    return PenSample(_to_canvas(drawing, tip, width, height) if tip else None, DRAW)
+    from stroke_timing import ink_progress
+    before = ink_progress(drawing, max(0., fraction - 1e-4))
+    ink = ink_progress(drawing, fraction)
+    tip = _ink_tip(drawing, ink)
+    # Resting during a pause: the pen is there but not drawing (silent).
+    kind = LIFT if ink - before < 1e-9 else DRAW
+    return PenSample(_to_canvas(drawing, tip, width, height) if tip else None, kind)
 
 
 def _plan_pen(drawing, image, progress, width, height, brush_width, stroke_spacing):

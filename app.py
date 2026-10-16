@@ -2,9 +2,9 @@ import sys, time
 from collections import OrderedDict
 from pathlib import Path
 from datetime import datetime
-from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl
+from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl, QItemSelectionModel
 from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap, QDesktopServices
-from PySide6.QtWidgets import (QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea,QColorDialog)
+from PySide6.QtWidgets import (QListWidgetItem,QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea,QColorDialog)
 from engine import import_svg, render, export_frames, encode_mov, encode_webm, encode_mp4, scale_animation_frame, apply_lettering_background
 from lettering import make_text
 from font_library import (STARTER_FONTS, installed_font, make_font_text,
@@ -57,6 +57,20 @@ class Canvas(QWidget):
         self._spin=0
         self._spinner=QTimer(self); self._spinner.setInterval(40)
         self._spinner.timeout.connect(self._advance)
+        self.on_click=None          # on_click(x, y, add) in frame pixels
+        self.highlight=[]           # selected lines: polylines in frame pixels
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
+    def mousePressEvent(self,event):
+        if self.frame is None or self.on_click is None or self.busy_text is not None:
+            return super().mousePressEvent(event)
+        x,y,size=self.frame_rect()
+        pos=event.position()
+        fx=(pos.x()-x)*self.frame.width()/max(1,size.width())
+        fy=(pos.y()-y)*self.frame.height()/max(1,size.height())
+        if 0<=fx<=self.frame.width() and 0<=fy<=self.frame.height():
+            mods=event.modifiers()
+            self.on_click(fx,fy,bool(mods&(Qt.KeyboardModifier.ControlModifier|Qt.KeyboardModifier.ShiftModifier)))
+        self.setFocus()
     def set_background(self,index):
         self.background=index; self.update()
     def set_busy(self,text,percent=None,detail=''):
@@ -91,7 +105,26 @@ class Canvas(QWidget):
                 for a in range(x,x+size.width(),20):
                     for b in range(y,y+size.height(),20):
                         p.fillRect(a,b,20,20,QColor(c['checker_a'] if ((a-x)//20+(b-y)//20)%2==0 else c['checker_b']))
-            p.drawImage(x,y,self.frame.scaled(size,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation)); p.restore()
+            p.drawImage(x,y,self.frame.scaled(size,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+            if self.highlight:
+                from PySide6.QtGui import QPainterPath, QPen
+                from PySide6.QtCore import QPointF
+                k=size.width()/max(1,self.frame.width())
+                path=QPainterPath()
+                for line in self.highlight:
+                    if not line: continue
+                    path.moveTo(QPointF(x+line[0][0]*k,y+line[0][1]*k))
+                    for px,py in line[1:]: path.lineTo(QPointF(x+px*k,y+py*k))
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor(255,255,255,190),6,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap,Qt.PenJoinStyle.RoundJoin))
+                p.drawPath(path)
+                p.setPen(QPen(QColor(c['accent']),3,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap,Qt.PenJoinStyle.RoundJoin))
+                p.drawPath(path)
+                # Where the pen starts each selected line.
+                p.setBrush(QColor(c['accent'])); p.setPen(QPen(QColor('white'),1.5))
+                for line in self.highlight:
+                    if line: p.drawEllipse(QPointF(x+line[0][0]*k,y+line[0][1]*k),4.5,4.5)
+            p.restore()
         if self.busy_text is not None:
             overlay=QColor(c['monitor']); overlay.setAlpha(205)
             p.fillRect(self.rect(),overlay)
@@ -270,8 +303,10 @@ class Window(QMainWindow):
         self.letter_ink_color='#25364a'
         self.letter_bg_color=None
         self.last_letter_bg_index=0
-        self.reorder_undo=[]
-        self.reorder_redo=[]
+        from history import History
+        self.history=History()
+        self._restoring=False
+        self._lines_cache=None
         self.busy=False
         self._preparing=False
         self.preview_sound=None
@@ -285,6 +320,8 @@ class Window(QMainWindow):
         self.brush_preview_timer.timeout.connect(self.refresh)
         from studio_workspace import build_workspace
         build_workspace(self,Canvas,BRAND_ICON)
+        self.canvas.on_click=self.click_preview
+        self.watch_settings()
         self.use_builtin_hand(refresh=False)
         # Setup level chosen in the setup window (Fast/Balanced/Quality/Max).
         import preflight
@@ -302,6 +339,7 @@ class Window(QMainWindow):
         self.analysis_timer=QTimer(self)
         self.analysis_timer.setInterval(1000)
         self.analysis_timer.timeout.connect(self.update_analysis_elapsed)
+        self.reset_history()
 
     # ---------------------------------------------------------------- theme
     def apply_theme(self,name):
@@ -433,27 +471,218 @@ class Window(QMainWindow):
         self.project_menu.setText('▣  '+short+'  ▾')
         self.project_menu.setToolTip('Current artwork: '+self.project_title)
 
+    # ------------------------------------------------ undo / redo (everything)
+    def snapshot(self):
+        return {'settings':self.settings_state(),
+                'strokes':tuple(self.drawing.strokes) if self.drawing else ()}
+
+    def reset_history(self):
+        if hasattr(self,'history_timer'): self.history_timer.stop()
+        self.history.reset(self.snapshot())
+        self.update_history_controls()
+
+    def note_change(self,*args):
+        """A setting changed: remember it once the user pauses (one undo step per edit)."""
+        if self._restoring or not hasattr(self,'history_timer'): return
+        self.history_timer.start()
+
+    def commit_history(self):
+        if self._restoring: return
+        self.history_timer.stop()
+        self.history.record(self.snapshot())
+        self.update_history_controls()
+
+    def watch_settings(self):
+        """Every setting control feeds the undo history."""
+        from PySide6.QtWidgets import QAbstractButton
+        self.history_timer=QTimer(self)
+        self.history_timer.setSingleShot(True); self.history_timer.setInterval(450)
+        self.history_timer.timeout.connect(self.commit_history)
+        for name in self.PROJECT_SETTINGS:
+            widget=getattr(self,name,None)
+            if isinstance(widget,QComboBox): widget.currentIndexChanged.connect(self.note_change)
+            elif isinstance(widget,(QSpinBox,QDoubleSpinBox)): widget.valueChanged.connect(self.note_change)
+            elif isinstance(widget,QAbstractButton): widget.toggled.connect(self.note_change)
+
     def update_history_controls(self):
-        self.undo_button.setEnabled(bool(self.reorder_undo))
-        self.redo_button.setEnabled(bool(self.reorder_redo))
+        self.undo_button.setEnabled(self.history.can_undo())
+        self.redo_button.setEnabled(self.history.can_redo())
 
-    def undo_stroke_order(self):
-        if not self.reorder_undo or not self.drawing:return
-        self.reorder_redo.append(list(self.drawing.strokes))
-        self.drawing.strokes=self.reorder_undo.pop()
-        self.order.clear()
-        self.order.addItems([s.name for s in self.drawing.strokes])
+    def undo(self):
+        if self.history_timer.isActive(): self.commit_history()
+        self.restore(self.history.undo())
+
+    def redo(self):
+        if self.history_timer.isActive(): self.commit_history()
+        self.restore(self.history.redo())
+
+    # Older names (stroke order only) kept for compatibility.
+    def undo_stroke_order(self): self.undo()
+    def redo_stroke_order(self): self.redo()
+
+    def restore(self,snapshot):
+        if snapshot is None: return
+        from projects import set_widget_value
+        self._restoring=True
+        try:
+            settings=snapshot['settings']
+            for name in self.PROJECT_SETTINGS:
+                widget=getattr(self,name,None)
+                if widget is None or name not in settings: continue
+                widget.blockSignals(True); set_widget_value(widget,settings[name]); widget.blockSignals(False)
+            if settings.get('audio_path')!=self.audio_path:
+                self.set_audio(settings.get('audio_path'),refresh=False)
+            self.canvas.set_background(self.preview_background.currentIndex())
+            self.preserve_colors.setEnabled(self.image_animation.currentIndex()!=1)
+            if self.drawing is not None and snapshot['strokes']:
+                selected=set(id(s) for s in self.selected_strokes())
+                self.drawing.strokes=list(snapshot['strokes'])
+                self.fill_order(keep=selected)
+        finally:
+            self._restoring=False
         self.update_history_controls()
         self.refresh()
 
-    def redo_stroke_order(self):
-        if not self.reorder_redo or not self.drawing:return
-        self.reorder_undo.append(list(self.drawing.strokes))
-        self.drawing.strokes=self.reorder_redo.pop()
+    # ------------------------------------------------ lines: select and edit
+    def fill_order(self,keep=(),current=None):
+        """Rebuild the line list (each item holds its stroke)."""
+        from history import describe
+        self.order.blockSignals(True)
         self.order.clear()
-        self.order.addItems([s.name for s in self.drawing.strokes])
-        self.update_history_controls()
+        if self.drawing:
+            for stroke in self.drawing.strokes:
+                item=QListWidgetItem(describe(stroke))
+                item.setData(Qt.ItemDataRole.UserRole,stroke)
+                self.order.addItem(item)
+                if id(stroke) in keep: item.setSelected(True)
+            if current is not None and 0<=current<self.order.count():
+                self.order.setCurrentRow(current,QItemSelectionModel.SelectionFlag.NoUpdate)
+        self.order.blockSignals(False)
+        self.lines_selected()
+
+    def selected_rows(self):
+        return sorted(self.order.row(item) for item in self.order.selectedItems())
+
+    def selected_strokes(self):
+        if not self.drawing: return []
+        return [self.drawing.strokes[i] for i in self.selected_rows() if i<len(self.drawing.strokes)]
+
+    def lines_selected(self):
+        """Selection changed: show its pace/pause and outline it on the preview."""
+        strokes=self.selected_strokes()
+        for widget in (self.reverse_button,self.delete_button,self.line_pace,self.line_pause):
+            widget.setEnabled(bool(strokes))
+        if strokes:
+            from stroke_timing import pace_name
+            self.line_pace.blockSignals(True); self.line_pause.blockSignals(True)
+            self.line_pace.setCurrentText(pace_name(getattr(strokes[0],'pace',1.)))
+            self.line_pause.setValue(float(getattr(strokes[0],'pause',0.) or 0.))
+            self.line_pace.blockSignals(False); self.line_pause.blockSignals(False)
+        self.update_highlight()
+
+    def preview_lines(self,options=None):
+        """Every line as a polyline in preview-frame pixels (Artwork size and camera applied)."""
+        if not self.drawing or self.canvas.frame is None: return []
+        from motion import strokes_on_canvas
+        w,h=self.canvas.frame.width(),self.canvas.frame.height()
+        scale=self.artwork_size.value()/100.
+        key=(tuple(id(s) for s in self.drawing.strokes),w,h,scale)
+        if self._lines_cache is None or self._lines_cache[0]!=key:
+            self._lines_cache=(key,strokes_on_canvas(self.drawing,w,h,scale))
+        lines=self._lines_cache[1]
+        camera=self._camera_path if self.camera.currentIndex() else None
+        if camera is not None:
+            z,cx,cy=camera.at(self.position)
+            if z>1.0001:
+                vw,vh=w/z,h/z
+                left=min(max(0.,cx*w-vw/2),w-vw); top=min(max(0.,cy*h-vh/2),h-vh)
+                lines=[[((x-left)*z,(y-top)*z) for x,y in line] for line in lines]
+        return lines
+
+    def update_highlight(self):
+        rows=self.selected_rows()
+        lines=self.preview_lines() if rows else []
+        self.canvas.highlight=[lines[i] for i in rows if i<len(lines)]
+        self.canvas.update()
+
+    def line_at(self,x,y,tolerance=14.):
+        """Index of the line nearest to (x, y) in preview pixels, or None."""
+        import numpy as np
+        best,best_d=None,tolerance*self.canvas.frame.width()/max(1,self.canvas.frame_rect()[2].width())
+        for i,line in enumerate(self.preview_lines()):
+            if not line: continue
+            pts=np.asarray(line,float)
+            if len(pts)==1:
+                d=float(np.hypot(*(pts[0]-(x,y))))
+            else:
+                a,b=pts[:-1],pts[1:]; ab=b-a
+                t=np.clip(((x-a[:,0])*ab[:,0]+(y-a[:,1])*ab[:,1])/np.maximum((ab**2).sum(1),1e-9),0,1)
+                d=float(np.hypot(a[:,0]+ab[:,0]*t-x,a[:,1]+ab[:,1]*t-y).min())
+            if d<best_d: best,best_d=i,d
+        return best
+
+    def click_preview(self,x,y,add=False):
+        index=self.line_at(x,y)
+        if index is None:
+            if not add: self.order.clearSelection()
+            return
+        item=self.order.item(index)
+        if add:
+            item.setSelected(not item.isSelected())
+        else:
+            self.order.clearSelection(); item.setSelected(True)
+        self.order.setCurrentRow(index,QItemSelectionModel.SelectionFlag.NoUpdate)
+        self.order.scrollToItem(item)
+        self.status.setText(f'Selected: {self.drawing.strokes[index].name}  •  Delete, Reverse, pace and pause '
+                            'are in the Lines panel; drag in the list to reorder.')
+
+    def change_lines(self,strokes,keep=(),current=None,status=''):
+        """Apply an edited stroke list as one undo step."""
+        self.drawing.strokes=list(strokes)
+        self.fill_order(keep=keep,current=current)
+        self.commit_history()
+        if status: self.status.setText(status)
         self.refresh()
+
+    def edit_selected(self,**change):
+        from history import edited_stroke
+        rows=set(self.selected_rows())
+        if not rows or not self.drawing: return
+        strokes=[edited_stroke(s,**change) if i in rows else s for i,s in enumerate(self.drawing.strokes)]
+        keep={id(strokes[i]) for i in rows}
+        self.drawing.strokes=strokes
+        self.fill_order(keep=keep,current=min(rows))
+
+    def reverse_lines(self):
+        if not self.selected_rows(): return
+        self.edit_selected(reverse=True); self.commit_history(); self.refresh()
+
+    def set_line_pace(self):
+        if not self.selected_rows(): return
+        from stroke_timing import pace_value
+        self.edit_selected(pace=pace_value(self.line_pace.currentText())); self.commit_history(); self.refresh()
+
+    def set_line_pause(self):
+        if not self.selected_rows() or self._restoring: return
+        self.edit_selected(pause=self.line_pause.value())
+        self.note_change(); self.refresh()
+
+    def delete_lines(self):
+        rows=set(self.selected_rows())
+        if not rows or not self.drawing: return
+        if len(rows)>=len(self.drawing.strokes):
+            self.status.setText('At least one line has to stay.'); return
+        strokes=[s for i,s in enumerate(self.drawing.strokes) if i not in rows]
+        self.change_lines(strokes,current=min(min(rows),len(strokes)-1),
+                          status=f'Deleted {len(rows)} line(s). Undo (Ctrl+Z) brings them back.')
+
+    def order_dragged(self):
+        """The user dragged lines to a new place in the list."""
+        if not self.drawing: return
+        strokes=[self.order.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.order.count())]
+        if len(strokes)!=len(self.drawing.strokes) or any(s is None for s in strokes): return
+        keep={id(s) for s in self.selected_strokes()}
+        self.change_lines(strokes,keep=keep,status='New drawing order.')
 
     def sync_workspace(self,*args):
         image_source=bool(self.source_type.currentIndex())
@@ -496,16 +725,13 @@ class Window(QMainWindow):
     def set_drawing(self,drawing):
         self.playing=False
         self.drawing=drawing
-        self.reorder_undo.clear()
-        self.reorder_redo.clear()
-        self.update_history_controls()
-        self.order.clear()
-        self.order.addItems([s.name for s in drawing.strokes])
+        self.fill_order()
         self.note.setText('\n'.join(drawing.warnings) or 'Ready. Press Play to draw from the beginning.')
         self.position=0 if getattr(drawing,'source_kind',None)=='image' else 1
         self.slider.setValue(round(self.position*1000))
         self.update_project_title(self.project_title)
         self.refresh()
+        self.reset_history()
     def change_source(self,index):
         self.playing=False
         if index:
@@ -513,7 +739,7 @@ class Window(QMainWindow):
             self.image_controls.show(); self.import_button.setText('Import image…')
             if self.image_result: self.set_drawing(self.image_result.drawing)
             else:
-                self.drawing=None; self.order.clear(); self.canvas.frame=None; self.canvas.update()
+                self.drawing=None; self.order.clear(); self.canvas.frame=None; self.canvas.highlight=[]; self.canvas.update()
                 self.note.setText('Import a PNG, JPEG, WebP or BMP to begin.')
         else:
             self.image_controls.hide(); self.import_button.setText('Import SVG…')
@@ -531,7 +757,7 @@ class Window(QMainWindow):
                       'sound_on','sound_volume','sound_preview','preview_background','image_detail',
                       'image_style','image_animation_style','clean_faint',
                       'erase_mode','erase_time','erase_size','eraser',
-                      'camera','audio_volume','audio_offset')
+                      'camera','audio_volume','audio_offset','pen_ease')
 
     def project_state(self):
         """Everything needed to reopen this exact animation."""
@@ -917,15 +1143,9 @@ class Window(QMainWindow):
         if not self.drawing:return
         i=self.order.currentRow(); j=i+direction
         if i<0 or not 0<=j<len(self.drawing.strokes): return
-        self.reorder_undo.append(list(self.drawing.strokes))
-        self.reorder_undo=self.reorder_undo[-50:]
-        self.reorder_redo.clear()
-        self.drawing.strokes[i],self.drawing.strokes[j]=self.drawing.strokes[j],self.drawing.strokes[i]
-        item=self.order.takeItem(i)
-        self.order.insertItem(j,item)
-        self.order.setCurrentRow(j)
-        self.update_history_controls()
-        self.refresh()
+        strokes=list(self.drawing.strokes)
+        strokes[i],strokes[j]=strokes[j],strokes[i]
+        self.change_lines(strokes,keep={id(strokes[j])},current=j)
     def loadhand(self):
         name,_=QFileDialog.getOpenFileName(self,'Hand overlay','','PNG (*.png)')
         if name:
@@ -1083,6 +1303,7 @@ class Window(QMainWindow):
             self.audio_note.setText('No audio track')
         self.remove_audio_button.setEnabled(bool(path))
         self.fit_audio_button.setEnabled(bool(path and self.audio_seconds))
+        self.note_change()
         if refresh: self.refresh()
 
     def timing_parts(self):
@@ -1190,6 +1411,7 @@ class Window(QMainWindow):
             # the Qt signal handler and terminate the application.
             self.status.setText('Preview could not be updated: '+str(exc)[:220])
             return
+        if self.order.selectedItems(): self.update_highlight()
         length=self.timeline_length()
         self.clock.setText(timecode(self.position*length))
         self.clock_total.setText(timecode(length))
