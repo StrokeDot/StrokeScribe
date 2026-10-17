@@ -110,7 +110,7 @@ class StudioTests(unittest.TestCase):
         self.assertEqual(items,['Brush painting','Adaptive Hand Painting','Zigzag sweep',
                                'Top to bottom (rows)','Left to right (columns)'])
         from app import REVEAL_MODES
-        self.assertEqual(REVEAL_MODES,('brush','adaptive','zigzag'))
+        self.assertEqual(REVEAL_MODES,('brush','adaptive','zigzag','rows','columns'))
         self.assertEqual(self.window.reveal_mode.currentText(),'Adaptive Hand Painting')
 
     def test_image_and_export_controls_preserved(self):
