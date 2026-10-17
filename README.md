@@ -160,6 +160,15 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Handwriting like a real hand (v0.5.3-experimental.56)
+
+- **Handwriting is consistent in every font**: down strokes are always written downwards (upright and slanted fonts alike), and letters like e, o, l and w are one smooth line instead of small pieces.
+- **Pen movement → Natural** now works for Google / local fonts too (slower starts and ends, a short pause between lines).
+- **Choosing another font re-writes the text at once**; Letter detail is only available for real fonts (the built-in pen has no detail setting).
+- **Hand tab** in three clear parts: 1 · Drawing hand (the lines), 2 · Painting hand (the colours), 3 · Both hands (left-handed).
+- **+ Add element → Create an image with AI**: the element is added only when you use the picture.
+- **Smoother effects**: the finished picture used by Comes in / Goes out effects is no longer drawn again on every frame.
+
 ## One timeline for the whole video (v0.5.3-experimental.55)
 
 - **One timeline**: with two or more elements the timeline shows the whole video, element after element with the camera moves between them. Each element shows its Draw / Paint / Hold / Out parts; click an element to work on it, double-click for its settings, drag the white edges of the one you edit.

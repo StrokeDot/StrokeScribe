@@ -1602,6 +1602,18 @@ class Window(QMainWindow):
                                                   'The text to write by hand (the font is chosen on the left):',
                                                   '')
             if not ok or not text.strip(): return False
+        if how=='ai' and path is None:
+            # The picture is made first; the element is added only when it is used.
+            from create_image_dialog import CreateImageDialog
+            import ai_engine
+            if self.ai_engine is None:
+                self.ai_engine=ai_engine.Engine()
+            made=[]
+            CreateImageDialog(self,None,lambda kind,p,original=None: made.append((kind,p,original)),
+                              self.ai_engine).exec()
+            made=[m for m in made if m[0]!='sound']
+            if not made: return False
+            kind,path,original=made[-1]
         if how=='library' and item is None:
             from library_dialog import LibraryDialog
             chosen=[]
@@ -1621,7 +1633,8 @@ class Window(QMainWindow):
             scene['name']=str(getattr(item,'name','') or 'Picture')[:30]
             self.use_library_item('images',item)
         elif how=='ai':
-            self.open_create_image()
+            scene['name']=Path(path).stem[:30]
+            self.use_ai_result('image',path,None)
         # One timeline: with two or more elements, show the whole video.
         if len(self.scenes)>1 and self.preview_scope.currentIndex()==0:
             self.preview_scope.setCurrentIndex(1)
@@ -2297,6 +2310,19 @@ class Window(QMainWindow):
             return
         if getattr(self.drawing,'font_point',None)==int(self.font_size.value()):
             return                                # already traced at this detail (a project loading)
+        position=self.position
+        self.letter()
+        self.position=position
+        self.slider.blockSignals(True); self.slider.setValue(round(position*1000)); self.slider.blockSignals(False)
+        self.refresh()
+
+    def font_choice_changed(self):
+        """Another font chosen (by the user): the text on screen is written again with it."""
+        builtin=self.font_select.currentText().strip() in ('','Built-in single-line pen')
+        self.font_size.setEnabled(not builtin)
+        if getattr(self.drawing,'source_kind',None) not in ('font','lettering') or not self.text.toPlainText().strip():
+            return
+        if self.builder and self.builder.isRunning(): return
         position=self.position
         self.letter()
         self.position=position

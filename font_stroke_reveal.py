@@ -17,6 +17,7 @@ from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QImage, QPainter
 
 from engine import Drawing, Stroke
+from stroke_timing import NATURAL_LENGTH, ease
 
 
 def _thin(mask):
@@ -47,89 +48,126 @@ def _thin(mask):
     return a[1:-1,1:-1].astype(bool)
 
 
+def _direction(route,back=6):
+    """Unit direction of the last few pixels of a route."""
+    a=route[max(0,len(route)-1-back)]; b=route[-1]
+    dx,dy=b[0]-a[0],b[1]-a[1]
+    n=math.hypot(dx,dy)
+    return (dx/n,dy/n) if n else (0.,0.)
+
+
+def _orient(path):
+    """Write like a hand: mostly-vertical lines go DOWN, the others go to the RIGHT
+    (the same for upright and slanted fonts). Closed loops keep their direction."""
+    (x0,y0),(x1,y1)=path[0],path[-1]
+    dx,dy=x1-x0,y1-y0
+    if abs(dx)<1e-9 and abs(dy)<1e-9:
+        return path
+    if abs(dy)>abs(dx)*.8:
+        return path if dy>0 else path[::-1]
+    return path if dx>0 else path[::-1]
+
+
 def _paths_from_binary(binary,scale=1.):
-    """Return left-to-right ordered pen passes over a thinned glyph.
+    """Pen passes over a thinned glyph, in a handwriting-like order.
+
+    At a crossing or a join, the pen goes straight on along the branch that best
+    continues its direction (so an "e", an "o" or an "l" is one smooth line instead
+    of small pieces). Lines are oriented like a hand writes them (down, or to the
+    right), and the passes of a letter are chained from the top-left.
 
     scale: the letter size compared with the usual Letter detail (68). Sizes in
     pixels (spurs, small gaps) follow it, so the writing is the same at any detail."""
     pts={(int(x),int(y)) for y,x in zip(*np.nonzero(binary))}
     if not pts:return []
     def adjacent(p):
+        # A diagonal step is skipped when the two pixels already touch through a
+        # side neighbour: otherwise every staircase is full of tiny triangles,
+        # every pixel looks like a crossing and the line breaks into pieces.
         x,y=p
-        return sorted(((x+dx,y+dy) for dy in (-1,0,1) for dx in (-1,0,1)
-                       if (dx or dy) and (x+dx,y+dy) in pts))
+        out=[]
+        for dy in (-1,0,1):
+            for dx in (-1,0,1):
+                q=(x+dx,y+dy)
+                if not (dx or dy) or q not in pts:continue
+                if dx and dy and ((x+dx,y) in pts or (x,y+dy) in pts):continue
+                out.append(q)
+        return sorted(out)
     graph={p:adjacent(p) for p in pts}
     used=set()
-    paths=[]
     def edge(a,b):return (a,b) if a<b else (b,a)
+    def free(p):return [q for q in graph[p] if edge(p,q) not in used]
+    turn=math.cos(math.radians(70))      # a branch must continue within ~70 degrees
     def walk(a,b):
         route=[a,b]
         used.add(edge(a,b))
-        previous,current=a,b
-        while len(route)<8000 and len(graph[current])==2:
-            opts=[p for p in graph[current]
-                  if p!=previous and edge(current,p) not in used]
-            if not opts:break
-            nxt=opts[0]
-            used.add(edge(current,nxt))
+        while len(route)<8000:
+            options=free(route[-1])
+            if not options:break
+            if len(options)>1 or len(graph[route[-1]])>2:
+                d=_direction(route)
+                def score(q):
+                    # Look a few pixels down each branch, not only at the next pixel.
+                    probe=[route[-1],q]; seen={edge(route[-1],q)}
+                    for _ in range(5):
+                        nxt=[r for r in graph[probe[-1]] if edge(probe[-1],r) not in used
+                             and edge(probe[-1],r) not in seen and r not in probe]
+                        if not nxt:break
+                        seen.add(edge(probe[-1],nxt[0])); probe.append(nxt[0])
+                    e=_direction(probe,len(probe)-1)
+                    return d[0]*e[0]+d[1]*e[1]
+                best=max(options,key=score)
+                if d!=(0.,0.) and score(best)<turn and len(route)>3:
+                    break                          # a sharp corner at a join: lift here
+                nxt=best
+            else:
+                nxt=options[0]
+            used.add(edge(route[-1],nxt))
             route.append(nxt)
-            previous,current=current,nxt
         return route
-    starts=sorted(graph,key=lambda p:(p[0],p[1]))
-    for p in starts:
-        if len(graph[p])==2:continue
-        for q in graph[p]:
-            if edge(p,q) not in used:
-                paths.append(walk(p,q))
-    for p in starts:
-        for q in graph[p]:
-            if edge(p,q) not in used:
-                paths.append(walk(p,q))
+    def top_left(p):return (p[1]+p[0]*.35,p[0])
+    paths=[]
+    # Line ends first (a hand starts at an end, top-left first), then joins, then loops.
+    for group in (lambda p:len(graph[p])==1, lambda p:len(graph[p])>2, lambda p:True):
+        for p in sorted((p for p in graph if group(p)),key=top_left):
+            while free(p):
+                paths.append(walk(p,free(p)[0]))
     # A 1-pixel mark still needs a stroke and paint coverage.
     if not paths:
         paths=[[(x,y),(x+.01,y)] for x,y in sorted(pts)]
-    ordered=[]
-    for path in paths:
-        if len(path)<2:continue
-        if (path[-1][0],path[-1][1])<(path[0][0],path[0][1]):
-            path.reverse()
-        ordered.append(path)
-    ordered.sort(key=lambda p:(min(x for x,y in p),min(y for x,y in p),
-                               -len(p)))
+    def length(path):
+        return sum(math.dist(a,b) for a,b in zip(path,path[1:]))
     # Suppress tiny skeleton spurs near existing longer strokes. These are
     # topology artifacts at joins/corners; otherwise the hand returns to
     # finish a 1-3 px leftover after writing the letter. Distant tiny marks
     # (e.g. a dot or punctuation) are retained.
-    def length(path):
-        return sum(math.dist(a,b) for a,b in zip(path,path[1:]))
+    paths=[p for p in paths if len(p)>=2]
     spur=4.*max(1.,scale)
-    substantial=[p for p in ordered if length(p)>=spur]
+    substantial=[p for p in paths if length(p)>=spur]
     if substantial:
-        fixed=[]
-        for path in ordered:
+        kept=[]
+        for path in paths:
             if length(path)>=spur:
-                fixed.append(path)
-                continue
-            x0,y0=path[0]
-            x1,y1=path[-1]
-            neighboring=any(
-                min(math.dist((x0,y0),q),math.dist((x1,y1),q))<=3.*max(1.,scale)
-                for major in substantial for q in major)
-            if not neighboring:
-                fixed.append(path)
-        ordered=fixed
-    # Keep character order stable, but chain paths WITHIN each character
-    # by the nearest endpoint to avoid unnecessary jumps and pen lifts.
-    if not ordered:return []
-    remaining=ordered[1:]
-    chain=[ordered[0]]
+                kept.append(path); continue
+            near=any(min(math.dist(path[0],q),math.dist(path[-1],q))<=3.*max(1.,scale)
+                     for major in substantial for q in major)
+            if not near:
+                kept.append(path)
+        paths=kept
+    if not paths:return []
+    paths=[_orient(p) for p in paths]
+    # The first pass starts nearest the top-left; then the nearest next start.
+    # A vertical line is never written upwards to save a short trip.
+    remaining=sorted(paths,key=lambda p:top_left(p[0]))
+    chain=[remaining.pop(0)]
     while remaining:
         tip=chain[-1][-1]
         ranked=[]
         for i,path in enumerate(remaining):
-            a=math.dist(tip,path[0])
-            b=math.dist(tip,path[-1])
-            ranked.append((min(a,b),i,b<a))
+            ranked.append((math.dist(tip,path[0]),i,False))
+            (x0,y0),(x1,y1)=path[0],path[-1]
+            if abs(y1-y0)<=abs(x1-x0)*.8:          # not a down stroke: may be written backwards
+                ranked.append((math.dist(tip,path[-1])*1.25,i,True))
         _,i,reverse=min(ranked)
         chosen=remaining.pop(i)
         if reverse: chosen=list(reversed(chosen))
@@ -217,13 +255,33 @@ def create_font_drawing(text,fontfile,point_size=68):
     return drawing
 
 
+def _natural(drawing):
+    return getattr(drawing,'pen_ease','off')=='natural'
+
+
+def _signature(drawing):
+    return tuple(id(stroke) for stroke in drawing.strokes)+(_natural(drawing),)
+
+
+_EASE_X=np.linspace(0.,1.,1025)
+_EASE_Y=None
+
+
+def _uneased(share):
+    """Inverse of the Natural pen ease: when the pen reaches `share` of a line."""
+    global _EASE_Y
+    if _EASE_Y is None:
+        _EASE_Y=np.array([ease(float(x)) for x in _EASE_X])
+    return float(np.interp(share,_EASE_Y,_EASE_X))
+
+
 def _stroke_schedule(drawing):
     """The one clock used by ink appearance AND the hand.
 
     Events never overlap. A pen-lift event carries no ink and is inserted
     between disconnected paths. Stroke order remains editable in the UI.
     """
-    signature=tuple(id(stroke) for stroke in drawing.strokes)
+    signature=_signature(drawing)
     cached=getattr(drawing,'font_schedule_cache',None)
     if cached is not None and cached[0]==signature:
         return cached[1],cached[2]
@@ -233,6 +291,7 @@ def _stroke_schedule(drawing):
     # Pixel sizes follow the letter size, so the rhythm is the same at any Letter detail.
     scale=max(.3,float(getattr(drawing,'font_point',68) or 68)/68.)*float(getattr(drawing,'font_scale',1.) or 1.)
     small_gap=5.*scale
+    natural=_natural(drawing)
     for index,stroke in enumerate(drawing.strokes):
         if len(stroke.points)<2:continue
         first=stroke.points[0]
@@ -242,6 +301,8 @@ def _stroke_schedule(drawing):
                 # Pen-up travel is visible in time, but reveals no ink.
                 # Limit long trips so the viewer doesn't wait excessively.
                 lift_duration=min(12.*scale,max(2.5*scale,distance*.24))
+                if natural:
+                    lift_duration*=2.2               # a real hand takes its time between lines
                 events.append(('lift',None,t,t+lift_duration,previous,first))
                 t+=lift_duration
             elif distance>0:
@@ -249,6 +310,9 @@ def _stroke_schedule(drawing):
                 events.append(('lift',None,t,t+distance,previous,first))
                 t+=distance
         duration=max(1.,stroke.length)
+        if natural:
+            # Long lines go a little faster than short ones, like a real hand.
+            duration=max(1.,(stroke.length/scale)**NATURAL_LENGTH*scale)
         events.append(('draw',index,t,t+duration,first,stroke.points[-1]))
         t+=duration
         previous=stroke.points[-1]
@@ -267,7 +331,8 @@ def _ink_ownership(drawing):
     stroke starts, and no ink changes during pen lifts.
     """
     events,total=_stroke_schedule(drawing)
-    signature=tuple(id(stroke) for stroke in drawing.strokes)
+    signature=_signature(drawing)
+    natural=_natural(drawing)
     cache=getattr(drawing,'font_time_cache',None)
     if cache is not None and cache[0]==signature:
         return cache[1],cache[2],cache[3]
@@ -288,7 +353,10 @@ def _ink_ownership(drawing):
                 y=round(a[1]+(b[1]-a[1])*progress)
                 if not (0<=x<w and 0<=y<h):continue
                 passed=stroke.distances[seg_index]+distance*progress
-                when=(start+(end-start)*min(1.,passed/max(.001,stroke.length)))/total
+                share=min(1.,passed/max(.001,stroke.length))
+                if natural:
+                    share=_uneased(share)          # the time the eased pen reaches this point
+                when=(start+(end-start)*share)/total
                 if when<seed[y,x]:
                     seed[y,x]=when
                     seed_owner[y,x]=index
@@ -352,6 +420,8 @@ def _pen_state(drawing,progress):
             return (a[0]+(b[0]-a[0])*fraction,
                     a[1]+(b[1]-a[1])*fraction),False,None
         stroke=drawing.strokes[index]
+        if _natural(drawing):
+            fraction=ease(fraction)
         points=stroke.portion(stroke.length*fraction)
         return points[-1],True,index
     return events[-1][5],False,None

@@ -128,8 +128,14 @@ def _erase_key(drawing, opts, erase):
     def simple(v):
         if hasattr(v, 'cacheKey'):
             return ('img', v.cacheKey())
-        if isinstance(v, (int, float, str, bool, tuple)) or v is None:
+        if isinstance(v, (int, float, str, bool)) or v is None:
             return v
+        # Lists and dicts made again for every frame must give the same key (by value,
+        # not by id), or the finished picture is drawn again each frame: playback lags.
+        if isinstance(v, (tuple, list)):
+            return tuple(simple(x) for x in v)
+        if isinstance(v, dict):
+            return tuple(sorted((str(k), simple(x)) for k, x in v.items()))
         return id(v)
     return (id(drawing), tuple(id(s) for s in drawing.strokes),
             tuple(sorted((k, simple(v)) for k, v in opts.items())),

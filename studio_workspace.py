@@ -995,6 +995,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.font_size.valueChanged.connect(lambda v: w.letter_timer.start()
                                      if getattr(w.drawing,'source_kind',None)=='font' else None)
     asset_l.addLayout(font_size_form)
+    # Choosing another font re-writes the text at once (no need to press Animate);
+    # Letter detail only means something for real fonts, not the built-in pen.
+    w.font_select.activated.connect(lambda i: w.font_choice_changed())
+    w.font_size.setEnabled(w.font_select.currentText()!='Built-in single-line pen')
+    w.font_select.currentIndexChanged.connect(
+        lambda i: w.font_size.setEnabled(w.font_select.currentText()!='Built-in single-line pen'))
     style_form=form_layout()
     w.font_color_button=QPushButton('Letter color: #25364A')
     w.font_color_button.setToolTip('Choose the ink color of handwritten text. Applies to current lettering and future lettering.')
@@ -1253,19 +1259,20 @@ def build_workspace(w, Canvas, BRAND_ICON):
 
     hand=QWidget();hand_l=QVBoxLayout(hand)
     hand_l.setContentsMargins(9,12,9,8);hand_l.setSpacing(12)
-    # 1. Which hand: a picture of the hand that draws and of the one that paints.
-    hand_l.addWidget(label('THE HAND'))
-    pics=QHBoxLayout(); pics.setSpacing(10)
-    w.hand_pictures={}
-    for key,text in (('draw','Draws the lines'),('paint','Paints the colours')):
-        box=QVBoxLayout(); box.setSpacing(3)
+    # Two clear parts: the hand that DRAWS the lines, and the one that PAINTS the colours.
+    def picture(key,text):
+        row=QHBoxLayout(); row.setSpacing(10)
         pic=QLabel(); pic.setObjectName('monitorWell'); pic.setFixedSize(120,92)
         pic.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        box.addWidget(pic,0,Qt.AlignmentFlag.AlignHCenter)
-        box.addWidget(caption(text),0,Qt.AlignmentFlag.AlignHCenter)
-        pics.addLayout(box); w.hand_pictures[key]=pic
-    pics.addStretch(1)
-    hand_l.addLayout(pics)
+        row.addWidget(pic); w.hand_pictures[key]=pic
+        note=caption(text); note.setWordWrap(True)
+        row.addWidget(note,1)
+        hand_l.addLayout(row)
+        return note
+    w.hand_pictures={}
+    # 1. The drawing hand.
+    hand_l.addWidget(label('1 · DRAWING HAND (the lines)'))
+    picture('draw','This hand draws the lines of pictures and writes the text.')
     w.hand_name=caption('Hand: none')
     hand_l.addWidget(w.hand_name)
     builtin_row=QHBoxLayout()
@@ -1285,34 +1292,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     hands_library.clicked.connect(lambda checked=False: w.open_library('hands'))
     own_row.addWidget(hands_library)
     hand_l.addLayout(own_row)
-    w.left_handed=QCheckBox('Left-handed (the hand comes from the left)')
-    w.left_handed.setToolTip('Mirrors the drawing hand, the painting brush and the eraser, for left-handers.')
-    hand_l.addWidget(w.left_handed)
-    # 2. When it is seen.
-    hand_l.addWidget(label('WHEN IT IS SEEN'))
-    w.showhand=QCheckBox('While drawing the lines')
+    w.showhand=QCheckBox('Show it while drawing the lines')
     w.showhand.setChecked(True);hand_l.addWidget(w.showhand)
-    w.show_paint_hand=QCheckBox('While painting the colours')
-    w.show_paint_hand.setChecked(True);hand_l.addWidget(w.show_paint_hand)
-    # 3. Painting: the same hand (default) or a brush.
-    hand_l.addWidget(label('WHILE PAINTING'))
-    from tools_kit import PAINT_CHOICES
-    ph=form_layout();hand_l.addLayout(ph)
-    w.paint_hand=QComboBox()
-    w.paint_hand.addItems(list(PAINT_CHOICES))
-    w.paint_hand.setToolTip('The same hand paints the colours (default), or it switches to the built-in '
-                            'paint brush, or to a hand from your Hands library.')
-    ph.addRow('Paints with',w.paint_hand)
-    w.paint_hand_size=w.number(5,90,30,1);w.paint_hand_size.setDecimals(0)
-    w.paint_hand_size.setToolTip('Width of the painting hand, as a share of the video width.')
-    ph.addRow('Its size (%)',w.paint_hand_size)
-    w.paint_hand_choose=QPushButton('Choose painting hand…')
-    w.paint_hand_choose.clicked.connect(lambda checked=False: w.choose_paint_hand())
-    hand_l.addWidget(w.paint_hand_choose)
-    w.paint_hand_name=caption('')
-    hand_l.addWidget(w.paint_hand_name)
-    # 4. Size and pen tip (fine tuning).
-    hand_l.addWidget(label('SIZE & PEN TIP'))
     h=form_layout();hand_l.addLayout(h)
     w.handsize=w.number(.02,.8,.75,.01);h.addRow('Hand size',w.handsize)
     # Defaults calibrated for the built-in hand (assets/default_hand.png).
@@ -1330,6 +1311,32 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.pick_tip_button.clicked.connect(lambda checked=False: w.pick_pen_tip())
     tip_row.addWidget(w.pick_tip_button)
     hand_l.addLayout(tip_row)
+    # 2. The painting hand.
+    hand_l.addWidget(label('2 · PAINTING HAND (the colours)'))
+    picture('paint','After the lines, this one paints the colours in. '
+                    'By default it is the same hand as above.')
+    from tools_kit import PAINT_CHOICES
+    ph=form_layout();hand_l.addLayout(ph)
+    w.paint_hand=QComboBox()
+    w.paint_hand.addItems(list(PAINT_CHOICES))
+    w.paint_hand.setToolTip('The same hand paints the colours (default), or it switches to the built-in '
+                            'paint brush, or to a hand from your Hands library.')
+    ph.addRow('Paints with',w.paint_hand)
+    w.paint_hand_size=w.number(5,90,30,1);w.paint_hand_size.setDecimals(0)
+    w.paint_hand_size.setToolTip('Width of the painting hand, as a share of the video width.')
+    ph.addRow('Its size (%)',w.paint_hand_size)
+    w.paint_hand_choose=QPushButton('Choose painting hand…')
+    w.paint_hand_choose.clicked.connect(lambda checked=False: w.choose_paint_hand())
+    hand_l.addWidget(w.paint_hand_choose)
+    w.paint_hand_name=caption('')
+    hand_l.addWidget(w.paint_hand_name)
+    w.show_paint_hand=QCheckBox('Show it while painting the colours')
+    w.show_paint_hand.setChecked(True);hand_l.addWidget(w.show_paint_hand)
+    # 3. Both.
+    hand_l.addWidget(label('3 · BOTH HANDS'))
+    w.left_handed=QCheckBox('Left-handed (the hands come from the left)')
+    w.left_handed.setToolTip('Mirrors the drawing hand, the painting brush and the eraser, for left-handers.')
+    hand_l.addWidget(w.left_handed)
     hand_l.addStretch(1)
     tabs.addTab(scroll_view(hand),'Hand')
 

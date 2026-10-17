@@ -259,7 +259,7 @@ class ElementDialog(QDialog):
         self.timer.stop()
         self.w.commit_history()
         self.give_back_view()
-        self.w.fill_scenes(); self.w.refresh()
+        self.w.fill_scenes(); self.back_to_scope(); self.w.refresh()
         super().accept()
 
     def reject(self):
@@ -270,5 +270,11 @@ class ElementDialog(QDialog):
         scene['name'] = self.saved['name']
         scene['transition'], scene['transition_seconds'] = self.saved['transition'], self.saved['seconds']
         self.give_back_view()
-        w.fill_scenes(); w.refresh()
+        w.fill_scenes(); self.back_to_scope(); w.refresh()
         super().reject()
+
+    def back_to_scope(self):
+        """Back to what the main timeline showed before (the whole video, usually)."""
+        scope = self.w.preview_scope
+        if self.scope and scope.currentIndex() != self.scope and len(self.w.scenes) > 1:
+            scope.blockSignals(True); scope.setCurrentIndex(self.scope); scope.blockSignals(False)
