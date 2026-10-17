@@ -1238,10 +1238,16 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.scene_transition_time.setToolTip('Length of the move to the next scene (seconds).')
     w.scene_transition_time.valueChanged.connect(lambda value: w.scene_transition_changed())
     trans.addRow('Move (s)',w.scene_transition_time)
-    w.preview_scope=QComboBox();w.preview_scope.addItems(['This scene','All scenes'])
-    w.preview_scope.setToolTip('Play and scrub only the scene you edit, or the whole video.')
+    w.preview_scope=QComboBox();w.preview_scope.addItems(['This scene','All scenes','Board'])
+    w.preview_scope.setToolTip('This scene: play the scene you edit. All scenes: the whole video. '
+                               'Board: all scenes from above — move and resize their frames.')
     w.preview_scope.currentIndexChanged.connect(lambda index: w.preview_scope_changed())
     trans.addRow('Preview',w.preview_scope)
+    w.board_arrange=QPushButton('Arrange in a row'); w.board_arrange.setObjectName('subtle')
+    w.board_arrange.setToolTip('Put every frame next to the one before it again (following the transitions).')
+    w.board_arrange.clicked.connect(lambda checked=False: w.arrange_board())
+    w.board_arrange.hide()
+    trans.addRow('',w.board_arrange)
     scene_row.addLayout(trans)
     line_l.addLayout(scene_row)
     # The slider keeps the position; the timeline is what you see and drag.

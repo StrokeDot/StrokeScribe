@@ -123,7 +123,7 @@ class WindowTests(unittest.TestCase):
         w.duration.setValue(1.)
         # At the start of picture 2, picture 1 is already on the page.
         w.slider.setValue(0); self.app.processEvents()
-        base = w.page_base(1, w.canvas.frame.width(), w.canvas.frame.height())
+        base = w.scene_base(1, w.canvas.frame.width(), w.canvas.frame.height())
         self.assertIsNotNone(base)
         start = visible_box(w.canvas.frame)
         self.assertLessEqual(start[0], first[0] + 2)

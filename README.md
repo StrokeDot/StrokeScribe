@@ -160,6 +160,14 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## The board: the camera flies between scenes (v0.5.3-experimental.50)
+
+- **One big board, like VideoScribe:** every scene has a frame on one board. The camera shows a scene's frame while it is drawn, then flies (zooms out, moves, zooms in) to the next frame. Everything already drawn stays on the board.
+- **Board view:** Preview → Board shows all frames from above. Drag a frame to move it, use the mouse wheel on it to make it bigger or smaller, double-click it to edit that scene. "Arrange in a row" puts them back next to each other.
+- **Frames inside frames:** put a small frame inside a picture and the camera zooms in to draw a detail there, on top of the picture.
+- **Sharp at any zoom:** pictures are drawn again at the size the camera needs (SVG lines are vectors), so zooming in never makes them blurry.
+- **Show everything:** choose it under "Then" for the last scene: at the end the camera zooms out to the whole board.
+
 ## Sharp logo, rounder purple design (v0.5.3-experimental.49)
 
 - **Sharp logo:** the logo in the app, the window and the taskbar is now made from the large 1024 px logo, and drawn with your screen's real pixels, so it is sharp at 100 %, 125 %, 150 % and 200 % screen scaling. The Windows icon (.ico) has every size from 16 to 256 px.

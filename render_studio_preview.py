@@ -203,6 +203,27 @@ _page.playing=False
     f'frames: {_n+1}\nready-made frames: {_page.ready_frames()[0]}\n'
     f'drawing a frame: {_draw*1000:.1f} ms\nready-made frame: {_ready*1000:.2f} ms\n')
 _page.close()
+# The board: scene 2 is a small frame inside scene 1 (the camera zooms in), scene 3 to the
+# right, then the camera zooms out to show everything. A GIF of the whole video, and the Board view.
+_b=Window(); _b.resize(1490,890); _b.apply_theme('dark'); _b.show(); app.processEvents()
+_b.duration.setValue(1.5)
+_b.add_scene(); _b.set_drawing(_imp('samples/arthur-headset-traced.svg')); _b.duration.setValue(1.5)
+_b.add_scene(); _b.set_drawing(_imp('samples/drawing.svg')); _b.duration.setValue(1.2)
+_b.scenes[0]['board']=dict(cx=0.,cy=0.,w=1.)
+_b.scenes[1]['board']=dict(cx=.27,cy=.12,w=.32)
+_b.scenes[2]['board']=dict(cx=1.25,cy=.1,w=.8)
+_b.scene_transition.setCurrentText('Show everything'); _b.scene_transition_changed()
+_b.fill_scenes()
+_b.preview_scope.setCurrentIndex(2); app.processEvents()
+_b.grab().save(str(out/'board-view.png'))
+_b.preview_scope.setCurrentIndex(1); app.processEvents()
+_frames=[]
+for _i in range(72):
+    _img=_b.all_scenes_frame(640,360,_i/71)[0]
+    _f=_pil(_img).convert('RGBA'); _bg=_Image.new('RGBA',_f.size,(255,255,255,255)); _bg.alpha_composite(_f)
+    _frames.append(_bg.convert('RGB'))
+_frames[0].save(str(out/'board-flight.gif'),save_all=True,append_images=_frames[1:]+[_frames[-1]]*8,duration=90,loop=0)
+_b.close()
 # Setup & system check window, with the real checks of the build machine.
 import preflight
 from setup_wizard import SetupDialog

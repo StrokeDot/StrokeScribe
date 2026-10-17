@@ -23,7 +23,9 @@ import numpy as np
 # 'Same page': the next scene is another picture drawn on the same page; the
 # pictures before it stay on the page (several pictures in one place).
 SAME_PAGE = 'Same page'
-TRANSITIONS = ('Camera move', 'Pan left', 'Pan right', 'Pan up', 'Pan down', 'Zoom in', 'Fade', 'Cut', SAME_PAGE)
+SHOW_ALL = 'Show everything'      # after the last scene: zoom out to the whole board
+TRANSITIONS = ('Camera move', 'Pan left', 'Pan right', 'Pan up', 'Pan down', 'Zoom in', 'Fade', 'Cut', SAME_PAGE,
+               SHOW_ALL)
 DEFAULT_TRANSITION = 'Camera move'
 DEFAULT_TRANSITION_SECONDS = 1.2
 # Output settings shared by all scenes (taken from the scene being edited).
@@ -32,8 +34,10 @@ GLOBAL_SETTINGS = ('res', 'fps', 'webm', 'webm_quality', 'mov', 'mp4', 'mp4_back
                    'sound_pencil_file', 'sound_brush_file', 'sound_eraser_file')
 
 
-def transition_seconds(kind, seconds):
-    return 0. if kind in ('Cut', SAME_PAGE) else max(0., float(seconds))
+def transition_seconds(kind, seconds, last=False):
+    """Length of the move after a scene (after the last one: only for Show everything)."""
+    import board
+    return board.transition_seconds(kind, seconds, last)
 
 
 def _ease(t):
@@ -176,18 +180,27 @@ def thumbnail(drawing, options, width=192):
 # ------------------------------------------------------------ whole video
 
 def plan(scenes, hand=None, overrides=None):
-    """Prepared scenes: [{drawing, options, seconds, transition, transition_seconds}]."""
+    """Prepared scenes: [{drawing, options, seconds, transition, transition_seconds, move_seconds, frame}].
+
+    Every scene gets its frame on the board (board.py). A scene whose frame shows
+    pictures drawn before it is drawn over them, without its own background."""
+    import board
     out = []
     for i, scene in enumerate(scenes):
         drawing, options, settings = job_from_state(scene['state'], hand, overrides)
-        if on_page(scenes, i):
-            options = for_page(options)
         last = i == len(scenes) - 1
         kind = scene.get('transition', DEFAULT_TRANSITION)
+        move = float(scene.get('transition_seconds', DEFAULT_TRANSITION_SECONDS))
         out.append(dict(drawing=drawing, options=options, settings=settings,
-                        seconds=seconds_of(drawing, options), transition=kind,
-                        transition_seconds=0. if last else transition_seconds(
-                            kind, scene.get('transition_seconds', DEFAULT_TRANSITION_SECONDS))))
+                        seconds=seconds_of(drawing, options), transition=kind, move_seconds=move,
+                        transition_seconds=transition_seconds(kind, move, last)))
+    aspect = out[0]['options']['height'] / out[0]['options']['width'] if out else 9 / 16
+    for p, frame in zip(out, board.frames(scenes, aspect)):
+        p['frame'] = frame
+    all_frames = [p['frame'] for p in out]
+    for k, p in enumerate(out):
+        if board.has_base(all_frames, k, aspect):
+            p['options'] = dict(p['options'], background=False)
     return out
 
 
@@ -213,17 +226,31 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
     folder.mkdir(parents=True, exist_ok=False)
     overrides = {k: settings[k] for k in GLOBAL_SETTINGS if k in settings}
     prepared = plan(scenes, hand, overrides)
+    import board
+    from PySide6.QtGui import QImage
+    from frame_render import camera_for
     fps = int(prepared[0]['options']['fps'])
+    width, height = prepared[0]['options']['width'], prepared[0]['options']['height']
+    aspect = height / width
+    all_frames = [p['frame'] for p in prepared]
+    layers = prepared[0]['options'].get('layers', 'all')
+    world = board.World([dict(drawing=p['drawing'], options=p['options'], frame=p['frame'], key=('scene', k))
+                         for k, p in enumerate(prepared)], aspect)
     counts = [frame_count(p['seconds'], fps) for p in prepared]
     joins = [round(p['transition_seconds'] * fps) for p in prepared]
     total = sum(counts) + sum(joins)
     done = 0
     index = 0
     ranges = []
-    previous_last = None
-    page = None                    # finished pictures of the current page (QImage)
     work = folder / '_scenes'
     work.mkdir()
+
+    def write(image):
+        nonlocal index, done
+        if not image.save(str(folder / f'frame_{index:06d}.png'), 'PNG', 80):
+            raise OSError('Unable to save PNG frame.')
+        index += 1; done += 1
+        progress(done, total)
     try:
         for k, scene in enumerate(prepared):
             options = dict(scene['options'])
@@ -237,35 +264,45 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
             export_frames(scene['drawing'], part, callback=tick, **options)
             frames = sorted(part.glob('frame_*.png'))
             done = base + len(frames)
-            from PySide6.QtGui import QImage
-            layers = options.get('layers', 'all')
-            if on_page(scenes, k) and page is not None and layers != 'hand':
-                for frame in frames:                  # this picture over the ones already on the page
-                    if not stack(page, QImage(str(frame))).save(str(frame), 'PNG', 80):
+            if layers != 'hand' and board.has_base(all_frames, k, aspect):
+                # Pictures drawn before this scene can be seen in its frame: draw over them
+                # (following this scene's camera, if it follows the hand).
+                camera = camera_for(scene['drawing'], options, float(options.get('camera_zoom', 1.)))
+                still = None
+                for i, frame in enumerate(frames):
+                    if camera is None:
+                        if still is None:
+                            still = world.view(all_frames[k], width, height, upto=k)
+                        under = still
+                    else:
+                        view = board.sub_view(all_frames[k], *camera.at(i / max(1, len(frames) - 1)), aspect)
+                        under = world.view(view, width, height, upto=k)
+                    if not stack(under, QImage(str(frame))).save(str(frame), 'PNG', 80):
                         raise OSError('Unable to save PNG frame.')
-            if k < len(prepared) - 1 and prepared[k]['transition'] == SAME_PAGE and layers != 'hand':
-                art = finished_art(scene['drawing'], options, background=not on_page(scenes, k))
-                page = stack(page if on_page(scenes, k) else None, art)
-            else:
-                page = None
-            if previous_last is not None and joins[k - 1] > 0:
-                a = QImage(str(previous_last))
-                b = QImage(str(frames[0]))
-                kind = prepared[k - 1]['transition']
-                n = joins[k - 1]
-                for j in range(n):
-                    image = transition_frame(a, b, kind, (j + 1) / (n + 1))
-                    if not image.save(str(folder / f'frame_{index:06d}.png'), 'PNG', 80):
-                        raise OSError('Unable to save PNG frame.')
-                    index += 1
-                    done += 1
-                    progress(done, total)
             start = index
             for frame in frames:
                 frame.replace(folder / f'frame_{index:06d}.png')
                 index += 1
             ranges.append((start, index))
-            previous_last = folder / f'frame_{index - 1:06d}.png'
+            # The move after this scene: the camera flies over the board to the next frame
+            # (or, after the last scene, out to the whole board).
+            n = joins[k]
+            kind = scene['transition']
+            last = k == len(prepared) - 1
+            screens = None
+            for j in range(n):
+                t = (j + 1) / n if last else (j + 1) / (n + 1)
+                if layers == 'hand':
+                    image = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied); image.fill(0)
+                elif kind in board.SCREEN_KINDS and not last:
+                    if screens is None:
+                        screens = (world.view(all_frames[k], width, height, upto=k + 1),
+                                   world.view(all_frames[k + 1], width, height, upto=k + 1))
+                    image = transition_frame(screens[0], screens[1], kind, t)
+                else:
+                    view = board.join_view(all_frames, k, kind, t, aspect, scene['move_seconds'])
+                    image = world.view(view, width, height, upto=k + 1)
+                write(image)
             if interrupted():
                 raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
     finally:
@@ -274,7 +311,9 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
     (folder / 'sequence.json').write_text(json.dumps(dict(
         width=prepared[0]['options']['width'], height=prepared[0]['options']['height'], fps=fps,
         frames=index, duration=seconds,
-        scenes=[dict(first_frame=a, frames=b - a, transition_after=p['transition'] if k < len(prepared) - 1 else None)
+        scenes=[dict(first_frame=a, frames=b - a,
+                     transition_after=p['transition'] if k < len(prepared) - 1 or joins[k] else None,
+                     board_frame=dict(zip(('cx', 'cy', 'w'), p['frame'])))
                 for k, ((a, b), p) in enumerate(zip(ranges, prepared))]), indent=2))
     # Sound: every scene's pencil/brush/eraser sounds in place, silence during
     # transitions; each scene's voiceover starts with its scene.
@@ -297,6 +336,8 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                 path.unlink()
             else:
                 parts.append(np.zeros((samples, 2), np.int16))
+        if joins[-1]:                              # the zoom out to the whole board at the end
+            parts.append(np.zeros((round(joins[-1] / fps * RATE), 2), np.int16))
         track = np.vstack(parts)
         voices = [(k, p['options']['audio']) for k, p in enumerate(prepared) if p['options'].get('audio')]
         audio = write_wav(folder / ('pencil_sounds.wav' if voices else 'soundtrack.wav'), track)
@@ -344,7 +385,7 @@ def scenes_from_project(data):
         state = item.get('state') or main
         out.append(dict(state=state, transition=item.get('transition', DEFAULT_TRANSITION),
                         transition_seconds=float(item.get('transition_seconds', DEFAULT_TRANSITION_SECONDS)),
-                        name=item.get('name')))
+                        name=item.get('name'), board=item.get('board')))
     return out
 
 
@@ -353,7 +394,8 @@ def scenes_to_project(main_state, scene_list, index):
     data = dict(main_state)
     if len(scene_list) > 1:
         data['scenes'] = [dict(state=None if k == index else s['state'], transition=s['transition'],
-                               transition_seconds=s['transition_seconds'], name=s.get('name'))
+                               transition_seconds=s['transition_seconds'], name=s.get('name'),
+                               board=s.get('board'))
                           for k, s in enumerate(scene_list)]
         data['scene_index'] = index
     return data

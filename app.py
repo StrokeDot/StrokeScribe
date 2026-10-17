@@ -56,7 +56,9 @@ class Canvas(QWidget):
         self._spinner=QTimer(self); self._spinner.setInterval(40)
         self._spinner.timeout.connect(self._advance)
         self.on_click=None          # on_click(x, y, add) in frame pixels
-        self.on_drag=None           # on_drag('start'|'move'|'done', dx, dy): dx, dy in fractions of the frame
+        self.on_drag=None           # on_drag('start', x, y) then ('move', dx, dy) / ('done'): dx, dy in fractions of the frame
+        self.on_wheel=None          # on_wheel(steps, x, y) → False when not used
+        self.on_double=None         # on_double(x, y)
         self._press=None
         self.highlight=[]           # selected lines: polylines in frame pixels
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
@@ -79,7 +81,8 @@ class Canvas(QWidget):
         d=event.position()-start
         if not dragging and abs(d.x())+abs(d.y())<self.DRAG_START: return
         if not dragging:
-            if self.on_drag('start',0.,0.) is False:
+            sx,sy=self._frame_point(start)
+            if self.on_drag('start',sx,sy) is False:
                 self._press=None; return
             self._press=(start,True)
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
@@ -111,6 +114,18 @@ class Canvas(QWidget):
             p.end()
             self._checker_pix=pix; self._checker_key=key
         return self._checker_pix
+    def wheelEvent(self,event):
+        if self.on_wheel is not None and self.frame is not None and self.busy_text is None:
+            steps=event.angleDelta().y()/120
+            x,y=self._frame_point(event.position())
+            if steps and self.on_wheel(steps,x,y) is not False:
+                event.accept(); return
+        super().wheelEvent(event)
+    def mouseDoubleClickEvent(self,event):
+        if self.on_double is not None and self.frame is not None and self.busy_text is None:
+            x,y=self._frame_point(event.position())
+            self.on_double(x,y); event.accept(); return
+        super().mouseDoubleClickEvent(event)
     def set_background(self,index):
         self.background=index; self.update()
     def set_busy(self,text,percent=None,detail=''):
@@ -400,6 +415,8 @@ class Window(QMainWindow):
         build_workspace(self,Canvas,BRAND_ICON)
         self.canvas.on_click=self.click_preview
         self.canvas.on_drag=self.drag_picture
+        self.canvas.on_wheel=lambda steps,x,y: self.board_wheel(steps,x,y) if self.board_mode() else False
+        self.canvas.on_double=lambda x,y: self.board_double(x,y) if self.board_mode() else None
         from menus import build_menus
         build_menus(self)
         self.watch_settings()
@@ -790,7 +807,9 @@ class Window(QMainWindow):
         return best
 
     def drag_picture(self,kind,dx,dy):
-        """Drag on the preview: move the picture on the page (Position X / Y)."""
+        """Drag on the preview: move the picture on the page (Position X / Y), or a frame on the Board."""
+        if self.board_mode() or (kind!='start' and getattr(self,'_board_drag',None)):
+            return self.board_drag(kind,dx,dy)
         if kind=='start':
             if not self.drawing or self.all_scenes() or self.busy: return False
             self._drag_from=(self.picture_x.value(),self.picture_y.value())
@@ -806,6 +825,8 @@ class Window(QMainWindow):
                                 'Click "Center" (Animation tab) to put it back in the middle.')
 
     def click_preview(self,x,y,add=False):
+        if self.board_mode():
+            self.board_select(self.board_pick(x,y)); self.refresh(); return
         if self.all_scenes(): return          # lines are edited in "This scene" preview
         index=self.line_at(x,y)
         if index is None:
@@ -1185,9 +1206,8 @@ class Window(QMainWindow):
         for k,scene in enumerate(self.scenes):
             if k==self.scene_index and self.drawing is not None and scene.get('thumb') is None:
                 self.store_scene()
-            from scenes import on_page
-            # "+": a picture added to the page of the scene before it.
-            item=QListWidgetItem(f'{k+1} {"+" if on_page(self.scenes,k) else "·"} {self.scene_label(k)}'[:22])
+            # "+": drawn over pictures of earlier scenes (same page, or a frame on top of them).
+            item=QListWidgetItem(f'{k+1} {"+" if self.drawn_over(k) else "·"} {self.scene_label(k)}'[:22])
             thumb=scene.get('thumb')
             if thumb is not None and not thumb.isNull():
                 from PySide6.QtGui import QImage, QPainter
@@ -1211,8 +1231,12 @@ class Window(QMainWindow):
             if widget is self.scene_transition: widget.setCurrentText(value)
             else: widget.setValue(value)
             widget.blockSignals(False)
-        self.scene_transition.setEnabled(not last)
-        self.scene_transition_time.setEnabled(not last and scene['transition'] not in ('Cut','Same page'))
+        # After the last scene only "Show everything" does something (zoom out to the whole board).
+        self.scene_transition.setEnabled(True)
+        self.scene_transition.setToolTip('After the last scene: "Show everything" zooms out to the whole board.'
+                                         if last else 'How the camera goes from this scene to the next one.')
+        self.scene_transition_time.setEnabled(scene['transition']=='Show everything' if last
+                                              else scene['transition'] not in ('Cut','Same page'))
         self.preview_scope.setEnabled(many)
         if not many and self.preview_scope.currentIndex():
             self.preview_scope.blockSignals(True); self.preview_scope.setCurrentIndex(0); self.preview_scope.blockSignals(False)
@@ -1287,7 +1311,7 @@ class Window(QMainWindow):
                  name=f'Picture {self.scene_index+2}',thumb=current.get('thumb'))
         current['transition']='Same page'
         self.scenes.insert(self.scene_index+1,new)
-        self._page_cache={}
+        self._base_cache=OrderedDict()
         self._enter_scene(self.scene_index+1)
         self.status.setText('Picture added on the same page. Import its SVG or image (Import, Library or Create image), '
                             'then drag it on the preview to place it. The pictures before it stay on the page.')
@@ -1314,19 +1338,30 @@ class Window(QMainWindow):
         scene=self.scenes[self.scene_index]
         scene['transition']=self.scene_transition.currentText()
         scene['transition_seconds']=self.scene_transition_time.value()
-        self.scene_transition_time.setEnabled(scene['transition'] not in ('Cut','Same page')
-                                              and self.scene_index<len(self.scenes)-1)
-        self._page_cache={}
+        last=self.scene_index==len(self.scenes)-1
+        self.scene_transition_time.setEnabled(scene['transition']=='Show everything' if last
+                                              else scene['transition'] not in ('Cut','Same page'))
+        self._base_cache=OrderedDict()
         self.fill_scenes()
         self.refresh()
 
     def all_scenes(self):
         return self.preview_scope.currentIndex()==1 and len(self.scenes)>1
 
+    def board_mode(self):
+        """Preview → Board: the whole board from above, to arrange the scenes' frames."""
+        return self.preview_scope.currentIndex()==2 and len(self.scenes)>1
+
     def preview_scope_changed(self):
         self.playing=False
         if self.preview_sound is not None: self.preview_sound.stop()
-        if self.all_scenes():
+        if hasattr(self,'board_arrange'): self.board_arrange.setVisible(self.board_mode())
+        if self.board_mode():
+            self.status.setText('Board: drag a frame to move it, mouse wheel on a frame to make it bigger or '
+                                'smaller, double-click to edit that scene. A frame inside another one: the '
+                                'camera zooms in to draw there.')
+            self.order.clearSelection()
+        elif self.all_scenes():
             self.status.setText('Previewing all scenes (no sound in this preview; the export has it). '
                                 'Lines can be clicked again in "This scene" preview.')
             self.order.clearSelection()
@@ -1335,21 +1370,21 @@ class Window(QMainWindow):
     def preview_scene(self,k,width,height):
         """(drawing, options, seconds, camera) of scene k for the preview, at preview size."""
         from scenes import job_from_state, seconds_of
-        from scenes import on_page, for_page
+        over=self.drawn_over(k)
         if k==self.scene_index:
             options=self.options(); options.pop('fps',None)
-            if on_page(self.scenes,k): options=for_page(options)
+            if over: options['background']=False
             options['hand_scale']/=options['artwork_scale']
             options['width'],options['height']=width,height
             options['ghost']=.22
             return self.drawing,options,seconds_of(self.drawing,options),self.preview_camera(options)
         state=self.scenes[k]['state']
-        key=(id(state),width,height,on_page(self.scenes,k))
+        key=(id(state),width,height,over)
         cached=self._scene_cache.get(id(state))
         if cached is None or cached[0]!=key:
             drawing,options,_=job_from_state(state,self.hand)
             options.pop('fps',None); options.pop('audio',None)
-            if on_page(self.scenes,k): options=for_page(options)
+            if over: options['background']=False
             options['hand_scale']/=options['artwork_scale']
             options['width'],options['height']=width,height
             options['ghost']=.22
@@ -1372,47 +1407,232 @@ class Window(QMainWindow):
             self._scene_cache[id(state)]=cached
         return cached[1]
 
-    def page_base(self,k,width,height):
-        """The pictures already on scene k's page (finished, no hand), or None."""
-        from scenes import on_page, finished_art, stack
-        if not on_page(self.scenes,k): return None
-        edited=self.scene_index<k                   # the page includes the picture being edited
-        key=(k,width,height,tuple(id(s['state']) for s in self.scenes[:k]),
-             tuple(s['transition'] for s in self.scenes[:k]),self.scene_index,
-             id(self.history.current) if edited else None,
-             (self.picture_x.value(),self.picture_y.value(),self.artwork_size.value()) if edited else None)
-        cache=self.__dict__.setdefault('_page_cache',{})
-        if key in cache: return cache[key]
-        below=self.page_base(k-1,width,height)
-        drawing,options,_,_=self.preview_scene(k-1,width,height)
-        base=stack(below,finished_art(drawing,options,background=not on_page(self.scenes,k-1)))
-        if len(cache)>12: cache.clear()
+    # ------------------------------------------------------------ the board
+    def board_aspect(self):
+        try:
+            w,h=[int(x.strip()) for x in self.res.currentText().split('×')]
+            return h/w
+        except Exception:
+            return 9/16
+
+    def board_frames(self):
+        """(cx, cy, w) of every scene on the board."""
+        import board
+        return board.frames(self.scenes,self.board_aspect())
+
+    def drawn_over(self,k):
+        """True when pictures of earlier scenes can be seen in scene k's frame."""
+        import board
+        if k<=0 or len(self.scenes)<2: return False
+        return board.has_base(self.board_frames(),k,self.board_aspect())
+
+    def edited_key(self):
+        """Changes whenever the scene being edited would look different when finished."""
+        settings=self.settings_state()
+        return ('edit',self.scene_index,id(self.drawing),len(getattr(self.drawing,'strokes',()) or ()),
+                id(self.final_image),hash(repr(sorted((k,repr(v)) for k,v in settings.items()))))
+
+    def preview_world(self,width,height):
+        """The board for the preview: every scene, drawn sharp at any camera zoom."""
+        import board
+        items=[]
+        for k,frame in enumerate(self.board_frames()):
+            drawing,options,_,_=self.preview_scene(k,width,height)
+            key=self.edited_key() if k==self.scene_index else ('scene',id(self.scenes[k]['state']))
+            items.append(dict(drawing=drawing,options=options,frame=frame,key=key))
+        cache=self.__dict__.setdefault('_world_cache',OrderedDict())
+        return board.World(items,height/width,cache)
+
+    BOARD_WIDTH=1280
+
+    def show_board(self):
+        """Draw the board view: every finished scene in its frame, frame outlines and numbers."""
+        import board
+        from PySide6.QtCore import QRectF, QPointF
+        from PySide6.QtGui import QPainter, QPen, QFont, QPainterPath
+        import theme
+        c=theme.colors()
+        self.sync_workspace()
+        aspect=self.board_aspect()
+        W=self.BOARD_WIDTH; H=round(W*aspect)
+        try:
+            world=self.preview_world(960,round(960*aspect))
+        except Exception as exc:
+            self.status.setText('Board could not be drawn: '+str(exc)[:200]); return
+        frames=world.frames
+        view=getattr(self,'_board_view',None) if getattr(self,'_board_drag',None) else None
+        if view is None:
+            view=board.bounds(frames,aspect,margin=.12)
+        self._board_map=(view,W,H)
+        image=world.view(view,W,H,upto=len(frames))
+        p=QPainter(image); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # Camera path: from one frame to the next.
+        centres=[world.place(f,view,W,H) for f in frames]
+        path=QPainterPath()
+        for n,(x,y,w,h) in enumerate(centres):
+            point=QPointF(x+w/2,y+h/2)
+            path.moveTo(point) if n==0 else path.lineTo(point)
+        p.setPen(QPen(QColor(c['accent']),2,Qt.PenStyle.DashLine)); p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawPath(path)
+        font=QFont(self.font()); font.setBold(True); font.setPointSizeF(9.5); p.setFont(font)
+        for n,(x,y,w,h) in enumerate(centres):
+            current=n==self.scene_index
+            p.setPen(QPen(QColor(c['accent'] if current else c['muted']),3 if current else 1.6,
+                          Qt.PenStyle.SolidLine if current else Qt.PenStyle.DashLine))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRoundedRect(QRectF(x,y,w,h),6,6)
+            label=f' {n+1} · {self.scene_label(n)} '[:26]
+            tw=p.fontMetrics().horizontalAdvance(label)+8
+            badge=QRectF(x+6,y+6,tw,22)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['accent'] if current else '#444A55'))
+            p.drawRoundedRect(badge,11,11)
+            p.setPen(QColor('white')); p.drawText(badge,Qt.AlignmentFlag.AlignCenter,label)
+        p.end()
+        self.canvas.frame=image; self.canvas.highlight=[]; self.canvas.update()
+        lengths,joins=self.scene_timeline(960,round(960*aspect))
+        segments=[]
+        for n,(length,join) in enumerate(zip(lengths,joins)):
+            segments.append((f'{n+1} · {self.scene_label(n)}',length,'scene'))
+            if join>0: segments.append((self.scenes[n]['transition'],join,'join'))
+        self.stage_timeline.set_scenes(segments,current=self.scene_index)
+        total=sum(lengths)+sum(joins)
+        self.stage_timeline.update_state(total,0,0,self.position)
+        self.clock.setText(timecode(self.position*total)); self.clock_total.setText(timecode(total))
+
+    def board_point(self,x,y):
+        """Board (world) point under a pixel of the board view."""
+        view,W,H=self._board_map
+        vx,vy,vw=view
+        return vx-vw/2+x*vw/W, vy-vw*H/W/2+y*vw/W
+
+    def board_pick(self,x,y):
+        """The scene whose frame is under (x, y) of the board view: the smallest one (frames
+        inside frames), or None."""
+        import board
+        if not getattr(self,'_board_map',None): return None
+        wx,wy=self.board_point(x,y)
+        aspect=self.board_aspect()
+        hits=[(f[2],k) for k,f in enumerate(self.board_frames())
+              if board.rect(f,aspect)[0]<=wx<=board.rect(f,aspect)[2] and board.rect(f,aspect)[1]<=wy<=board.rect(f,aspect)[3]]
+        return min(hits)[1] if hits else None
+
+    def pin_board(self):
+        """Give every scene its own fixed frame (before the first move on the board), so moving one
+        frame does not move the scenes placed after it."""
+        for scene,(cx,cy,w) in zip(self.scenes,self.board_frames()):
+            if not scene.get('board'): scene['board']=dict(cx=cx,cy=cy,w=w)
+
+    def arrange_board(self):
+        """Forget the moved frames: every scene next to the one before it again."""
+        for scene in self.scenes: scene.pop('board',None)
+        self._base_cache=OrderedDict()
+        self.fill_scenes(); self.refresh()
+        self.status.setText('Frames arranged again from the transitions (Camera move: to the right, Pan up: above…).')
+
+    def board_select(self,k):
+        if k is None or k==self.scene_index: return
+        self.playing=False
+        self._leave_scene(); self._enter_scene(k)
+
+    def board_drag(self,kind,dx,dy):
+        import board
+        if kind=='start':
+            k=self.board_pick(dx,dy)
+            if k is None: return False
+            self.board_select(k)
+            self.pin_board()
+            b=self.scenes[k]['board']
+            self._board_drag=(k,b['cx'],b['cy'])
+            self._board_view=self._board_map[0]           # the view stays still while dragging
+            return True
+        drag=getattr(self,'_board_drag',None)
+        if drag is None: return
+        k,cx0,cy0=drag
+        if kind=='move':
+            vw=self._board_view[2]; aspect=self.board_aspect()
+            cx,cy=cx0+dx*vw,cy0+dy*vw*aspect
+            # Snap to the centre of other frames (to put a picture exactly on another frame).
+            for j,f in enumerate(self.board_frames()):
+                if j==k: continue
+                if abs(cx-f[0])<.015*vw: cx=f[0]
+                if abs(cy-f[1])<.015*vw*aspect: cy=f[1]
+            self.scenes[k]['board'].update(cx=cx,cy=cy)
+            self._base_cache=OrderedDict()
+            self.show_board()
+        else:
+            self._board_drag=None; self._board_view=None
+            self.fill_scenes(); self.show_board()
+            self.note_change()
+
+    def board_wheel(self,steps,x,y):
+        k=self.board_pick(x,y)
+        if k is None: k=self.scene_index
+        self.pin_board()
+        b=self.scenes[k]['board']
+        b['w']=max(.05,min(20.,b['w']*(1.12**steps)))
+        self._base_cache=OrderedDict()
+        self.fill_scenes(); self.show_board(); self.note_change()
+        self.status.setText(f'Scene {k+1}: frame size {b["w"]*100:.0f}% of a normal scene. '
+                            'Smaller frame = the camera zooms in more.')
+
+    def board_double(self,x,y):
+        k=self.board_pick(x,y)
+        if k is None: return
+        self.board_select(k)
+        self.preview_scope.setCurrentIndex(0)
+
+    def scene_base(self,k,width,height,fraction=1.,camera=None):
+        """What the camera sees of earlier scenes while scene k is drawn (None: nothing)."""
+        import board
+        if not self.drawn_over(k): return None
+        world=self.preview_world(width,height)
+        view=world.frames[k]
+        if camera is not None:
+            view=board.sub_view(view,*camera.at(fraction),world.aspect)
+        key=(k,width,height,view,tuple(it['key'] for it in world.items[:k]))
+        cache=self.__dict__.setdefault('_base_cache',OrderedDict())
+        if key in cache:
+            cache.move_to_end(key); return cache[key]
+        base=world.view(view,width,height,upto=k)
         cache[key]=base
+        while len(cache)>8: cache.popitem(last=False)
         return base
 
     def scene_timeline(self,width=960,height=540):
         """Lengths of all scenes and the moves between them (seconds)."""
         from scenes import transition_seconds
         lengths=[self.preview_scene(k,width,height)[2] for k in range(len(self.scenes))]
-        joins=[0. if k==len(self.scenes)-1 else
-               transition_seconds(s['transition'],s['transition_seconds']) for k,s in enumerate(self.scenes)]
+        last=len(self.scenes)-1
+        joins=[transition_seconds(s['transition'],s['transition_seconds'],k==last) for k,s in enumerate(self.scenes)]
         return lengths,joins
 
     def all_scenes_frame(self,width,height,fraction=None):
-        """Preview frame of the whole video at the playhead (or at `fraction`)."""
+        """Preview frame of the whole video at the playhead (or at `fraction`): the camera
+        over the board, as in the export."""
+        import board
         from frame_render import compose_frame
-        from scenes import locate, transition_frame
+        from scenes import transition_frame, stack
         lengths,joins=self.scene_timeline(width,height)
         total=sum(lengths)+sum(joins)
-        where,k,f=locate(lengths,joins,(self.position if fraction is None else fraction)*total)
-        from scenes import stack
-        def frame(n,fraction):
-            drawing,options,_,camera=self.preview_scene(n,width,height)
-            frame=compose_frame(drawing,fraction,options,camera)
-            return frame if options.get('layers')=='hand' else stack(self.page_base(n,width,height),frame)
-        if where=='join':
-            return transition_frame(frame(k,1.),frame(k+1,0.),self.scenes[k]['transition'],f),k,lengths,joins
-        return frame(k,f),k,lengths,joins
+        where,k,f=board.locate(lengths,joins,(self.position if fraction is None else fraction)*total)
+        if where=='scene':
+            drawing,options,_,camera=self.preview_scene(k,width,height)
+            frame=compose_frame(drawing,f,options,camera)
+            if options.get('layers')=='hand': return frame,k,lengths,joins
+            return stack(self.scene_base(k,width,height,f,camera),frame),k,lengths,joins
+        world=self.preview_world(width,height)
+        if self.preview_scene(k,width,height)[1].get('layers')=='hand':
+            from PySide6.QtGui import QImage
+            blank=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); blank.fill(0)
+            return blank,k,lengths,joins
+        kind=self.scenes[k]['transition']
+        last=k==len(self.scenes)-1
+        if kind in board.SCREEN_KINDS and not last:
+            a=world.view(world.frames[k],width,height,upto=k+1)
+            b=world.view(world.frames[k+1],width,height,upto=k+1)
+            return transition_frame(a,b,kind,f),k,lengths,joins
+        view=board.join_view(world.frames,k,kind,f,world.aspect,self.scenes[k]['transition_seconds'])
+        return world.view(view,width,height,upto=k+1),k,lengths,joins
 
     def open_batch_export(self):
         from batch_export import BatchExportDialog
@@ -2111,6 +2331,9 @@ class Window(QMainWindow):
         playhead=getattr(self,'_playhead_only',False); self._playhead_only=False
         if self._preparing:
             return
+        if self.drawing and self.board_mode():
+            self._view=None; self.clear_frames()
+            self.show_board(); return
         view=getattr(self,'_view',None)
         if not playhead or view is None or view['token']!=self._view_token() or not self.drawing:
             if not self.build_view(): return
@@ -2175,9 +2398,9 @@ class Window(QMainWindow):
         # Size, while its pen-tip coordinates move with the artwork.
         options['hand_scale']/=options['artwork_scale']
         options['ghost']=.22            # Hand only: still show faintly what is being written
-        from scenes import on_page, for_page
-        page=on_page(self.scenes,self.scene_index) and options.get('layers')!='hand'
-        if page: options=for_page(options)  # pictures before it stay on the page
+        # Pictures of earlier scenes in this frame stay on the board under it.
+        page=self.drawn_over(self.scene_index) and options.get('layers')!='hand'
+        if page: options['background']=False
         self._view=dict(all=False,options=options,page=page,ratio=ratio,length=self.timeline_length(),
                         token=self._view_token())
         return True
@@ -2190,11 +2413,12 @@ class Window(QMainWindow):
             return self.all_scenes_frame(width,height,fraction)[0]
         from frame_render import compose_frame
         options=dict(view['options'],width=width,height=height)
+        camera=self.preview_camera(options)
+        frame=compose_frame(self.drawing,fraction,options,camera)
         if view['page']:
             from scenes import stack
-            return stack(self.page_base(self.scene_index,width,height),
-                         compose_frame(self.drawing,fraction,options,None))
-        return compose_frame(self.drawing,fraction,options,self.preview_camera(options))
+            return stack(self.scene_base(self.scene_index,width,height,fraction,camera),frame)
+        return frame
 
     def frame_index(self,fraction):
         count=max(1,round(self._view['length']*self.PREVIEW_FPS))
@@ -2265,6 +2489,7 @@ class Window(QMainWindow):
         self.refresh()
     def toggle(self):
         if not self.drawing or self.busy: return
+        if self.board_mode(): self.preview_scope.setCurrentIndex(1)
         if self.position>=1: self.slider.setValue(0)
         self.playing=not self.playing; self.last=time.perf_counter(); self.sync_workspace()
         self.sync_preview_sound()
@@ -2286,6 +2511,7 @@ class Window(QMainWindow):
             self.status.setText('Preview sound unavailable: '+str(exc)[:160])
     def restart(self):
         if not self.drawing or self.busy: return
+        if self.board_mode(): self.preview_scope.setCurrentIndex(1)
         self.slider.setValue(0); self.playing=True; self.last=time.perf_counter(); self.sync_workspace()
         self.sync_preview_sound()
     def tick(self):
@@ -2308,7 +2534,7 @@ class Window(QMainWindow):
         if len(self.scenes)>1 and self.export_all_scenes.isChecked():
             self._leave_scene()
             scene_list=[dict(state=copy.deepcopy(s['state']),transition=s['transition'],
-                             transition_seconds=s['transition_seconds']) for s in self.scenes]
+                             transition_seconds=s['transition_seconds'],board=s.get('board')) for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
             self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand)
         else:
