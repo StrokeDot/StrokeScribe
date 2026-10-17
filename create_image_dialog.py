@@ -14,8 +14,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal, QUrl
-from PySide6.QtGui import QPixmap, QDesktopServices
+from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QRectF, QPointF
+from PySide6.QtGui import QPixmap, QDesktopServices, QPainter, QColor, QLinearGradient, QPen, QFont
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QComboBox,
     QPlainTextEdit, QProgressBar, QSpinBox, QCheckBox, QFileDialog, QMessageBox, QFrame,
@@ -28,6 +28,17 @@ from ai_workflows import LINE_ART_PROMPT, SIZES, SOUND_PROMPTS, build
 
 TASKS = (('lineart', 'Line art for my image'), ('generate', 'Create from text'),
          ('edit', 'Edit an image'), ('sound', 'Create a sound'))
+GENERATE_PROMPT = ('A friendly cartoon coffee cup with steam, bold clean shapes, '
+                   'flat colours, white background')
+EDIT_PROMPT = 'Make the background plain white.'
+
+
+def suggested_prompt(task, sound_for='Pencil'):
+    """The ready-made prompt of each tab (the Suggested prompt button brings it back)."""
+    return {'lineart': LINE_ART_PROMPT, 'edit': EDIT_PROMPT, 'generate': GENERATE_PROMPT,
+            'sound': SOUND_PROMPTS.get(sound_for, next(iter(SOUND_PROMPTS.values())))}.get(task, GENERATE_PROMPT)
+
+
 SOUND_SETTINGS = {'Pencil': 'sound_pencil_file', 'Brush': 'sound_brush_file', 'Eraser': 'sound_eraser_file'}
 
 
@@ -198,6 +209,14 @@ class CreateImageDialog(QDialog):
         form.addWidget(QLabel('Prompt'), row, 0, Qt.AlignmentFlag.AlignTop)
         self.prompt = QPlainTextEdit(); self.prompt.setMinimumHeight(96)
         form.addWidget(self.prompt, row, 1); row += 1
+        prompt_row = QHBoxLayout(); prompt_row.addStretch(1)
+        self.suggested_button = QPushButton('↺ Suggested prompt'); self.suggested_button.setObjectName('subtle')
+        self.suggested_button.setToolTip('Put back the ready-made prompt for this tab (try your own words, '
+                                         'then come back to it with one click).')
+        self.suggested_button.clicked.connect(
+            lambda checked=False: self.prompt.setPlainText(suggested_prompt(self.task, self.sound_for.currentText())))
+        prompt_row.addWidget(self.suggested_button)
+        form.addLayout(prompt_row, row, 1); row += 1
         self.size_label = QLabel('Size')
         form.addWidget(self.size_label, row, 0)
         self.size_box = QComboBox(); self.size_box.addItems(list(SIZES))
@@ -249,8 +268,9 @@ class CreateImageDialog(QDialog):
         bottom = QHBoxLayout()
         self.status = QLabel('Ready.'); self.status.setObjectName('status'); self.status.setWordWrap(True)
         bottom.addWidget(self.status, 1)
-        self.progress = QProgressBar(); self.progress.setFixedWidth(220); self.progress.setTextVisible(False)
-        self.progress.setFixedHeight(8)
+        self.progress = QProgressBar(); self.progress.setFixedWidth(280); self.progress.setTextVisible(True)
+        self.progress.setFixedHeight(18); self.progress.setFormat('%p%')
+        self.progress.setAlignment(Qt.AlignmentFlag.AlignCenter)
         bottom.addWidget(self.progress)
         self.log_button = QPushButton('Engine log'); self.log_button.setObjectName('subtle')
         self.log_button.setCheckable(True)
@@ -266,6 +286,14 @@ class CreateImageDialog(QDialog):
         self.log_button.toggled.connect(self.log_view.setVisible)
         root.addWidget(self.log_view)
 
+        # Each tab keeps its own prompt and its last result (switching tabs loses nothing).
+        self.memory = {}
+        self.running_task = None
+        self.work = dict(percent=-1, text='', started=0.)
+        self.work_timer = QTimer(self); self.work_timer.setInterval(40)
+        self.work_timer.timeout.connect(self.paint_working)
+        self.reveal_timer = QTimer(self); self.reveal_timer.setInterval(30)
+        self.reveal_timer.timeout.connect(self.reveal_step)
         self.task = None
         self.set_task(task or ('lineart' if current_image else 'generate'))
 
@@ -275,6 +303,9 @@ class CreateImageDialog(QDialog):
         return [m for m in ai_models.MODELS if need in m.tasks]
 
     def set_task(self, key):
+        if self.task is not None:
+            self.memory[self.task] = dict(self.memory.get(self.task, {}), prompt=self.prompt.toPlainText(),
+                                          result_path=self.result_path, kept_path=self.kept_path)
         self.task = key
         for k, button in self.task_buttons.items():
             button.setChecked(k == key)
@@ -286,19 +317,20 @@ class CreateImageDialog(QDialog):
             self.model_box.addItem(f'{m.name}  —  {ai_models.fit_text(fit)}', m.id)
         self.model_box.blockSignals(False)
         self.model_box.setCurrentIndex(best)
-        self.prompt.setPlainText(LINE_ART_PROMPT if key == 'lineart' else
-                                 'Make the background plain white.' if key == 'edit' else
-                                 SOUND_PROMPTS[self.sound_for.currentText()] if key == 'sound' else
-                                 'A friendly cartoon coffee cup with steam, bold clean shapes, '
-                                 'flat colours, white background')
+        saved = self.memory.get(key, {})
+        self.prompt.setPlainText(saved.get('prompt') or suggested_prompt(key, self.sound_for.currentText()))
         for w in self.image_widgets:
             w.setVisible(key not in ('generate', 'sound'))
         self.size_box.setVisible(key == 'generate'); self.size_label.setVisible(key == 'generate')
         for w in self.sound_widgets:
             w.setVisible(key == 'sound')
         self.play_button.setVisible(key == 'sound')
-        self.result_path = None; self.kept_path = None
-        self.preview.setPixmap(QPixmap()); self.preview.setText('The result appears here.')
+        self.result_path = saved.get('result_path'); self.kept_path = saved.get('kept_path')
+        self.reveal_timer.stop()
+        if self.running_task == key and self.worker is not None and self.worker.isRunning():
+            self.paint_working()
+        else:
+            self.show_result(animate=False)
         self.use_button.setText(self.use_text())
         self.save_button.setText('Save sound…' if key == 'sound' else 'Save image…')
         self.refresh()
@@ -472,6 +504,11 @@ class CreateImageDialog(QDialog):
                          image_name='input.png' if image else None, width=width, height=height,
                          ram_gb=self.hw.ram_gb, seconds=self.sound_seconds.value())
         self.result_path = None; self.kept_path = None
+        self.running_task = self.task
+        self.memory[self.task] = dict(self.memory.get(self.task, {}), result_path=None, kept_path=None,
+                                      prompt=self.prompt.toPlainText(), source=image)
+        self.work.update(percent=-1, text='Starting…', started=time.monotonic())
+        self.reveal_timer.stop(); self.work_timer.start(); self.paint_working()
         self._start(AIWorker('generate', engine=self.engine, workflow=workflow, image_path=image),
                     self.on_result)
 
@@ -481,6 +518,7 @@ class CreateImageDialog(QDialog):
             self.status.setText('Stopping…')
 
     def on_progress(self, percent, text):
+        self.work.update(percent=percent, text=text)
         if percent < 0:
             self.progress.setRange(0, 0)
         else:
@@ -488,6 +526,10 @@ class CreateImageDialog(QDialog):
         self.status.setText(text)
 
     def on_failed(self, message):
+        self.work_timer.stop()
+        if self.running_task == self.task:
+            self.show_result(animate=False)
+        self.running_task = None
         self.progress.setRange(0, 100); self.progress.setValue(0)
         self.status.setText(message.splitlines()[0][:200] if message else 'Stopped.')
         if message and 'cancel' not in message.lower() and 'paused' not in message.lower():
@@ -495,6 +537,20 @@ class CreateImageDialog(QDialog):
             QMessageBox.warning(self, 'Create Image', message[:1500])
 
     def on_result(self, path):
+        self.work_timer.stop()
+        task, self.running_task = self.running_task or self.task, None
+        if task != self.task:
+            # Made for another tab: it waits there (nothing is lost by switching tabs).
+            kept = None
+            if task != 'sound':
+                kept = keep_in_library(path, task, self.memory.get(task, {}).get('prompt', ''))
+            self.memory[task] = dict(self.memory.get(task, {}), result_path=path, kept_path=kept)
+            name = dict(TASKS).get(task, task)
+            self.progress.setRange(0, 100); self.progress.setValue(100)
+            self.status.setText(f'Your “{name}” result is ready: click that tab to see it.'
+                                + (' It is also kept in your Library → Images.' if kept else ''))
+            self.refresh()
+            return
         if self.task == 'sound':
             # AI sounds come out quiet: bring them to a normal level first.
             from sound import normalized_copy
@@ -517,11 +573,103 @@ class CreateImageDialog(QDialog):
         self.status.setText('Done.' + kept + ' ' + ('Click “Draw it in StrokeScribe” to trace these lines and paint '
                                                    'your original colours.' if self.task == 'lineart' else
                                                    'Use it as an image source.'))
-        pix = QPixmap(path)
-        if not pix.isNull():
-            self.preview.setPixmap(pix.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio,
-                                              Qt.TransformationMode.SmoothTransformation))
+        self.memory[self.task] = dict(self.memory.get(self.task, {}), result_path=path, kept_path=self.kept_path)
+        self.show_result(animate=True)
         self.refresh()
+
+    # ------------------------------------------------------------ the result well
+    def show_result(self, animate=False):
+        """Show this tab's result (with a short fade-in when it has just been made)."""
+        self.preview.setText('')
+        if not self.result_path:
+            self.preview.setPixmap(QPixmap()); self.preview.setText('The result appears here.')
+            return
+        if self.task == 'sound':
+            self.preview.setPixmap(waveform(self.result_path, self.preview.width(), self.preview.height()))
+            return
+        pix = QPixmap(str(self.result_path))
+        if pix.isNull():
+            self.preview.setPixmap(QPixmap()); self.preview.setText('The result appears here.')
+            return
+        self._shown = pix.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio,
+                                 Qt.TransformationMode.SmoothTransformation)
+        if animate:
+            self._reveal = 0.
+            self.reveal_timer.start(); self.reveal_step()
+        else:
+            self.preview.setPixmap(self._shown)
+
+    def reveal_step(self):
+        """The new picture fades in and settles from slightly bigger (about half a second)."""
+        self._reveal = min(1., getattr(self, '_reveal', 1.) + .07)
+        f = 1 - (1 - self._reveal) ** 3
+        size = self.preview.size()
+        canvas = QPixmap(size); canvas.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(canvas)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.setOpacity(f)
+        scale = 1.06 - .06 * f
+        w, h = self._shown.width() * scale, self._shown.height() * scale
+        painter.drawPixmap(QRectF((size.width() - w) / 2, (size.height() - h) / 2, w, h), self._shown,
+                           QRectF(self._shown.rect()))
+        painter.end()
+        self.preview.setPixmap(canvas)
+        if self._reveal >= 1:
+            self.reveal_timer.stop()
+            self.preview.setPixmap(self._shown)
+
+    def paint_working(self):
+        """While the AI works: a light sweeps over the well (over the starting image, dimmed,
+        when there is one), a spinner turns, and the percent and time are written."""
+        if self.running_task != self.task:
+            return
+        size = self.preview.size()
+        W, H = max(40, size.width()), max(40, size.height())
+        canvas = QPixmap(W, H); canvas.fill(QColor('#15171d'))
+        painter = QPainter(canvas)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        now = time.monotonic()
+        source = self.memory.get(self.task, {}).get('source')
+        if source:
+            pix = getattr(self, '_work_source', None)
+            if pix is None or getattr(self, '_work_source_path', None) != source:
+                self._work_source = pix = QPixmap(str(source)); self._work_source_path = source
+            if not pix.isNull():
+                fit = pix.scaled(W, H, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                painter.setOpacity(.28 + .06 * __import__('math').sin(now * 2.2))
+                painter.drawPixmap((W - fit.width()) // 2, (H - fit.height()) // 2, fit)
+                painter.setOpacity(1.)
+        # A soft light sweeping across, again and again.
+        phase = (now * .45) % 1.
+        x = -W * .6 + phase * W * 2.2
+        light = QLinearGradient(QPointF(x, 0), QPointF(x + W * .5, H))
+        light.setColorAt(0, QColor(110, 79, 242, 0)); light.setColorAt(.5, QColor(140, 110, 255, 70))
+        light.setColorAt(1, QColor(110, 79, 242, 0))
+        painter.fillRect(0, 0, W, H, light)
+        # The spinner.
+        r = min(W, H) * .09
+        centre = QPointF(W / 2, H / 2 - r * .6)
+        painter.setPen(QPen(QColor(255, 255, 255, 40), max(3., r * .18)))
+        painter.drawEllipse(centre, r, r)
+        pen = QPen(QColor('#8B6CFF'), max(3., r * .18)); pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        painter.drawArc(QRectF(centre.x() - r, centre.y() - r, 2 * r, 2 * r),
+                        int(-now * 360 * 16) % (360 * 16), 100 * 16)
+        # The words.
+        percent = self.work.get('percent', -1)
+        elapsed = int(now - self.work.get('started', now))
+        line = f'Creating… {percent}%' if percent >= 0 else (self.work.get('text') or 'Working…')
+        font = QFont(self.font()); font.setPointSizeF(11.5); font.setBold(True)
+        painter.setFont(font); painter.setPen(QColor('white'))
+        painter.drawText(QRectF(10, centre.y() + r * 1.5, W - 20, 26), Qt.AlignmentFlag.AlignCenter, line[:80])
+        small = QFont(self.font()); small.setPointSizeF(9.5); painter.setFont(small)
+        painter.setPen(QColor(255, 255, 255, 170))
+        painter.drawText(QRectF(10, centre.y() + r * 1.5 + 26, W - 20, 22), Qt.AlignmentFlag.AlignCenter,
+                         f'{elapsed // 60}:{elapsed % 60:02d}  •  you can switch tabs; the result waits here')
+        painter.end()
+        self.preview.setText('')
+        self.preview.setPixmap(canvas)
 
     def listen(self):
         if not self.result_path:
@@ -578,6 +726,7 @@ class CreateImageDialog(QDialog):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
 
     def closeEvent(self, event):
+        self.work_timer.stop(); self.reveal_timer.stop()
         if self.player is not None:
             self.player.stop()
         if self.worker and self.worker.isRunning():

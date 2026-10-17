@@ -63,6 +63,15 @@ for theme_name in ('dark','light'):
     dialog.grab().save(str(out/f'create-image-{theme_name}.png'))
     dialog.set_task('lineart'); app.processEvents()
     dialog.grab().save(str(out/f'create-image-lineart-{theme_name}.png'))
+    if theme_name=='dark':
+        # The working animation (as while the AI makes a picture).
+        import time as _t
+        dialog.set_task('generate'); dialog.running_task='generate'
+        dialog.work.update(percent=42,text='Creating… 42%',started=_t.monotonic()-37)
+        dialog.progress.setRange(0,100); dialog.progress.setValue(42)
+        dialog.paint_working(); app.processEvents()
+        dialog.grab().save(str(out/'create-image-working.png'))
+        dialog.running_task=None
     dialog.close()
 window.apply_theme('dark')
 # Library with a few items, and the pen-tip helper.

@@ -160,6 +160,12 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Create Image keeps your work (v0.5.3-experimental.58)
+
+- **Each tab keeps its own prompt and its last result**: switching between Line art, Create from text, Edit and Sound loses nothing. A picture that finishes while you look at another tab waits on its own tab (and is kept in Library → Images).
+- **↺ Suggested prompt** under the prompt box puts the ready-made prompt back after you tried your own words.
+- **Working animation**: while the AI works, a light sweeps over the result area (over your image, dimmed), a spinner turns and the percent and time are shown; the new picture fades in when it is ready. A bigger progress bar with the percent.
+
 ## Paint like a painter, several pictures on one page (v0.5.3-experimental.57)
 
 - **New paint modes "Top to bottom (rows)" and "Left to right (columns)"**: after the lines, the colours are brushed in band by band (like speedpainter), sweeping back and forth across the whole picture; the background is never painted. Brush width sets how wide the bands are.
