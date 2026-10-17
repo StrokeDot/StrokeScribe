@@ -38,7 +38,7 @@ def format_seconds(seconds):
     return f'{hours}:{minutes:02d}:{secs:02d}' if hours else f'{minutes}:{secs:02d}'
 # Paint mode menu order (studio_workspace). Stroke-guided and Clean contour
 # painting were retired from the menu; their code remains for old renders.
-REVEAL_MODES = ('brush', 'adaptive', 'zigzag')
+REVEAL_MODES = ('brush', 'adaptive', 'zigzag', 'rows', 'columns')
 
 def timecode(seconds):
     """00:04.25 style time for the monitor."""
@@ -547,7 +547,7 @@ class Window(QMainWindow):
             return
         mode=options.get('reveal_mode')
         image_source=getattr(self.drawing,'source_kind',None)=='image'
-        if mode in ('adaptive','zigzag'):
+        if mode in ('adaptive','zigzag','rows','columns'):
             self.drawing.paint_method=mode
         elif not image_source:
             return
@@ -1658,30 +1658,112 @@ class Window(QMainWindow):
             self.build_image(self.keep_in_library('images',path))
         return True
 
-    def add_picture(self):
-        """Another picture on the same page: a new scene joined by 'Same page'.
+    def page_members(self,k=None):
+        """The elements drawn on the same page as element k (joined by 'Same page')."""
+        k=self.scene_index if k is None else k
+        first=k
+        while first>0 and self.scenes[first-1]['transition']=='Same page': first-=1
+        last=k
+        while last<len(self.scenes)-1 and self.scenes[last]['transition']=='Same page': last+=1
+        return list(range(first,last+1))
 
-        It starts as a smaller copy at the right; import its own artwork, then drag it
-        on the preview to where it belongs."""
-        if not self.drawing or (self.builder and self.builder.isRunning()): return
+    def page_occupancy(self,members,width=160):
+        """Where the page already has pictures: a bool mask (rows x cols) of the frame."""
+        import numpy as np
+        from scenes import thumbnail
+        height=max(2,round(width*self.board_aspect()))
+        used=np.zeros((height,width),bool)
+        for k in members:
+            try:
+                if k==self.scene_index and self.drawing is not None:
+                    drawing,options=self.drawing,self.options()
+                else:
+                    drawing,options,_,_=self.preview_scene(k,width,height)
+                options=dict(options,background=False,overlays=[],layers='all')
+                image=thumbnail(drawing,options,width).convertToFormat(QImage.Format.Format_RGBA8888)
+                a=np.frombuffer(bytes(image.constBits()),np.uint8).reshape(image.height(),image.bytesPerLine())
+                a=a[:,3::4][:,:image.width()]>24
+                if a.shape!=used.shape:
+                    import cv2
+                    a=cv2.resize(a.astype(np.uint8),(width,height),interpolation=cv2.INTER_NEAREST).astype(bool)
+                used|=a
+            except Exception as exc:
+                import applog; applog.error('Page layout',exc)
+        return used
+
+    @staticmethod
+    def free_spot(used,sizes=(.6,.55,.5,.42,.34)):
+        """(artwork size, x %, y %) of the biggest free place on the page, in reading
+        order (top-left first), or None when the page is full."""
+        import numpy as np, cv2
+        h,w=used.shape
+        # A little air around what is already there.
+        grow=max(1,round(w*.025))
+        busy=cv2.dilate(used.astype(np.uint8),np.ones((2*grow+1,2*grow+1),np.uint8))>0
+        total=np.pad(busy.astype(np.int32).cumsum(0).cumsum(1),((1,0),(1,0)))
+        def area(x0,y0,x1,y1):
+            return total[y1,x1]-total[y0,x1]-total[y1,x0]+total[y0,x0]
+        margin=.03
+        # How far each free point is from the pictures: a new one goes in the middle
+        # of a free area, not squeezed into a corner of it.
+        room=cv2.distanceTransform(np.pad((~busy).astype(np.uint8),1),cv2.DIST_L2,3)[1:-1,1:-1]
+        room_sum=np.pad(room.cumsum(0).cumsum(1),((1,0),(1,0)))
+        def space(x0,y0,x1,y1):
+            return room_sum[y1,x1]-room_sum[y0,x1]-room_sum[y1,x0]+room_sum[y0,x0]
+        for size in sizes:
+            bw,bh=round(.82*size*w),round(.78*size*h)
+            if bw<4 or bh<4: continue
+            best=None
+            step=max(1,round(w*.0125))
+            for y0 in range(round(margin*h),h-round(margin*h)-bh+1,step):
+                for x0 in range(round(margin*w),w-round(margin*w)-bw+1,step):
+                    if area(x0,y0,x0+bw,y0+bh)<=bw*bh*.002:
+                        # Most room around the whole box first; then reading order.
+                        key=(-round(float(space(x0,y0,x0+bw,y0+bh))/(bw*bh)*4),round(y0/max(1.,h*.2)),x0)
+                        if best is None or key<best[0]:
+                            best=(key,(x0,y0))
+            if best:
+                best=best[1]
+                cx,cy=(best[0]+bw/2)/w,(best[1]+bh/2)/h
+                return size*100,round((cx-.5)*100,1),round((cy-.5)*100,1)
+        return None
+
+    def add_picture(self):
+        """Another picture on the same page (like VideoScribe): it goes to the biggest
+        free place on the page; when the page is full, to a new page (the camera moves).
+        Returns True on the same page, False on a new page."""
+        if not self.drawing or (self.builder and self.builder.isRunning()): return None
         import copy
         self.playing=False
+        self.store_scene(thumbnail=False)
+        members=self.page_members()
+        spot=self.free_spot(self.page_occupancy(members))
+        if spot is None and members==[self.scene_index] and self.artwork_size.value()>60:
+            # One big picture on the page: it moves to the left half to make room.
+            self.artwork_size.setValue(55.); self.picture_x.setValue(-22.); self.picture_y.setValue(0.)
+            self.store_scene(thumbnail=False)
+            spot=self.free_spot(self.page_occupancy(members))
+        if spot is None:
+            # The page is full: like VideoScribe, the camera moves on to a new place.
+            self.add_scene()
+            self.status.setText('This page is full, so the new picture goes on a new page: the camera moves there. '
+                                'Make pictures smaller (Artwork size) to fit more on one page.')
+            return False
         self._leave_scene()
         current=self.scenes[self.scene_index]
         state=copy.deepcopy(current['state'])
         settings=state.setdefault('settings',{})
-        size=float(settings.get('artwork_size',100))
-        settings['artwork_size']=max(25.,min(100.,size*.6))
-        settings['picture_x']=max(-100.,min(100.,float(settings.get('picture_x',0))+28.))
+        settings['artwork_size'],settings['picture_x'],settings['picture_y']=spot
         if 'erase_mode' in settings: settings['erase_mode']='Off'   # the page stays until it is finished
         new=dict(state=state,transition=current['transition'],transition_seconds=current['transition_seconds'],
-                 name=f'Picture {self.scene_index+2}',thumb=current.get('thumb'))
+                 name=f'Picture {self.scene_index+2}',thumb=None)
         current['transition']='Same page'
         self.scenes.insert(self.scene_index+1,new)
         self._base_cache=OrderedDict()
         self._enter_scene(self.scene_index+1)
-        self.status.setText('Picture added on the same page. Import its SVG or image (Import, Library or Create image), '
-                            'then drag it on the preview to place it. The pictures before it stay on the page.')
+        self.status.setText('Picture added in a free place on the same page. Drag it on the preview to move it; '
+                            'Artwork size makes it bigger or smaller. When the page is full, the next one goes to a new page.')
+        return True
 
     def delete_scene(self):
         if len(self.scenes)<2: return
@@ -1767,7 +1849,7 @@ class Window(QMainWindow):
             if options.get('camera_zoom',1.)>1.0001:
                 from frame_render import camera_for
                 camera=camera_for(drawing,options,options['camera_zoom'],rate=20.)
-            if options.get('final_image') is not None and options.get('reveal_mode') in ('adaptive','zigzag'):
+            if options.get('final_image') is not None and options.get('reveal_mode') in ('adaptive','zigzag','rows','columns'):
                 from adaptive_hand import plan_ready, plan_for
                 drawing.paint_method=options['reveal_mode']
                 if not plan_ready(drawing,options['final_image'],options['brush_width'],options['stroke_spacing']):
@@ -2672,7 +2754,7 @@ class Window(QMainWindow):
 
     def image_paint_method(self):
         mode=REVEAL_MODES[self.reveal_mode.currentIndex()]
-        return mode if mode in ('adaptive','zigzag') else 'adaptive'
+        return mode if mode in ('adaptive','zigzag','rows','columns') else 'adaptive'
 
     def settings_state(self):
         from projects import widget_value

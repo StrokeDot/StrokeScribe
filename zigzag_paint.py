@@ -372,3 +372,112 @@ def build_zigzag_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
                                   bytearray(faint.ravel().astype(np.uint8)), gw, gh)
     return PaintPlan((gw, gh), labels_list, segments, [s.end for s in segments],
                      arrival_list, origin, total, [], regions)
+
+
+# ---------------------------------------------------------------- band painting
+# Like a painter filling a sketch from the top down: the picture is cut into bands
+# (rows for "Top to bottom", columns for "Left to right"); each band is swept with a
+# wide brush, back and forth across everything in it, one band after the other.
+# The brush is clipped to the picture, so the background is never painted.
+
+def _band_strokes(support, radius, across):
+    """[(points, ...)] brush passes in (x, y) cells. across=False: horizontal bands
+    from the top down; True: vertical bands from the left to the right."""
+    grid = support.T if across else support               # rows of `grid` are the bands
+    h, w = grid.shape
+    pitch = max(1., 1.45 * radius)                         # neighbouring bands overlap a little
+    passes = []
+    forward = True
+    v = radius * .8
+    while v - radius < h:
+        lo, hi = max(0, int(v - pitch / 2)), min(h, int(math.ceil(v + pitch / 2)))
+        if hi > lo:
+            cover = grid[lo:hi].any(0)
+            # Runs along the band; small gaps are crossed with the brush down.
+            runs, start, gap = [], None, 0
+            for u in range(w):
+                if cover[u]:
+                    if start is None:
+                        start = u
+                    gap, end = 0, u
+                elif start is not None:
+                    gap += 1
+                    if gap > 2.2 * radius:
+                        runs.append((start, end)); start = None
+            if start is not None:
+                runs.append((start, end))
+            if not forward:
+                runs = [(b, a) for a, b in reversed(runs)]
+            for a, b in runs:
+                step = 1 if b >= a else -1
+                a2, b2 = a - step * radius * .3, b + step * (radius * .3 + 1)
+                # A gentle wave inside the band, like a hand sweeping a brush.
+                length = abs(b2 - a2)
+                count = max(2, int(length / max(1., radius * .9)) + 1)
+                points = []
+                for i in range(count):
+                    f = i / (count - 1)
+                    u = a2 + (b2 - a2) * f
+                    wave = math.sin(f * math.pi * max(1., length / (radius * 3.))) * pitch * .1
+                    points.append((u + .5, v + wave + .5))
+                passes.append([(q, p) for p, q in points] if across else points)
+            if runs:
+                forward = not forward
+        v += pitch
+    return passes
+
+
+def build_band_plan(drawing, image, brush_width=.14, stroke_spacing=.55, across=False):
+    """Top to bottom (across=False) or Left to right (across=True) band painting,
+    in Adaptive's PaintPlan form (same preview, export, hand and guide removal)."""
+    from adaptive_hand import (GRID_LIMIT, VISIBLE_ALPHA, PaintPlan, Segment,
+                               _reveal_faint_with_neighbours, pil_image)
+    from color_reveal import artwork_rect, last_stroke_canvas_endpoint
+    source = pil_image(image)
+    iw, ih = source.size
+    ratio = min(1., GRID_LIMIT / max(iw, ih))
+    gw, gh = max(1, math.ceil(iw * ratio)), max(1, math.ceil(ih * ratio))
+    alpha = np.asarray(source.getchannel('A'))
+    rows = np.minimum(gh - 1, ((2 * np.arange(ih) + 1) * gh) // (2 * ih))
+    cols = np.minimum(gw - 1, ((2 * np.arange(iw) + 1) * gw) // (2 * iw))
+    visible = np.zeros((gh, gw), bool); faint = np.zeros((gh, gw), bool)
+    vy, vx = np.nonzero(alpha >= VISIBLE_ALPHA)
+    visible[rows[vy], cols[vx]] = True
+    fy, fx = np.nonzero((alpha > 0) & (alpha < VISIBLE_ALPHA))
+    faint[rows[fy], cols[fx]] = True
+    faint &= ~visible
+    if not visible.any():
+        visible, faint = faint, np.zeros_like(faint)
+    if not visible.any():
+        raise ValueError('The color image has no visible pixels.')
+    rect = artwork_rect(drawing, image, 1920, 1080)
+    end = last_stroke_canvas_endpoint(drawing, 1920, 1080)
+    origin = ((end[0] - rect.x()) * gw / rect.width(), (end[1] - rect.y()) * gh / rect.height())
+    planner = _Planner(visible, faint, origin, brush_width, stroke_spacing)
+    # One region: the brush may pass from one part to the next inside a band.
+    planner.components = visible.astype(np.int32)
+    planner.component_count = 1
+    # Band height from the brush size; Stroke spacing makes the bands a little denser or looser.
+    radius = max(1.2, planner.max_radius * (.55 + .5 * planner.spacing))
+    for points in _band_strokes(visible, radius, across):
+        planner.hop(points[0], 1, radius)
+        if planner.cursor != points[0]:
+            planner.move(points[0], 1, False)
+        for p in points[1:]:
+            planner.move(p, 1, True, radius)
+    # Anything the bands missed: a quick dab, in band order.
+    order = (lambda y, x: (x, y)) if across else (lambda y, x: (y, x))
+    for y, x in sorted(zip(*np.nonzero(visible & ~np.isfinite(planner.arrival))), key=lambda c: order(*c)):
+        if np.isfinite(planner.arrival[y, x]):
+            continue
+        r = max(1.2, radius * .5)
+        planner.hop((x + .5, y + .5), 1, r)
+        planner.move((x + .51, y + .5), 1, True, r)
+    segments = [Segment(a, b, r, int(rid), painting, s, e)
+                for a, b, r, rid, painting, s, e in planner.segments]
+    labels_list = [int(v) for v in planner.components.astype(np.int64).ravel()]
+    arrival_list = [float(v) for v in planner.arrival.ravel()]
+    _reveal_faint_with_neighbours(arrival_list, labels_list,
+                                  bytearray(faint.ravel().astype(np.uint8)), gw, gh)
+    return PaintPlan((gw, gh), labels_list, segments, [s.end for s in segments],
+                     arrival_list, origin, planner.clock, [], 1)

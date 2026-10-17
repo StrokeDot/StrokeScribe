@@ -1215,7 +1215,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     animation_l.addWidget(w.color_note)
     a2=form_layout();animation_l.addLayout(a2)
     w.reveal_mode=QComboBox()
-    w.reveal_mode.addItems(['Brush painting','Adaptive Hand Painting','Zigzag sweep'])
+    w.reveal_mode.addItems(['Brush painting','Adaptive Hand Painting','Zigzag sweep',
+                            'Top to bottom (rows)','Left to right (columns)'])
+    w.reveal_mode.setItemData(3,'Like a painter: the colours are brushed in band by band from the top '
+                              'down, sweeping left and right across the whole picture.',Qt.ItemDataRole.ToolTipRole)
+    w.reveal_mode.setItemData(4,'The colours are brushed in band by band from the left to the right, '
+                              'sweeping up and down across the whole picture.',Qt.ItemDataRole.ToolTipRole)
     w.reveal_mode.setCurrentIndex(1)
     w.reveal_mode.setItemData(2,'The hand follows one route along the object, scribbling colour '
                               'back and forth across it (wider on broad parts).',Qt.ItemDataRole.ToolTipRole)
@@ -1534,9 +1539,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.scene_add.setToolTip('A new element after this one: choose a picture or SVG, write a text, or pick from the Library. '
                            'The camera moves to it.')
     w.scene_add.clicked.connect(lambda checked=False: w.add_element_menu(False,w.scene_add))
-    w.scene_picture=QPushButton('+ Same spot')
-    w.scene_picture.setToolTip('A new element on the SAME page (no camera move): drawn next to the elements '
-                               'before it. Import its artwork, then drag it on the preview to place it.')
+    w.scene_picture=QPushButton('+ On this page')
+    w.scene_picture.setToolTip('A new element on the SAME page (no camera move), like VideoScribe: it goes '
+                               'to a free place next to the pictures already there. When the page is full, '
+                               'it goes to a new page and the camera moves there.')
     w.scene_picture.clicked.connect(lambda checked=False: w.add_element_menu(True,w.scene_picture))
     add_row=QHBoxLayout();add_row.setSpacing(4)
     add_row.addWidget(w.scene_add); add_row.addWidget(w.scene_picture)

@@ -160,6 +160,11 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Paint like a painter, several pictures on one page (v0.5.3-experimental.57)
+
+- **New paint modes "Top to bottom (rows)" and "Left to right (columns)"**: after the lines, the colours are brushed in band by band (like speedpainter), sweeping back and forth across the whole picture; the background is never painted. Brush width sets how wide the bands are.
+- **+ On this page** (was "+ Same spot") puts the new picture in a free place on the page, like VideoScribe. With one big picture on the page, it moves to the left half to make room. When the page is full, the new picture goes to a new page and the camera moves there.
+
 ## Handwriting like a real hand (v0.5.3-experimental.56)
 
 - **Handwriting is consistent in every font**: down strokes are always written downwards (upright and slanted fonts alike), and letters like e, o, l and w are one smooth line instead of small pieces.

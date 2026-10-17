@@ -143,6 +143,16 @@ for _i in range(48):
     _frames.append(_bg.convert('RGB'))
 _frames[0].save(str(out/'painting-hand.gif'),save_all=True,append_images=_frames[1:]+[_frames[-1]]*6,
                 duration=90,loop=0)
+# Band painting, like a painter: top to bottom (rows) and left to right (columns).
+for _mode in ('rows','columns'):
+    _o2=dict(_o,reveal_mode=_mode,duration=1.,fade_duration=2.,hold_duration=.3)
+    _frames=[]
+    for _i in range(40):
+        _f=_pil(_compose(_d,.3+.7*_i/39,_o2)).convert('RGBA')
+        _bg=_Image.new('RGBA',_f.size,(255,255,255,255)); _bg.alpha_composite(_f)
+        _frames.append(_bg.convert('RGB'))
+    _frames[0].save(str(out/f'painting-{_mode}.gif'),save_all=True,append_images=_frames[1:]+[_frames[-1]]*6,
+                    duration=90,loop=0)
 # Scenes: two scenes, the whole video previewed during the camera move.
 from engine import import_svg as _imp
 window.apply_theme('dark'); window.resize(1490,890)

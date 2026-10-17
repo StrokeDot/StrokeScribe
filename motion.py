@@ -155,7 +155,7 @@ def _pen_canvas(drawing, fraction, width, height, duration, fade_duration, hold_
     fraction = max(0., min(1., float(fraction)))
     if final_image is None or final_image.isNull():
         return _drawing_pen(drawing, fraction, width, height)
-    if reveal_mode in ('adaptive', 'zigzag'):
+    if reveal_mode in ('adaptive', 'zigzag', 'rows', 'columns'):
         drawing.paint_method = reveal_mode
         reveal_mode = 'adaptive'
     animation = getattr(drawing, 'image_animation', None)
