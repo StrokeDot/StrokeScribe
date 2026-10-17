@@ -1,0 +1,41 @@
+name: AI image engine checks
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  model-files:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install numpy pillow opencv-python-headless
+      - name: Every model file exists with the registered size
+        run: python tools/ci_ai_check.py urls
+  workflows-on-real-comfyui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install ComfyUI (CPU) the same way the app does
+        run: |
+          python - <<'PY'
+          import io, zipfile, urllib.request, sys
+          sys.path.insert(0, '.')
+          import ai_engine
+          from pathlib import Path
+          ai_engine._extract_zip(urllib.request.urlopen(ai_engine.COMFY_ZIP).read(), Path('/tmp/engine/ComfyUI'))
+          ai_engine._extract_zip(urllib.request.urlopen(ai_engine.GGUF_ZIP).read(),
+                                 Path('/tmp/engine/data/custom_nodes/ComfyUI-GGUF'))
+          PY
+          pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install -r /tmp/engine/ComfyUI/requirements.txt
+          pip install 'gguf>=0.13.0' sentencepiece protobuf numpy pillow opencv-python-headless
+      - name: ComfyUI accepts every StrokeScribe workflow
+        run: python tools/ci_ai_check.py workflows /tmp/engine/ComfyUI /tmp/engine/data

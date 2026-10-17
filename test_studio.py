@@ -30,10 +30,10 @@ class StudioTests(unittest.TestCase):
         w=self.window
         self.assertIn('Studio',w.windowTitle())
         self.assertIn('Prototype',w.windowTitle())
-        self.assertEqual(w.inspector_tabs.count(),3)
-        self.assertEqual([w.inspector_tabs.tabText(i) for i in range(3)],
-                         ['Animation','Hand','Export'])
-        split=w.findChild(QSplitter)
+        self.assertEqual(w.inspector_tabs.count(),4)
+        self.assertEqual([w.inspector_tabs.tabText(i) for i in range(4)],
+                         ['Animation','Hand','Sound','Export'])
+        split=w.findChild(QSplitter,'workspaceSplit')
         self.assertIsNotNone(split)
         self.assertEqual(split.count(),3)
         self.assertTrue(w.canvas.isVisible())
@@ -53,7 +53,7 @@ class StudioTests(unittest.TestCase):
         w.final_image=original
         w.use_color.setEnabled(True)
         w.use_color.setChecked(True)
-        w.reveal_mode.setCurrentIndex(4)
+        w.reveal_mode.setCurrentIndex(w.reveal_mode.findText('Adaptive Hand Painting'))
         w.color_fade.setValue(3.5)
         w.color_hold.setValue(1.25)
         APP.processEvents()
@@ -66,9 +66,56 @@ class StudioTests(unittest.TestCase):
         self.assertGreater(w.slider.value(),100)
         self.assertLess(w.slider.value(),900)
 
+    def test_builtin_hand_loaded_with_default_calibration(self):
+        w=self.window
+        from app import DEFAULT_HAND
+        self.assertTrue(DEFAULT_HAND.is_file())
+        self.assertIsNotNone(w.hand)
+        self.assertFalse(w.hand.isNull())
+        self.assertEqual((w.hand.width(),w.hand.height()),(1230,1278))
+        self.assertIn('built-in',w.hand_name.text())
+        # Calibration defaults match the pencil tip in the bundled image.
+        self.assertAlmostEqual(w.ax.value(),.08); self.assertAlmostEqual(w.ay.value(),.13)
+        self.assertAlmostEqual(w.handsize.value(),.75)
+        w.hand=None; w.use_builtin_hand()
+        self.assertFalse(w.hand.isNull())
+
+    def test_export_panel_additions(self):
+        w=self.window
+        from app import format_seconds
+        # MP4 option follows the preview background choice.
+        self.assertEqual([w.mp4_background.itemText(i) for i in range(3)],
+                         ['White','Dark','Black'])
+        w.preview_background.setCurrentIndex(2)
+        self.assertEqual(w.mp4_background.currentText(),'Dark')
+        w.preview_background.setCurrentIndex(1)
+        self.assertEqual(w.mp4_background.currentText(),'White')
+        w.mp4.setChecked(True); APP.processEvents()
+        self.assertTrue(w.mp4_background.isEnabled())
+        self.assertTrue(w.keep_png.isEnabled())
+        # Timer formatting.
+        self.assertEqual(format_seconds(176.57),'2:57')
+        self.assertEqual(format_seconds(3725),'1:02:05')
+        # Number boxes get real arrow buttons whose images exist.
+        style=w.styleSheet()
+        self.assertIn('QAbstractSpinBox::up-arrow',style)
+        from pathlib import Path
+        import re
+        for path in re.findall(r'url\("([^"]+)"\)',style):
+            self.assertTrue(Path(path).is_file(),path)
+
+    def test_retired_paint_modes_are_not_offered(self):
+        items=[self.window.reveal_mode.itemText(i)
+               for i in range(self.window.reveal_mode.count())]
+        self.assertEqual(items,['Brush painting','Adaptive Hand Painting','Zigzag sweep',
+                               'Top to bottom (rows)','Left to right (columns)'])
+        from app import REVEAL_MODES
+        self.assertEqual(REVEAL_MODES,('brush','adaptive','zigzag','rows','columns'))
+        self.assertEqual(self.window.reveal_mode.currentText(),'Adaptive Hand Painting')
+
     def test_image_and_export_controls_preserved(self):
         w=self.window
-        w.inspector_tabs.setCurrentIndex(2)
+        w.inspector_tabs.setCurrentIndex(3)
         self.assertTrue(w.webm.isVisible())
         self.assertTrue(w.keep_png.isVisible())
         self.assertEqual(w.webm_quality.value(),28)
@@ -98,16 +145,20 @@ class StudioTests(unittest.TestCase):
     def test_source_inspector_and_export_navigation(self):
         w=self.window
         w.quick_export.click()
-        self.assertEqual(w.inspector_tabs.currentIndex(),2)
+        self.assertEqual(w.inspector_tabs.currentIndex(),3)
         w.fps.setValue(60)
         self.assertIn('60 fps',w.output_summary.text())
         w.inspector_tabs.setCurrentIndex(0)
         w.source_type.setCurrentIndex(1)
         self.assertFalse(w.load_color_button.isEnabled())
-        self.assertFalse(w.reveal_mode.isVisible())
+        # Images choose Adaptive or Zigzag; plain Brush painting is SVG-only.
+        self.assertTrue(w.reveal_mode.isVisible())
+        self.assertFalse(w.reveal_mode.model().item(0).isEnabled())
+        self.assertTrue(w.reveal_mode.model().item(2).isEnabled())
         self.assertTrue(w.image_duration.isVisible())
         w.source_type.setCurrentIndex(0)
         self.assertTrue(w.reveal_mode.isVisible())
+        self.assertTrue(w.reveal_mode.model().item(0).isEnabled())
         self.assertFalse(w.image_duration.isVisible())
 
     def test_timeline_keyboard_and_export_busy_guard(self):

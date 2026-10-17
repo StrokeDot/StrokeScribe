@@ -1,0 +1,67 @@
+name: Windows installer
+on:
+  push:
+    paths:
+      - 'version.py'
+      - 'requirements.txt'
+      - 'installer/**'
+      - 'tools/build_windows_installer.py'
+      - '.github/workflows/windows-installer.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Version
+        shell: bash
+        run: echo "VERSION=$(python -c 'import version; print(version.APP_VERSION)')" >> "$GITHUB_ENV"
+      - name: App files and private Python with packages
+        run: python tools/build_windows_installer.py
+      - name: Build the installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc "/DAppVersion=$env:VERSION" installer\StrokeScribe.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem dist
+      - name: Install, start and uninstall it (like a user would)
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\StrokeScribe-Setup-*.exe | Select-Object -First 1
+          $dir = "$env:RUNNER_TEMP\StrokeScribeTest"
+          Start-Process $setup.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=$dir" -Wait
+          if (!(Test-Path "$dir\runtime\pythonw.exe")) { Write-Error "not installed"; exit 1 }
+          if (!(Test-Path "$dir\startup.py")) { Write-Error "app files missing"; exit 1 }
+          New-Item -ItemType Directory -Force "$dir\test-output" | Out-Null
+          $env:STROKESCRIBE_STARTUP_TEST = "1"
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process "$dir\runtime\python.exe" -ArgumentList "`"$dir\startup.py`"" -WorkingDirectory $dir -PassThru -Wait
+          Get-Content "$dir\startup.log"
+          if (!(Select-String -Path "$dir\startup.log" -Pattern "Ready:" -Quiet)) { Write-Error "did not start"; exit 1 }
+          & "$dir\runtime\python.exe" -c "import sys; sys.path.insert(0, r'$dir'); import updater; print('updater sees', updater.current_version(r'$dir'))"
+          Start-Process "$dir\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path "$dir\runtime") { Write-Error "uninstall left files"; exit 1 }
+          Write-Output "Installed, started and uninstalled OK"
+      - name: Publish on the GitHub Releases page
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="installer-${VERSION}"
+          file=$(ls dist/StrokeScribe-Setup-*.exe | head -1)
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$file" --clobber
+          else
+            gh release create "$tag" "$file" --prerelease --target "$GITHUB_SHA" \
+              --title "StrokeScribe ${VERSION} (Windows installer)" \
+              --notes "Double-click StrokeScribe-Setup to install. Updates then come through the app (File → Update StrokeScribe…)."
+          fi

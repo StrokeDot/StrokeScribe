@@ -13,7 +13,7 @@ out=here/'headset-demo'; out.mkdir(exist_ok=True)
 drawing=import_svg(here/'samples/arthur-headset-traced.svg')
 frames=out/'transparent-frames'
 started=time.perf_counter()
-count=export_frames(drawing,frames,duration=8,fps=24,width=1920,height=1080)
+count=export_frames(drawing,frames,duration=8,fps=24,width=1920,height=1080,workers=1)
 mov=encode_mov(frames,24)
 render(drawing,1).save(str(out/'headset-final-transparent.png'))
 # Only the viewing copy has a white background. Source PNGs and MOV retain alpha.

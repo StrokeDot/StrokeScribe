@@ -160,6 +160,261 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Create Image keeps your work (v0.5.3-experimental.58)
+
+- **Each tab keeps its own prompt and its last result**: switching between Line art, Create from text, Edit and Sound loses nothing. A picture that finishes while you look at another tab waits on its own tab (and is kept in Library → Images).
+- **↺ Suggested prompt** under the prompt box puts the ready-made prompt back after you tried your own words.
+- **Working animation**: while the AI works, a light sweeps over the result area (over your image, dimmed), a spinner turns and the percent and time are shown; the new picture fades in when it is ready. A bigger progress bar with the percent.
+
+## Paint like a painter, several pictures on one page (v0.5.3-experimental.57)
+
+- **New paint modes "Top to bottom (rows)" and "Left to right (columns)"**: after the lines, the colours are brushed in band by band (like speedpainter), sweeping back and forth across the whole picture; the background is never painted. Brush width sets how wide the bands are.
+- **+ On this page** (was "+ Same spot") puts the new picture in a free place on the page, like VideoScribe. With one big picture on the page, it moves to the left half to make room. When the page is full, the new picture goes to a new page and the camera moves there.
+
+## Handwriting like a real hand (v0.5.3-experimental.56)
+
+- **Handwriting is consistent in every font**: down strokes are always written downwards (upright and slanted fonts alike), and letters like e, o, l and w are one smooth line instead of small pieces.
+- **Pen movement → Natural** now works for Google / local fonts too (slower starts and ends, a short pause between lines).
+- **Choosing another font re-writes the text at once**; Letter detail is only available for real fonts (the built-in pen has no detail setting).
+- **Hand tab** in three clear parts: 1 · Drawing hand (the lines), 2 · Painting hand (the colours), 3 · Both hands (left-handed).
+- **+ Add element → Create an image with AI**: the element is added only when you use the picture.
+- **Smoother effects**: the finished picture used by Comes in / Goes out effects is no longer drawn again on every frame.
+
+## One timeline for the whole video (v0.5.3-experimental.55)
+
+- **One timeline**: with two or more elements the timeline shows the whole video, element after element with the camera moves between them. Each element shows its Draw / Paint / Hold / Out parts; click an element to work on it, double-click for its settings, drag the white edges of the one you edit.
+- **+ Add element** asks what the new element is: a picture or SVG, a text, something from the Library or an AI image (or a copy, if you want one).
+- **Camera moves** never land on an earlier element (Pan right, then Pan left goes further left).
+- **Handwriting**: letters are always sharp, the pen no longer stops at every little piece, and the rhythm is the same at any Letter detail. Letter detail applies by itself.
+- **Hand tab** tidied up, with pictures of the hand that draws and the one that paints.
+- **Smoother** whole-video playback with effects; the Board explains itself.
+
+## Elements, like VideoScribe (v0.5.3-experimental.54)
+
+- **Elements instead of "scenes":** the strip under the preview lists the elements of your video in order. Each card shows how long the element is on screen (⏱) and the camera move to the next one (➜).
+- **Edit… (or double-click an element):** a window for that element only, with its own little player: how it comes in and how long, colours (painting style, paint time, colour hold), the pause, how it goes out, the camera move to the next element, and the hand. Set keeps the changes, Cancel puts everything back.
+- **Comes in:** drawn by the hand, or Fade in, Pop in, Zoom in, Spin in, Slide in from a side (no hand, no pencil sound).
+- **Pause after (s):** the finished element stays on screen, with or without colours.
+- **Goes out:** an eraser (as before), or Fade out, Pop out, Zoom out, Spin out, Move out to a side.
+
+## One background, 55 fonts, natural pen, left hand (v0.5.3-experimental.53)
+
+- **One Background for everything:** the menu above the preview (Transparent, White, Dark, Whiteboard, Paper, Chalkboard, Cork, Black or any colour) is the background of the whole video: drawings, images and lettering, the preview and every export (MP4, MOV, WebM). "Lettering background" and "MP4 background" are gone. Transparent: MOV, WebM and PNG keep transparency (MP4 is then white).
+- **55 free fonts** (Google Fonts, open licenses: also for commercial use), in groups: Handwriting, Script, Clean titles, Serif. A font downloads by itself the first time you use it; "Download all" gets them all at once.
+- **Letter detail** (was "Glyph detail size"): how finely letters are traced into pen lines. It does not change the text size.
+- **Natural pen movement** is now clearly different: each line speeds up and slows down, the pen lifts for a moment between lines, and long lines go faster than short ones.
+- **Left-handed:** Hand tab → "Left-handed": the hand, the painting brush and the eraser come from the left.
+
+## Fixes: deleting scenes, a log, calm mouse wheel (v0.5.3-experimental.52)
+
+- **Deleting scenes:** after deleting a scene, the next delete, playing and autosave stopped working ("list index out of range"). Fixed: the scene number is updated before the next scene is loaded.
+- **Log:** StrokeScribe now keeps a log with every error and its details: Help → Open log folder (or Help → Copy the log, to paste it in a bug report). When something goes wrong, the bottom line says so.
+- **Mouse wheel:** the wheel scrolls the panel. Lists and number boxes change with the wheel only after you click on them.
+
+## Overlays: pictures and titles on their own tracks (v0.5.3-experimental.51)
+
+- **+ Picture / + Text** (Timeline header, or Edit menu): a picture (PNG, JPG, SVG) or a title appears on top of the scene at the playhead, at the same time as the hand draws, on its own track below the drawing (like a video editor).
+- **Effects:** comes in with Fade, Pop (with a small bounce), Slide from left / right / top / bottom, Zoom or Spin; goes out with any of them too.
+- **Timeline:** drag a clip to change when it appears (up / down: another track), drag its edges to change how long it stays. Double-click: settings. Right-click: settings, duplicate, delete. Drop a picture file on the timeline to add it there.
+- **Preview:** click a picture or title to select it, drag it to move it, mouse wheel to make it bigger or smaller, double-click for its settings.
+- **Settings window:** text, font, colour, bold, size, position, when it appears and for how long, the effects and their speed. Every change shows at once.
+- Overlays belong to their scene (on the board they fly with the camera), are saved in the project, can be undone, and are drawn over the drawing and under the hand. SVG pictures and titles stay sharp at any size.
+
+## The board: the camera flies between scenes (v0.5.3-experimental.50)
+
+- **One big board, like VideoScribe:** every scene has a frame on one board. The camera shows a scene's frame while it is drawn, then flies (zooms out, moves, zooms in) to the next frame. Everything already drawn stays on the board.
+- **Board view:** Preview → Board shows all frames from above. Drag a frame to move it, use the mouse wheel on it to make it bigger or smaller, double-click it to edit that scene. "Arrange in a row" puts them back next to each other.
+- **Frames inside frames:** put a small frame inside a picture and the camera zooms in to draw a detail there, on top of the picture.
+- **Sharp at any zoom:** pictures are drawn again at the size the camera needs (SVG lines are vectors), so zooming in never makes them blurry.
+- **Show everything:** choose it under "Then" for the last scene: at the end the camera zooms out to the whole board.
+
+## Sharp logo, rounder purple design (v0.5.3-experimental.49)
+
+- **Sharp logo:** the logo in the app, the window and the taskbar is now made from the large 1024 px logo, and drawn with your screen's real pixels, so it is sharp at 100 %, 125 %, 150 % and 200 % screen scaling. The Windows icon (.ico) has every size from 16 to 256 px.
+- **Rounder, polished design:** the logo's purple is the app's colour (buttons, Play, timeline, tabs), with the logo's purple-to-indigo gradient on the main buttons. Rounder panels, buttons, boxes, menus and preview; tabs look like rounded pills.
+
+## Cleaner look, simple update window, pictures kept (v0.5.3-experimental.48)
+
+- **Cleaner design:** calmer colours, no outlines around panels, buttons and boxes, and softer corners.
+- **Update window:** a green ✓ "Connected to GitHub" or a red ✗ "Not connected". The key is never shown. StrokeScribe is public, so no key is needed; "Key…" opens a small pop-up only if you make the project private again. An old or wrong key no longer blocks updates.
+- **Created pictures are kept:** every picture and line art made in Create image is copied into your Library → Images (Documents\StrokeScribe Library\Images), with a readable name. "Show in folder" opens it.
+
+## Downloads: no waiting for one slow piece (v0.5.3-experimental.47)
+
+- When a connection has nothing left to do, it takes over half of the slowest piece still downloading, so one slow piece no longer keeps the whole file waiting. Tested on the real Hugging Face servers.
+
+## Faster AI model downloads (v0.5.3-experimental.46)
+
+- **8 connections at once:** big model files download in pieces over 8 connections. This is much faster where one connection is slow, as Hugging Face often is from Asia.
+- **Cancel works right away**, and a stopped download continues where it stopped, piece by piece (also from a download started by an older version).
+- The speed shown is the current speed (last few seconds).
+
+## Several pictures on one page, smoother playback (v0.5.3-experimental.45)
+
+- **Several pictures on one page:** in the scene strip, click **+ Add picture**. The new picture is drawn on the same page, and the pictures before it stay there. Import its artwork, then drag it on the preview to place it. In the strip, a "+" marks a picture on the same page. You can also choose "Same page" under "Then" for any scene.
+- **Move a picture:** drag it on the preview, or set Position X / Y in the Animation tab. Click "Center" to put it back.
+- **Smoother playback:** while the preview is idle, StrokeScribe makes the next frames ready, so Play runs smoothly at the video's frame rate. If a frame is not ready and your computer is busy, it is drawn a little smaller while playing.
+- **Clean colour picture in saved projects:** the background clean-up (fake checkerboard, faint leftovers) also works on the colour picture stored in older projects. Untick "Clean the PNG's background" to see it as saved.
+
+## Timeline, autosave and update banner (v0.5.3-experimental.44)
+
+- **Tabs in order of work:** Animation, Hand, Sound, Export.
+- **Drag the timeline:** drag the right edge of the Draw, Paint, Hold or Erase clip to make it longer or shorter.
+- **Audio lane, like a video editor:** drop a voiceover or music file on the lower row of the timeline, drag the clip to choose when it starts, right-click it to remove it.
+- **Bigger timeline, smaller preview:** drag the divider above the timeline.
+- **Sound when the export is finished** (Export tab, on by default).
+- **Autosave every minute and recovery:** if StrokeScribe closes by accident, it offers to bring your work back at the next start.
+- **File > Recent projects.**
+- **Update banner:** when a new version is ready, a banner shows at the top with "What's new", "Update now" and "Later".
+
+## Sound tab and complete transparency (v0.5.3-experimental.43)
+
+- **Sound tab** (Inspector: Animation | Hand | Export | **Sound**): the pencil/brush/eraser sounds, Create a sound with AI, and the voiceover / music track are all here now. Also View → Sound settings.
+- **Clean the PNG's background** (Animation tab, under *Load matching colored PNG…*, on by default): the matching colored PNG of an SVG gets complete transparency. A painted checkerboard ("fake transparency") or a plain sheet behind the artwork, and faint leftovers, become transparent. Only background connected to the picture's edges is removed, so white or grey parts inside the artwork stay; photos and textured paper are left alone. The note under the button says how much was cleaned. Untick it to use the PNG exactly as it is.
+- The image import option is now **Clean the background (fake transparency, leftovers)** and does the same, plus the faint-pixel clean-up it did before.
+
+## Windows installer (v0.5.3-experimental.42)
+
+- **StrokeScribe-Setup-<version>.exe** (GitHub → Releases): a normal Windows installer with the StrokeScribe logo. It needs no Python and no Setup.cmd: a private Python with every package is included. It installs for your user only (no administrator), into `%LOCALAPPDATA%\Programs\StrokeScribe`, adds StrokeScribe to the Start menu (and the desktop if you like), and appears in *Settings → Apps* to uninstall.
+- StrokeScribe starts without a console window and has its own taskbar icon. If it ever cannot start, a message box says why.
+- After installing, updates come through the app (File → Update StrokeScribe…). Running a newer installer over it also works.
+- Your Library, projects, settings and AI models are never touched by installing or uninstalling.
+
+## Menu bar, no built-in sounds, check marks, quieter loading (v0.5.3-experimental.40)
+
+- **Menu bar** like other programs: **File** (open, save, import, Library, export, batch export, update, exit), **Edit** (undo, redo, delete/reverse lines, add/delete scene), **View** (dark mode, preview background, this scene / all scenes), **Effects** (paint mode, pen movement, camera follow, erase at the end, painting hand, sounds, Hand only export, MP4 background, Auto timing, AI) and **Help** (setup, updates, about). Menu choices are the same settings as in the panels.
+- **No built-in sounds**: the generated pencil/brush/eraser sounds and the export chime are gone. Sound comes only from sounds you add (Export tab or Effects menu) or make with Create sound; a tool without a sound is silent.
+- **Check marks**: ticked boxes and menu choices now show a white ✓.
+- **Less loading**: changing Brush width or Stroke spacing re-plans the brush quietly in the background (the last picture stays; *Updating the brush route…* on the timeline). The loading card appears only for bigger changes: a new paint mode, a new image, or choosing an eraser style.
+
+## Update in the app (v0.5.3-experimental.39)
+
+- **Project menu → Update StrokeScribe…**: updates this installation in place. No unzipping, no Setup.cmd. It replaces only the app's own files; your `.venv` packages, Library, projects, settings and AI models stay. New Python packages are installed only when a version needs them. The previous version is kept (**Go back to the previous version**).
+- **Online**: the newest version is read from the StrokeScribe GitHub project. Because the project is private, paste a read-only GitHub key once (the window shows the steps: fine-grained token, only StrokeDot/StrokeScribe, *Contents: Read-only*). With the key saved, StrokeScribe checks at start and shows **⬆ Update to exp.NN** in the top bar when a new version is ready.
+- **Offline**: **Update from a ZIP file…** uses a StrokeScribe ZIP you already downloaded.
+
+## Create a sound with AI (v0.5.3-experimental.38)
+
+- **✦ Create a sound with AI…** (Export tab → Sound), or **Create a sound** in the Create window: describe a sound and **Stable Audio 3 Small-SFX** (Stability AI) makes it on your PC. Ready descriptions for **Pencil**, **Brush** and **Eraser**; change the words as you like. Choose the length (8 s is plenty: it is looped while the pen moves), click **Generate**, **▶ Listen**, and **Use as pencil sound** (or brush / eraser). Not right? Generate again: every try is different.
+- Download: 3.5 GB once (model 2.3 GB + text encoder 1.2 GB), in the same AI engine as Create image. It is small enough to run without a graphics card; with an NVIDIA card it is faster.
+- License: Stability AI Community License — free for personal use, and for creators and businesses under US$1 million revenue a year; you own the sounds. You accept it once before the download.
+- Sounds you use are kept in the Library (Audio).
+
+## Mute button and Hand-only export (v0.5.3-experimental.37)
+
+- **Mute button** (speaker, next to the play controls): sound on / off for the pencil, brush and eraser sounds, in the preview and in the exported video. It is the same switch as Export tab → *Pencil and brush sounds*. (A voiceover/music track is separate: remove it in the Export tab.)
+- **Export tab → Export**: *Drawing and hand* (as before), **Hand only (no drawing)** or **Drawing only (no hand)**. Hand only exports just the moving hand on a transparent background (PNG, WebM, MOV), so you can lay it over your own text or picture in Filmora, for example your name in any font. The preview shows the drawing faintly so you can see what the hand writes; the export does not contain it.
+
+## Real recorded pencil sounds (v0.5.3-experimental.36)
+
+- **Export tab → Sound**: choose a real recording for the **Pencil**, and if you like the **Brush** and **Eraser** (MP3, WAV, M4A…). A few seconds is enough: quiet parts at the start and end are cut off, and the recording is looped from different places so it never sounds repeated. It plays only while the pen moves (louder when it moves faster), silent during pen lifts.
+- **Built-in** goes back to the generated sound. Sounds are now **off by default**; choosing a recording switches them on.
+- Recordings are kept in the Library (Audio), saved with the project, used by batch export and by all scenes.
+
+## Scenes: several drawings in one video (v0.5.3-experimental.35)
+
+The **Scenes** strip in the Timeline panel holds the drawings of one video, in order:
+
+- **+ Add scene** adds a scene after the current one. It starts as a copy; import its own SVG or image (Import, Library or Create image). Every scene keeps its own drawing, colours, hand, timing, painting, eraser, camera and voiceover.
+- Click a scene to edit it. **◀ ▶** change the order, **Delete** removes a scene.
+- **Then** sets how the video moves to the next scene: *Camera move* (zoom out, travel along the board, zoom in, like VideoScribe), *Pan left/right/up/down*, *Zoom in*, *Fade* or *Cut*. **Move (s)** sets how long the move takes.
+- **Preview → All scenes** plays and scrubs the whole video, with one block per scene on the timeline. (That preview has no sound; the export does.)
+- **Export → Export all N scenes as one video** (on by default with several scenes): one video with every scene and the moves. Each scene's pencil sounds and voiceover play with that scene. Resolution, frame rate, formats, background and sound settings come from the scene you are editing. Uses all CPU cores.
+- Scenes are saved in the project file. Batch export turns a multi-scene project into one video. Older StrokeScribe versions open such a project as the edited scene only.
+
+## Faster export on all CPU cores (v0.5.3-experimental.34)
+
+- Longer exports (from about 4 seconds of video) are rendered on several processor cores at once, one group of frames per core. The frames are exactly the same as before, only faster. **Export tab → Use all CPU cores (faster export)** is on by default; turn it off if you need the computer to stay quick while exporting. Batch export uses it too.
+- If the fast path cannot start for some reason, the export simply runs on one core as before.
+- Clicking a line on the preview now scrolls the left panel to **Lines & order**, so Delete, Reverse, pace and pause are in view.
+
+## Pencil, marker and a painting hand (v0.5.3-experimental.33)
+
+- **Built-in tools** (Hand tab): **Built-in hand**, **Pencil** and **Marker** buttons. Each one sets its own pen tip and a fitting size. The pencil and marker are tools on their own, without a hand.
+- **Painting hand** (Hand tab → Painting hand): *Same as drawing hand*, *Built-in paint brush*, or *From Hands library* (for example your own hand holding a brush). The animation switches to it automatically when painting starts. **Painting hand size** sets its width. The brush tip is found automatically, or the tip saved in the library is used.
+- Saved in projects (a library painting hand is stored inside the project file too) and used by batch export. Undo works for these settings.
+
+## Undo everything, edit lines on the preview, timing control (v0.5.3-experimental.32)
+
+- **Undo / Redo for everything** (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z, and the ↶ ↷ buttons): every setting and every line change, not only the stroke order. Changing a value several times in a row counts as one step.
+- **Click a line on the preview** to select it (Ctrl+click or Shift+click for more). It is outlined, with a dot where the pen starts. The **Lines & order** panel then offers **Delete** (or the Delete key), **Reverse** (draw it from the other end), **Line pace** (Very slow to Very fast) and **Pause after** (the pen rests before the next line). Drag lines in the list to change the drawing order.
+- **Pen movement → Natural (ease in and out)** (Animation tab): every line starts and ends a little slower, like a real hand.
+- Line changes are saved in projects and used by every export, the camera and the sound.
+
+## Voiceover, camera follow, backgrounds and Auto timing (v0.5.3-experimental.31)
+
+- **Voiceover / music** (Export tab): **Load audio…** (MP3, WAV, M4A, AAC, OGG, FLAC, Opus, WMA) or pick one from the new **Audio** section of the Library. Set the track volume and when it starts. It is mixed with the pencil/brush sounds into every video (and `soundtrack.wav`), cut at the end of the animation, heard in the preview, and saved in projects. **Fit animation to audio** stretches draw, paint, hold and erase times (keeping their proportions) so the video ends when the track ends.
+- **Auto timing** (Animation tab): picks draw, paint, hold and erase times from how much there is to draw. With a voiceover loaded it fits them to the voiceover instead.
+- **Camera follow** (Animation tab): *Gentle zoom* or *Close-up zoom*. The camera glides after the pen, then pulls back to show the whole picture at the end. Frames are rendered larger and cropped, so they stay sharp. Shown in the preview and used in every export.
+- **Backgrounds**: Whiteboard, Paper, Chalkboard and Cork textures, besides White, Dark and Black, for the preview and the MP4. Transparent formats (PNG, WebM, MOV) stay transparent.
+
+## Eraser (v0.5.3-experimental.30)
+
+Animation tab → **Erase at the end** adds an **Erase** stage after the hold (Draw → Paint → Hold → Erase), so the picture is rubbed away and the video ends empty:
+
+- **Zigzag (follows the shapes)** — the eraser finds where the picture actually is and scrubs back and forth over it along one route (the same planner as Zigzag sweep painting), so it never wastes time on empty areas.
+- **Along the lines** — the eraser follows the drawn lines backwards, last line first; anything left between lines fades away at the very end.
+
+Settings: erase time, eraser size, and what is shown rubbing (the built-in eraser or your pen hand). The rubbed edge is soft, the eraser makes a rubbing sound in the soundtrack, and the stage is saved in projects and used by batch export.
+
+## Library and automatic pen tip (v0.5.3-experimental.29)
+
+- **▤ Library** (top bar; **Hands library…** in the Hand tab): a safe home for your images, SVGs and hands, like Canva uploads. Files are *copied* into a folder you choose (default `Documents/StrokeScribe Library`, with `Images` and `Hands` sub-folders), so moving or deleting the originals is safe. Upload, drag and drop, search, rename, show in folder, and delete (deleted items go to a *Deleted items* folder, so they can be recovered). With **Keep a copy of every file I import or load** (on by default), everything you import is added automatically.
+- **Automatic pen tip**: when you load a hand, StrokeScribe finds the pen tip itself (the sharpest point of the hand-and-pen shape, farthest from where the arm enters the picture) and sets Pen tip X/Y. **Find pen tip** repeats it; **Click to set…** shows the hand so you can click exactly on the tip. The tip is remembered with each hand in the library. Manual X/Y adjustment still works.
+
+## Projects, pencil sound and batch export (v0.5.3-experimental.28)
+
+- **Save / open projects** (project menu, Ctrl+S / Ctrl+O): one `.strokescribe` file keeps the drawing with your stroke order, the colour image, the hand and every setting. Images are stored inside the file, so it still opens if the originals move.
+- **Pencil and brush sounds** (Export tab → Sound): a pencil scratch while the pen draws (silent during pen lifts, louder when it moves faster) and a soft brush sound while painting, panned with the hand. Generated to match the animation exactly; included in MP4, WebM and MOV, and saved as `soundtrack.wav` with PNG exports. You can hear it in the preview while playing.
+- **Batch export** (project menu or Export tab): queue images, SVGs and projects and export them all, each into its own folder. Images and SVGs use the current settings (an SVG is coloured with `name_color.png` or `name.png` next to it); projects use their own. Failed items are reported and the batch continues; a chime plays at the end.
+
+## Create Image: local AI models (v0.5.3-experimental.27)
+
+**✦ Create image** (top bar, or **AI line art for this image…** in the Image source panel) runs open image models on your own PC:
+
+- **Line art for my image** — the AI redraws your image as clean black line art; StrokeScribe lines it up with your image, traces each drawn line as one pen stroke, and paints your original colours. Best for objects (TVs, headphones, products).
+- **Create from text** and **Edit an image** — new images or instruction-based edits, which you can then draw in StrokeScribe.
+
+Models (chosen version depends on your graphics card memory and system RAM; you can override it):
+
+| Model | License | Use |
+|---|---|---|
+| Qwen-Image-Edit 2511 (Alibaba) | Apache 2.0 | Line art and edits; best free editor |
+| FLUX.2 [klein] 4B (Black Forest Labs) | Apache 2.0 | Fast text-to-image and edits |
+| FLUX.2 [dev] (Black Forest Labs) | FLUX Non-Commercial (accept before download) | Highest quality, very large |
+
+The first time, click **Install AI engine** (about 5 GB: ComfyUI v0.41.1 with PyTorch for NVIDIA cards, kept in its own folder that you can move to another drive), then **Download** a model (4–40 GB, resumable). The engine runs hidden on 127.0.0.1 only while you make an image and stops with the app. Nothing is sent to the internet when generating.
+
+**Use my own line drawing…** traces a black line drawing you already have (for example from ChatGPT) over your colour image the same way.
+
+## New look: dark and light themes (v0.5.3-experimental.26)
+
+The Studio has a calmer, video-editor style layout: panels with title strips (Source, Program, Inspector, Timeline), a program monitor with transport buttons and a timecode underneath, and a timeline with a time ruler, coloured Draw / Paint / Hold clips and a playhead you can click or drag. **Dark mode is the default**; the ☀ / ☾ button in the top bar switches to light mode and the choice is remembered. Space plays and pauses.
+
+While a drawing is being prepared (importing an image, applying image settings, loading an SVG, or planning a new brush route after changing the paint mode or brush settings), the monitor shows a loading card with a progress bar and the timeline is locked; it unlocks when the drawing is ready.
+
+The hand is now drawn on its own layer after **Artwork size** is applied, so it is no longer cut off by an invisible box when the artwork is made smaller; it is only ever cropped by the real video frame.
+
+## Zigzag sweep painting (v0.5.3-experimental.25)
+
+**Paint mode** now offers **Brush painting**, **Adaptive Hand Painting** and the new **Zigzag sweep** (the old Fade option was removed from the menu). Zigzag sweep starts where the drawing ended and follows one logical route along the object's centre line (for a headset: one side of the band, the ear cup, across to the other cup, up the other side), scribbling colour back and forth across the shape: wide strokes on broad parts, narrow ones on thin parts. Side branches (a microphone, a handle) are painted as the route passes them, and any spot the sweep missed is touched up at the end, so every visible pixel is always painted. Image sources can choose Adaptive Hand Painting or Zigzag sweep; plain Brush painting stays SVG-only. Hand, guide-line retirement, timing and export work exactly as with Adaptive Hand Painting.
+
+## Artist animation (v0.5.3-experimental.24)
+
+Images now animate like a pencil artist by default (**Animation: Artist (layered)**), following lessons from a real face-drawing video: light guide shapes first, then the main lines area by area with the densest detail last and slowest, then darker accents. Strokes carry their own drawing speed (`pace`). **Standard** keeps the single-pass animation. Exported SVGs keep each layer's colour and line weight.
+
+## Clean drawing style and SVG export (v0.5.3-experimental.23)
+
+Line art now has two **Drawing styles**: *Clean drawing* (default), which keeps only the meaningful lines as fewer, longer, smooth strokes, the way an artist would draw it, and *Detailed (all lines)*. **Export drawing as SVG…** saves the strokes as an editable SVG plus the matching colour PNG, so any image can be polished in Inkscape and re-imported through SVG source, like a hand-made SVG. See [IMAGE_SOURCE.md](IMAGE_SOURCE.md).
+
+## Images: Line art (v0.5.3-experimental.21+)
+
+Imported PNG, JPEG, WebP and BMP images are turned into clean, artist-style pen strokes by **Line art**, now the only image method. A small built-in line model (TEED, MIT license, `models/teed.onnx`, run with ONNX Runtime) finds contours and inner detail lines; dark ink lines are detected directly so thick outlines become one line and pencil strokes survive; wood grain and paper texture are ignored; dense shading is left to the colour painting. Strokes are traced along line centres, joined smoothly, and drawn outline first, then long lines, then details. Detail: Low, Medium (recommended), High or Max. No Ollama or other AI download is needed.
+
+The painting hand only visits pixels that are at least ~25% visible; nearly invisible leftovers from background removal appear together with their nearest painted area. **Clean faint background leftovers** (Image source panel) removes such pixels completely.
+
+**Removed in experimental.22:** Auto trace, Stroke reconstruction and AI redraw (Ollama/Qwen), together with their settings. Line art replaced them with better and more consistent results. The setup window's Fast/Balanced/Quality/Max levels now set Line art detail. See [IMAGE_SOURCE.md](IMAGE_SOURCE.md).
+
 ## Experimental image sources (v0.5.2)
 
 PNG, JPEG, WebP and BMP can now become contour animations or region-guided painted reconstructions. See [IMAGE_SOURCE.md](IMAGE_SOURCE.md) for controls, algorithm, setup and limitations. Existing SVG modes remain available. AI redraw is not implemented.

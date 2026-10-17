@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  pull-requests: write
 jobs:
   test-and-package:
     runs-on: ubuntu-latest
@@ -17,8 +18,39 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 ffmpeg
       - run: pip install -r requirements.txt
       - run: python -m compileall -q .
-      - run: python -m unittest -v test_prototype test_adaptive test_image_source test_webm test_studio test_ai_redraw test_font_features test_reported_fixes test_ollama_reliability test_ai_performance test_ai_profiles test_contour_transitions test_image_animation
-      - run: python benchmark_ai_profiles.py
+      - name: Full test suite
+        id: tests
+        continue-on-error: true
+        env:
+          STROKESCRIBE_TEST_TOKEN: ${{ github.token }}
+          STROKESCRIBE_TEST_BRANCH: ${{ github.head_ref || github.ref_name }}
+        shell: bash
+        run: |
+          set -o pipefail
+          python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e 2>&1 | tee full-tests.log
+      - name: Report failing test output to pull request
+        if: steps.tests.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo '### Full test suite failures (image source workflow)'
+            echo 'Failures and errors only:'
+            echo '```text'
+            if grep -qE '^(FAIL|ERROR):' full-tests.log; then
+              awk '/^(FAIL|ERROR):/{p=1} p' full-tests.log | grep -v 'DeprecationWarning' | head -n 160 || true
+            else
+              echo 'No unittest summary (the test process may have crashed). Last 60 lines:'
+              tail -n 60 full-tests.log || true
+            fi
+            echo '```'
+          } > diagnostic-comment.md
+          gh pr comment "$PR_NUMBER" --body-file diagnostic-comment.md
+      - name: Stop workflow if tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
       - run: python render_image_samples.py
       - run: python render_studio_preview.py
       - run: python render_contour_samples.py
@@ -35,6 +67,8 @@ jobs:
   windows-python-314:
     name: Windows Python 3.14 installation + tests
     runs-on: windows-latest
+    permissions:
+      contents: write
     timeout-minutes: 25
     env:
       QT_QPA_PLATFORM: offscreen
@@ -50,4 +84,26 @@ jobs:
           python -m pip install --only-binary=:all: -r requirements.txt
           python -c "import sys, numpy, cv2; from PySide6.QtWidgets import QApplication; print(sys.version, numpy.__version__, cv2.__version__)"
       - name: Test image reconstruction and existing modes on Windows
-        run: python -m unittest -v test_prototype test_adaptive test_image_source test_webm test_studio test_ai_redraw test_font_features test_reported_fixes test_ollama_reliability test_ai_performance test_ai_profiles test_contour_transitions test_image_animation
+        id: wintests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e 2>&1 | tee win-tests.log
+      - name: Publish the Windows test log (branch win-test-log)
+        if: always() && steps.wintests.outcome != 'skipped'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ../winlog && cp win-tests.log ../winlog/win-tests.log
+          cd ../winlog
+          git init -q && git checkout -q -b win-test-log
+          git config user.name ci && git config user.email ci@example.invalid
+          git add win-tests.log && git commit -qm "Windows tests for ${{ github.sha }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" win-test-log
+      - name: Stop if Windows tests failed
+        if: steps.wintests.outcome == 'failure'
+        shell: bash
+        run: exit 1

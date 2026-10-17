@@ -21,7 +21,9 @@ SOURCE_FILES = (
     [p for p in ROOT.iterdir() if p.is_file() and p.suffix.lower() in SOURCE_EXTENSIONS]
     + [ROOT / "LICENSE"]
     + [p for folder in ("assets", "samples") for p in (ROOT / folder).rglob("*")
-       if p.is_file() and p.suffix.lower() in {".png", ".svg"}]
+       if p.is_file() and p.suffix.lower() in {".png", ".svg", ".wav", ".ico"}]
+    + [p for p in (ROOT / "models").glob("*")
+       if p.is_file() and p.suffix.lower() in {".onnx", ".txt"}]
 )
 
 

@@ -61,7 +61,10 @@ class PaintPlan:
         f = min(1., max(0., (clock-segment.start)/(segment.end-segment.start)))
         point = (segment.a[0]+(segment.b[0]-segment.a[0])*f,
                  segment.a[1]+(segment.b[1]-segment.a[1])*f)
-        return segment, point if segment.painting else None
+        # Pen-up transfers never paint (segment.painting is False), but the
+        # hand stays visible and glides to the next region. Hiding it here made
+        # the hand blink out for a frame at every transfer.
+        return segment, point
 
     def mask(self, progress):
         clock = max(0., min(1., float(progress)))/.98*self.total
@@ -111,6 +114,29 @@ def _shortest(start, finish, region, labels, width, height):
                     queue.append(n)
     raise ValueError('Region traversal failed; no safe brush connection.')
 
+VISIBLE_ALPHA = 64  # about 25% visible; fainter pixels get no brush visit
+
+
+def _reveal_faint_with_neighbours(arrival, labels, faint, gw, gh):
+    """Faint cells appear at the same moment as the nearest painted cell."""
+    if not any(faint):
+        return
+    import cv2
+    import numpy as np
+    painted = np.asarray(labels, np.int32).reshape(gh, gw) > 0
+    if not painted.any():
+        return
+    times = np.asarray(arrival, np.float64).reshape(gh, gw)
+    _, nearest = cv2.distanceTransformWithLabels(
+        (~painted).astype(np.uint8), cv2.DIST_L2, 3, labelType=cv2.DIST_LABEL_PIXEL)
+    lookup = np.full(int(nearest.max()) + 1, np.inf)
+    lookup[nearest[painted]] = times[painted]
+    borrowed = lookup[nearest].ravel()
+    for cell, is_faint in enumerate(faint):
+        if is_faint and not labels[cell]:
+            arrival[cell] = float(borrowed[cell])
+
+
 def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
     from color_reveal import artwork_rect, last_stroke_canvas_endpoint
     source=pil_image(image)
@@ -122,13 +148,20 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
         return ((point[0]-rect.x())*gw/rect.width(),
                 (point[1]-rect.y())*gh/rect.height())
     origin=grid_point(last_stroke_canvas_endpoint(drawing,1920,1080))
-    # Conservative support: retain even tiny disconnected alpha details.
+    # The hand paints only where the image is actually visible (alpha at
+    # least VISIBLE_ALPHA). Nearly invisible leftovers from background removal
+    # are revealed with their nearest painted area instead, with no hand visit.
     support=bytearray(gw*gh)
+    faint=bytearray(gw*gh)
     for i,a in enumerate(source.getchannel('A').tobytes()):
         if a:
-            support[min(gh-1,(2*(i//iw)+1)*gh//(2*ih))*gw+min(gw-1,(2*(i%iw)+1)*gw//(2*iw))]=1
+            cell=min(gh-1,(2*(i//iw)+1)*gh//(2*ih))*gw+min(gw-1,(2*(i%iw)+1)*gw//(2*iw))
+            if a>=VISIBLE_ALPHA: support[cell]=1
+            else: faint[cell]=1
     if not any(support):
-        raise ValueError('The color image has no nontransparent pixels.')
+        if not any(faint):
+            raise ValueError('The color image has no nontransparent pixels.')
+        support,faint=faint,bytearray(gw*gh)   # all faint: paint it anyway
     labels=[1 if a else 0 for a in support]
     polygons=[]
     x0,y0,x1,y1=drawing.bounds
@@ -300,20 +333,56 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
             paint_to(target,rid)
             missing={cell for cell in missing if not math.isfinite(arrival[cell])}
     assert all(not rid or math.isfinite(arrival[i]) for i,rid in enumerate(labels))
+    _reveal_faint_with_neighbours(arrival,labels,faint,gw,gh)
     return PaintPlan((gw,gh),labels,segments,[s.end for s in segments],arrival,
                      origin,clock,warnings,len(groups))
 
-def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
+_ALPHA_DIGESTS = OrderedDict()
+
+def _alpha_digest(image):
+    """SHA-256 of the PNG alpha, computed once per image instead of per frame.
+
+    QImage.cacheKey changes whenever an image's pixels change, so a stale
+    digest can never be reused for modified artwork.
+    """
+    key=(image.cacheKey(),image.width(),image.height())
+    digest=_ALPHA_DIGESTS.get(key)
+    if digest is None:
+        digest=hashlib.sha256(pil_image(image).getchannel('A').tobytes()).digest()
+        _ALPHA_DIGESTS[key]=digest
+        if len(_ALPHA_DIGESTS)>8: _ALPHA_DIGESTS.popitem(last=False)
+    else:
+        _ALPHA_DIGESTS.move_to_end(key)
+    return digest
+
+def _plan_key(drawing,image,brush_width,stroke_spacing):
     # Content-based keys survive deepcopy/export and include the full stroke order.
     geometry=tuple((s.name,tuple(s.points)) for s in drawing.strokes)
-    raw=pil_image(image)
     region_map=getattr(drawing,'image_regions',None)
-    key=(geometry,region_map,getattr(drawing,'image_region_priority',False),
-         getattr(drawing,'image_semantic_order',()),tuple(drawing.bounds),raw.size,
-         hashlib.sha256(raw.getchannel('A').tobytes()).digest(),
-         float(brush_width),float(stroke_spacing))
+    return (geometry,region_map,getattr(drawing,'image_region_priority',False),
+            getattr(drawing,'image_semantic_order',()),tuple(drawing.bounds),
+            (image.width(),image.height()),_alpha_digest(image),
+            float(brush_width),float(stroke_spacing),getattr(drawing,'paint_method','adaptive'))
+
+def plan_ready(drawing,image,brush_width=.14,stroke_spacing=.55):
+    """True when plan_for would return at once (the brush plan is cached)."""
+    try:
+        return _plan_key(drawing,image,brush_width,stroke_spacing) in _CACHE
+    except Exception:
+        return True
+
+def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
+    key=_plan_key(drawing,image,brush_width,stroke_spacing)
     if key not in _CACHE:
-        _CACHE[key]=build_plan(drawing,image,brush_width,stroke_spacing)
+        method=getattr(drawing,'paint_method','adaptive')
+        if method in ('rows','columns'):
+            from zigzag_paint import build_band_plan
+            _CACHE[key]=build_band_plan(drawing,image,brush_width,stroke_spacing,across=method=='columns')
+        elif method=='zigzag':
+            from zigzag_paint import build_zigzag_plan
+            _CACHE[key]=build_zigzag_plan(drawing,image,brush_width,stroke_spacing)
+        else:
+            _CACHE[key]=build_plan(drawing,image,brush_width,stroke_spacing)
         if len(_CACHE)>3: _CACHE.popitem(last=False)
     else:
         _CACHE.move_to_end(key)
@@ -349,26 +418,36 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
         frame.fill(Qt.GlobalColor.transparent)
         painter=QPainter(frame)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        painter.drawImage(rect,image)
+        from source_render import draw_source
+        draw_source(painter,rect,image)
         painter.end()
         return frame
     mask,tip=adaptive_paint_mask(drawing,image,width,height,rect,progress,
                                 brush_width,stroke_spacing)
-    # Preserve the complete SVG until real painted pixels cover it. The old
-    # footprint clipping erased unreached contours immediately at paint start.
-    from PIL import ImageChops
-    source=pil_image(image)
-    coverage=plan_for(drawing,image,brush_width,stroke_spacing).mask(progress)
-    coverage=coverage.resize(source.size,Image.Resampling.NEAREST)
-    source.putalpha(ImageChops.multiply(source.getchannel('A'),coverage))
+    # The brush mask governs BOTH colored pixels and temporary SVG ink.
+    # Using only the PNG alpha to erase outlines would strand misregistered
+    # guides in transparent areas until the final frame.
     painted=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
     painted.fill(Qt.GlobalColor.transparent)
-    p=QPainter(painted); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    p.drawImage(rect,qimage(source)); p.end()
-    from color_reveal import replace_outlines_with_painted_pixels
-    outline=replace_outlines_with_painted_pixels(
-        render(drawing,1,width,height,thickness),painted)
-    p=QPainter(outline)
+    p=QPainter(painted)
+    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    from source_render import draw_source
+    draw_source(p,rect,image)
+    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+    p.drawImage(0,0,mask)
+    p.end()
+    from svg_guide_cleanup import remove_svg_guides
+    outline=remove_svg_guides(render(drawing,1,width,height,thickness),
+                              mask,image,rect)
+    # Assemble on a fresh premultiplied canvas, exactly like the settled
+    # frame. Compositing onto the SVG layer's own image format rounded some
+    # semi-transparent edge pixels, so a fully painted frame could differ
+    # slightly from the final frame and flicker at the end.
+    frame=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
+    frame.fill(Qt.GlobalColor.transparent)
+    p=QPainter(frame)
+    p.drawImage(0,0,outline)
+    p.drawImage(0,0,painted)
     draw_hand(p,tip,hand,width,hand_scale,anchor)
     p.end()
-    return outline
+    return frame
