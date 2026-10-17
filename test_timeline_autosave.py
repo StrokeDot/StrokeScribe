@@ -115,7 +115,10 @@ class WindowTests(ConfigDir):
         tl = w.stage_timeline
         self.assertIn('hold', tl.editable)
         w.set_stage_seconds('hold', 2.5)
-        self.assertAlmostEqual(w.color_hold.value(), 2.5)
+        if w.options().get('final_image') is not None:
+            self.assertAlmostEqual(w.color_hold.value(), 2.5)
+        else:                                             # no colours: the hold clip is the pause
+            self.assertAlmostEqual(w.pause_after.value(), 2.5)
         w.set_stage_seconds('erase', 4.0)
         self.assertAlmostEqual(w.erase_time.value(), 4.0)
         if w.duration.isEnabled():
@@ -172,8 +175,16 @@ class WindowTests(ConfigDir):
         self.assertFalse(w.autosave_tick())               # nothing changed since
         self.assertIsNotNone(autosave.pending())
         # Normal close removes the backup.
-        w.close(); self.app.processEvents()
-        self.assertIsNone(autosave.pending())
+        calls = []
+        original = autosave.clear
+        autosave.clear = lambda: (calls.append(1), original())[1]
+        try:
+            closed = w.close(); self.app.processEvents()
+        finally:
+            autosave.clear = original
+        self.assertIsNone(autosave.pending(), f'closed={closed} visible={w.isVisible()} cleared={len(calls)} '
+                          f'busy={w.busy} builder={bool(w.builder and w.builder.isRunning())} '
+                          f'font={bool(w.font_worker and w.font_worker.isRunning())}')
 
     def test_update_banner(self):
         w = self.w
