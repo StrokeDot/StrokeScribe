@@ -282,8 +282,8 @@ class StageTimeline(QFrame):
         # Overlay tracks: pictures and titles on top of the drawing.
         if not self.scene_segments and self.overlays:
             for track in range(self.tracks()):
-                lane=self._lane(track)
-                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(lane,7,7)
+                row=self._lane(track)
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(row,7,7)
             p.save(); p.setClipRect(QRectF(left,0,width,self.height()))
             colour=QColor(c.get('accent_b','#4C42DE'))
             for item in self.overlays:
