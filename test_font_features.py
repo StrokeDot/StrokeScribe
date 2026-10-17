@@ -138,7 +138,9 @@ class FontAndScaleTests(unittest.TestCase):
         self.assertEqual(w.artwork_size.value(),100)
         w.artwork_size.setValue(65)
         self.assertEqual(w.options()['artwork_scale'],.65)
-        self.assertEqual(w.font_select.count(),11)
+        from font_library import FONT_GROUPS, STARTER_FONTS
+        # Built-in pen + every font + one separator per group.
+        self.assertEqual(w.font_select.count(),1+len(STARTER_FONTS)+len(FONT_GROUPS))
         w.close()
 
 if __name__=='__main__':
