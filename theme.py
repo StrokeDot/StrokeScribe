@@ -176,7 +176,8 @@ QSlider::groove:horizontal {{ background: {c['border']}; height: 4px; border-rad
 QSlider::sub-page:horizontal {{ background: {c['accent']}; border-radius: 2px; }}
 QSlider::handle:horizontal {{ background: {c['accent']}; width: 14px; margin: -5px 0; border-radius: 7px; }}
 QTabWidget::pane {{ border: 0px; background: {c['panel']}; }}
-QTabBar {{ background: transparent; }}
+QTabBar {{ background: transparent; qproperty-drawBase: 0; }}
+QTabWidget::tab-bar {{ left: 4px; }}
 QTabBar::tab {{ background: transparent; color: {c['muted']}; padding: 7px 13px; margin: 4px 2px;
     border: 0px; border-radius: 9px; font-weight: 600; }}
 QTabBar::tab:hover {{ color: {c['text']}; background: {c['raised']}; }}
