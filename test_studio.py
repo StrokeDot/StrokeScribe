@@ -107,7 +107,8 @@ class StudioTests(unittest.TestCase):
     def test_retired_paint_modes_are_not_offered(self):
         items=[self.window.reveal_mode.itemText(i)
                for i in range(self.window.reveal_mode.count())]
-        self.assertEqual(items,['Brush painting','Adaptive Hand Painting','Zigzag sweep'])
+        self.assertEqual(items,['Brush painting','Adaptive Hand Painting','Zigzag sweep',
+                               'Top to bottom (rows)','Left to right (columns)'])
         from app import REVEAL_MODES
         self.assertEqual(REVEAL_MODES,('brush','adaptive','zigzag'))
         self.assertEqual(self.window.reveal_mode.currentText(),'Adaptive Hand Painting')

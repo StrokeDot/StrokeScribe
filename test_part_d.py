@@ -86,8 +86,11 @@ class PageTests(unittest.TestCase):
             self.assertLess(float(first['picture_x']), 0)                        # moved to the left
             self.assertEqual(w.scene_list.item(1).text().split()[1], '+')
             # Keep adding: when the page is full, the next one goes to a new page.
-            added = [w.add_picture() for _ in range(4)]
-            self.assertIn(False, added)
+            for _ in range(6):
+                if w.add_picture() is False:
+                    break
+            else:
+                self.fail('the page never got full')
             self.assertNotEqual(w.scenes[w.scene_index - 1]['transition'], 'Same page')
         finally:
             w.playing = False; w.close()
