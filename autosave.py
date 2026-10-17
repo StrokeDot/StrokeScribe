@@ -48,17 +48,33 @@ def pending():
         meta = json.loads(_meta_path().read_text())
     except Exception:
         meta = {}
+    if meta.get('cleared'):
+        return None                       # closed normally; the file just could not be deleted
     meta['path'] = str(path)
     meta.setdefault('time', path.stat().st_mtime)
     return meta
 
 
 def clear():
-    for path in (backup_path(), _meta_path()):
-        try:
-            path.unlink()
-        except OSError:
-            pass
+    """Remove the backup (a normal close). On Windows a file can be held open for a
+    moment (antivirus, indexing), so the delete is retried; if it still cannot be
+    deleted, the backup is marked as cleared so it is not offered for recovery."""
+    for attempt in range(10):
+        left = []
+        for path in (backup_path(), _meta_path()):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                left.append(path)
+        if not left:
+            return
+        time.sleep(.1)
+    try:
+        _meta_path().write_text(json.dumps({'cleared': True}))
+    except OSError:
+        pass
 
 
 # ------------------------------------------------------------ recent projects

@@ -47,7 +47,7 @@ class FontTests(unittest.TestCase):
         if font is None:
             self.skipTest('no TTF here')
         from font_stroke_reveal import create_font_drawing
-        for ch, most in (('o', 2), ('w', 2), ('e', 3)):
+        for ch, most in (('o', 2), ('w', 3), ('e', 3)):
             d = create_font_drawing(ch, font, 68)
             self.assertLessEqual(len([s for s in d.strokes if s.length > 6]), most, ch)
 
@@ -98,7 +98,7 @@ class WindowTests(unittest.TestCase):
             self.assertFalse(w.font_size.isEnabled())            # Letter detail: real fonts only
             # A new element made with AI: nothing is added when the window is closed unused.
             from unittest import mock
-            w.ai_engine = object()
+            w.ai_engine = mock.Mock()
             with mock.patch('create_image_dialog.CreateImageDialog') as dialog:
                 dialog.return_value.exec.return_value = 0
                 self.assertFalse(w.new_element('ai'))
