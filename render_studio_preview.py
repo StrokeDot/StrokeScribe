@@ -242,6 +242,10 @@ _o.refresh(); _o.slider.setValue(600)
 for _ in range(3): app.processEvents()
 _o.stage_timeline.repaint(); app.processEvents()
 _o.grab().save(str(out/'overlays.png'))
+_tl=_o.stage_timeline
+_tl.grab().save(str(out/'overlay-timeline.png'))
+(out/'overlay-debug.txt').write_text(f'items {len(_tl.overlays)} tracks {_tl.tracks()} geom {_tl.geometry()} '
+    f'segments {_tl.scene_segments} rows {_tl._rows()} lane1 {_tl._lane(1)} visible {_tl.isVisible()}')
 _frames=[]
 for _i in range(45):
     _o.position=_i/44
