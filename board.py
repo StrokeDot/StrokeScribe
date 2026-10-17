@@ -178,7 +178,7 @@ class World:
     zoom of 3× draws the pictures 3× bigger instead of stretching them."""
 
     LADDER = 2 ** .25
-    MAX_SIDE = 4096
+    MAX_SIDE = 6144                          # sharp up to about 3× zoom at 1080p
     BUDGET = 500 * 1024 * 1024
 
     def __init__(self, items, aspect, cache=None):
