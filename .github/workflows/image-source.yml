@@ -67,6 +67,8 @@ jobs:
   windows-python-314:
     name: Windows Python 3.14 installation + tests
     runs-on: windows-latest
+    permissions:
+      contents: write
     timeout-minutes: 25
     env:
       QT_QPA_PLATFORM: offscreen
@@ -88,24 +90,19 @@ jobs:
         run: |
           set -o pipefail
           python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c 2>&1 | tee win-tests.log
-      - name: Report Windows failures to pull request
-        if: steps.wintests.outcome == 'failure' && github.event_name == 'pull_request'
+      - name: Publish the Windows test log (branch win-test-log)
+        if: always() && steps.wintests.outcome != 'skipped'
+        continue-on-error: true
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        shell: bash
         run: |
-          {
-            echo '### Windows test failures'
-            echo '```text'
-            if grep -qE '^(FAIL|ERROR):' win-tests.log; then
-              awk '/^(FAIL|ERROR):/{p=1} p' win-tests.log | head -n 160 || true
-            else
-              echo 'No unittest summary. Last 60 lines:'; tail -n 60 win-tests.log || true
-            fi
-            echo '```'
-          } > win-comment.md
-          gh pr comment "$PR_NUMBER" --body-file win-comment.md
+          mkdir -p ../winlog && cp win-tests.log ../winlog/win-tests.log
+          cd ../winlog
+          git init -q && git checkout -q -b win-test-log
+          git config user.name ci && git config user.email ci@example.invalid
+          git add win-tests.log && git commit -qm "Windows tests for ${{ github.sha }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" win-test-log
       - name: Stop if Windows tests failed
         if: steps.wintests.outcome == 'failure'
         shell: bash
