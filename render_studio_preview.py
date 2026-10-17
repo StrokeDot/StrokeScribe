@@ -251,6 +251,16 @@ for _i in range(45):
     _frames.append(_bg.convert('RGB'))
 _frames[0].save(str(out/'overlays.gif'),save_all=True,append_images=_frames[1:]+[_frames[-1]]*6,duration=80,loop=0)
 _o.close()
+# Elements (VideoScribe style): the element strip and the element editor window.
+_e=Window(); _e.resize(1490,890); _e.apply_theme('dark'); _e.show(); app.processEvents()
+_e.duration.setValue(2.)
+_e.add_scene(); _e.set_drawing(_imp('samples/arthur-headset-traced.svg')); _e.duration.setValue(1.5)
+_e.scenes[0]['name']='House'; _e.scenes[1]['name']='Headset'; _e.fill_scenes()
+_e.scene_list.setCurrentRow(0); app.processEvents()
+_e.grab().save(str(out/'elements.png'))
+from element_dialog import ElementDialog
+_ed=ElementDialog(_e,0); _ed.pairs[0][0].setCurrentText('Pop in'); _ed.seek(.35); _ed.show(); app.processEvents()
+_ed.grab().save(str(out/'element-editor.png')); _ed.reject(); _e.close()
 # Setup & system check window, with the real checks of the build machine.
 import preflight
 from setup_wizard import SetupDialog
