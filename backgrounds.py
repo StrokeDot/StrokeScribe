@@ -11,6 +11,39 @@ import numpy as np
 COLORS = {'White': (255, 255, 255), 'Dark': (36, 45, 59), 'Black': (0, 0, 0)}
 TEXTURES = ('Whiteboard', 'Paper', 'Chalkboard', 'Cork')
 CHOICES = tuple(COLORS) + TEXTURES
+# The one Background of a video (top of the preview): preview and every export.
+BACKGROUND_ITEMS = ('Transparent', 'White', 'Dark', 'Whiteboard', 'Paper', 'Chalkboard', 'Cork', 'Black',
+                    'Custom colour…')
+
+
+def spec(choice, custom='#f5f0e4'):
+    """'transparent', 'white', 'dark', 'black', a texture ('paper'…) or '#rrggbb' for a menu choice."""
+    text = str(choice or '').strip().lower().replace(' background', '')
+    if not text or text.startswith('transparen'):
+        return 'transparent'
+    if text.startswith('custom'):
+        return str(custom or '#f5f0e4').lower()
+    if text in ('white', 'dark', 'black') or text in (t.lower() for t in TEXTURES):
+        return text
+    if text.startswith('#') and len(text) in (4, 7):
+        return text
+    return 'transparent'
+
+
+def picture_png(value, width, height, path):
+    """The background as a PNG (for FFmpeg): colour, texture or custom colour."""
+    from PIL import Image
+    value = spec(value) if not str(value).startswith('#') else value
+    names = {t.lower(): t for t in TEXTURES}
+    named = {'white': 'White', 'dark': 'Dark', 'black': 'Black'}
+    if value in names or value in named:
+        return save_png(names.get(value) or named[value], width, height, path)
+    colour = str(value).lstrip('#')
+    if len(colour) == 3:
+        colour = ''.join(c * 2 for c in colour)
+    rgb = tuple(int(colour[i:i + 2], 16) for i in (0, 2, 4))
+    Image.new('RGB', (width, height), rgb).save(path)
+    return path
 _CACHE = {}
 
 

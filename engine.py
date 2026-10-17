@@ -276,17 +276,31 @@ def _audio_args(audio, codec):
     return ['-i', str(audio)], ['-map', '0:v', '-map', '1:a', '-c:a', *codec, '-shortest']
 
 
-def encode_mov(folder, fps=30, audio=None):
+def _backdrop(folder, fps, background, audio, audio_codec):
+    """Inputs / filter / maps that put the frames on the video Background (None: keep transparency)."""
+    if not background or background=='transparent':
+        extra_in,audio_out=_audio_args(audio,audio_codec)
+        return extra_in,[],audio_out if audio else ['-an']
+    folder=Path(folder)
+    info=json.loads((folder/'sequence.json').read_text())
+    from backgrounds import picture_png
+    png=picture_png(background,int(info['width']),int(info['height']),folder/'background.png')
+    inputs=['-loop','1','-framerate',str(fps),'-i',str(png)]+(['-i',str(audio)] if audio else [])
+    maps=['-map','[v]']+(['-map','2:a','-c:a',*audio_codec,'-shortest'] if audio else ['-an'])
+    return inputs,['-filter_complex','[1:v][0:v]overlay=shortest=1:format=auto[v]'],maps
+
+
+def encode_mov(folder, fps=30, audio=None, background=None):
     ffmpeg=shutil.which('ffmpeg')
     if not ffmpeg: raise RuntimeError('FFmpeg was not found on PATH. PNG frames have still been exported.')
     output=Path(folder)/'animation_prores4444.mov'
-    extra_in,audio_out=_audio_args(audio,['pcm_s16le'])
-    cmd=[ffmpeg,'-n','-hide_banner','-loglevel','error','-framerate',str(fps),'-i',str(Path(folder)/'frame_%06d.png'),*extra_in,'-c:v','prores_ks','-profile:v','4','-pix_fmt','yuva444p10le','-alpha_bits','16',*(audio_out if audio else []),str(output)]
+    extra_in,filters,audio_out=_backdrop(folder,fps,background,audio,['pcm_s16le'])
+    cmd=[ffmpeg,'-n','-hide_banner','-loglevel','error','-framerate',str(fps),'-i',str(Path(folder)/'frame_%06d.png'),*extra_in,*filters,*audio_out,'-c:v','prores_ks','-profile:v','4','-pix_fmt','yuva444p10le','-alpha_bits','16',str(output)]
     result=subprocess.run(cmd,capture_output=True,text=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
     if result.returncode: raise RuntimeError(result.stderr[-2000:])
     return output
 
-def encode_webm(folder, fps=30, quality=28, audio=None):
+def encode_webm(folder, fps=30, quality=28, audio=None, background=None):
     """Create a smaller, genuinely alpha-bearing VP9 WebM from PNG frames.
 
     Filmora import of external VP9 alpha files must still be visually tested.
@@ -301,9 +315,9 @@ def encode_webm(folder, fps=30, quality=28, audio=None):
         raise ValueError('WebM quality must be in the range 18–42.')
     folder=Path(folder)
     output=folder/'animation_vp9_alpha.webm'
-    extra_in,audio_out=_audio_args(audio,['libopus','-b:a','128k'])
+    extra_in,filters,audio_out=_backdrop(folder,fps,background,audio,['libopus','-b:a','128k'])
     cmd=[ffmpeg,'-n','-hide_banner','-loglevel','error',
-         '-framerate',str(fps),'-i',str(folder/'frame_%06d.png'),*extra_in,
+         '-framerate',str(fps),'-i',str(folder/'frame_%06d.png'),*extra_in,*filters,
          *audio_out,'-c:v','libvpx-vp9','-deadline','good','-cpu-used','4',
          '-row-mt','1','-b:v','0','-crf',str(quality),
          '-auto-alt-ref','0','-pix_fmt','yuva420p',str(output)]
@@ -351,15 +365,19 @@ def encode_mp4(folder, fps=30, background='white', audio=None):
         raise RuntimeError('FFmpeg was not found on PATH. PNG frames have still been exported.')
     from backgrounds import TEXTURES
     textures={t.lower():t for t in TEXTURES}
-    if background not in MP4_BACKGROUNDS and background not in textures:
-        raise ValueError('MP4 background must be white, dark, black or a texture.')
+    background=(background or 'white').lower()
+    if background=='transparent':
+        background='white'                      # MP4 cannot be transparent
+    custom=background.startswith('#')
+    if background not in MP4_BACKGROUNDS and background not in textures and not custom:
+        raise ValueError('MP4 background must be white, dark, black, a texture or a colour.')
     folder=Path(folder)
     info=json.loads((folder/'sequence.json').read_text())
     width,height=int(info['width']),int(info['height'])
-    output=folder/f'animation_{background}_background.mp4'
-    if background in textures:
-        from backgrounds import save_png
-        texture=save_png(textures[background],width,height,folder/'background.png')
+    output=folder/f'animation_{"custom" if custom else background}_background.mp4'
+    if background in textures or custom:
+        from backgrounds import picture_png
+        texture=picture_png(background,width,height,folder/'background.png')
         background_input=['-loop','1','-framerate',str(fps),'-i',str(texture)]
     else:
         color=f"color=c=0x{MP4_BACKGROUNDS[background]}:s={width}x{height}:r={fps}"

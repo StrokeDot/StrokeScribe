@@ -873,12 +873,22 @@ def build_workspace(w, Canvas, BRAND_ICON):
     from font_library import STARTER_FONTS
     w.font_select=QComboBox()
     w.font_select.setEditable(True)
-    w.font_select.addItems(['Built-in single-line pen']+list(STARTER_FONTS))
+    w.font_select.addItem('Built-in single-line pen')
+    from font_library import FONT_GROUPS
+    for group,families in FONT_GROUPS.items():
+        w.font_select.insertSeparator(w.font_select.count())
+        for family in families:
+            w.font_select.addItem(family)
+            w.font_select.setItemData(w.font_select.count()-1,f'{group} • free Google Font (open license, '
+                                      'commercial use allowed). Downloaded when you choose it.',Qt.ItemDataRole.ToolTipRole)
     w.font_select.setToolTip('Select an open-licensed Google Fonts family. Download before use, or import your own TTF/OTF.')
     asset_l.addWidget(w.font_select)
     w.font_size=w.number(24,128,68,4)
     font_size_form=form_layout()
-    font_size_form.addRow('Glyph detail size',w.font_size)
+    w.font_size.setToolTip('How finely the letters are traced into pen lines. Higher: smoother letters '
+                           '(more small lines, slower to prepare). Lower: simpler letters. It does NOT change '
+                           'how big the text is: use Artwork size (Animation tab) for that.')
+    font_size_form.addRow('Letter detail',w.font_size)
     asset_l.addLayout(font_size_form)
     style_form=form_layout()
     w.font_color_button=QPushButton('Letter color: #25364A')
@@ -890,6 +900,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.font_bg_mode.setToolTip('Background of lettering exports and preview, independent of the checkerboard preview setting.')
     w.font_bg_mode.currentIndexChanged.connect(w.select_letter_background)
     style_form.addRow('Lettering background',w.font_bg_mode)
+    w.font_bg_mode.hide(); style_form.labelForField(w.font_bg_mode).hide()   # one Background for all (top)
     asset_l.addLayout(style_form)
     w.generate_text=QPushButton('Animate lettering')
     w.generate_text.clicked.connect(w.letter)
@@ -897,7 +908,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.download_font=QPushButton('Download selected font')
     w.download_font.clicked.connect(w.install_selected_font)
     asset_l.addWidget(w.download_font)
-    w.download_starters=QPushButton('Download 10 handwriting fonts')
+    from font_library import STARTER_FONTS as _ALL_FONTS
+    w.download_starters=QPushButton(f'Download all {len(_ALL_FONTS)} fonts')
+    w.download_starters.setToolTip('Download every font in the list at once (about 10–40 MB; already '
+                                   'downloaded fonts are skipped). Or choose one and use it: it downloads by itself.')
     w.download_starters.clicked.connect(w.install_starter_fonts)
     asset_l.addWidget(w.download_starters)
     w.import_font_button=QPushButton('Import TTF / OTF…')
@@ -963,12 +977,14 @@ def build_workspace(w, Canvas, BRAND_ICON):
     monitor_l=QVBoxLayout(body);monitor_l.setContentsMargins(10,10,10,8)
     monitor_l.setSpacing(8)
     monitor_outer.addWidget(body,1)
+    from backgrounds import BACKGROUND_ITEMS
     w.preview_background=QComboBox()
-    w.preview_background.addItems(['Transparency grid','White background','Dark background',
-                                   'Whiteboard','Paper','Chalkboard','Cork'])
-    w.preview_background.setToolTip('Preview background. Transparent exports keep transparency; '
-                                    'the MP4 uses the same background.')
-    w.preview_background.setAccessibleName('Preview background')
+    w.preview_background.addItems(list(BACKGROUND_ITEMS))
+    w.preview_background.setToolTip('Background of the whole video — drawings, images and lettering, the '
+                                    'preview and every export. Transparent: MOV, WebM and PNG keep '
+                                    'transparency (MP4 is then white).')
+    w.preview_background.setAccessibleName('Background')
+    top.addWidget(label('Background','panelHint'))
     top.addWidget(w.preview_background)
     well=QFrame();well.setObjectName('monitorWell')
     well_l=QVBoxLayout(well);well_l.setContentsMargins(1,1,1,1)
@@ -1009,9 +1025,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.clock_total.setAlignment(Qt.AlignmentFlag.AlignRight|Qt.AlignmentFlag.AlignVCenter)
     tr.addWidget(w.clock_total)
     monitor_l.addWidget(transport)
-    w.preview_background.currentIndexChanged.connect(w.canvas.set_background)
+    w.preview_background.activated.connect(lambda index: w.background_chosen(index))
+    w.preview_background.currentIndexChanged.connect(lambda index: w.show_background())
     w.preview_background.currentIndexChanged.connect(
-        lambda index: index>0 and w.mp4_background.setCurrentIndex(index-1 if index<=2 else index))
+        lambda index: 0<index<=6 and w.mp4_background.setCurrentIndex(index-1 if index<=2 else index))
     split.addWidget(monitor)
 
     # Inspector settings grouped by task (right).
@@ -1140,6 +1157,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     hand_l.addWidget(w.hand_name)
     w.showhand=QCheckBox('Show hand while drawing')
     w.showhand.setChecked(True);hand_l.addWidget(w.showhand)
+    w.left_handed=QCheckBox('Left-handed (the hand comes from the left)')
+    w.left_handed.setToolTip('Mirrors the drawing hand, the painting brush and the eraser, for left-handers.')
+    hand_l.addWidget(w.left_handed)
     hand_l.addWidget(caption('New hands get their pen tip found automatically. '
                              'Adjust it here if lines do not start exactly at the pen.'))
     tip_row=QHBoxLayout()
@@ -1209,6 +1229,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.mp4_background.setToolTip('Background of the MP4: a colour or a texture (matches the preview backgrounds).')
     e3=form_layout();e3.addRow('MP4 background',w.mp4_background)
     output_l.addLayout(e3)
+    # One Background for everything now (top of the preview); kept for older projects.
+    w.mp4_background.hide(); e3.labelForField(w.mp4_background).hide()
+    w.background_note=label('Background: chosen above the preview (the same for the whole video).','note')
+    w.background_note.setWordWrap(True)
+    output_l.addWidget(w.background_note)
     from frame_render import LAYERS
     w.export_layers=QComboBox();w.export_layers.addItems(list(LAYERS))
     w.export_layers.setToolTip('Hand only: just the moving hand on a transparent background, to lay over '
@@ -1437,6 +1462,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     for widget in (w.duration,w.speed,w.thickness,w.artwork_size,w.picture_x,w.picture_y,w.handsize,w.ax,w.ay):
         widget.valueChanged.connect(w.refresh)
     w.showhand.toggled.connect(w.refresh)
+    w.left_handed.toggled.connect(w.refresh)
     w.res.currentIndexChanged.connect(w.refresh)
     w.use_color.toggled.connect(w.refresh)
     w.color_fade.valueChanged.connect(w.refresh)

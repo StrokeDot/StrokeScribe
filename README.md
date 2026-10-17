@@ -160,6 +160,14 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## One background, 55 fonts, natural pen, left hand (v0.5.3-experimental.53)
+
+- **One Background for everything:** the menu above the preview (Transparent, White, Dark, Whiteboard, Paper, Chalkboard, Cork, Black or any colour) is the background of the whole video: drawings, images and lettering, the preview and every export (MP4, MOV, WebM). "Lettering background" and "MP4 background" are gone. Transparent: MOV, WebM and PNG keep transparency (MP4 is then white).
+- **55 free fonts** (Google Fonts, open licenses: also for commercial use), in groups: Handwriting, Script, Clean titles, Serif. A font downloads by itself the first time you use it; "Download all" gets them all at once.
+- **Letter detail** (was "Glyph detail size"): how finely letters are traced into pen lines. It does not change the text size.
+- **Natural pen movement** is now clearly different: each line speeds up and slows down, the pen lifts for a moment between lines, and long lines go faster than short ones.
+- **Left-handed:** Hand tab → "Left-handed": the hand, the painting brush and the eraser come from the left.
+
 ## Fixes: deleting scenes, a log, calm mouse wheel (v0.5.3-experimental.52)
 
 - **Deleting scenes:** after deleting a scene, the next delete, playing and autosave stopped working ("list index out of range"). Fixed: the scene number is updated before the next scene is loaded.

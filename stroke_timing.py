@@ -29,10 +29,14 @@ def pace_value(name):
     return dict(PACES)[name]
 
 
+NATURAL_LIFT = .08          # Natural: seconds the pen lifts between lines (a real hand does)
+NATURAL_LENGTH = .8         # Natural: long lines go faster than short ones (time ~ length^0.8)
+
+
 def ease(f):
-    """Gentle start and end of a line (60 % smoothstep, 40 % constant speed)."""
+    """Natural: the pen speeds up into a line and slows down at its end (clearly visible)."""
     f = max(0., min(1., f))
-    return .4 * f + .6 * f * f * (3 - 2 * f)
+    return .1 * f + .9 * f * f * f * (f * (f * 6 - 15) + 10)
 
 
 def custom(drawing):
@@ -46,6 +50,9 @@ def pauses(drawing):
     """Pause of each stroke as a share of the drawing time (after capping)."""
     seconds = max(.001, float(getattr(drawing, 'draw_seconds', 0.) or 0.))
     raw = [max(0., float(getattr(s, 'pause', 0.) or 0.)) for s in drawing.strokes]
+    if getattr(drawing, 'pen_ease', 'off') == 'natural' and len(raw) > 1:
+        lift = min(NATURAL_LIFT, .25 * seconds / len(raw))       # short drawings: shorter lifts
+        raw = [r + lift for r in raw[:-1]] + raw[-1:]
     if not getattr(drawing, 'draw_seconds', None):
         return [0.] * len(raw)
     total = sum(raw)
@@ -57,13 +64,16 @@ def pauses(drawing):
 def _schedule(drawing):
     """[(stroke start time share, moving share, pause share, ink before, length)]."""
     key = (tuple(id(s) for s in drawing.strokes), getattr(drawing, 'draw_seconds', None),
+           getattr(drawing, 'pen_ease', 'off'),
            tuple((getattr(s, 'pace', 1.), getattr(s, 'pause', 0.)) for s in drawing.strokes))
     cached = getattr(drawing, '_timing_cache', None)
     if cached and cached[0] == key:
         return cached[1]
     rests = pauses(drawing)
     moving = 1. - sum(rests)
-    weights = [s.length * max(.05, float(getattr(s, 'pace', 1.) or 1.)) for s in drawing.strokes]
+    natural = getattr(drawing, 'pen_ease', 'off') == 'natural'
+    weights = [(s.length ** NATURAL_LENGTH if natural else s.length) * max(.05, float(getattr(s, 'pace', 1.) or 1.))
+               for s in drawing.strokes]
     total_weight = sum(weights) or 1.
     out = []
     t = ink = 0.

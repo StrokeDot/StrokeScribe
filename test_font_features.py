@@ -26,7 +26,8 @@ def sample_font():
 
 class FontAndScaleTests(unittest.TestCase):
     def test_ten_handwriting_choices(self):
-        self.assertEqual(len(STARTER_FONTS),10)
+        self.assertGreaterEqual(len(STARTER_FONTS),50)
+        self.assertEqual(len(set(STARTER_FONTS)),len(STARTER_FONTS))
         self.assertEqual(font_slug('Indie Flower'),'indieflower')
         with self.assertRaises(ValueError):font_slug('../')
 

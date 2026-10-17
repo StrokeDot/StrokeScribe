@@ -21,11 +21,22 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from engine import Drawing, Stroke
 
-STARTER_FONTS=(
-    'Caveat','Kalam','Patrick Hand','Indie Flower','Dancing Script',
-    'Sacramento','Gochi Hand','Architects Daughter',
-    'Shadows Into Light','Reenie Beanie',
-)
+# Open-licensed Google Fonts (OFL or Apache 2.0: free, also for commercial use),
+# downloaded on request with their license. Grouped in the font list.
+FONT_GROUPS={
+    'Handwriting':('Caveat','Kalam','Patrick Hand','Indie Flower','Gochi Hand','Architects Daughter',
+                   'Shadows Into Light','Reenie Beanie','Amatic SC','Permanent Marker','Rock Salt',
+                   'Covered By Your Grace','Gloria Hallelujah','Handlee','Nothing You Could Do','Homemade Apple',
+                   'Just Another Hand','Schoolbell','Coming Soon','Neucha','Over the Rainbow',
+                   'Annie Use Your Telescope','La Belle Aurore','Zeyada','Delius','Mali','Sriracha','Caveat Brush',
+                   'Pangolin','Delicious Handrawn','Sue Ellen Francisco','Short Stack'),
+    'Script':('Dancing Script','Sacramento','Satisfy','Great Vibes','Pacifico','Courgette','Kaushan Script',
+              'Allura'),
+    'Clean titles':('Nunito','Poppins','Montserrat','Lato','Quicksand','Comfortaa','Fredoka','Bebas Neue',
+                    'Oswald','Bangers','Luckiest Guy','Chewy'),
+    'Serif':('Merriweather','Playfair Display','Lora'),
+}
+STARTER_FONTS=tuple(f for group in FONT_GROUPS.values() for f in group)
 MAX_FONT_BYTES=12_000_000
 API_ROOT='https://api.github.com/repos/google/fonts/contents'
 BINARY_HOST='https://raw.githubusercontent.com/google/fonts/'

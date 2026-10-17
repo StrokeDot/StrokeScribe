@@ -62,6 +62,17 @@ class TimingTests(unittest.TestCase):
         self.assertAlmostEqual(stroke_timing.ink_progress(d, .5), .5, places=6)
         self.assertGreater(stroke_timing.ink_progress(d, .45), .45)       # gentle end
 
+    def test_natural_is_clearly_different(self):
+        strokes = [_Stroke([(0, i * 10), (100 if i % 2 else 20, i * 10)]) for i in range(6)]
+        plain = _Drawing(strokes, draw_seconds=4.)
+        natural = _Drawing(strokes, draw_seconds=4., pen_ease='natural')
+        diff = max(abs(stroke_timing.ink_progress(plain, k / 50) - stroke_timing.ink_progress(natural, k / 50))
+                   for k in range(51))
+        self.assertGreater(diff, .04)                       # visible, not a tiny change
+        # The pen lifts between lines: the ink stands still for a moment.
+        ink = [stroke_timing.ink_progress(natural, k / 400) for k in range(401)]
+        self.assertTrue(any(ink[k + 1] == ink[k] and 0 < ink[k] < 1 for k in range(400)))
+
     def test_image_drawing_pause(self):
         from image_drawing import drawing_state
         strokes = lines(1, 1)

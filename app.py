@@ -50,7 +50,7 @@ def timecode(seconds):
 class Canvas(QWidget):
     """Program monitor: the frame on its preview background, plus a loading card."""
     def __init__(self):
-        super().__init__(); self.frame=None; self.background=0; self.setMinimumSize(550,330)
+        super().__init__(); self.frame=None; self.background=0; self.custom_colour=None; self.setMinimumSize(550,330)
         self.busy_text=None; self.busy_percent=None; self.busy_detail=''
         self._spin=0
         self._spinner=QTimer(self); self._spinner.setInterval(40)
@@ -154,7 +154,10 @@ class Canvas(QWidget):
             from PySide6.QtGui import QPainterPath as _Path
             rounded=_Path(); rounded.addRoundedRect(QRectF(x,y,size.width(),size.height()),10,10)
             p.save(); p.setClipPath(rounded)
-            if self.background>=3:
+            if self.background==7 or self.background==8:
+                p.fillRect(x,y,size.width(),size.height(),QColor('#000000' if self.background==7
+                                                                 else (self.custom_colour or '#f5f0e4')))
+            elif self.background>=3:
                 from backgrounds import TEXTURES, texture_qimage
                 key=(TEXTURES[self.background-3],size.width(),size.height())
                 if getattr(self,'_texture_key',None)!=key:
@@ -273,9 +276,9 @@ class PreviewSound:
 class Exporter(QThread):
     progress=Signal(int,int); done=Signal(str); failed=Signal(str)
     def __init__(self,drawing,folder,options,mov,webm=False,webm_quality=28,keep_png=True,
-                 mp4=False,mp4_background='white',sound_volume=None):
+                 mp4=False,mp4_background='white',sound_volume=None,background=None):
         super().__init__()
-        self.sound_volume=sound_volume
+        self.sound_volume=sound_volume; self.background=background
         self.drawing=drawing; self.folder=Path(folder); self.options=options
         self.mov=mov; self.webm=webm; self.webm_quality=webm_quality
         self.keep_png=keep_png; self.mp4=mp4; self.mp4_background=mp4_background
@@ -285,7 +288,7 @@ class Exporter(QThread):
             self.done.emit(run_export(
                 self.drawing,self.folder,self.options,self.mov,self.webm,self.webm_quality,
                 self.keep_png,self.mp4,self.mp4_background,self.sound_volume,
-                progress=self.progress.emit,interrupted=self.isInterruptionRequested))
+                progress=self.progress.emit,interrupted=self.isInterruptionRequested,background=self.background))
         except Exception as e: self.failed.emit(str(e))
 
 class PlanWorker(QThread):
@@ -953,6 +956,28 @@ class Window(QMainWindow):
         QApplication.clipboard().setText(applog.tail(300))
         self.status.setText('The last part of the log is copied: paste it in the chat with Henry.')
 
+    # ------------------------------------------------------------ background
+    def export_backgrounds(self):
+        from export_job import backgrounds_from_settings
+        return backgrounds_from_settings(self.settings_state())
+
+    def background_spec(self):
+        from backgrounds import spec
+        return spec(self.preview_background.currentText(),getattr(self,'background_color',None))
+
+    def show_background(self):
+        self.canvas.custom_colour=getattr(self,'background_color',None)
+        self.canvas.set_background(self.preview_background.currentIndex())
+
+    def background_chosen(self,index):
+        """Custom colour…: pick the colour."""
+        if self.preview_background.itemText(index).startswith('Custom'):
+            colour=QColorDialog.getColor(QColor(getattr(self,'background_color',None) or '#f5f0e4'),self,'Background colour')
+            if colour.isValid():
+                self.background_color=colour.name()
+                self.preview_background.setItemText(index,'Custom colour…')
+            self.show_background(); self.note_change()
+
     def drag_picture(self,kind,dx,dy):
         """Drag on the preview: move the picture on the page (Position X / Y), or a frame on the Board."""
         if self.board_mode() or (kind!='start' and getattr(self,'_board_drag',None)):
@@ -1142,7 +1167,7 @@ class Window(QMainWindow):
     # ------------------------------------------------------------ projects
     PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
-                      'use_color','preserve_colors','showhand','show_paint_hand','handsize','ax','ay',
+                      'use_color','preserve_colors','showhand','left_handed','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
                       'sound_on','sound_volume','sound_preview','preview_background','image_detail',
                       'image_style','image_animation_style','clean_faint',
@@ -1312,7 +1337,15 @@ class Window(QMainWindow):
         self.update_sound_buttons()
         letter=data.get('letter',{})
         self.letter_ink_color=letter.get('ink',self.letter_ink_color)
-        self.letter_bg_color=letter.get('background')
+        self.background_color=settings.get('background_color') or getattr(self,'background_color',None)
+        old_bg=letter.get('background')
+        self.letter_bg_color=None                 # one Background for all now (top of the preview)
+        if old_bg and self.preview_background.currentIndex()==0:
+            self.background_color=old_bg          # an older lettering project: keep its background
+            self.preview_background.blockSignals(True)
+            self.preview_background.setCurrentIndex(self.preview_background.count()-1)
+            self.preview_background.blockSignals(False)
+        self.show_background()
         if data.get('source')=='image' and data.get('image'):
             from image_reconstruct import Reconstruction
             from image_regions import segment_regions
@@ -2033,10 +2066,18 @@ class Window(QMainWindow):
                 if not label.startswith('Local: ') or not font_path:
                     font_path=installed_font(label)
                 if font_path is None:
-                    QMessageBox.information(self,'Handwriting font',
-                        'This font has not been downloaded yet. Click '
-                        '"Download selected Google Font" first, or import a local TTF/OTF file.')
-                    return
+                    # Not downloaded yet: get it now (a small file, with its open license).
+                    from font_library import download_google_font
+                    self.show_busy_now('Getting the font',f'Downloading {label} from Google Fonts…')
+                    try:
+                        font_path=download_google_font(label)
+                    except Exception as exc:
+                        QMessageBox.information(self,'Handwriting font',
+                            f'"{label}" could not be downloaded ({exc}). Check the internet connection, '
+                            'or import a local TTF/OTF file.')
+                        return
+                    finally:
+                        self.clear_busy()
                 drawing=make_font_text(self.text.toPlainText(),font_path,
                                        int(self.font_size.value()))
             drawing.source_kind=getattr(drawing,'source_kind','lettering')
@@ -2398,6 +2439,7 @@ class Window(QMainWindow):
         state['paint_hand_path']=self.paint_hand_path
         state.update(self.sound_files)
         state['paint_hand_tip']=self.paint_hand_tip
+        state['background_color']=getattr(self,'background_color',None)
         return state
 
     # ------------------------------------------------- voiceover, timing
@@ -2762,7 +2804,7 @@ class Window(QMainWindow):
                              self.mov.isChecked(),self.webm.isChecked(),
                              self.webm_quality.value(),self.keep_png.isChecked(),
                              mp4=self.mp4.isChecked(),
-                             mp4_background=self.mp4_background.currentText().lower(),
+                             **self.export_backgrounds(),
                              sound_volume=self.sound_volume.value()/100 if self.sound_on.isChecked() else None)
         self.worker.progress.connect(self.export_progress); self.worker.done.connect(lambda p:self.export_done('Saved: '+p)); self.worker.done.connect(lambda _p: self.export_done_sound.isChecked() and play_finished_sound()); self.worker.failed.connect(lambda e:self.export_done('Export stopped: '+e)); self.worker.finished.connect(self.export_finished)
         self.export.setEnabled(False); self.quick_export.setEnabled(False); self.cancel.setEnabled(True); self.status.setText('Exporting locally…')

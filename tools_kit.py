@@ -86,6 +86,27 @@ def place(rect, hand):
 _CACHE = {}
 
 
+_MIRRORED = {}
+
+
+def mirrored(image):
+    """The picture flipped left ↔ right (left-handed), cached (same result object every time)."""
+    if image is None or image.isNull():
+        return image
+    key = image.cacheKey()
+    out = _MIRRORED.get(key)
+    if out is None:
+        from PySide6.QtCore import Qt
+        try:
+            out = image.flipped(Qt.Orientation.Horizontal)
+        except (AttributeError, TypeError):
+            out = image.mirrored(True, False)
+        if len(_MIRRORED) > 24:
+            _MIRRORED.clear()
+        _MIRRORED[key] = out
+    return out
+
+
 def painting_hand(settings, hand):
     """The painting hand chosen in the Hand tab (None: hidden while painting).
 
@@ -111,13 +132,17 @@ def painting_hand(settings, hand):
         stamp = None
     if stamp is None:
         return hand                                  # file gone: fall back to the drawing hand
-    key = (path, stamp, tuple(known) if known else None, share, hand_scale, anchor)
+    left = bool(s.get('left_handed'))
+    key = (path, stamp, tuple(known) if known else None, share, hand_scale, anchor, left)
     tool = _CACHE.get(key)
     if tool is None:
         from PySide6.QtGui import QImage
         image = QImage(path)
         if image.isNull():
             return hand
+        if left:                                     # the brush in the left hand
+            image = mirrored(image)
+            known = (1 - float(known[0]), float(known[1])) if known else None
         tool = painting_tool(image, tip_for_image(image, known), share, hand_scale, anchor)
         if len(_CACHE) > 16:
             _CACHE.clear()

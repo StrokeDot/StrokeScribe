@@ -22,6 +22,11 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     painted and the Image source rules apply).
     """
     width, height = [int(x.strip()) for x in str(s.get('res', '1920 × 1080')).split('×')]
+    if s.get('left_handed'):
+        # Left-handed: the hand (and brush, eraser) mirrored; its pen tip moves to the other side.
+        from tools_kit import mirrored
+        hand = mirrored(hand)
+        s = dict(s, ax=1 - float(s.get('ax', .08)))
     reveal = REVEAL_BY_TEXT.get(s.get('reveal_mode'), 'adaptive')
     options = dict(
         duration=float(s.get('duration', 4)) / max(.01, float(s.get('speed', 1))),
@@ -91,23 +96,37 @@ def erase_from_settings(s, hand=None):
         return None
     size = float(s.get('erase_size', 8)) / 100.
     use_hand = s.get('eraser') == 'Pen hand' and hand is not None and not hand.isNull()
+    left = bool(s.get('left_handed'))
+    if left and not use_hand:
+        from tools_kit import mirrored
     return dict(mode=mode, seconds=float(s.get('erase_time', 3)), size=size,
-                image=hand if use_hand else builtin_eraser(),
-                anchor=(float(s.get('ax', .08)), float(s.get('ay', .13))) if use_hand else ERASER_TIP,
+                image=hand if use_hand else (mirrored(builtin_eraser()) if left else builtin_eraser()),
+                anchor=(float(s.get('ax', .08)), float(s.get('ay', .13))) if use_hand
+                else ((1 - ERASER_TIP[0], ERASER_TIP[1]) if left else ERASER_TIP),
                 width=float(s.get('handsize', .75)) if use_hand else max(.1, size * 2.2))
+
+
+def backgrounds_from_settings(s):
+    """The one Background (top of the preview) for every export. Old projects: their MP4 background."""
+    from backgrounds import spec
+    choice = s.get('preview_background')
+    value = spec(choice, s.get('background_color')) if choice is not None else 'transparent'
+    if value == 'transparent':
+        return dict(mp4_background=(s.get('mp4_background') or 'White').lower(), background=None)
+    return dict(mp4_background=value, background=value)
 
 
 def formats_from_settings(s):
     return dict(mov=bool(s.get('mov')), webm=bool(s.get('webm')),
                 webm_quality=int(s.get('webm_quality', 28)), keep_png=bool(s.get('keep_png')),
                 mp4=bool(s.get('mp4')),
-                mp4_background=(s.get('mp4_background') or 'White').lower(),
+                **backgrounds_from_settings(s),
                 sound_volume=(int(s.get('sound_volume', 80)) / 100) if s.get('sound_on', True) else None)
 
 
 def run_export(drawing, folder, options, mov=False, webm=False, webm_quality=28, keep_png=True,
                mp4=False, mp4_background='white', sound_volume=None, progress=lambda i, n: None,
-               interrupted=lambda: False):
+               interrupted=lambda: False, background=None):
     """Frames, optional soundtrack, then the chosen videos. Returns a summary."""
     from engine import export_frames
     folder = Path(folder)
@@ -133,18 +152,18 @@ def run_export(drawing, folder, options, mov=False, webm=False, webm_quality=28,
         audio = mix(audio, voice['path'], voice['volume'], voice['offset'],
                     timeline_seconds(drawing, options), folder / 'soundtrack.wav')
     return encode_outputs(folder, options['fps'], mov, webm, webm_quality, keep_png, mp4, mp4_background,
-                          audio=audio, progress=progress, interrupted=interrupted)
+                          audio=audio, progress=progress, interrupted=interrupted, background=background)
 
 
 def encode_outputs(folder, fps, mov=False, webm=False, webm_quality=28, keep_png=True, mp4=False,
                    mp4_background='white', sound_volume=None, audio=None, progress=lambda i, n: None,
-                   interrupted=lambda: False):
+                   interrupted=lambda: False, background=None):
     """Encode the PNG frames in `folder` into the chosen videos. Returns a summary."""
     from engine import encode_mov, encode_mp4, encode_webm
     folder = Path(folder)
     videos = []
-    for wanted, make in ((webm, lambda: encode_webm(folder, fps, webm_quality, audio)),
-                         (mov, lambda: encode_mov(folder, fps, audio)),
+    for wanted, make in ((webm, lambda: encode_webm(folder, fps, webm_quality, audio, background)),
+                         (mov, lambda: encode_mov(folder, fps, audio, background)),
                          (mp4, lambda: encode_mp4(folder, fps, mp4_background, audio))):
         if not wanted:
             continue
