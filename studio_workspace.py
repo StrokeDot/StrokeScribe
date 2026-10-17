@@ -7,13 +7,13 @@ existing modules. No third-party product assets or lookalike trade dress.
 from __future__ import annotations
 
 from pathlib import Path
-from PySide6.QtCore import Qt, QPointF, QRectF, Signal
+from PySide6.QtCore import Qt, QPointF, QRectF, Signal, QObject, QEvent
 from PySide6.QtGui import QColor, QPainter, QPen, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QWidget, QFrame, QScrollArea, QSplitter, QVBoxLayout,
     QHBoxLayout, QFormLayout, QPushButton, QLabel, QComboBox, QCheckBox,
     QSpinBox, QListWidget, QPlainTextEdit, QSlider, QTabWidget,
-    QProgressBar, QSizePolicy,
+    QProgressBar, QSizePolicy, QAbstractSpinBox, QAbstractScrollArea,
 )
 from version import APP_VERSION, DISPLAY_NAME
 
@@ -642,6 +642,27 @@ class LineList(QListWidget):
 
 # Inspector tabs, in order.
 TABS = {'animation': 0, 'hand': 1, 'sound': 2, 'export': 3}
+
+
+class WheelGuard(QObject):
+    """The mouse wheel scrolls the panel, not the list or number box under the mouse:
+    a list or number box reacts to the wheel only after you clicked it (it has focus)."""
+
+    def eventFilter(self, obj, event):
+        if event.type()==QEvent.Type.Wheel and isinstance(obj,(QComboBox,QAbstractSpinBox)) and not obj.hasFocus():
+            area=obj.parentWidget()
+            while area is not None and not isinstance(area,QAbstractScrollArea):
+                area=area.parentWidget()
+            if area is not None:
+                QApplication.sendEvent(area.verticalScrollBar(),event)
+            return True
+        return False
+
+
+def calm_wheel(root):
+    """Lists and number boxes get focus only by clicking (not by the wheel)."""
+    for widget in root.findChildren(QComboBox)+root.findChildren(QAbstractSpinBox):
+        widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
 
 def build_workspace(w, Canvas, BRAND_ICON):
@@ -1470,3 +1491,6 @@ def build_workspace(w, Canvas, BRAND_ICON):
         w.delete_shortcuts.append(shortcut)
     w.update_theme_button()
     w.sync_workspace()
+    calm_wheel(w)
+    w.wheel_guard=WheelGuard(w)
+    QApplication.instance().installEventFilter(w.wheel_guard)

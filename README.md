@@ -160,6 +160,12 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Fixes: deleting scenes, a log, calm mouse wheel (v0.5.3-experimental.52)
+
+- **Deleting scenes:** after deleting a scene, the next delete, playing and autosave stopped working ("list index out of range"). Fixed: the scene number is updated before the next scene is loaded.
+- **Log:** StrokeScribe now keeps a log with every error and its details: Help → Open log folder (or Help → Copy the log, to paste it in a bug report). When something goes wrong, the bottom line says so.
+- **Mouse wheel:** the wheel scrolls the panel. Lists and number boxes change with the wheel only after you click on them.
+
 ## Overlays: pictures and titles on their own tracks (v0.5.3-experimental.51)
 
 - **+ Picture / + Text** (Timeline header, or Edit menu): a picture (PNG, JPG, SVG) or a title appears on top of the scene at the playhead, at the same time as the hand draws, on its own track below the drawing (like a video editor).

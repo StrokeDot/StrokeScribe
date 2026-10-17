@@ -156,6 +156,9 @@ def build_menus(w):
 
     # ---------------------------------------------------------------- Help
     help_menu = bar.addMenu('&Help'); w.menus['help'] = help_menu
+    help_menu.addAction('Open log folder', lambda: w.open_log_folder())
+    help_menu.addAction('Copy the log (for a bug report)', lambda: w.copy_log())
+    help_menu.addSeparator()
     help_menu.addAction('Setup && system check…', lambda: w.open_setup())
     help_menu.addAction('Check for updates…', lambda: w.open_updates())
     help_menu.addSeparator()

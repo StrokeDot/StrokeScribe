@@ -422,6 +422,9 @@ class Window(QMainWindow):
         self.brush_preview_timer.setSingleShot(True)
         self.brush_preview_timer.setInterval(180)
         self.brush_preview_timer.timeout.connect(self.quiet_refresh)
+        import applog
+        applog.setup()
+        applog._on_error.append(self.show_error)
         from studio_workspace import build_workspace
         build_workspace(self,Canvas,BRAND_ICON)
         self.canvas.on_click=self.click_preview
@@ -600,6 +603,7 @@ class Window(QMainWindow):
             self.show_busy_now('Preparing the eraser','Finding where the picture is…')
             erase_setup(self.drawing,opts,erase)
         except Exception as exc:
+            import applog; applog.error('Eraser could not be prepared',exc)
             self.status.setText('Eraser could not be prepared: '+str(exc)[:160])
         finally:
             self._preparing=False
@@ -935,6 +939,20 @@ class Window(QMainWindow):
         if overlays.state_at(item,self.playhead_seconds()) is None: return None
         return overlays.box(item,self.canvas.frame.width(),self.canvas.frame.height())
 
+    def show_error(self,text):
+        """Something went wrong: say so (the details are in the log)."""
+        if hasattr(self,'status'):
+            self.status.setText('⚠ Something went wrong: '+text[:160]+'  •  Details: Help → Open log folder')
+
+    def open_log_folder(self):
+        import applog
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(applog.folder())))
+
+    def copy_log(self):
+        import applog
+        QApplication.clipboard().setText(applog.tail(300))
+        self.status.setText('The last part of the log is copied: paste it in the chat with Henry.')
+
     def drag_picture(self,kind,dx,dy):
         """Drag on the preview: move the picture on the page (Position X / Y), or a frame on the Board."""
         if self.board_mode() or (kind!='start' and getattr(self,'_board_drag',None)):
@@ -1205,6 +1223,7 @@ class Window(QMainWindow):
             self._autosaved=self.history.current
             return True
         except Exception as exc:
+            import applog; applog.error('Autosave failed',exc)
             self.status.setText('Autosave failed: '+str(exc)[:120])
             return False
 
@@ -1345,7 +1364,7 @@ class Window(QMainWindow):
 
     def store_scene(self,thumbnail=True):
         """Keep the edited scene's state (and a fresh thumbnail) in the scene list."""
-        if not self.drawing: return
+        if not self.drawing or not 0<=self.scene_index<len(self.scenes): return
         scene=self.scenes[self.scene_index]
         scene['name']=scene.get('name') or None
         if thumbnail:
@@ -1409,16 +1428,27 @@ class Window(QMainWindow):
         self._scene_cache.pop(id(self.scenes[self.scene_index]['state']),None)
 
     def _enter_scene(self,k):
+        import applog
+        k=max(0,min(int(k),len(self.scenes)-1))
         state=self.scenes[k]['state']
+        previous=self.scene_index
+        # The scene number changes BEFORE loading: while it loads, the timeline and the
+        # board already ask for "the current scene" (after a delete, the old number may
+        # not exist any more).
+        self.scene_index=k
         self._entering_scene=True                  # loading a scene is not new artwork
         try:
-            self.apply_scene_state(state)
+            if state is not None:
+                self.apply_scene_state(state)
         except Exception as exc:
+            applog.error(f'Scene {k+1} could not be opened',exc)
+            if 0<=previous<len(self.scenes) and self.scenes[previous]['state'] is None and previous!=k:
+                self.scene_index=previous            # stay on the scene being edited
+                self.fill_scenes(); return
             QMessageBox.warning(self,'Scene',f'Scene {k+1} could not be opened: {exc}')
-            self.fill_scenes(); return
         finally:
             self._entering_scene=False
-        self.scene_index=k
+        applog.info('Editing scene %d of %d',k+1,len(self.scenes))
         self.scenes[k]['state']=None              # lives in the editor now
         self._scene_cache={key:v for key,v in self._scene_cache.items()
                            if any(id(s['state'])==key for s in self.scenes)}
@@ -1437,7 +1467,8 @@ class Window(QMainWindow):
     def add_scene(self):
         """A new scene after the current one (starts as a copy; import its own artwork)."""
         if not self.drawing or (self.builder and self.builder.isRunning()): return
-        import copy
+        import copy, applog
+        applog.info('Adding a scene after scene %d',self.scene_index+1)
         self.playing=False
         self._leave_scene()
         current=self.scenes[self.scene_index]
@@ -1481,7 +1512,10 @@ class Window(QMainWindow):
         if answer!=QMessageBox.StandardButton.Yes: return
         self.playing=False
         removed=self.scene_index
+        import applog
+        applog.info('Deleting scene %d of %d',removed+1,len(self.scenes))
         del self.scenes[removed]
+        self._scene_cache={}; self._base_cache=OrderedDict()
         self._enter_scene(min(removed,len(self.scenes)-1))
         self.status.setText(f'Scene {removed+1} deleted.')
 
@@ -1581,7 +1615,7 @@ class Window(QMainWindow):
     def drawn_over(self,k):
         """True when pictures of earlier scenes can be seen in scene k's frame."""
         import board
-        if k<=0 or len(self.scenes)<2: return False
+        if k<=0 or len(self.scenes)<2 or k>=len(self.scenes): return False
         return board.has_base(self.board_frames(),k,self.board_aspect())
 
     def edited_key(self):
@@ -1616,6 +1650,7 @@ class Window(QMainWindow):
         try:
             world=self.preview_world(960,round(960*aspect))
         except Exception as exc:
+            import applog; applog.error('Board could not be drawn',exc)
             self.status.setText('Board could not be drawn: '+str(exc)[:200]); return
         frames=world.frames
         view=getattr(self,'_board_view',None) if getattr(self,'_board_drag',None) else None
@@ -1967,6 +2002,7 @@ class Window(QMainWindow):
         try:
             return str(library.Library().add(category,path).path)
         except Exception as exc:
+            import applog; applog.error('Could not keep a library copy',exc)
             self.status.setText('Could not keep a library copy: '+str(exc)[:150])
             return path
 
@@ -2522,6 +2558,7 @@ class Window(QMainWindow):
         except Exception as exc:
             # An invalid/expensive brush configuration must not throw out of
             # the Qt signal handler and terminate the application.
+            import applog; applog.error('Preview could not be updated',exc)
             self.status.setText('Preview could not be updated: '+str(exc)[:220])
             return
         self.canvas.frame=frame
@@ -2552,6 +2589,7 @@ class Window(QMainWindow):
             try:
                 lengths,joins=self.scene_timeline(width,height)
             except Exception as exc:
+                import applog; applog.error('Preview could not be updated',exc)
                 self.status.setText('Preview could not be updated: '+str(exc)[:220]); return False
             segments=[]
             for n,(length,join) in enumerate(zip(lengths,joins)):
@@ -2751,6 +2789,7 @@ class Window(QMainWindow):
         self.export_encoding=(n==0)
         self.update_export_status()
     def export_done(self,message):
+        import applog; applog.info('Export finished: %s (took %s)',message,self.export_elapsed())
         if hasattr(self,'export_clock'): self.export_clock.stop()
         self.status.setText(f'{message}  •  took {self.export_elapsed()}'); self.status.setWordWrap(True)
     def export_finished(self):
