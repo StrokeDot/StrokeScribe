@@ -65,6 +65,12 @@ class StageTimeline(QFrame):
     audio_moved=Signal(float)           # new start time of the audio clip (seconds)
     audio_dropped=Signal(str)           # an audio file dropped on the timeline
     audio_remove=Signal()
+    overlay_selected=Signal(str)        # an overlay clip was clicked ('' = none)
+    overlay_changed=Signal(str,float,float,int)   # id, start, duration, track (while dragging)
+    overlay_done=Signal(str)            # drag finished
+    overlay_edit=Signal(str)            # double-click: open its settings
+    overlay_action=Signal(str,str)      # id, 'edit' / 'duplicate' / 'delete'
+    overlay_dropped=Signal(str,float)   # a picture file dropped on the overlay tracks, at seconds
 
     STAGE_KEYS=('draw','paint','hold','erase')
     EDGE=6.                             # pixels: grab distance for a clip edge
@@ -86,6 +92,8 @@ class StageTimeline(QFrame):
         self.current_scene=0
         self.audio=None            # {'start', 'seconds', 'name', 'envelope'} or None
         self.editable=set(self.STAGE_KEYS)   # stages whose length can be dragged
+        self.overlays=[]           # overlay clips of the scene (dicts, see overlays.py)
+        self.selected_overlay=None
         self._drag=None
         self._frozen=None          # time scale kept still while a clip edge is dragged
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -111,6 +119,19 @@ class StageTimeline(QFrame):
         self.audio=dict(audio) if audio else None
         self.update()
 
+    CLIP_H=34.; LANE_H=22.; AUDIO_H=26.
+
+    def tracks(self):
+        if self.scene_segments: return 0
+        return (max(int(o.get('track',0)) for o in self.overlays)+1) if self.overlays else 0
+
+    def set_overlays(self, items, selected=None):
+        self.overlays=list(items or ())
+        self.selected_overlay=selected
+        need=int(22+6+self.CLIP_H+4+(self.LANE_H+3)*max(1,self.tracks())+self.AUDIO_H+10)
+        self.setMinimumHeight(max(104,need)); self.setMaximumHeight(max(140,need+20))
+        self.update()
+
     LEFT=12.
     RIGHT=12.
 
@@ -120,9 +141,32 @@ class StageTimeline(QFrame):
 
     def _rows(self):
         ruler_h=22.; top=ruler_h+6.
-        height=max(40.,self.height()-top-6.)
-        clip_h=height*.56
-        return ruler_h,QRectF(self.LEFT,top,self._width(),clip_h),QRectF(self.LEFT,top+clip_h+4,self._width(),height-clip_h-4)
+        clips=QRectF(self.LEFT,top,self._width(),self.CLIP_H)
+        y=clips.bottom()+4
+        n=self.tracks()
+        lane_top=y
+        y+=(self.LANE_H+3)*n if n else 0
+        audio=QRectF(self.LEFT,y,self._width(),max(18.,min(self.AUDIO_H+10,self.height()-y-4)))
+        return ruler_h,clips,audio
+
+    def _lane(self, track):
+        _,clips,_=self._rows()
+        return QRectF(self.LEFT,clips.bottom()+4+(self.LANE_H+3)*track,self._width(),self.LANE_H)
+
+    def _overlay_rect(self, item):
+        lane=self._lane(int(item.get('track',0)))
+        x0=self._x(float(item.get('start',0))); x1=self._x(float(item.get('start',0))+float(item.get('duration',3)))
+        return QRectF(x0,lane.top(),max(8.,x1-x0),lane.height())
+
+    def _overlay_at(self, pos):
+        if self.scene_segments or self.locked: return None,None
+        for item in reversed(self.overlays):
+            r=self._overlay_rect(item)
+            if r.adjusted(-3,0,3,0).contains(pos):
+                if abs(pos.x()-r.right())<=self.EDGE: return item,'end'
+                if abs(pos.x()-r.left())<=self.EDGE and r.width()>3*self.EDGE: return item,'start'
+                return item,'move'
+        return None,None
 
     def _width(self):
         return max(1.,self.width()-self.LEFT-self.RIGHT)
@@ -235,6 +279,26 @@ class StageTimeline(QFrame):
                 p.setFont(small)
             x+=part
         p.restore()
+        # Overlay tracks: pictures and titles on top of the drawing.
+        if not self.scene_segments and self.overlays:
+            for track in range(self.tracks()):
+                lane=self._lane(track)
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(lane,7,7)
+            p.save(); p.setClipRect(QRectF(left,0,width,self.height()))
+            colour=QColor(c.get('accent_b','#4C42DE'))
+            for item in self.overlays:
+                r=self._overlay_rect(item).adjusted(1,2,-1,-2)
+                chosen=item.get('id')==self.selected_overlay
+                fill=QColor(colour if item.get('kind')!='text' else QColor(c.get('erase','#E06A86')))
+                fill.setAlpha(235 if chosen else 185)
+                p.setPen(QPen(QColor('white') if chosen else fill.lighter(130),2 if chosen else 1)); p.setBrush(fill)
+                p.drawRoundedRect(r,6,6)
+                if r.width()>30:
+                    p.setPen(QColor('white')); p.setFont(small)
+                    icon='T ' if item.get('kind')=='text' else '▣ '
+                    p.drawText(r.adjusted(7,0,-6,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
+                               icon+str(item.get('name') or '')[:40])
+            p.restore()
         # Audio lane.
         if not self.scene_segments:
             p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track']))
@@ -292,6 +356,18 @@ class StageTimeline(QFrame):
             event.accept(); return
         pos=event.position()
         if event.button()==Qt.MouseButton.RightButton:
+            item,_=self._overlay_at(pos)
+            if item is not None:
+                from PySide6.QtWidgets import QMenu
+                oid=item.get('id')
+                self.selected_overlay=oid; self.overlay_selected.emit(oid); self.update()
+                menu=QMenu(self)
+                menu.addAction('Settings…',lambda: self.overlay_action.emit(oid,'edit'))
+                menu.addAction('Duplicate',lambda: self.overlay_action.emit(oid,'duplicate'))
+                menu.addSeparator()
+                menu.addAction('Delete',lambda: self.overlay_action.emit(oid,'delete'))
+                menu.exec(event.globalPosition().toPoint())
+                event.accept(); return
             rect=self._audio_rect()
             if rect is not None and rect.contains(pos):
                 from PySide6.QtWidgets import QMenu
@@ -301,6 +377,13 @@ class StageTimeline(QFrame):
             event.accept(); return
         if event.button()!=Qt.MouseButton.LeftButton or self.total()<=0:
             return super().mousePressEvent(event)
+        item,part=self._overlay_at(pos)
+        if item is not None:
+            self.selected_overlay=item.get('id'); self.overlay_selected.emit(item.get('id'))
+            self._frozen=self.total()
+            self._drag=('overlay',item,part,pos.x(),pos.y(),float(item.get('start',0)),
+                        float(item.get('duration',3)),int(item.get('track',0)),self._width()/self.total())
+            self.update(); event.accept(); return
         key=self._edge_at(pos)
         if key:
             start=next(t for k,_,t in self._edges() if k==key)
@@ -322,6 +405,21 @@ class StageTimeline(QFrame):
         pos=event.position()
         if self._drag and event.buttons() & Qt.MouseButton.LeftButton:
             kind=self._drag[0]
+            if kind=='overlay':
+                _,item,part,x0,y0,start0,length0,track0,px_per_sec=self._drag
+                shift=(pos.x()-x0)/px_per_sec
+                total=self._frozen or self.total()
+                start,length,track=start0,length0,track0
+                if part=='move':
+                    start=max(0.,min(total-.1,start0+shift))
+                    track=max(0,min(5,track0+int(round((pos.y()-y0)/(self.LANE_H+3)))))
+                elif part=='end':
+                    length=max(.2,min(total-start0,length0+shift))
+                else:
+                    start=max(0.,min(start0+length0-.2,start0+shift)); length=start0+length0-start
+                self.overlay_changed.emit(item.get('id'),round(start,2),round(length,2),track)
+                self.setToolTip(f'{item.get("name","")}: {start:.1f} s → {start+length:.1f} s')
+                event.accept(); return
             if kind=='edge':
                 _,key,start,px_per_sec=self._drag
                 seconds=max(.1,(pos.x()-self.LEFT)/px_per_sec-start)
@@ -334,6 +432,10 @@ class StageTimeline(QFrame):
                 self._seek(pos.x())
             event.accept(); return
         # Hover: show what can be grabbed.
+        item,part=self._overlay_at(pos)
+        if item is not None:
+            self.setCursor(Qt.CursorShape.SizeHorCursor if part in ('start','end') else Qt.CursorShape.OpenHandCursor)
+            return super().mouseMoveEvent(event)
         if self._edge_at(pos):
             self.setCursor(Qt.CursorShape.SizeHorCursor)
         else:
@@ -342,7 +444,16 @@ class StageTimeline(QFrame):
                            else Qt.CursorShape.PointingHandCursor)
         super().mouseMoveEvent(event)
 
+    def mouseDoubleClickEvent(self,event):
+        item,_=self._overlay_at(event.position())
+        if item is not None:
+            self.overlay_edit.emit(item.get('id')); event.accept(); return
+        super().mouseDoubleClickEvent(event)
+
     def mouseReleaseEvent(self,event):
+        if self._drag and self._drag[0]=='overlay':
+            self._frozen=None
+            self.overlay_done.emit(self._drag[1].get('id'))
         if self._drag and self._drag[0]=='edge':
             self._frozen=None
             self.stage_drag_done.emit()
@@ -353,15 +464,16 @@ class StageTimeline(QFrame):
 
     # ------------------------------------------------------------ drop audio
     AUDIO_TYPES=('.mp3','.wav','.m4a','.aac','.ogg','.flac','.opus','.wma')
+    PICTURE_TYPES=('.png','.jpg','.jpeg','.webp','.bmp','.svg')
 
-    def _audio_url(self, event):
+    def _audio_url(self, event, types=None):
         for url in event.mimeData().urls() if event.mimeData().hasUrls() else []:
-            if url.isLocalFile() and url.toLocalFile().lower().endswith(self.AUDIO_TYPES):
+            if url.isLocalFile() and url.toLocalFile().lower().endswith(types or self.AUDIO_TYPES):
                 return url.toLocalFile()
         return None
 
     def dragEnterEvent(self, event):
-        if self._audio_url(event):
+        if self._audio_url(event) or (not self.scene_segments and self._audio_url(event,self.PICTURE_TYPES)):
             event.acceptProposedAction()
         else:
             event.ignore()
@@ -370,11 +482,19 @@ class StageTimeline(QFrame):
         path=self._audio_url(event)
         if path:
             self.audio_dropped.emit(path)
+            event.acceptProposedAction(); return
+        picture=self._audio_url(event,self.PICTURE_TYPES)
+        if picture and not self.scene_segments:
+            x=event.position().x()
+            seconds=max(0.,min(self.total(),(x-self.LEFT)/self._width()*self.total()))
+            self.overlay_dropped.emit(picture,round(seconds,2))
             event.acceptProposedAction()
 
     def keyPressEvent(self,event):
         if self.locked:
             event.accept(); return
+        if event.key() in (Qt.Key.Key_Delete,Qt.Key.Key_Backspace) and self.selected_overlay:
+            self.overlay_action.emit(self.selected_overlay,'delete'); return
         if event.key() in (Qt.Key.Key_Left,Qt.Key.Key_Right):
             self.slider.setValue(self.slider.value()+(-10 if event.key()==Qt.Key.Key_Left else 10))
         elif event.key()==Qt.Key.Key_Home:
@@ -1183,6 +1303,16 @@ def build_workspace(w, Canvas, BRAND_ICON):
 
     # Time-based workflow remains visible whichever Inspector tab is open.
     timeline,timeline_outer,timeline_head=panel('timelinePanel','Timeline','Click or drag to scrub')
+    # Overlays (pictures and titles on top of the scene, on their own tracks).
+    w.add_picture_overlay=QPushButton('+ Picture'); w.add_picture_overlay.setObjectName('subtle')
+    w.add_picture_overlay.setToolTip('Put a picture on top of this scene (PNG, JPG or SVG), with an entrance '
+                                     'effect. It appears at the playhead; drag its clip to change when.')
+    w.add_picture_overlay.clicked.connect(lambda checked=False: w.add_overlay_picture())
+    timeline_head.addWidget(w.add_picture_overlay)
+    w.add_text_overlay=QPushButton('+ Text'); w.add_text_overlay.setObjectName('subtle')
+    w.add_text_overlay.setToolTip('Put a title or label on top of this scene, with an entrance effect.')
+    w.add_text_overlay.clicked.connect(lambda checked=False: w.add_overlay_text())
+    timeline_head.addWidget(w.add_text_overlay)
     w.timeline_status=label('','panelHint')
     timeline_head.addWidget(w.timeline_status)
     body=QWidget();body.setObjectName('panelBody')
@@ -1263,6 +1393,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.audio_offset.valueChanged.connect(lambda value: w.stage_timeline.set_audio(w.timeline_audio()))
     w.stage_timeline.audio_dropped.connect(lambda path: w.audio_dropped(path))
     w.stage_timeline.audio_remove.connect(lambda: w.remove_audio())
+    w.stage_timeline.overlay_selected.connect(lambda oid: w.select_overlay(oid))
+    w.stage_timeline.overlay_changed.connect(lambda oid,start,length,track: w.move_overlay_clip(oid,start,length,track))
+    w.stage_timeline.overlay_done.connect(lambda oid: w.commit_history())
+    w.stage_timeline.overlay_edit.connect(lambda oid: w.edit_overlay(oid))
+    w.stage_timeline.overlay_action.connect(lambda oid,action: w.overlay_action(oid,action))
+    w.stage_timeline.overlay_dropped.connect(lambda path,seconds: w.add_overlay_picture(path,at=seconds))
     w.vertical_splitter.addWidget(timeline)
     w.vertical_splitter.setStretchFactor(0,1)
     w.vertical_splitter.setStretchFactor(1,0)

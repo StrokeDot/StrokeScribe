@@ -224,6 +224,30 @@ for _i in range(72):
     _frames.append(_bg.convert('RGB'))
 _frames[0].save(str(out/'board-flight.gif'),save_all=True,append_images=_frames[1:]+[_frames[-1]]*8,duration=90,loop=0)
 _b.close()
+# Overlays: a title sliding in and a picture popping in while the hand draws (GIF + screenshot).
+import overlays as _ov
+_o=Window(); _o.resize(1490,890); _o.apply_theme('dark'); _o.show(); app.processEvents()
+_o.duration.setValue(3.)
+_t=_ov.new_text('How it works',start=.2,duration=2.6); _t.update(effect_in='Slide from top',y=.13,color='#3A2FB0')
+_o.overlays.append(_t)
+_sun=_ov.new_image('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><circle cx="50" cy="50" r="26" '
+                   'fill="#F5B83D"/><g stroke="#F5B83D" stroke-width="7" stroke-linecap="round">'
+                   '<line x1="50" y1="4" x2="50" y2="16"/><line x1="50" y1="84" x2="50" y2="96"/>'
+                   '<line x1="4" y1="50" x2="16" y2="50"/><line x1="84" y1="50" x2="96" y2="50"/></g></svg>',
+                   'svg','Sun',start=1.,duration=1.9)
+_sun.update(x=.82,y=.33,size=.14,effect_in='Pop',track=1)
+_o.overlays.append(_sun)
+_o.selected_overlay=_sun['id']
+_o.refresh(); _o.slider.setValue(600); app.processEvents()
+_o.grab().save(str(out/'overlays.png'))
+_frames=[]
+for _i in range(45):
+    _o.position=_i/44
+    _img=_o.render_view(_i/44,640)
+    _f=_pil(_img).convert('RGBA'); _bg=_Image.new('RGBA',_f.size,(255,255,255,255)); _bg.alpha_composite(_f)
+    _frames.append(_bg.convert('RGB'))
+_frames[0].save(str(out/'overlays.gif'),save_all=True,append_images=_frames[1:]+[_frames[-1]]*6,duration=80,loop=0)
+_o.close()
 # Setup & system check window, with the real checks of the build machine.
 import preflight
 from setup_wizard import SetupDialog

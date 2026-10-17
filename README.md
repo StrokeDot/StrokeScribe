@@ -160,6 +160,15 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Overlays: pictures and titles on their own tracks (v0.5.3-experimental.51)
+
+- **+ Picture / + Text** (Timeline header, or Edit menu): a picture (PNG, JPG, SVG) or a title appears on top of the scene at the playhead, at the same time as the hand draws, on its own track below the drawing (like a video editor).
+- **Effects:** comes in with Fade, Pop (with a small bounce), Slide from left / right / top / bottom, Zoom or Spin; goes out with any of them too.
+- **Timeline:** drag a clip to change when it appears (up / down: another track), drag its edges to change how long it stays. Double-click: settings. Right-click: settings, duplicate, delete. Drop a picture file on the timeline to add it there.
+- **Preview:** click a picture or title to select it, drag it to move it, mouse wheel to make it bigger or smaller, double-click for its settings.
+- **Settings window:** text, font, colour, bold, size, position, when it appears and for how long, the effects and their speed. Every change shows at once.
+- Overlays belong to their scene (on the board they fly with the camera), are saved in the project, can be undone, and are drawn over the drawing and under the hand. SVG pictures and titles stay sharp at any size.
+
 ## The board: the camera flies between scenes (v0.5.3-experimental.50)
 
 - **One big board, like VideoScribe:** every scene has a frame on one board. The camera shows a scene's frame while it is drawn, then flies (zooms out, moves, zooms in) to the next frame. Everything already drawn stays on the board.

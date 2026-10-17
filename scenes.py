@@ -155,6 +155,7 @@ def job_from_state(data, hand=None, overrides=None):
     else:
         options = options_from_settings(s, drawing, color_image=qimage_from_b64(data.get('color_png')),
                                         hand=scene_hand)
+    options['overlays'] = list(data.get('overlays') or [])
     return drawing, options, s
 
 

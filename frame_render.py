@@ -64,6 +64,8 @@ def _core(drawing, fraction, opts, camera_path=None):
     layers = opts.get('layers', 'all')
     ghost = float(opts.get('ghost', 0) or 0)
     dx, dy = offset_of(opts)
+    items = opts.get('overlays') if layers != 'hand' else None
+    seconds = opts.get('_seconds')
     opts = {k: v for k, v in opts.items() if k in RENDER_KEYS}
     scale = opts.pop('artwork_scale', 1.0)
     width, height = opts['width'], opts['height']
@@ -82,6 +84,21 @@ def _core(drawing, fraction, opts, camera_path=None):
         if ghost > 0:
             hand_only = _ghosted(scale_animation_frame(frame, scale, None), hand_only, ghost)
         frame = hand_only
+    elif items and seconds is not None:
+        # Overlays go over the drawing and under the hand.
+        import overlays
+        from hand_layer import draw_captured
+        from PySide6.QtCore import QRectF
+        frame = shift(scale_animation_frame(frame, scale, None), dx, dy)
+        if frame is not None:
+            frame = frame.copy()
+        overlays.paint(frame, items, seconds)
+        if layers != 'art' and hands:
+            f = float(scale) or 1.
+            moved = [(QRectF(r.x() + dx * big_w / f, r.y() + dy * big_h / f, r.width(), r.height()), h)
+                     for r, h in hands]
+            frame = draw_captured(frame, moved, scale)
+        return crop(frame, width, height, zoom, cx, cy)
     elif layers == 'art':
         frame = scale_animation_frame(frame, scale, None)
     else:
@@ -145,11 +162,14 @@ def compose_frame(drawing, fraction, options, camera_path=None):
     """options: render_color_timeline keywords plus artwork_scale, duration and erase."""
     from engine import apply_lettering_background
     opts, erase, base_fraction, progress = split_erase(drawing, fraction, options)
+    items = opts.get('overlays') if opts.get('layers', 'all') != 'hand' else None
+    if items:
+        opts['_seconds'] = max(0., min(1., float(fraction))) * timeline_seconds(drawing, options)
     if progress is None:
         frame = _core(drawing, base_fraction, opts, camera_path)
     else:
         import eraser
-        hold, plan = erase_setup(drawing, opts, erase)
+        hold, plan = erase_setup(drawing, {k: v for k, v in opts.items() if k not in ('overlays', '_seconds')}, erase)
         frame = eraser.erase_frame(hold, plan, progress)
         point, _ = plan.state(progress)
         if frame is hold:
@@ -162,6 +182,11 @@ def compose_frame(drawing, fraction, options, camera_path=None):
             frame = eraser.draw_eraser(frame, point, erase.get('image'), erase.get('anchor', eraser.ERASER_TIP),
                                        float(erase.get('width', .18)))
         frame = shift(frame, *offset_of(opts))
+        if items:
+            import overlays
+            if frame is hold:
+                frame = hold.copy()
+            overlays.paint(frame, items, opts['_seconds'])     # overlays keep their own timing
         if camera_path is not None:
             frame = _camera_view(frame, *camera_path.at(fraction))
     if opts.get('layers', 'all') == 'hand' or opts.get('background') is False:

@@ -59,6 +59,7 @@ class Canvas(QWidget):
         self.on_drag=None           # on_drag('start', x, y) then ('move', dx, dy) / ('done'): dx, dy in fractions of the frame
         self.on_wheel=None          # on_wheel(steps, x, y) → False when not used
         self.on_double=None         # on_double(x, y)
+        self.box_provider=None      # () → (x, y, w, h) in frame pixels of a box to outline, or None
         self._press=None
         self.highlight=[]           # selected lines: polylines in frame pixels
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
@@ -166,6 +167,14 @@ class Canvas(QWidget):
             # Scaled while painting (no copy of the frame every time).
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             p.drawImage(QRectF(x,y,size.width(),size.height()),self.frame)
+            box=self.box_provider() if self.box_provider is not None else None
+            if box:
+                from PySide6.QtGui import QPen
+                k=size.width()/max(1,self.frame.width())
+                bx,by,bw,bh=box
+                p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor(255,255,255,200),3)); p.drawRoundedRect(QRectF(x+bx*k-3,y+by*k-3,bw*k+6,bh*k+6),6,6)
+                p.setPen(QPen(QColor(c['accent']),2,Qt.PenStyle.DashLine)); p.drawRoundedRect(QRectF(x+bx*k-3,y+by*k-3,bw*k+6,bh*k+6),6,6)
             if self.highlight:
                 from PySide6.QtGui import QPainterPath, QPen
                 from PySide6.QtCore import QPointF
@@ -405,6 +414,8 @@ class Window(QMainWindow):
         self._scene_cache={}           # preview of other scenes: id(state) -> prepared scene
         self._camera_key=None; self._camera_path=None
         self._frames=OrderedDict(); self._frame_bytes=0; self._view=None
+        self.overlays=[]               # pictures and titles on top of this scene (overlays.py)
+        self.selected_overlay=None
         # Rapid brush-width changes should not synchronously rebuild the entire
         # paint plan for every spinbox/wheel event on the GUI thread.
         self.brush_preview_timer=QTimer(self)
@@ -415,8 +426,9 @@ class Window(QMainWindow):
         build_workspace(self,Canvas,BRAND_ICON)
         self.canvas.on_click=self.click_preview
         self.canvas.on_drag=self.drag_picture
-        self.canvas.on_wheel=lambda steps,x,y: self.board_wheel(steps,x,y) if self.board_mode() else False
-        self.canvas.on_double=lambda x,y: self.board_double(x,y) if self.board_mode() else None
+        self.canvas.box_provider=self.overlay_box
+        self.canvas.on_wheel=self.preview_wheel
+        self.canvas.on_double=self.preview_double
         from menus import build_menus
         build_menus(self)
         self.watch_settings()
@@ -650,8 +662,10 @@ class Window(QMainWindow):
 
     # ------------------------------------------------ undo / redo (everything)
     def snapshot(self):
+        import json
         return {'settings':self.settings_state(),
-                'strokes':tuple(self.drawing.strokes) if self.drawing else ()}
+                'strokes':tuple(self.drawing.strokes) if self.drawing else (),
+                'overlays':json.dumps(getattr(self,'overlays',[]))}
 
     def reset_history(self):
         if hasattr(self,'history_timer'): self.history_timer.stop()
@@ -716,6 +730,10 @@ class Window(QMainWindow):
             self.update_sound_buttons()
             self.canvas.set_background(self.preview_background.currentIndex())
             self.preserve_colors.setEnabled(self.image_animation.currentIndex()!=1)
+            if 'overlays' in snapshot:
+                import json
+                self.overlays=json.loads(snapshot['overlays'])
+                if not any(o.get('id')==self.selected_overlay for o in self.overlays): self.selected_overlay=None
             if self.drawing is not None and snapshot['strokes']:
                 selected=set(id(s) for s in self.selected_strokes())
                 self.drawing.strokes=list(snapshot['strokes'])
@@ -806,10 +824,138 @@ class Window(QMainWindow):
             if d<best_d: best,best_d=i,d
         return best
 
+    # ------------------------------------------------------------ overlays
+    def scene_seconds(self):
+        from frame_render import timeline_seconds
+        return timeline_seconds(self.drawing,self.options()) if self.drawing else 4.
+
+    def playhead_seconds(self):
+        return self.position*self.scene_seconds()
+
+    def add_overlay(self,item):
+        """Put a new overlay at the playhead (on a free track) and open its settings."""
+        import overlays
+        total=self.scene_seconds()
+        start=min(max(0.,self.playhead_seconds()),max(0.,total-.5))
+        if self.position>=.999: start=0.
+        item['start']=round(start,2); item['duration']=round(max(.5,min(3.,total-start)),2)
+        busy=[o for o in self.overlays if overlays.end_of(o)>item['start'] and o['start']<overlays.end_of(item)]
+        used={int(o.get('track',0)) for o in busy}
+        item['track']=next(t for t in range(10) if t not in used)
+        self.overlays.append(item)
+        self.selected_overlay=item['id']
+        if self.preview_scope.currentIndex(): self.preview_scope.setCurrentIndex(0)
+        self.commit_history(); self.refresh()
+        return item
+
+    def add_overlay_picture(self,path=None,at=None):
+        import overlays
+        if not self.drawing: return None
+        if not path:
+            path,_=QFileDialog.getOpenFileName(self,'Add a picture on top','',
+                                               'Pictures (*.png *.jpg *.jpeg *.webp *.bmp *.svg)')
+            if not path: return None
+        try:
+            item=overlays.image_item_from_file(path)
+        except Exception as exc:
+            QMessageBox.warning(self,'Picture',f'This picture could not be opened: {exc}'); return None
+        if at is not None:
+            self.position=max(0.,min(1.,at/max(.01,self.scene_seconds())))
+        item=self.add_overlay(item)
+        self.status.setText(f'Picture "{item["name"]}" added at {item["start"]:.1f} s with a {item["effect_in"]} '
+                            'effect. Drag it on the preview to place it, double-click its clip for more.')
+        return item
+
+    def add_overlay_text(self):
+        import overlays
+        if not self.drawing: return None
+        item=self.add_overlay(overlays.new_text())
+        self.edit_overlay(item['id'])
+        return item
+
+    def find_overlay(self,oid):
+        return next((o for o in self.overlays if o.get('id')==oid),None)
+
+    def select_overlay(self,oid):
+        self.selected_overlay=oid or None
+        self.refresh()
+
+    def move_overlay_clip(self,oid,start,duration,track):
+        item=self.find_overlay(oid)
+        if item is None: return
+        item.update(start=start,duration=duration,track=track)
+        self.refresh()
+
+    def edit_overlay(self,oid):
+        from overlay_dialog import OverlayDialog
+        item=self.find_overlay(oid)
+        if item is None: return
+        self.selected_overlay=oid
+        dialog=OverlayDialog(self,item,self.scene_seconds(),changed=lambda it: self.refresh())
+        dialog.exec()
+        if dialog.deleted:
+            self.overlay_action(oid,'delete'); return
+        self.commit_history(); self.refresh()
+
+    def overlay_action(self,oid,action):
+        import copy, uuid
+        item=self.find_overlay(oid)
+        if item is None: return
+        if action=='edit':
+            self.edit_overlay(oid); return
+        if action=='duplicate':
+            twin=copy.deepcopy(item); twin['id']=uuid.uuid4().hex[:10]
+            twin['track']=max(int(o.get('track',0)) for o in self.overlays)+1
+            self.overlays.append(twin); self.selected_overlay=twin['id']
+        elif action=='delete':
+            self.overlays=[o for o in self.overlays if o.get('id')!=oid]
+            if self.selected_overlay==oid: self.selected_overlay=None
+            self.status.setText(f'Overlay "{item.get("name","")}" deleted (Ctrl+Z brings it back).')
+        self.commit_history(); self.refresh()
+
+    def overlay_at(self,x,y):
+        """The overlay shown at (x, y) of the preview now (the selected one first), or None."""
+        import overlays
+        if self.canvas.frame is None or not self.overlays: return None
+        W,H=self.canvas.frame.width(),self.canvas.frame.height()
+        t=self.playhead_seconds()
+        order=sorted(self.overlays,key=lambda o: (o.get('id')!=self.selected_overlay,-int(o.get('track',0))))
+        for item in order:
+            if overlays.state_at(item,t) is None: continue
+            bx,by,bw,bh=overlays.box(item,W,H)
+            if bx-6<=x<=bx+bw+6 and by-6<=y<=by+bh+6:
+                return item
+        return None
+
+    def overlay_box(self):
+        """Dashed box around the selected overlay on the preview (frame pixels), or None."""
+        import overlays
+        item=self.find_overlay(self.selected_overlay) if self.selected_overlay else None
+        if item is None or self.canvas.frame is None or self.all_scenes() or self.board_mode(): return None
+        if overlays.state_at(item,self.playhead_seconds()) is None: return None
+        return overlays.box(item,self.canvas.frame.width(),self.canvas.frame.height())
+
     def drag_picture(self,kind,dx,dy):
         """Drag on the preview: move the picture on the page (Position X / Y), or a frame on the Board."""
         if self.board_mode() or (kind!='start' and getattr(self,'_board_drag',None)):
             return self.board_drag(kind,dx,dy)
+        if kind=='start' and not self.all_scenes():
+            item=self.overlay_at(dx,dy)
+            if item is not None:
+                self.playing=False
+                self.selected_overlay=item['id']
+                self._overlay_drag=(item,float(item.get('x',.5)),float(item.get('y',.5)))
+                return True
+        drag=getattr(self,'_overlay_drag',None)
+        if drag is not None and kind!='start':
+            item,x0,y0=drag
+            if kind=='move':
+                item['x'],item['y']=round(x0+dx,4),round(y0+dy,4)
+                self.refresh()
+            else:
+                self._overlay_drag=None; self.commit_history(); self.refresh()
+                self.status.setText(f'"{item.get("name","")}" moved. Mouse wheel on it: bigger or smaller.')
+            return
         if kind=='start':
             if not self.drawing or self.all_scenes() or self.busy: return False
             self._drag_from=(self.picture_x.value(),self.picture_y.value())
@@ -825,6 +971,12 @@ class Window(QMainWindow):
                                 'Click "Center" (Animation tab) to put it back in the middle.')
 
     def click_preview(self,x,y,add=False):
+        if not self.board_mode() and not self.all_scenes():
+            item=self.overlay_at(x,y)
+            if item is not None or self.selected_overlay:
+                self.selected_overlay=item['id'] if item is not None else None
+                self.refresh()
+                if item is not None: return
         if self.board_mode():
             self.board_select(self.board_pick(x,y)); self.refresh(); return
         if self.all_scenes(): return          # lines are edited in "This scene" preview
@@ -1007,6 +1159,9 @@ class Window(QMainWindow):
         if self.paint_hand_path and Path(self.paint_hand_path).is_file():
             import base64
             state['paint_hand_png']=base64.b64encode(Path(self.paint_hand_path).read_bytes()).decode('ascii')
+        if self.overlays:
+            import copy
+            state['overlays']=copy.deepcopy(self.overlays)
         return state
 
     def save_project(self,save_as=False):
@@ -1110,6 +1265,9 @@ class Window(QMainWindow):
     def apply_scene_state(self,data):
         from projects import drawing_from_dict, qimage_from_b64, set_widget_value
         self.playing=False
+        import copy
+        self.overlays=copy.deepcopy(data.get('overlays') or [])
+        self.selected_overlay=None
         drawing=drawing_from_dict(data['drawing'])
         settings=data.get('settings',{})
         # Settings first (without a refresh storm), then the drawing.
@@ -1495,6 +1653,7 @@ class Window(QMainWindow):
             segments.append((f'{n+1} · {self.scene_label(n)}',length,'scene'))
             if join>0: segments.append((self.scenes[n]['transition'],join,'join'))
         self.stage_timeline.set_scenes(segments,current=self.scene_index)
+        self.stage_timeline.set_overlays([])
         total=sum(lengths)+sum(joins)
         self.stage_timeline.update_state(total,0,0,self.position)
         self.clock.setText(timecode(self.position*total)); self.clock_total.setText(timecode(total))
@@ -1564,6 +1723,17 @@ class Window(QMainWindow):
             self.fill_scenes(); self.show_board()
             self.note_change()
 
+    def preview_wheel(self,steps,x,y):
+        """Mouse wheel on the preview: resize a frame on the Board, or the overlay under the mouse."""
+        if self.board_mode(): return self.board_wheel(steps,x,y)
+        if self.all_scenes(): return False
+        item=self.overlay_at(x,y)
+        if item is None: return False
+        item['size']=max(.01,min(3.,float(item.get('size',.3))*(1.08**steps)))
+        self.selected_overlay=item['id']
+        self.note_change(); self.refresh()
+        return True
+
     def board_wheel(self,steps,x,y):
         k=self.board_pick(x,y)
         if k is None: k=self.scene_index
@@ -1574,6 +1744,12 @@ class Window(QMainWindow):
         self.fill_scenes(); self.show_board(); self.note_change()
         self.status.setText(f'Scene {k+1}: frame size {b["w"]*100:.0f}% of a normal scene. '
                             'Smaller frame = the camera zooms in more.')
+
+    def preview_double(self,x,y):
+        if self.board_mode(): return self.board_double(x,y)
+        if self.all_scenes(): return
+        item=self.overlay_at(x,y)
+        if item is not None: self.edit_overlay(item['id'])
 
     def board_double(self,x,y):
         k=self.board_pick(x,y)
@@ -2302,11 +2478,13 @@ class Window(QMainWindow):
     def options(self):
         from export_job import options_from_settings
         image_source=bool(self.source_type.currentIndex())
-        return options_from_settings(
+        options=options_from_settings(
             self.settings_state(),self.drawing,
             color_image=None if image_source else self.final_image,hand=self.hand,
             image_source=self.image_result.image if image_source and self.image_result else None,
             image_mode=image_source)
+        options['overlays']=list(getattr(self,'overlays',[]))
+        return options
 
     # ------------------------------------------------------------ preview
     PREVIEW_WIDTH=960
@@ -2318,7 +2496,8 @@ class Window(QMainWindow):
         d=self.drawing
         return (id(d),id(getattr(d,'strokes',None)),len(getattr(d,'strokes',()) or ()),self.scene_index,
                 self.all_scenes(),self.source_type.currentIndex(),id(self.final_image),
-                self.hand.cacheKey() if self.hand is not None else None,len(self.scenes))
+                self.hand.cacheKey() if self.hand is not None else None,len(self.scenes),
+                repr(getattr(self,'overlays',[])) if not self.playing else None)
 
     def clear_frames(self):
         """Forget the ready-made preview frames (something changed)."""
@@ -2379,11 +2558,13 @@ class Window(QMainWindow):
                 segments.append((f'{n+1} · {self.scene_label(n)}',length,'scene'))
                 if join>0: segments.append((self.scenes[n]['transition'],join,'join'))
             self.stage_timeline.set_scenes(segments,current=self.scene_index)
+            self.stage_timeline.set_overlays([])
             total=sum(lengths)+sum(joins)
             self.stage_timeline.update_state(total,0,0,self.position)
             self._view=dict(all=True,length=total,ratio=ratio,token=self._view_token())
             return True
         self.stage_timeline.set_scenes(None)
+        self.stage_timeline.set_overlays(self.overlays,self.selected_overlay)
         self.stage_timeline.set_audio(self.timeline_audio())
         self.stage_timeline.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() \
             else {'paint','hold','erase'}

@@ -102,12 +102,16 @@ def build_menus(w):
     edit.addSeparator()
     add_scene = edit.addAction('Add scene', lambda: w.add_scene())
     del_scene = edit.addAction('Delete scene', lambda: w.delete_scene())
+    edit.addSeparator()
+    add_pic = edit.addAction('Add picture on top…', lambda: w.add_overlay_picture())
+    add_text = edit.addAction('Add title…', lambda: w.add_overlay_text())
 
     def edit_state():
         undo.setEnabled(w.history.can_undo()); redo.setEnabled(w.history.can_redo())
         has_lines = bool(w.selected_rows()) if w.drawing else False
         delete.setEnabled(has_lines); reverse.setEnabled(has_lines)
         add_scene.setEnabled(w.drawing is not None); del_scene.setEnabled(len(w.scenes) > 1)
+        add_pic.setEnabled(w.drawing is not None); add_text.setEnabled(w.drawing is not None)
     edit.aboutToShow.connect(edit_state)
 
     # ---------------------------------------------------------------- View
