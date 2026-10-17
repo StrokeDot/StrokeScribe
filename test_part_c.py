@@ -98,8 +98,11 @@ class WindowTests(unittest.TestCase):
             self.assertFalse(w.font_size.isEnabled())            # Letter detail: real fonts only
             # A new element made with AI: nothing is added when the window is closed unused.
             from unittest import mock
-            with mock.patch('create_image_dialog.CreateImageDialog.exec', return_value=0):
+            w.ai_engine = object()
+            with mock.patch('create_image_dialog.CreateImageDialog') as dialog:
+                dialog.return_value.exec.return_value = 0
                 self.assertFalse(w.new_element('ai'))
+                self.assertTrue(dialog.called)
             self.assertEqual(len(w.scenes), 1)
         finally:
             w.close()

@@ -196,9 +196,11 @@ def create_font_drawing(text,fontfile,point_size=68):
     font=ImageFont.truetype(str(fontfile),point_size)
     lines=text.split('\n')
     ascent,descent=font.getmetrics()
-    line_height=ascent+descent+12
-    w=max(20,math.ceil(max(font.getlength(line) for line in lines)+40))
-    h=max(20,len(lines)*line_height+32)
+    # Margins follow the letter size, so the text sits the same at any Letter detail.
+    pad=point_size/68.
+    line_height=ascent+descent+12*pad
+    w=max(20,math.ceil(max(font.getlength(line) for line in lines)+40*pad))
+    h=max(20,math.ceil(len(lines)*line_height+32*pad))
     if w*h>MAX_INK_PIXELS:
         raise ValueError('Text is too large for tracing. Shorten it or lower the font size.')
     # How much bigger the ink is drawn than the tracing (1 = the same size).
@@ -214,11 +216,11 @@ def create_font_drawing(text,fontfile,point_size=68):
     strokes=[]
     boxes=[]
     for row,line in enumerate(lines):
-        y=10+row*line_height
-        painter.text((18*k,y*k),line,font=big,fill=(37,54,74,255))
+        y=10*pad+row*line_height
+        painter.text((18*pad*k,y*k),line,font=big,fill=(37,54,74,255))
         for index,char in enumerate(line):
             if char.isspace():continue
-            x=18+font.getlength(line[:index])
+            x=18*pad+font.getlength(line[:index])
             left,top,right,bottom=measure.textbbox((x,y),char,font=font)
             left=max(0,math.floor(left)-2); top=max(0,math.floor(top)-2)
             right=min(w,math.ceil(right)+2);bottom=min(h,math.ceil(bottom)+2)
