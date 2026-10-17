@@ -547,9 +547,9 @@ class CreateImageDialog(QDialog):
             self.memory[task] = dict(self.memory.get(task, {}), result_path=path, kept_path=kept)
             name = dict(TASKS).get(task, task)
             self.progress.setRange(0, 100); self.progress.setValue(100)
+            self.refresh()
             self.status.setText(f'Your “{name}” result is ready: click that tab to see it.'
                                 + (' It is also kept in your Library → Images.' if kept else ''))
-            self.refresh()
             return
         if self.task == 'sound':
             # AI sounds come out quiet: bring them to a normal level first.
