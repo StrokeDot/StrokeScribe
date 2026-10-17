@@ -20,7 +20,8 @@ class History:
         if a is None or b is None:
             return a is b
         return (a['settings'] == b['settings'] and len(a['strokes']) == len(b['strokes'])
-                and all(x is y for x, y in zip(a['strokes'], b['strokes'])))
+                and all(x is y for x, y in zip(a['strokes'], b['strokes']))
+                and a.get('overlays') == b.get('overlays'))
 
     def reset(self, snapshot):
         self.undo_stack.clear(); self.redo_stack.clear()
