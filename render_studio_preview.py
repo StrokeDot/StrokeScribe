@@ -240,6 +240,10 @@ _o.overlays.append(_sun)
 _o.selected_overlay=_sun['id']
 _o.refresh(); _o.slider.setValue(600); app.processEvents()
 _o.grab().save(str(out/'overlays.png'))
+_tl=_o.stage_timeline
+(out/'overlay-debug.txt').write_text(f'items {len(_tl.overlays)} tracks {_tl.tracks()} height {_tl.height()} '
+    f'min {_tl.minimumHeight()} max {_tl.maximumHeight()} rows {_tl._rows()} '
+    f'rects {[(_tl._overlay_rect(i).top(), i.get("track")) for i in _tl.overlays]}')
 _frames=[]
 for _i in range(45):
     _o.position=_i/44

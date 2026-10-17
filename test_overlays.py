@@ -140,6 +140,10 @@ class WindowTests(unittest.TestCase):
         # Clip on the timeline: move it and make it longer.
         w.move_overlay_clip(item['id'], 2., 1.5, 1)
         self.assertEqual((item['start'], item['duration'], item['track']), (2., 1.5, 1))
+        tl = w.stage_timeline
+        self.assertEqual(tl.tracks(), 2)
+        self.assertGreater(tl._overlay_rect(tl.overlays[0]).top(), tl._lane(0).top())
+        self.assertGreater(tl._rows()[2].top(), tl._lane(1).bottom())          # audio lane below the tracks
         # A title, duplicate, delete and undo.
         w.overlay_action(item['id'], 'duplicate')
         self.assertEqual(len(w.overlays), 2)
