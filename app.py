@@ -1516,7 +1516,7 @@ class Window(QMainWindow):
             QMessageBox.warning(self,'Scene',f'Scene {k+1} could not be opened: {exc}')
         finally:
             self._entering_scene=False
-        applog.info('Editing scene %d of %d',k+1,len(self.scenes))
+        applog.info('Editing element %d of %d',k+1,len(self.scenes))
         self.scenes[k]['state']=None              # lives in the editor now
         self._scene_cache={key:v for key,v in self._scene_cache.items()
                            if any(id(s['state'])==key for s in self.scenes)}
@@ -1530,7 +1530,7 @@ class Window(QMainWindow):
         self.playing=False
         self._leave_scene()
         self._enter_scene(row)
-        self.status.setText(f'Editing scene {row+1} of {len(self.scenes)}: {self.scene_label(row)}')
+        self.status.setText(f'Editing element {row+1} of {len(self.scenes)}: {self.scene_label(row)}')
 
     def add_scene(self):
         """A new scene after the current one (starts as a copy; import its own artwork)."""

@@ -1387,8 +1387,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.scene_list.setViewMode(QListWidget.ViewMode.IconMode)
     w.scene_list.setMovement(QListWidget.Movement.Static)
     w.scene_list.setIconSize(QSize(72,40))
-    w.scene_list.setGridSize(QSize(132,78))
-    w.scene_list.setFixedHeight(86)
+    w.scene_list.setGridSize(QSize(140,96))
+    w.scene_list.setWordWrap(True)
+    w.scene_list.setFixedHeight(106)
     w.scene_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
     w.scene_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     w.scene_list.setToolTip('The elements of your video, in order (like VideoScribe). Click one to work on it; '
