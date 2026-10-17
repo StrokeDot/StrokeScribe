@@ -130,7 +130,7 @@ class SceneWindowTests(unittest.TestCase):
         lengths, joins = w.scene_timeline()
         self.assertEqual(len(lengths), 2)
         self.assertAlmostEqual(w.timeline_length(), sum(lengths) + sum(joins))
-        self.assertEqual([k for _, _, k in w.stage_timeline.scene_segments], ['scene', 'join', 'scene'])
+        self.assertEqual([seg[2] for seg in w.stage_timeline.scene_segments], ['scene', 'join', 'scene'])
         for value in (100, 500, 900):
             w.slider.setValue(value)
             self.assertFalse(w.canvas.frame.isNull())

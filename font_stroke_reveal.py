@@ -47,8 +47,11 @@ def _thin(mask):
     return a[1:-1,1:-1].astype(bool)
 
 
-def _paths_from_binary(binary):
-    """Return left-to-right ordered pen passes over a thinned glyph."""
+def _paths_from_binary(binary,scale=1.):
+    """Return left-to-right ordered pen passes over a thinned glyph.
+
+    scale: the letter size compared with the usual Letter detail (68). Sizes in
+    pixels (spurs, small gaps) follow it, so the writing is the same at any detail."""
     pts={(int(x),int(y)) for y,x in zip(*np.nonzero(binary))}
     if not pts:return []
     def adjacent(p):
@@ -99,17 +102,18 @@ def _paths_from_binary(binary):
     # (e.g. a dot or punctuation) are retained.
     def length(path):
         return sum(math.dist(a,b) for a,b in zip(path,path[1:]))
-    substantial=[p for p in ordered if length(p)>=4.]
+    spur=4.*max(1.,scale)
+    substantial=[p for p in ordered if length(p)>=spur]
     if substantial:
         fixed=[]
         for path in ordered:
-            if length(path)>=4.:
+            if length(path)>=spur:
                 fixed.append(path)
                 continue
             x0,y0=path[0]
             x1,y1=path[-1]
             neighboring=any(
-                min(math.dist((x0,y0),q),math.dist((x1,y1),q))<=3.
+                min(math.dist((x0,y0),q),math.dist((x1,y1),q))<=3.*max(1.,scale)
                 for major in substantial for q in major)
             if not neighboring:
                 fixed.append(path)
@@ -129,11 +133,24 @@ def _paths_from_binary(binary):
         _,i,reverse=min(ranked)
         chosen=remaining.pop(i)
         if reverse: chosen=list(reversed(chosen))
-        chain.append(chosen)
+        # Pieces that touch (skeleton joins) are one pen movement, not a new stroke.
+        if math.dist(chain[-1][-1],chosen[0])<=1.5:
+            chain[-1]=chain[-1]+chosen[1:]
+        else:
+            chain.append(chosen)
     return chain
 
 
+SHARP_POINT=128          # the ink is always drawn this big (when the text fits), so it stays sharp
+MAX_INK_PIXELS=2_600_000
+
+
 def create_font_drawing(text,fontfile,point_size=68):
+    """Font lettering: the real glyph ink plus estimated pen paths.
+
+    Letter detail (point_size) decides how finely the pen paths are traced. The ink
+    itself is drawn at SHARP_POINT (if the text is not too long), so the letters are
+    equally sharp at every Letter detail and the hand follows the same rhythm."""
     if not text.strip():raise ValueError('Enter some lettering to animate.')
     if len(text)>240:raise ValueError('Font lettering supports at most 240 characters.')
     point_size=int(point_size)
@@ -144,19 +161,27 @@ def create_font_drawing(text,fontfile,point_size=68):
     line_height=ascent+descent+12
     w=max(20,math.ceil(max(font.getlength(line) for line in lines)+40))
     h=max(20,len(lines)*line_height+32)
-    if w*h>2_600_000:
+    if w*h>MAX_INK_PIXELS:
         raise ValueError('Text is too large for tracing. Shorten it or lower the font size.')
-    ink=Image.new('RGBA',(w,h),(0,0,0,0))
+    # How much bigger the ink is drawn than the tracing (1 = the same size).
+    k=max(1.,SHARP_POINT/point_size)
+    while k>1. and w*h*k*k>MAX_INK_PIXELS:
+        k=max(1.,k*.9)
+    big=ImageFont.truetype(str(fontfile),max(point_size,round(point_size*k))) if k>1. else font
+    k=big.size/point_size
+    W,H=max(20,math.ceil(w*k)),max(20,math.ceil(h*k))
+    ink=Image.new('RGBA',(W,H),(0,0,0,0))
     painter=ImageDraw.Draw(ink)
+    measure=ImageDraw.Draw(Image.new('L',(1,1)))
     strokes=[]
     boxes=[]
     for row,line in enumerate(lines):
         y=10+row*line_height
-        painter.text((18,y),line,font=font,fill=(37,54,74,255))
+        painter.text((18*k,y*k),line,font=big,fill=(37,54,74,255))
         for index,char in enumerate(line):
             if char.isspace():continue
             x=18+font.getlength(line[:index])
-            left,top,right,bottom=painter.textbbox((x,y),char,font=font)
+            left,top,right,bottom=measure.textbbox((x,y),char,font=font)
             left=max(0,math.floor(left)-2); top=max(0,math.floor(top)-2)
             right=min(w,math.ceil(right)+2);bottom=min(h,math.ceil(bottom)+2)
             if right-left<2 or bottom-top<2:continue
@@ -164,13 +189,13 @@ def create_font_drawing(text,fontfile,point_size=68):
             cell=Image.new('L',(right-left,bottom-top))
             ImageDraw.Draw(cell).text((x-left,y-top),char,font=font,fill=255)
             skeleton=_thin(np.asarray(cell)>90)
-            paths=_paths_from_binary(skeleton)
+            paths=_paths_from_binary(skeleton,point_size/68.)
             if not paths:
                 paths=[[(0,(bottom-top)/2),(right-left,(bottom-top)/2)]]
             piece=len(boxes)
-            boxes.append((left,top,right,bottom))
+            boxes.append((left*k,top*k,right*k,bottom*k))
             for route in paths[:150]:
-                points=[(float(left+px),float(top+py)) for px,py in route]
+                points=[(float((left+px)*k),float((top+py)*k)) for px,py in route]
                 if len(points)<2:continue
                 s=Stroke(f'Pen {char} / {len(strokes)+1}',points,'#25364a',1.)
                 s.font_piece=piece
@@ -178,11 +203,13 @@ def create_font_drawing(text,fontfile,point_size=68):
             if len(strokes)>3000:
                 raise ValueError('Font has too many detail paths. Reduce the text length.')
     if not strokes:raise ValueError('No drawable glyph strokes were found.')
-    drawing=Drawing(strokes,(0.,0.,float(w),float(h)),[
+    drawing=Drawing(strokes,(0.,0.,float(W),float(H)),[
         'Estimated pen strokes trace real typeface shapes, with complete original glyph ink.',
         'A regular font does not record its human writing order; pen paths are approximations.',
     ])
     drawing.source_kind='font'
+    drawing.font_point=point_size
+    drawing.font_scale=k                 # ink pixels per traced pixel
     drawing.font_ink=ink
     drawing.font_color='#25364a'
     drawing.font_boxes=tuple(boxes)
@@ -203,17 +230,24 @@ def _stroke_schedule(drawing):
     events=[]
     t=0.
     previous=None
+    # Pixel sizes follow the letter size, so the rhythm is the same at any Letter detail.
+    scale=max(.3,float(getattr(drawing,'font_point',68) or 68)/68.)*float(getattr(drawing,'font_scale',1.) or 1.)
+    small_gap=5.*scale
     for index,stroke in enumerate(drawing.strokes):
         if len(stroke.points)<2:continue
         first=stroke.points[0]
         if previous is not None:
             distance=math.dist(previous,first)
-            if distance>0.8:
+            if distance>small_gap:
                 # Pen-up travel is visible in time, but reveals no ink.
                 # Limit long trips so the viewer doesn't wait excessively.
-                lift_duration=min(12.,max(2.5,distance*.24))
+                lift_duration=min(12.*scale,max(2.5*scale,distance*.24))
                 events.append(('lift',None,t,t+lift_duration,previous,first))
                 t+=lift_duration
+            elif distance>0:
+                # A tiny gap inside a letter: the pen just carries on (no lift, no stop).
+                events.append(('lift',None,t,t+distance,previous,first))
+                t+=distance
         duration=max(1.,stroke.length)
         events.append(('draw',index,t,t+duration,first,stroke.points[-1]))
         t+=duration

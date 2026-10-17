@@ -837,6 +837,10 @@ class Window(QMainWindow):
         return timeline_seconds(self.drawing,self.options()) if self.drawing else 4.
 
     def playhead_seconds(self):
+        if self.all_scenes() or self.board_mode():
+            lengths,joins=self.scene_timeline()
+            at=self.position*(sum(lengths)+sum(joins))-self.element_start()
+            return max(0.,min(self.scene_seconds(),at))
         return self.position*self.scene_seconds()
 
     def add_overlay(self,item):
@@ -851,7 +855,7 @@ class Window(QMainWindow):
         item['track']=next(t for t in range(10) if t not in used)
         self.overlays.append(item)
         self.selected_overlay=item['id']
-        if self.preview_scope.currentIndex(): self.preview_scope.setCurrentIndex(0)
+        if self.board_mode(): self.preview_scope.setCurrentIndex(1)
         self.commit_history(); self.refresh()
         return item
 
@@ -1140,6 +1144,16 @@ class Window(QMainWindow):
         self.fill_order()
         self.note.setText('\n'.join(drawing.warnings) or 'Ready. Press Play to draw from the beginning.')
         self.position=0 if getattr(drawing,'source_kind',None)=='image' else 1
+        if getattr(self,'scenes',None) and len(self.scenes)>1 and self.all_scenes():
+            # Whole video: show this element (finished SVG, or its start for an image).
+            try:
+                lengths,joins=self.scene_timeline()
+                total=max(1e-6,sum(lengths)+sum(joins))
+                start=self.element_start()
+                at=start if self.position==0 else start+lengths[self.scene_index]*.999
+                self.position=max(0.,min(1.,at/total))
+            except Exception as exc:
+                import applog; applog.error('Whole-video position',exc)
         self.slider.setValue(round(self.position*1000))
         self.update_project_title(self.project_title)
         self.refresh()
@@ -1530,6 +1544,16 @@ class Window(QMainWindow):
         self.playing=False
         self._leave_scene()
         self._enter_scene(row)
+        if self.all_scenes():
+            # Whole video: the playhead jumps to where this element ends (finished).
+            try:
+                lengths,joins=self.scene_timeline()
+                total=max(1e-6,sum(lengths)+sum(joins))
+                self.position=max(0.,min(1.,(self.element_start()+lengths[row]*.999)/total))
+                self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False)
+                self.refresh()
+            except Exception as exc:
+                import applog; applog.error('Whole-video position',exc)
         self.status.setText(f'Editing element {row+1} of {len(self.scenes)}: {self.scene_label(row)}')
 
     def add_scene(self):
@@ -1547,6 +1571,79 @@ class Window(QMainWindow):
         self._enter_scene(self.scene_index+1)
         self.status.setText(f'Scene {self.scene_index+1} added as a copy. Import an SVG or image for it '
                             '(Import, Library or Create image); its settings are its own.')
+
+    def add_element_menu(self,same_spot=False,button=None):
+        """'+ Add element' / '+ Same spot': what the new element is (like VideoScribe, it
+        does not start as a copy of the one before)."""
+        from PySide6.QtWidgets import QMenu
+        from PySide6.QtGui import QCursor
+        if not self.drawing or (self.builder and self.builder.isRunning()): return
+        menu=QMenu(self)
+        menu.addAction('Picture or SVG file…',lambda: self.new_element('file',same_spot))
+        menu.addAction('Text (handwriting)…',lambda: self.new_element('text',same_spot))
+        menu.addAction('From the Library…',lambda: self.new_element('library',same_spot))
+        menu.addAction('Create an image with AI…',lambda: self.new_element('ai',same_spot))
+        menu.addSeparator()
+        menu.addAction('Copy of this element',lambda: self.new_element('copy',same_spot))
+        where=button.mapToGlobal(button.rect().bottomLeft()) if button is not None else QCursor.pos()
+        menu.exec(where)
+
+    def new_element(self,how,same_spot=False,path=None,text=None,item=None):
+        """Add an element with its own artwork. The file (or text) is chosen first: if the
+        choice is cancelled, nothing is added. path / text / item skip the question (tests)."""
+        if not self.drawing or (self.builder and self.builder.isRunning()): return False
+        if how=='file' and path is None:
+            path,_=QFileDialog.getOpenFileName(self,'New element: choose a picture or SVG','',
+                                               'Pictures and SVG (*.svg *.png *.jpg *.jpeg *.webp *.bmp)')
+            if not path: return False
+        if how=='text' and text is None:
+            from PySide6.QtWidgets import QInputDialog
+            text,ok=QInputDialog.getMultiLineText(self,'New element: text',
+                                                  'The text to write by hand (the font is chosen on the left):',
+                                                  '')
+            if not ok or not text.strip(): return False
+        if how=='library' and item is None:
+            from library_dialog import LibraryDialog
+            chosen=[]
+            LibraryDialog(self,'images',lambda category,it: chosen.append(it)).exec()
+            if not chosen: return False
+            item=chosen[-1]
+        (self.add_picture if same_spot else self.add_scene)()
+        scene=self.scenes[self.scene_index]
+        if how=='file':
+            scene['name']=Path(path).stem[:30]
+            self.import_artwork(path)
+        elif how=='text':
+            scene['name']=text.strip().splitlines()[0][:30]
+            self.text.setPlainText(text)
+            self.letter()
+        elif how=='library':
+            scene['name']=str(getattr(item,'name','') or 'Picture')[:30]
+            self.use_library_item('images',item)
+        elif how=='ai':
+            self.open_create_image()
+        # One timeline: with two or more elements, show the whole video.
+        if len(self.scenes)>1 and self.preview_scope.currentIndex()==0:
+            self.preview_scope.setCurrentIndex(1)
+        self.store_scene(); self.fill_scenes()
+        return True
+
+    def import_artwork(self,path):
+        """An SVG or a picture file as the artwork of the element being edited."""
+        path=str(path)
+        if path.lower().endswith('.svg'):
+            self.source_type.setCurrentIndex(0)
+            path=self.keep_in_library('images',path)
+            try:
+                drawing=import_svg(path)
+            except Exception as exc:
+                QMessageBox.warning(self,'Cannot import',str(exc)); return False
+            self.update_project_title(Path(path).name)
+            self.set_drawing(drawing)
+        else:
+            self.source_type.setCurrentIndex(1)
+            self.build_image(self.keep_in_library('images',path))
+        return True
 
     def add_picture(self):
         """Another picture on the same page: a new scene joined by 'Same page'.
@@ -1632,12 +1729,17 @@ class Window(QMainWindow):
         from scenes import job_from_state, seconds_of
         over=self.drawn_over(k)
         if k==self.scene_index:
+            # Asked for every frame of the whole video: made once per change, not per frame.
+            memo=self.__dict__.setdefault('_memo',{})
+            key=('scene',width,height,over,self._view_token())
+            if key in memo: return memo[key]
             options=self.options(); options.pop('fps',None)
             if over: options['background']=False
             options['hand_scale']/=options['artwork_scale']
             options['width'],options['height']=width,height
             options['ghost']=.22
-            return self.drawing,options,seconds_of(self.drawing,options),self.preview_camera(options)
+            memo[key]=(self.drawing,options,seconds_of(self.drawing,options),self.preview_camera(options))
+            return memo[key]
         state=self.scenes[k]['state']
         key=(id(state),width,height,over)
         cached=self._scene_cache.get(id(state))
@@ -1695,13 +1797,18 @@ class Window(QMainWindow):
     def preview_world(self,width,height):
         """The board for the preview: every scene, drawn sharp at any camera zoom."""
         import board
+        memo=self.__dict__.setdefault('_memo',{})
+        mkey=('world',width,height,self._view_token(),
+              tuple((s['transition'],repr(s.get('board'))) for s in self.scenes))
+        if mkey in memo: return memo[mkey]
         items=[]
         for k,frame in enumerate(self.board_frames()):
             drawing,options,_,_=self.preview_scene(k,width,height)
             key=self.edited_key() if k==self.scene_index else ('scene',id(self.scenes[k]['state']))
             items.append(dict(drawing=drawing,options=options,frame=frame,key=key))
         cache=self.__dict__.setdefault('_world_cache',OrderedDict())
-        return board.World(items,height/width,cache)
+        memo[mkey]=board.World(items,height/width,cache)
+        return memo[mkey]
 
     BOARD_WIDTH=1280
 
@@ -1748,17 +1855,21 @@ class Window(QMainWindow):
             p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['accent'] if current else '#444A55'))
             p.drawRoundedRect(badge,11,11)
             p.setPen(QColor('white')); p.drawText(badge,Qt.AlignmentFlag.AlignCenter,label)
+        # What the Board is for, on the board itself.
+        hint=('BOARD: every element on one big page, seen from above. The camera flies along the dashed '
+              'line.   Drag a frame to move it  •  mouse wheel on a frame: bigger / smaller (the camera '
+              'zooms)  •  double-click: edit it')
+        small=QFont(self.font()); small.setPointSizeF(9.); p.setFont(small)
+        box=QRectF(10,H-40,W-20,30)
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(20,22,30,215)); p.drawRoundedRect(box,10,10)
+        p.setPen(QColor('white'))
+        p.drawText(box.adjusted(12,0,-12,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
+                   p.fontMetrics().elidedText(hint,Qt.TextElideMode.ElideRight,int(box.width()-24)))
         p.end()
         self.canvas.frame=image; self.canvas.highlight=[]; self.canvas.update()
-        lengths,joins=self.scene_timeline(960,round(960*aspect))
-        segments=[]
-        for n,(length,join) in enumerate(zip(lengths,joins)):
-            segments.append((f'{n+1} · {self.scene_label(n)}',length,'scene'))
-            if join>0: segments.append((self.scenes[n]['transition'],join,'join'))
-        self.stage_timeline.set_scenes(segments,current=self.scene_index)
-        self.stage_timeline.set_overlays([])
+        segments,lengths,joins=self.whole_segments(960,round(960*aspect))
+        self.show_whole_timeline(segments,lengths,joins,self.options())
         total=sum(lengths)+sum(joins)
-        self.stage_timeline.update_state(total,0,0,self.position)
         self.clock.setText(timecode(self.position*total)); self.clock_total.setText(timecode(total))
 
     def board_point(self,x,y):
@@ -1858,7 +1969,7 @@ class Window(QMainWindow):
         k=self.board_pick(x,y)
         if k is None: return
         self.board_select(k)
-        self.preview_scope.setCurrentIndex(0)
+        self.preview_scope.setCurrentIndex(1)
 
     def scene_base(self,k,width,height,fraction=1.,camera=None):
         """What the camera sees of earlier scenes while scene k is drawn (None: nothing)."""
@@ -1877,12 +1988,70 @@ class Window(QMainWindow):
         while len(cache)>8: cache.popitem(last=False)
         return base
 
+    @staticmethod
+    def stage_parts(options):
+        """[(stage key, seconds)] of one element: Draw, Paint, Hold (+ pause), Out."""
+        colour=options.get('final_image') is not None
+        erase=options.get('erase')
+        return [('draw',float(options.get('duration',0))),
+                ('paint',float(options.get('fade_duration',0)) if colour else 0.),
+                ('hold',(float(options.get('hold_duration',0)) if colour else 0.)+float(options.get('pause',0) or 0)),
+                ('erase',float(erase['seconds']) if erase else 0.)]
+
+    def whole_segments(self,width=960,height=540):
+        """The whole video for the timeline: elements (with their parts) and camera moves."""
+        lengths,joins=self.scene_timeline(width,height)
+        segments=[]
+        for n,(length,join) in enumerate(zip(lengths,joins)):
+            parts=self.stage_parts(self.preview_scene(n,width,height)[1])
+            whole=sum(v for _,v in parts)
+            if whole>0 and abs(whole-length)>1e-3:          # match the real length of the element
+                parts=[(key,v*length/whole) for key,v in parts]
+            segments.append((f'{n+1} · {self.scene_label(n)}',length,'scene',parts))
+            if join>0: segments.append((self.scenes[n]['transition'],join,'join',()))
+        return segments,lengths,joins
+
+    def show_whole_timeline(self,segments,lengths,joins,options):
+        """Whole video on the timeline; the edited element keeps its edges, pictures and audio."""
+        tl=self.stage_timeline
+        tl.set_scenes(segments,current=self.scene_index)
+        tl.set_overlays(self.overlays,self.selected_overlay)
+        tl.set_audio(self.timeline_audio())
+        tl.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() else {'paint','hold','erase'}
+        mine=dict(self.stage_parts(options))
+        length=lengths[self.scene_index]
+        whole=sum(mine.values())
+        if whole>0 and abs(whole-length)>1e-3:
+            mine={k:v*length/whole for k,v in mine.items()}
+        tl.update_state(mine['draw'],mine['paint'],mine['hold'],self.position,mine['erase'])
+
+    def element_start(self,k=None):
+        """Whole video: the second where element k starts."""
+        k=self.scene_index if k is None else k
+        lengths,joins=self.scene_timeline()
+        return sum(lengths[:k])+sum(joins[:k])
+
+    def timeline_element_clicked(self,k):
+        """Whole video: a click on another element's block works on that element (the
+        playhead stays where it was clicked)."""
+        position=self.position
+        self.select_scene(k)
+        if self.all_scenes():
+            self.position=position
+            self.slider.blockSignals(True); self.slider.setValue(round(position*1000)); self.slider.blockSignals(False)
+            self.refresh()
+
     def scene_timeline(self,width=960,height=540):
         """Lengths of all scenes and the moves between them (seconds)."""
         from scenes import transition_seconds
+        memo=self.__dict__.setdefault('_memo',{})
+        key=('timeline',width,height,self._view_token(),
+             tuple((s['transition'],s['transition_seconds']) for s in self.scenes))
+        if key in memo: return memo[key]
         lengths=[self.preview_scene(k,width,height)[2] for k in range(len(self.scenes))]
         last=len(self.scenes)-1
         joins=[transition_seconds(s['transition'],s['transition_seconds'],k==last) for k,s in enumerate(self.scenes)]
+        memo[key]=(lengths,joins)
         return lengths,joins
 
     def all_scenes_frame(self,width,height,fraction=None):
@@ -2121,6 +2290,18 @@ class Window(QMainWindow):
             self.update_project_title('Lettering — '+self.text.toPlainText()[:16].replace('\n',' '))
             self.set_drawing(drawing)
         except Exception as e: QMessageBox.warning(self,'Lettering',str(e))
+
+    def reletter(self):
+        """Letter detail changed: trace the same text again (keeps the playhead)."""
+        if getattr(self.drawing,'source_kind',None)!='font' or (self.builder and self.builder.isRunning()):
+            return
+        if getattr(self.drawing,'font_point',None)==int(self.font_size.value()):
+            return                                # already traced at this detail (a project loading)
+        position=self.position
+        self.letter()
+        self.position=position
+        self.slider.blockSignals(True); self.slider.setValue(round(position*1000)); self.slider.blockSignals(False)
+        self.refresh()
 
     def apply_letter_style(self,drawing=None):
         drawing=drawing or self.drawing
@@ -2619,6 +2800,7 @@ class Window(QMainWindow):
     def clear_frames(self):
         """Forget the ready-made preview frames (something changed)."""
         self._frames=OrderedDict(); self._frame_bytes=0
+        self._memo={}               # whole-video lengths and the edited element's options
         if hasattr(self,'prerender_timer'): self.prerender_timer.stop()
 
     def refresh(self,*args):
@@ -2668,18 +2850,12 @@ class Window(QMainWindow):
         if self.all_scenes():
             width,height=self.PREVIEW_WIDTH,round(self.PREVIEW_WIDTH*ratio)
             try:
-                lengths,joins=self.scene_timeline(width,height)
+                segments,lengths,joins=self.whole_segments(width,height)
             except Exception as exc:
                 import applog; applog.error('Preview could not be updated',exc)
                 self.status.setText('Preview could not be updated: '+str(exc)[:220]); return False
-            segments=[]
-            for n,(length,join) in enumerate(zip(lengths,joins)):
-                segments.append((f'{n+1} · {self.scene_label(n)}',length,'scene'))
-                if join>0: segments.append((self.scenes[n]['transition'],join,'join'))
-            self.stage_timeline.set_scenes(segments,current=self.scene_index)
-            self.stage_timeline.set_overlays([])
+            self.show_whole_timeline(segments,lengths,joins,options)
             total=sum(lengths)+sum(joins)
-            self.stage_timeline.update_state(total,0,0,self.position)
             self._view=dict(all=True,length=total,ratio=ratio,token=self._view_token())
             return True
         self.stage_timeline.set_scenes(None)
@@ -2703,7 +2879,30 @@ class Window(QMainWindow):
         if page: options['background']=False
         self._view=dict(all=False,options=options,page=page,ratio=ratio,length=self.timeline_length(),
                         token=self._view_token())
+        self.show_hand_pictures(options)
         return True
+
+    def show_hand_pictures(self,options=None):
+        """Hand tab: small pictures of the hand that draws and the one that paints."""
+        pictures=getattr(self,'hand_pictures',None)
+        if not pictures: return
+        try:
+            options=options or self.options()
+            draw=options.get('hand') if self.showhand.isChecked() else None
+            paint=options.get('painting_hand') if self.show_paint_hand.isChecked() else None
+            if paint is None and self.show_paint_hand.isChecked() and self.paint_hand.currentIndex()==0:
+                paint=draw
+            for key,image in (('draw',draw),('paint',paint)):
+                label=pictures[key]
+                stamp=image.cacheKey() if image is not None and not image.isNull() else None
+                if getattr(label,'_stamp','x')==stamp: continue
+                label._stamp=stamp
+                if stamp is None:
+                    label.clear(); label.setText('hidden'); continue
+                label.setPixmap(QPixmap.fromImage(image).scaled(label.width()-8,label.height()-8,
+                    Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+        except Exception as exc:
+            import applog; applog.error('Hand pictures',exc)
 
     def render_view(self,fraction,width):
         """One preview frame of the current view at this width."""

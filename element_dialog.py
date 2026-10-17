@@ -32,7 +32,9 @@ class ElementDialog(QDialog):
         self.position = 0.
         self._last = 0.
         w = window
-        if w.preview_scope.currentIndex():
+        self.scope=w.preview_scope.currentIndex()       # given back when the window closes
+        self.main_position=w.position
+        if self.scope:
             w.preview_scope.setCurrentIndex(0)           # the element itself
         scene = w.scenes[k]
         self.saved = dict(snapshot=w.snapshot(), transition=scene['transition'],
@@ -246,9 +248,17 @@ class ElementDialog(QDialog):
             self.toggle()
 
     # ---------------------------------------------------------- Set / Cancel
+    def give_back_view(self):
+        w=self.w
+        if self.scope and w.preview_scope.currentIndex()!=self.scope and len(w.scenes)>1:
+            w.preview_scope.setCurrentIndex(self.scope)
+        w.position=self.main_position
+        w.slider.blockSignals(True); w.slider.setValue(round(w.position*1000)); w.slider.blockSignals(False)
+
     def accept(self):
         self.timer.stop()
         self.w.commit_history()
+        self.give_back_view()
         self.w.fill_scenes(); self.w.refresh()
         super().accept()
 
@@ -259,5 +269,6 @@ class ElementDialog(QDialog):
         scene = w.scenes[self.k]
         scene['name'] = self.saved['name']
         scene['transition'], scene['transition_seconds'] = self.saved['transition'], self.saved['seconds']
+        self.give_back_view()
         w.fill_scenes(); w.refresh()
         super().reject()

@@ -179,10 +179,12 @@ def finished_picture(drawing, opts):
     layers = clean.get('layers', 'all')
     clean['layers'] = 'hand' if layers == 'hand' else 'art'
     key = _erase_key(drawing, clean, {'mode': 'finished', 'size': 0})
-    if key not in _FINISHED:
-        if len(_FINISHED) > 6:
-            _FINISHED.clear()
-        _FINISHED[key] = _core(drawing, 1., clean)
+    if key in _FINISHED:
+        _FINISHED[key] = _FINISHED.pop(key)          # most recently used last
+        return _FINISHED[key]
+    while len(_FINISHED) >= 24:                       # several elements at several sizes
+        _FINISHED.pop(next(iter(_FINISHED)))
+    _FINISHED[key] = _core(drawing, 1., clean)
     return _FINISHED[key]
 
 

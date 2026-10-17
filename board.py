@@ -51,15 +51,20 @@ def frames(scenes, aspect=9 / 16):
         h = w * aspect
         kind = scenes[k - 1].get('transition')
         if kind == SAME_PAGE:
-            out.append((cx, cy, w))
-        elif kind == 'Pan left':
-            out.append((cx - w * (1 + GAP), cy, w))
-        elif kind == 'Pan up':
-            out.append((cx, cy - h * (1 + GAP), w))
-        elif kind == 'Pan down':
-            out.append((cx, cy + h * (1 + GAP), w))
-        else:
-            out.append((cx + w * (1 + GAP), cy, w))
+            out.append((cx, cy, w)); continue
+        dx, dy = {'Pan left': (-w * (1 + GAP), 0.), 'Pan up': (0., -h * (1 + GAP)),
+                  'Pan down': (0., h * (1 + GAP))}.get(kind, (w * (1 + GAP), 0.))
+        # Never on top of an earlier element (Pan right, then Pan left would come back to
+        # the first one): keep going in the same direction until the space is free.
+        # (A frame the previous one sits inside, like a small frame zoomed into a big
+        # picture, is not in the way: moving within it is what the user set up.)
+        prev = out[-1]
+        spot = (cx + dx, cy + dy, w)
+        for _ in range(len(out) + 1):
+            if not any(overlap(f, spot, aspect) > 1e-4 and overlap(f, prev, aspect) <= 1e-4 for f in out):
+                break
+            spot = (spot[0] + dx, spot[1] + dy, w)
+        out.append(spot)
     return out
 
 

@@ -160,6 +160,15 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## One timeline for the whole video (v0.5.3-experimental.55)
+
+- **One timeline**: with two or more elements the timeline shows the whole video, element after element with the camera moves between them. Each element shows its Draw / Paint / Hold / Out parts; click an element to work on it, double-click for its settings, drag the white edges of the one you edit.
+- **+ Add element** asks what the new element is: a picture or SVG, a text, something from the Library or an AI image (or a copy, if you want one).
+- **Camera moves** never land on an earlier element (Pan right, then Pan left goes further left).
+- **Handwriting**: letters are always sharp, the pen no longer stops at every little piece, and the rhythm is the same at any Letter detail. Letter detail applies by itself.
+- **Hand tab** tidied up, with pictures of the hand that draws and the one that paints.
+- **Smoother** whole-video playback with effects; the Board explains itself.
+
 ## Elements, like VideoScribe (v0.5.3-experimental.54)
 
 - **Elements instead of "scenes":** the strip under the preview lists the elements of your video in order. Each card shows how long the element is on screen (⏱) and the camera move to the next one (➜).

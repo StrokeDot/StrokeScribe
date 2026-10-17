@@ -7,8 +7,8 @@ existing modules. No third-party product assets or lookalike trade dress.
 from __future__ import annotations
 
 from pathlib import Path
-from PySide6.QtCore import Qt, QPointF, QRectF, Signal, QObject, QEvent
-from PySide6.QtGui import QColor, QPainter, QPen, QFont, QIcon, QPixmap
+from PySide6.QtCore import Qt, QPointF, QRectF, Signal, QObject, QEvent, QTimer
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QFont, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QWidget, QFrame, QScrollArea, QSplitter, QVBoxLayout,
     QHBoxLayout, QFormLayout, QPushButton, QLabel, QComboBox, QCheckBox,
@@ -71,6 +71,8 @@ class StageTimeline(QFrame):
     overlay_edit=Signal(str)            # double-click: open its settings
     overlay_action=Signal(str,str)      # id, 'edit' / 'duplicate' / 'delete'
     overlay_dropped=Signal(str,float)   # a picture file dropped on the overlay tracks, at seconds
+    element_clicked=Signal(int)         # whole video: an element's block was clicked
+    element_edit=Signal(int)            # whole video: an element's block was double-clicked
 
     STAGE_KEYS=('draw','paint','hold','erase')
     EDGE=6.                             # pixels: grab distance for a clip edge
@@ -88,8 +90,9 @@ class StageTimeline(QFrame):
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
         self.locked=False          # True while a drawing is being prepared
-        self.scene_segments=None   # all-scenes preview: [(label, seconds, 'scene'|'join')]
+        self.scene_segments=None   # whole video: [(label, seconds, 'scene'|'join', parts)]
         self.current_scene=0
+        self.offset=0.             # whole video: where the edited element starts (seconds)
         self.audio=None            # {'start', 'seconds', 'name', 'envelope'} or None
         self.editable=set(self.STAGE_KEYS)   # stages whose length can be dragged
         self.overlays=[]           # overlay clips of the scene (dicts, see overlays.py)
@@ -110,10 +113,46 @@ class StageTimeline(QFrame):
         self.update()
 
     def set_scenes(self, segments, current=0):
-        """Show scene blocks instead of Draw/Paint/Hold/Erase (None: back to stages)."""
-        self.scene_segments=list(segments) if segments else None
+        """Whole video: every element in a row, each with its own Draw / Paint / Hold / Out
+        parts inside it (None: back to the parts of one element only).
+
+        segments: [(label, seconds, 'scene' | 'join', parts)] with parts [(stage key, seconds)].
+        The edited element (current) keeps its draggable edges, overlays and audio."""
+        self.scene_segments=[tuple(s)+((),)*(4-len(s)) for s in segments] if segments else None
         self.current_scene=current
+        self.offset=0.
+        if self.scene_segments:
+            k=0
+            for label,secs,kind,_ in self.scene_segments:
+                if kind=='scene':
+                    if k==current: break
+                    k+=1
+                self.offset+=secs
         self.update()
+
+    def element_length(self):
+        """Seconds of the edited element (its own parts)."""
+        return self.draw_seconds+self.paint_seconds+self.hold_seconds+self.erase_seconds
+
+    def _blocks(self):
+        """Whole video: [(element number or None for a camera move, start, seconds, segment)]."""
+        out=[]; t=0.; k=0
+        for seg in self.scene_segments or ():
+            if seg[2]=='scene':
+                out.append((k,t,seg[1],seg)); k+=1
+            else:
+                out.append((None,t,seg[1],seg))
+            t+=seg[1]
+        return out
+
+    def _block_at(self, pos):
+        if not self.scene_segments: return None
+        _,clips,_=self._rows()
+        if not (clips.top()-2<=pos.y()<=clips.bottom()+2): return None
+        for k,start,secs,_ in self._blocks():
+            if k is not None and self._x(start)<=pos.x()<=self._x(start+secs):
+                return k
+        return None
 
     def set_audio(self, audio):
         self.audio=dict(audio) if audio else None
@@ -122,7 +161,6 @@ class StageTimeline(QFrame):
     CLIP_H=34.; LANE_H=22.; AUDIO_H=26.
 
     def tracks(self):
-        if self.scene_segments: return 0
         return (max(int(o.get('track',0)) for o in self.overlays)+1) if self.overlays else 0
 
     def set_overlays(self, items, selected=None):
@@ -137,7 +175,9 @@ class StageTimeline(QFrame):
 
     # ------------------------------------------------------------ geometry
     def total(self):
-        return self.draw_seconds+self.paint_seconds+self.hold_seconds+self.erase_seconds
+        if self.scene_segments:
+            return sum(s[1] for s in self.scene_segments)
+        return self.element_length()
 
     def _rows(self):
         ruler_h=22.; top=ruler_h+6.
@@ -155,11 +195,12 @@ class StageTimeline(QFrame):
 
     def _overlay_rect(self, item):
         lane=self._lane(int(item.get('track',0)))
-        x0=self._x(float(item.get('start',0))); x1=self._x(float(item.get('start',0))+float(item.get('duration',3)))
+        start=self.offset+float(item.get('start',0))
+        x0=self._x(start); x1=self._x(start+float(item.get('duration',3)))
         return QRectF(x0,lane.top(),max(8.,x1-x0),lane.height())
 
     def _overlay_at(self, pos):
-        if self.scene_segments or self.locked: return None,None
+        if self.locked: return None,None
         for item in reversed(self.overlays):
             r=self._overlay_rect(item)
             if r.adjusted(-3,0,3,0).contains(pos):
@@ -180,14 +221,14 @@ class StageTimeline(QFrame):
 
     def _edges(self):
         """[(stage key, x of its right edge, seconds before it)] of the visible stage clips."""
-        out=[]; t=0.
+        out=[]; t=self.offset
         for key,secs in zip(self.STAGE_KEYS,(self.draw_seconds,self.paint_seconds,self.hold_seconds,self.erase_seconds)):
             if secs<=0: continue
             out.append((key,self._x(t+secs),t)); t+=secs
         return out
 
     def _edge_at(self, pos):
-        if self.scene_segments or self.locked: return None
+        if self.locked: return None
         _,clips,_=self._rows()
         if not (clips.top()-2<=pos.y()<=clips.bottom()+2): return None
         for key,x,_ in self._edges():
@@ -196,12 +237,12 @@ class StageTimeline(QFrame):
         return None
 
     def _audio_rect(self):
-        if not self.audio or self.scene_segments: return None
+        if not self.audio: return None
         _,_,lane=self._rows()
-        total=self.total()
+        total=self.element_length()
         if total<=0: return None
-        x0=self._x(min(total,self.audio['start']))
-        x1=self._x(min(total,self.audio['start']+self.audio['seconds']))
+        x0=self._x(self.offset+min(total,self.audio['start']))
+        x1=self._x(self.offset+min(total,self.audio['start']+self.audio['seconds']))
         return QRectF(x0,lane.top(),max(6.,x1-x0),lane.height())
 
     # ------------------------------------------------------------ painting
@@ -245,13 +286,8 @@ class StageTimeline(QFrame):
                 ('Hold',self.hold_seconds,c['hold']),
                 ('Out',self.erase_seconds,c.get('erase','#D9667E'))]
         if self.scene_segments:
-            palette=[c['draw'],c['paint'],c['hold'],c.get('erase','#D9667E')]
-            stages=[]; k=0
-            for name,secs,kind in self.scene_segments:
-                if kind=='join':
-                    stages.append((name,secs,c['border_strong']))
-                else:
-                    stages.append((name,secs,palette[k%len(palette)])); k+=1
+            self._paint_whole(p,c,clips,small)
+            stages=[]
         x=left
         p.save(); p.setClipRect(QRectF(left,0,width,self.height()))
         label_font=QFont(self.font());label_font.setPointSizeF(8.5);label_font.setBold(True)
@@ -280,7 +316,7 @@ class StageTimeline(QFrame):
             x+=part
         p.restore()
         # Overlay tracks: pictures and titles on top of the drawing.
-        if not self.scene_segments and self.overlays:
+        if self.overlays:
             for track in range(self.tracks()):
                 row=self._lane(track)
                 p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(row,7,7)
@@ -300,7 +336,7 @@ class StageTimeline(QFrame):
                                icon+str(item.get('name') or '')[:40])
             p.restore()
         # Audio lane.
-        if not self.scene_segments:
+        if True:
             p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track']))
             p.drawRoundedRect(lane,8,8)
             rect=self._audio_rect()
@@ -318,7 +354,7 @@ class StageTimeline(QFrame):
                     mid=rect.center().y(); half=rect.height()*.42
                     p.setPen(QPen(accent.lighter(130),1))
                     span=max(1e-6,self.audio['seconds'])
-                    px_per_sec=width/total
+                    px_per_sec=width/max(1e-6,total)
                     for i,level in enumerate(env):
                         t=i/len(env)*span
                         xx=rect.left()+t*px_per_sec
@@ -340,6 +376,56 @@ class StageTimeline(QFrame):
                                  QPointF(play_x+6,ruler_h-6),QPointF(play_x,ruler_h),
                                  QPointF(play_x-6,ruler_h-6)]))
         p.end()
+
+    STAGE_NAMES={'draw':'Draw','paint':'Paint','hold':'Hold','erase':'Out'}
+
+    def _paint_whole(self, p, c, clips, small):
+        """Whole video: one block per element with its parts inside, camera moves between."""
+        colours={'draw':c['draw'],'paint':c['paint'],'hold':c['hold'],'erase':c.get('erase','#D9667E')}
+        p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
+        bold=QFont(self.font()); bold.setPointSizeF(8.5); bold.setBold(True)
+        for k,start,secs,seg in self._blocks():
+            if secs<=0: continue
+            x0,x1=self._x(start),self._x(start+secs)
+            rect=QRectF(x0+1.5,clips.top()+3,max(1.,x1-x0-3),clips.height()-6)
+            if k is None:                          # the camera move to the next element
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['border_strong']))
+                p.drawRoundedRect(rect.adjusted(0,8,0,-8),5,5)
+                if rect.width()>=20:
+                    p.setPen(QColor(c['muted'])); p.setFont(small)
+                    p.drawText(rect,Qt.AlignmentFlag.AlignCenter,'➜' if rect.width()<70 else '➜ '+seg[0])
+                continue
+            current=k==self.current_scene
+            parts=[(key,v) for key,v in (seg[3] or ()) if v>0] or [('draw',secs)]
+            whole=sum(v for _,v in parts) or 1.
+            path=QPainterPath(); path.addRoundedRect(rect,7,7)
+            p.save(); p.setClipPath(path,Qt.ClipOperation.IntersectClip)
+            x=rect.left()
+            for key,v in parts:
+                w=rect.width()*v/whole
+                fill=QColor(colours.get(key,c['draw'])); fill.setAlpha(225 if current else 120)
+                p.fillRect(QRectF(x,rect.top(),w,rect.height()),fill)
+                if x>rect.left():
+                    p.setPen(QPen(QColor(0,0,0,70),1)); p.drawLine(QPointF(x,rect.top()),QPointF(x,rect.bottom()))
+                x+=w
+            p.restore()
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor('white') if current else QColor(c['border_strong']),2 if current else 1))
+            p.drawRoundedRect(rect,7,7)
+            if current:
+                # Grips on the edges that can be dragged.
+                p.setPen(QPen(QColor(255,255,255,170),1.4))
+                for key,ex,_ in self._edges():
+                    if key in self.editable and ex-x0>=14:
+                        gx=ex-5
+                        p.drawLine(QPointF(gx,rect.center().y()-6),QPointF(gx,rect.center().y()+6))
+                        p.drawLine(QPointF(gx-3,rect.center().y()-6),QPointF(gx-3,rect.center().y()+6))
+            if rect.width()>=30:
+                p.setFont(bold); p.setPen(QColor(c['clip_text'] if current else c['text']))
+                text=seg[0] if rect.width()<110 else f'{seg[0]}  {secs:.1f}s'
+                text=p.fontMetrics().elidedText(text,Qt.TextElideMode.ElideRight,int(rect.width()-16))
+                p.drawText(rect.adjusted(8,0,-8,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,text)
+        p.restore(); p.setFont(small)
 
     def set_locked(self, locked):
         self.locked=bool(locked)
@@ -395,8 +481,11 @@ class StageTimeline(QFrame):
             self._drag=('audio',pos.x(),self.audio['start'],self._width()/self.total())
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
             event.accept(); return
+        k=self._block_at(pos)
         self._drag=('seek',)
         self._seek(pos.x())
+        if k is not None and k!=self.current_scene:
+            self.element_clicked.emit(k)
         event.accept()
 
     def mouseMoveEvent(self,event):
@@ -410,6 +499,7 @@ class StageTimeline(QFrame):
                 shift=(pos.x()-x0)/px_per_sec
                 total=self._frozen or self.total()
                 start,length,track=start0,length0,track0
+                if self.scene_segments: total=max(.2,self.element_length())
                 if part=='move':
                     start=max(0.,min(total-.1,start0+shift))
                     track=max(0,min(5,track0+int(round((pos.y()-y0)/(self.LANE_H+3)))))
@@ -438,6 +528,12 @@ class StageTimeline(QFrame):
             return super().mouseMoveEvent(event)
         if self._edge_at(pos):
             self.setCursor(Qt.CursorShape.SizeHorCursor)
+        elif self._block_at(pos) is not None:
+            k=self._block_at(pos)
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setToolTip(f'Element {k+1}: click to work on it, double-click for its settings' if k!=self.current_scene
+                            else 'The element you are editing: drag a white edge to change a part\'s length, '
+                                 'double-click for its settings.')
         else:
             rect=self._audio_rect()
             self.setCursor(Qt.CursorShape.OpenHandCursor if rect is not None and rect.contains(pos)
@@ -448,6 +544,9 @@ class StageTimeline(QFrame):
         item,_=self._overlay_at(event.position())
         if item is not None:
             self.overlay_edit.emit(item.get('id')); event.accept(); return
+        k=self._block_at(event.position())
+        if k is not None:
+            self.element_edit.emit(k); event.accept(); return
         super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self,event):
@@ -473,7 +572,7 @@ class StageTimeline(QFrame):
         return None
 
     def dragEnterEvent(self, event):
-        if self._audio_url(event) or (not self.scene_segments and self._audio_url(event,self.PICTURE_TYPES)):
+        if self._audio_url(event) or self._audio_url(event,self.PICTURE_TYPES):
             event.acceptProposedAction()
         else:
             event.ignore()
@@ -484,9 +583,10 @@ class StageTimeline(QFrame):
             self.audio_dropped.emit(path)
             event.acceptProposedAction(); return
         picture=self._audio_url(event,self.PICTURE_TYPES)
-        if picture and not self.scene_segments:
+        if picture:
             x=event.position().x()
-            seconds=max(0.,min(self.total(),(x-self.LEFT)/self._width()*self.total()))
+            seconds=(x-self.LEFT)/self._width()*self.total()-self.offset
+            seconds=max(0.,min(self.element_length(),seconds))
             self.overlay_dropped.emit(picture,round(seconds,2))
             event.acceptProposedAction()
 
@@ -889,6 +989,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
                            '(more small lines, slower to prepare). Lower: simpler letters. It does NOT change '
                            'how big the text is: use Artwork size (Animation tab) for that.')
     font_size_form.addRow('Letter detail',w.font_size)
+    # Letter detail applies by itself (a moment after the last change).
+    w.letter_timer=QTimer(w); w.letter_timer.setSingleShot(True); w.letter_timer.setInterval(700)
+    w.letter_timer.timeout.connect(lambda: w.reletter())
+    w.font_size.valueChanged.connect(lambda v: w.letter_timer.start()
+                                     if getattr(w.drawing,'source_kind',None)=='font' else None)
     asset_l.addLayout(font_size_form)
     style_form=form_layout()
     w.font_color_button=QPushButton('Letter color: #25364A')
@@ -1148,13 +1253,21 @@ def build_workspace(w, Canvas, BRAND_ICON):
 
     hand=QWidget();hand_l=QVBoxLayout(hand)
     hand_l.setContentsMargins(9,12,9,8);hand_l.setSpacing(12)
-    hand_l.addWidget(label('HAND & PEN'))
-    load_hand=QPushButton('Load transparent hand PNG…')
-    load_hand.clicked.connect(w.loadhand)
-    hand_l.addWidget(load_hand)
-    hands_library=QPushButton('Hands library…')
-    hands_library.clicked.connect(lambda checked=False: w.open_library('hands'))
-    hand_l.addWidget(hands_library)
+    # 1. Which hand: a picture of the hand that draws and of the one that paints.
+    hand_l.addWidget(label('THE HAND'))
+    pics=QHBoxLayout(); pics.setSpacing(10)
+    w.hand_pictures={}
+    for key,text in (('draw','Draws the lines'),('paint','Paints the colours')):
+        box=QVBoxLayout(); box.setSpacing(3)
+        pic=QLabel(); pic.setObjectName('monitorWell'); pic.setFixedSize(120,92)
+        pic.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        box.addWidget(pic,0,Qt.AlignmentFlag.AlignHCenter)
+        box.addWidget(caption(text),0,Qt.AlignmentFlag.AlignHCenter)
+        pics.addLayout(box); w.hand_pictures[key]=pic
+    pics.addStretch(1)
+    hand_l.addLayout(pics)
+    w.hand_name=caption('Hand: none')
+    hand_l.addWidget(w.hand_name)
     builtin_row=QHBoxLayout()
     for text,name,tip in (('Built-in hand','hand','Hand holding a pen (default).'),
                           ('Pencil','pencil','A pencil on its own, no hand.'),
@@ -1163,13 +1276,48 @@ def build_workspace(w, Canvas, BRAND_ICON):
         button.clicked.connect(lambda checked=False,n=name: w.use_builtin_tool(n))
         builtin_row.addWidget(button)
     hand_l.addLayout(builtin_row)
-    w.hand_name=caption('Hand: none')
-    hand_l.addWidget(w.hand_name)
-    w.showhand=QCheckBox('Show hand while drawing')
-    w.showhand.setChecked(True);hand_l.addWidget(w.showhand)
+    own_row=QHBoxLayout()
+    load_hand=QPushButton('My own hand PNG…')
+    load_hand.setToolTip('A transparent PNG of a hand holding a pen.')
+    load_hand.clicked.connect(w.loadhand)
+    own_row.addWidget(load_hand)
+    hands_library=QPushButton('Hands library…')
+    hands_library.clicked.connect(lambda checked=False: w.open_library('hands'))
+    own_row.addWidget(hands_library)
+    hand_l.addLayout(own_row)
     w.left_handed=QCheckBox('Left-handed (the hand comes from the left)')
     w.left_handed.setToolTip('Mirrors the drawing hand, the painting brush and the eraser, for left-handers.')
     hand_l.addWidget(w.left_handed)
+    # 2. When it is seen.
+    hand_l.addWidget(label('WHEN IT IS SEEN'))
+    w.showhand=QCheckBox('While drawing the lines')
+    w.showhand.setChecked(True);hand_l.addWidget(w.showhand)
+    w.show_paint_hand=QCheckBox('While painting the colours')
+    w.show_paint_hand.setChecked(True);hand_l.addWidget(w.show_paint_hand)
+    # 3. Painting: the same hand (default) or a brush.
+    hand_l.addWidget(label('WHILE PAINTING'))
+    from tools_kit import PAINT_CHOICES
+    ph=form_layout();hand_l.addLayout(ph)
+    w.paint_hand=QComboBox()
+    w.paint_hand.addItems(list(PAINT_CHOICES))
+    w.paint_hand.setToolTip('The same hand paints the colours (default), or it switches to the built-in '
+                            'paint brush, or to a hand from your Hands library.')
+    ph.addRow('Paints with',w.paint_hand)
+    w.paint_hand_size=w.number(5,90,30,1);w.paint_hand_size.setDecimals(0)
+    w.paint_hand_size.setToolTip('Width of the painting hand, as a share of the video width.')
+    ph.addRow('Its size (%)',w.paint_hand_size)
+    w.paint_hand_choose=QPushButton('Choose painting hand…')
+    w.paint_hand_choose.clicked.connect(lambda checked=False: w.choose_paint_hand())
+    hand_l.addWidget(w.paint_hand_choose)
+    w.paint_hand_name=caption('')
+    hand_l.addWidget(w.paint_hand_name)
+    # 4. Size and pen tip (fine tuning).
+    hand_l.addWidget(label('SIZE & PEN TIP'))
+    h=form_layout();hand_l.addLayout(h)
+    w.handsize=w.number(.02,.8,.75,.01);h.addRow('Hand size',w.handsize)
+    # Defaults calibrated for the built-in hand (assets/default_hand.png).
+    w.ax=w.number(0,1,.08,.005);w.ax.setDecimals(3);h.addRow('Pen tip X',w.ax)
+    w.ay=w.number(0,1,.13,.005);w.ay.setDecimals(3);h.addRow('Pen tip Y',w.ay)
     hand_l.addWidget(caption('New hands get their pen tip found automatically. '
                              'Adjust it here if lines do not start exactly at the pen.'))
     tip_row=QHBoxLayout()
@@ -1182,30 +1330,6 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.pick_tip_button.clicked.connect(lambda checked=False: w.pick_pen_tip())
     tip_row.addWidget(w.pick_tip_button)
     hand_l.addLayout(tip_row)
-    h=form_layout();hand_l.addLayout(h)
-    w.handsize=w.number(.02,.8,.75,.01);h.addRow('Hand scale',w.handsize)
-    # Defaults calibrated for the built-in hand (assets/default_hand.png).
-    w.ax=w.number(0,1,.08,.005);w.ax.setDecimals(3);h.addRow('Pen tip X',w.ax)
-    w.ay=w.number(0,1,.13,.005);w.ay.setDecimals(3);h.addRow('Pen tip Y',w.ay)
-    hand_l.addWidget(label('PAINTING HAND'))
-    hand_l.addWidget(caption('When painting starts, the hand can switch to a brush.'))
-    w.show_paint_hand=QCheckBox('Show hand while painting')
-    w.show_paint_hand.setChecked(True);hand_l.addWidget(w.show_paint_hand)
-    from tools_kit import PAINT_CHOICES
-    ph=form_layout();hand_l.addLayout(ph)
-    w.paint_hand=QComboBox()
-    w.paint_hand.addItems(list(PAINT_CHOICES))
-    w.paint_hand.setToolTip('Keep the drawing hand, switch to the built-in paint brush, '
-                            'or use a hand from your Hands library while painting.')
-    ph.addRow('Painting hand',w.paint_hand)
-    w.paint_hand_size=w.number(5,90,30,1);w.paint_hand_size.setDecimals(0)
-    w.paint_hand_size.setToolTip('Width of the painting hand, as a share of the video width.')
-    ph.addRow('Painting hand size (%)',w.paint_hand_size)
-    w.paint_hand_choose=QPushButton('Choose painting hand…')
-    w.paint_hand_choose.clicked.connect(lambda checked=False: w.choose_paint_hand())
-    hand_l.addWidget(w.paint_hand_choose)
-    w.paint_hand_name=caption('')
-    hand_l.addWidget(w.paint_hand_name)
     hand_l.addStretch(1)
     tabs.addTab(scroll_view(hand),'Hand')
 
@@ -1400,13 +1524,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     scene_row.addWidget(w.scene_list,1)
     scene_buttons=QVBoxLayout();scene_buttons.setSpacing(4)
     w.scene_add=QPushButton('+ Add element')
-    w.scene_add.setToolTip('A new element after this one (a copy of it: then import its own SVG, image or text). '
+    w.scene_add.setToolTip('A new element after this one: choose a picture or SVG, write a text, or pick from the Library. '
                            'The camera moves to it.')
-    w.scene_add.clicked.connect(lambda checked=False: w.add_scene())
+    w.scene_add.clicked.connect(lambda checked=False: w.add_element_menu(False,w.scene_add))
     w.scene_picture=QPushButton('+ Same spot')
     w.scene_picture.setToolTip('A new element on the SAME page (no camera move): drawn next to the elements '
                                'before it. Import its artwork, then drag it on the preview to place it.')
-    w.scene_picture.clicked.connect(lambda checked=False: w.add_picture())
+    w.scene_picture.clicked.connect(lambda checked=False: w.add_element_menu(True,w.scene_picture))
     add_row=QHBoxLayout();add_row.setSpacing(4)
     add_row.addWidget(w.scene_add); add_row.addWidget(w.scene_picture)
     scene_buttons.addLayout(add_row)
@@ -1434,6 +1558,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.scene_transition_time.valueChanged.connect(lambda value: w.scene_transition_changed())
     trans.addRow('Move (s)',w.scene_transition_time)
     w.preview_scope=QComboBox();w.preview_scope.addItems(['This element','Whole video','Board'])
+    w.preview_scope.setItemData(0,'Only the element you are editing (its own parts on the timeline).',Qt.ItemDataRole.ToolTipRole)
+    w.preview_scope.setItemData(1,'The whole video: every element one after the other, with the camera moves.',Qt.ItemDataRole.ToolTipRole)
+    w.preview_scope.setItemData(2,'Board: all elements on one big page seen from above. Move them, make them '
+                                  'bigger or smaller: the camera follows.',Qt.ItemDataRole.ToolTipRole)
     w.preview_scope.setToolTip('This element: play the element you work on. Whole video: everything with the '
                                'camera moves. Board: all elements from above — move and resize their frames.')
     w.preview_scope.currentIndexChanged.connect(lambda index: w.preview_scope_changed())
@@ -1464,6 +1592,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.overlay_edit.connect(lambda oid: w.edit_overlay(oid))
     w.stage_timeline.overlay_action.connect(lambda oid,action: w.overlay_action(oid,action))
     w.stage_timeline.overlay_dropped.connect(lambda path,seconds: w.add_overlay_picture(path,at=seconds))
+    w.stage_timeline.element_clicked.connect(lambda k: w.timeline_element_clicked(k))
+    w.stage_timeline.element_edit.connect(lambda k: w.edit_element(k))
     w.vertical_splitter.addWidget(timeline)
     w.vertical_splitter.setStretchFactor(0,1)
     w.vertical_splitter.setStretchFactor(1,0)

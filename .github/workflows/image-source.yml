@@ -27,7 +27,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b 2>&1 | tee full-tests.log
+          python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline 2>&1 | tee full-tests.log
       - name: Report failing test output to pull request
         if: steps.tests.outcome == 'failure' && github.event_name == 'pull_request'
         env:
@@ -82,4 +82,4 @@ jobs:
           python -m pip install --only-binary=:all: -r requirements.txt
           python -c "import sys, numpy, cv2; from PySide6.QtWidgets import QApplication; print(sys.version, numpy.__version__, cv2.__version__)"
       - name: Test image reconstruction and existing modes on Windows
-        run: python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b
+        run: python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline

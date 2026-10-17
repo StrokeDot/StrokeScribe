@@ -156,7 +156,7 @@ class BoardWindowTests(unittest.TestCase):
         x, y, fw, fh = place(w.board_frames()[0], view, W, H)
         w.board_double(x + fw / 2, y + fh / 2)
         self.assertEqual(w.scene_index, 0)
-        self.assertEqual(w.preview_scope.currentIndex(), 0)
+        self.assertEqual(w.preview_scope.currentIndex(), 1)          # the whole video, at that element
 
     def test_small_frame_inside_and_show_everything_export(self):
         import scenes
