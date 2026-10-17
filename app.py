@@ -1167,7 +1167,7 @@ class Window(QMainWindow):
     # ------------------------------------------------------------ projects
     PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
-                      'use_color','preserve_colors','showhand','left_handed','show_paint_hand','handsize','ax','ay',
+                      'use_color','preserve_colors','showhand','left_handed','entrance','pause_after','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
                       'sound_on','sound_volume','sound_preview','preview_background','image_detail',
                       'image_style','image_animation_style','clean_faint',
@@ -1388,12 +1388,45 @@ class Window(QMainWindow):
         self.set_drawing(drawing)
 
     # ------------------------------------------------------------ scenes
+    def edit_element(self,k):
+        """The element's own settings window (Set / Cancel)."""
+        if not self.drawing or not 0<=k<len(self.scenes): return
+        if self.builder and self.builder.isRunning(): return
+        if k!=self.scene_index:
+            self.select_scene(k)
+            if k!=self.scene_index: return
+        self.playing=False
+        from element_dialog import ElementDialog
+        ElementDialog(self,k).exec()
+
+    def element_times(self,k):
+        """(seconds on screen, seconds of the camera move after it) of element k, from its settings."""
+        try:
+            s=self.settings_state() if k==self.scene_index else dict((self.scenes[k]['state'] or {}).get('settings',{}))
+            image=(self.source_type.currentIndex()==1) if k==self.scene_index else \
+                  ((self.scenes[k]['state'] or {}).get('source')=='image')
+            paint_only=image and s.get('image_animation')=='Paint Only'
+            colour=bool(s.get('preserve_colors',True)) if image else bool(s.get('use_color'))
+            length=0. if paint_only else float(s.get('duration',4))/max(.01,float(s.get('speed',1)))
+            if colour or paint_only:
+                length+=float(s.get('image_duration',8) if image else s.get('color_fade',.4))
+                length+=float(s.get('color_hold',.6))
+            length+=float(s.get('pause_after',0) or 0)
+            if (s.get('erase_mode') or 'Off')!='Off':
+                length+=float(s.get('erase_time',3))
+            from scenes import transition_seconds
+            scene=self.scenes[k]
+            move=transition_seconds(scene['transition'],scene['transition_seconds'],k==len(self.scenes)-1)
+            return length,move
+        except Exception:
+            return 0.,0.
+
     def scene_label(self,k):
         scene=self.scenes[k]
         if scene.get('name'): return scene['name']
         state=scene.get('state')
         title=self.project_title if state is None else state.get('title')
-        return title or f'Scene {k+1}'
+        return title or f'Element {k+1}'
 
     def store_scene(self,thumbnail=True):
         """Keep the edited scene's state (and a fresh thumbnail) in the scene list."""
@@ -1417,7 +1450,9 @@ class Window(QMainWindow):
             if k==self.scene_index and self.drawing is not None and scene.get('thumb') is None:
                 self.store_scene()
             # "+": drawn over pictures of earlier scenes (same page, or a frame on top of them).
-            item=QListWidgetItem(f'{k+1} {"+" if self.drawn_over(k) else "·"} {self.scene_label(k)}'[:22])
+            length,move=self.element_times(k)
+            times=f'⏱ {length:.1f}s'+(f'  ➜ {move:.1f}s' if move else '')
+            item=QListWidgetItem(f'{k+1} {"+" if self.drawn_over(k) else "·"} {self.scene_label(k)}'[:20]+'\n'+times)
             thumb=scene.get('thumb')
             if thumb is not None and not thumb.isNull():
                 from PySide6.QtGui import QImage, QPainter
@@ -1451,7 +1486,7 @@ class Window(QMainWindow):
         if not many and self.preview_scope.currentIndex():
             self.preview_scope.blockSignals(True); self.preview_scope.setCurrentIndex(0); self.preview_scope.blockSignals(False)
         self.export_all_scenes.setEnabled(many)
-        self.export_all_scenes.setText(f'Export all {len(self.scenes)} scenes as one video' if many
+        self.export_all_scenes.setText(f'Export all {len(self.scenes)} elements as one video' if many
                                        else 'Export all scenes as one video')
 
     def _leave_scene(self):
@@ -1506,7 +1541,7 @@ class Window(QMainWindow):
         self._leave_scene()
         current=self.scenes[self.scene_index]
         new=dict(state=copy.deepcopy(current['state']),transition=current['transition'],
-                 transition_seconds=current['transition_seconds'],name=f'Scene {len(self.scenes)+1}',
+                 transition_seconds=current['transition_seconds'],name=f'Element {len(self.scenes)+1}',
                  thumb=current.get('thumb'))
         self.scenes.insert(self.scene_index+1,new)
         self._enter_scene(self.scene_index+1)
@@ -1540,8 +1575,8 @@ class Window(QMainWindow):
 
     def delete_scene(self):
         if len(self.scenes)<2: return
-        answer=QMessageBox.question(self,'Delete scene',
-            f'Delete scene {self.scene_index+1} ({self.scene_label(self.scene_index)})?')
+        answer=QMessageBox.question(self,'Delete element',
+            f'Delete element {self.scene_index+1} ({self.scene_label(self.scene_index)})?')
         if answer!=QMessageBox.StandardButton.Yes: return
         self.playing=False
         removed=self.scene_index
@@ -2465,7 +2500,11 @@ class Window(QMainWindow):
         elif key=='paint':
             (self.image_duration if self.source_type.currentIndex() else self.color_fade).setValue(seconds)
         elif key=='hold':
-            self.color_hold.setValue(seconds)
+            # The hold clip shows the colour hold plus the pause after the element.
+            if self.options().get('final_image') is not None:
+                self.color_hold.setValue(max(0.,seconds-self.pause_after.value()))
+            else:
+                self.pause_after.setValue(seconds)
         elif key=='erase':
             self.erase_time.setValue(seconds)
 
@@ -2651,7 +2690,7 @@ class Window(QMainWindow):
         erase=options.get('erase')
         self.stage_timeline.update_state(options['duration'],
             options['fade_duration'] if options['final_image'] is not None else 0,
-            options['hold_duration'] if options['final_image'] is not None else 0,
+            (options['hold_duration'] if options['final_image'] is not None else 0)+options.get('pause',0),
             self.position,erase['seconds'] if erase else 0)
         options.pop('fps')
         # The artwork is scaled after rasterization. Compensating the hand

@@ -193,4 +193,10 @@ def soundtrack(drawing, options, path, volume=.8):
     samples = motion.track(drawing, options, total, TRACK_RATE)
     files = options.get('sound_files') or ()
     recordings = {kind: load_recording(p) for kind, p in zip(SOUND_KINDS, files) if p}
+    if (options.get('entrance') or 'draw') != 'draw':        # comes in with an effect: no pencil / brush
+        recordings = {k: v for k, v in recordings.items() if k not in ('draw', 'paint')}
+    erase = options.get('erase') or {}
+    from frame_render import EXITS
+    if erase.get('mode') in EXITS:                             # goes out with an effect: no eraser sound
+        recordings.pop('rub', None)
     return write_wav(path, synthesize(samples, total, w, h, volume, recordings=recordings))

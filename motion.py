@@ -190,5 +190,19 @@ def _pen_canvas(drawing, fraction, width, height, duration, fade_duration, hold_
 def track(drawing, options, total_seconds, rate=30.):
     """[(time_s, PenSample)] sampled `rate` times a second over the animation."""
     count = max(2, int(math.ceil(total_seconds * rate)) + 1)
-    return [((i / (count - 1)) * total_seconds, pen_at(drawing, i / (count - 1), **options))
-            for i in range(count)]
+    pause = max(0., float(options.get('pause', 0) or 0))
+    if (options.get('entrance') or 'draw') != 'draw':
+        return [((i / (count - 1)) * total_seconds, PenSample(None, None)) for i in range(count)]
+    if pause <= 0:
+        return [((i / (count - 1)) * total_seconds, pen_at(drawing, i / (count - 1), **options))
+                for i in range(count)]
+    # A pause after the element: the pen rests (and the eraser, if any, comes after it).
+    from frame_render import timeline_seconds
+    plain = timeline_seconds(drawing, dict(options, pause=0, erase=None))
+    pen_total = max(1e-6, total_seconds - pause)
+    out = []
+    for i in range(count):
+        t = i / (count - 1) * total_seconds
+        t_pen = t if t <= plain else (plain if t <= plain + pause else t - pause)
+        out.append((t, pen_at(drawing, min(1., t_pen / pen_total), **options)))
+    return out

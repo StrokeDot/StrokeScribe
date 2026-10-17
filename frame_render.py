@@ -141,6 +141,8 @@ def erase_setup(drawing, opts, erase):
     import eraser
     import motion
     opts = dict(opts, offset=(0., 0.))      # planned in place; compose_frame moves the result
+    if erase.get('mode') in EXITS:
+        return finished_picture(drawing, opts), None        # an effect, no eraser route
     key = _erase_key(drawing, opts, erase)
     if key in _ERASE_CACHE:
         return _ERASE_CACHE[key]
@@ -158,6 +160,71 @@ def erase_setup(drawing, opts, erase):
     return hold, plan
 
 
+# How an element comes in (instead of being drawn by the hand) and goes out (instead of
+# being erased): the same effects as the overlays (overlays._effect).
+ENTRANCES = {'Draw with the hand': 'draw', 'Fade in': 'Fade', 'Pop in': 'Pop', 'Zoom in': 'Zoom',
+             'Spin in': 'Spin', 'Slide in from the left': 'Slide from left',
+             'Slide in from the right': 'Slide from right', 'Slide in from the top': 'Slide from top',
+             'Slide in from the bottom': 'Slide from bottom'}
+EXITS = {'fade': 'Fade', 'pop': 'Pop', 'zoom': 'Zoom', 'spin': 'Spin', 'out-left': 'Slide from left',
+         'out-right': 'Slide from right', 'out-top': 'Slide from top', 'out-bottom': 'Slide from bottom'}
+
+_FINISHED = {}
+
+
+def finished_picture(drawing, opts):
+    """The finished element (no hand, no overlays, in place), cached."""
+    clean = {k: v for k, v in opts.items() if k not in ('overlays', '_seconds', 'erase')}
+    clean.update(offset=(0., 0.), ghost=0, pause=0, entrance='draw')
+    layers = clean.get('layers', 'all')
+    clean['layers'] = 'hand' if layers == 'hand' else 'art'
+    key = _erase_key(drawing, clean, {'mode': 'finished', 'size': 0})
+    if key not in _FINISHED:
+        if len(_FINISHED) > 6:
+            _FINISHED.clear()
+        _FINISHED[key] = _core(drawing, 1., clean)
+    return _FINISHED[key]
+
+
+def effect_frame(image, kind, p):
+    """`image` (a whole frame) with an entrance effect at progress p (0..1); p=1: unchanged."""
+    import overlays
+    if p >= 1:
+        return image.copy()
+    opacity, dx, dy, scale, rotation = overlays._effect(kind, p)
+    from PySide6.QtCore import QPointF, QRectF
+    from PySide6.QtGui import QPainter
+    out = _blank(image)
+    if opacity <= 0 or scale <= 0:
+        return out
+    w, h = image.width(), image.height()
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    painter.setOpacity(min(1., opacity))
+    painter.translate(QPointF(w / 2 + dx * w, h / 2 + dy * h))
+    if rotation:
+        painter.rotate(rotation)
+    painter.scale(scale, scale)
+    painter.drawImage(QRectF(-w / 2, -h / 2, w, h), image)
+    painter.end()
+    return out
+
+
+def _entering(drawing, fraction, opts, kind):
+    """The element comes in with an effect during its animation time, then stays."""
+    plain = timeline_seconds(drawing, dict(opts, pause=0))
+    length = float(opts.get('duration', 4) or 0) or float(opts.get('fade_duration', .4) or .4)
+    p = fraction * plain / max(.05, length)
+    finished = finished_picture(drawing, opts)
+    frame = effect_frame(finished, kind, min(1., p))
+    frame = shift(frame, *offset_of(opts))
+    items = opts.get('overlays') if opts.get('layers', 'all') != 'hand' else None
+    if items and opts.get('_seconds') is not None:
+        import overlays
+        overlays.paint(frame, items, opts['_seconds'])
+    return frame
+
+
 def compose_frame(drawing, fraction, options, camera_path=None):
     """options: render_color_timeline keywords plus artwork_scale, duration and erase."""
     from engine import apply_lettering_background
@@ -166,7 +233,26 @@ def compose_frame(drawing, fraction, options, camera_path=None):
     if items:
         opts['_seconds'] = max(0., min(1., float(fraction))) * timeline_seconds(drawing, options)
     if progress is None:
-        frame = _core(drawing, base_fraction, opts, camera_path)
+        pause = float(opts.get('pause', 0) or 0)
+        if pause > 0:                              # the pause after the element: stays finished
+            whole = timeline_seconds(drawing, opts)
+            plain = whole - pause
+            base_fraction = min(1., base_fraction * whole / plain) if plain > 0 else 1.
+        entrance = opts.get('entrance') or 'draw'
+        if entrance != 'draw':
+            frame = _entering(drawing, base_fraction, opts, entrance)
+        else:
+            frame = _core(drawing, base_fraction, opts, camera_path)
+    elif erase.get('mode') in EXITS:
+        # Goes out with an effect (fade, pop, zoom, spin, move out) instead of an eraser.
+        hold = finished_picture(drawing, opts)
+        frame = effect_frame(hold, EXITS[erase['mode']], 1. - progress)
+        frame = shift(frame, *offset_of(opts))
+        if items:
+            import overlays
+            overlays.paint(frame, items, opts['_seconds'])
+        if camera_path is not None:
+            frame = _camera_view(frame, *camera_path.at(fraction))
     else:
         import eraser
         hold, plan = erase_setup(drawing, {k: v for k, v in opts.items() if k not in ('overlays', '_seconds')}, erase)
@@ -236,10 +322,12 @@ def timeline_seconds(drawing, options):
     if erase and erase.get('mode'):
         base = {k: v for k, v in options.items() if k != 'erase'}
         return timeline_seconds(drawing, base) + max(.1, float(erase.get('seconds', 3)))
+    pause = max(0., float(options.get('pause', 0) or 0))      # the element stays, finished
     image = options.get('final_image')
     if image is None or image.isNull():
-        return max(.001, float(options.get('duration', 4)))
+        return max(.001, float(options.get('duration', 4))) + pause
     if getattr(drawing, 'source_kind', None) == 'image' and getattr(drawing, 'image_animation', None) == 'paint_only':
-        return max(.001, float(options.get('fade_duration', .4))) + max(0., float(options.get('hold_duration', .6)))
+        return (max(.001, float(options.get('fade_duration', .4))) + max(0., float(options.get('hold_duration', .6)))
+                + pause)
     return timeline_duration(options.get('duration', 4), image, options.get('fade_duration', .4),
-                             options.get('hold_duration', .6))
+                             options.get('hold_duration', .6)) + pause

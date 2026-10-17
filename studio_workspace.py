@@ -243,7 +243,7 @@ class StageTimeline(QFrame):
         stages=[('Draw',self.draw_seconds,c['draw']),
                 ('Paint',self.paint_seconds,c['paint']),
                 ('Hold',self.hold_seconds,c['hold']),
-                ('Erase',self.erase_seconds,c.get('erase','#D9667E'))]
+                ('Out',self.erase_seconds,c.get('erase','#D9667E'))]
         if self.scene_segments:
             palette=[c['draw'],c['paint'],c['hold'],c.get('erase','#D9667E')]
             stages=[]; k=0
@@ -264,7 +264,7 @@ class StageTimeline(QFrame):
             p.setPen(QPen(QColor(color).lighter(125),1))
             p.setBrush(fill)
             p.drawRoundedRect(rect,7,7)
-            if not self.scene_segments and name.lower() in self.editable and part>=14:
+            if not self.scene_segments and {'out':'erase'}.get(name.lower(),name.lower()) in self.editable and part>=14:
                 # Grip on the right edge: drag it to change the length.
                 p.setPen(QPen(QColor(255,255,255,150),1.4))
                 gx=rect.right()-4
@@ -1067,6 +1067,15 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.pen_ease.addItems(['Constant speed','Natural (ease in and out)'])
     w.pen_ease.setToolTip('Natural: every line starts and ends a little slower, like a real hand.')
     a.addRow('Pen movement',w.pen_ease)
+    from frame_render import ENTRANCES
+    w.entrance=QComboBox(); w.entrance.addItems(list(ENTRANCES))
+    w.entrance.setToolTip('How this element appears: drawn by the hand, or with an effect (no hand) '
+                          'during its animation time.')
+    a.addRow('Comes in',w.entrance)
+    w.pause_after=w.number(0,60,0,.5)
+    w.pause_after.setToolTip('Seconds the finished element stays on screen before it goes out or the '
+                             'camera moves on (works with or without colours).')
+    a.addRow('Pause after (s)',w.pause_after)
     w.camera=QComboBox()
     w.camera.addItems(['Off','Gentle zoom','Close-up zoom'])
     w.camera.setToolTip('Camera follow: the view zooms in and glides after the pen, then pulls back '
@@ -1118,15 +1127,16 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stroke_spacing.setToolTip('Lower values add more overlap between brush strokes.')
     a2.addRow('Stroke spacing',w.stroke_spacing)
     w.color_hold=w.number(0,30,.6,.1);a2.addRow('Hold (s)',w.color_hold)
-    animation_l.addWidget(label('ERASE AT THE END'))
+    animation_l.addWidget(label('GOES OUT AT THE END'))
     a3=form_layout();animation_l.addLayout(a3)
+    from eraser import MODES as _EXITS
     w.erase_mode=QComboBox()
-    w.erase_mode.addItems(['Off','Zigzag (follows the shapes)','Along the lines'])
-    w.erase_mode.setToolTip('After the hold, an eraser rubs the picture away. Zigzag finds where the '
-                            'picture is and scrubs back and forth over it; Along the lines rubs along '
-                            'the drawn lines, last line first.')
-    a3.addRow('Eraser',w.erase_mode)
-    w.erase_time=w.number(.5,30,3,.5);a3.addRow('Erase time (s)',w.erase_time)
+    w.erase_mode.addItems(list(_EXITS))
+    w.erase_mode.setToolTip('At the end the element goes away: an eraser rubs it out (Zigzag: back and forth '
+                            'over the picture; Along the lines: last line first), or it fades, pops, '
+                            'zooms, spins or moves out.')
+    a3.addRow('Goes out',w.erase_mode)
+    w.erase_time=w.number(.3,30,3,.5);a3.addRow('Out time (s)',w.erase_time)
     w.erase_size=QSpinBox();w.erase_size.setRange(2,30);w.erase_size.setValue(8);w.erase_size.setSuffix('%')
     w.erase_size.setToolTip('Width of the rubbing area, as a share of the video width.')
     a3.addRow('Eraser size',w.erase_size)
@@ -1241,7 +1251,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.export_layers.currentIndexChanged.connect(w.refresh)
     el=form_layout();el.addRow('Export',w.export_layers)
     output_l.addLayout(el)
-    w.export_all_scenes=QCheckBox('Export all scenes as one video')
+    w.export_all_scenes=QCheckBox('Export all elements as one video')
     w.export_all_scenes.setChecked(True)
     w.export_all_scenes.setToolTip('With several scenes: one video with every scene and the moves between them. '
                                    'Off: only the scene you are editing.')
@@ -1369,7 +1379,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     from scenes import TRANSITIONS
     from PySide6.QtCore import QSize
     scene_row=QHBoxLayout();scene_row.setSpacing(6)
-    scene_row.addWidget(label('SCENES'))
+    scene_row.addWidget(label('ELEMENTS'))
     w.scene_list=QListWidget()
     w.scene_list.setObjectName('sceneStrip')
     w.scene_list.setFlow(QListWidget.Flow.LeftToRight)
@@ -1377,46 +1387,54 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.scene_list.setViewMode(QListWidget.ViewMode.IconMode)
     w.scene_list.setMovement(QListWidget.Movement.Static)
     w.scene_list.setIconSize(QSize(72,40))
-    w.scene_list.setGridSize(QSize(118,62))
-    w.scene_list.setFixedHeight(70)
+    w.scene_list.setGridSize(QSize(132,78))
+    w.scene_list.setFixedHeight(86)
     w.scene_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
     w.scene_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-    w.scene_list.setToolTip('Click a scene to edit it. Every scene has its own drawing and settings.')
+    w.scene_list.setToolTip('The elements of your video, in order (like VideoScribe). Click one to work on it; '
+                            'double-click (or Edit…) for its settings: how it comes in, its times, colours, '
+                            'how it goes out and the move to the next one.')
     w.scene_list.currentRowChanged.connect(lambda row: w.select_scene(row))
+    w.scene_list.itemDoubleClicked.connect(lambda item: w.edit_element(w.scene_list.row(item)))
     scene_row.addWidget(w.scene_list,1)
     scene_buttons=QVBoxLayout();scene_buttons.setSpacing(4)
-    w.scene_add=QPushButton('+ Add scene')
-    w.scene_add.setToolTip('A new scene after this one (a copy of it: then import its own SVG or image).')
+    w.scene_add=QPushButton('+ Add element')
+    w.scene_add.setToolTip('A new element after this one (a copy of it: then import its own SVG, image or text). '
+                           'The camera moves to it.')
     w.scene_add.clicked.connect(lambda checked=False: w.add_scene())
-    w.scene_picture=QPushButton('+ Add picture')
-    w.scene_picture.setToolTip('Another picture on the SAME page: the hand draws it next to the pictures before it. '
-                               'Import its artwork, then drag it on the preview to place it.')
+    w.scene_picture=QPushButton('+ Same spot')
+    w.scene_picture.setToolTip('A new element on the SAME page (no camera move): drawn next to the elements '
+                               'before it. Import its artwork, then drag it on the preview to place it.')
     w.scene_picture.clicked.connect(lambda checked=False: w.add_picture())
     add_row=QHBoxLayout();add_row.setSpacing(4)
     add_row.addWidget(w.scene_add); add_row.addWidget(w.scene_picture)
     scene_buttons.addLayout(add_row)
     move_row=QHBoxLayout();move_row.setSpacing(4)
-    w.scene_left=QPushButton('◀');w.scene_left.setToolTip('Move this scene earlier')
+    w.scene_edit=QPushButton('Edit…');w.scene_edit.setObjectName('primary')
+    w.scene_edit.setToolTip('Settings of this element in a window of its own, with its own preview: how it '
+                            'comes in, times, colours, how it goes out and the move to the next one.')
+    w.scene_edit.clicked.connect(lambda checked=False: w.edit_element(w.scene_index))
+    w.scene_left=QPushButton('◀');w.scene_left.setToolTip('Move this element earlier')
     w.scene_left.clicked.connect(lambda checked=False: w.move_scene(-1))
-    w.scene_right=QPushButton('▶');w.scene_right.setToolTip('Move this scene later')
+    w.scene_right=QPushButton('▶');w.scene_right.setToolTip('Move this element later')
     w.scene_right.clicked.connect(lambda checked=False: w.move_scene(1))
-    w.scene_delete=QPushButton('Delete');w.scene_delete.setToolTip('Delete this scene')
+    w.scene_delete=QPushButton('Delete');w.scene_delete.setToolTip('Delete this element')
     w.scene_delete.clicked.connect(lambda checked=False: w.delete_scene())
-    for b in (w.scene_left,w.scene_right,w.scene_delete): move_row.addWidget(b)
+    for b in (w.scene_edit,w.scene_left,w.scene_right,w.scene_delete): move_row.addWidget(b)
     scene_buttons.addLayout(move_row)
     scene_row.addLayout(scene_buttons)
     trans=QFormLayout();trans.setSpacing(4)
     w.scene_transition=QComboBox();w.scene_transition.addItems(list(TRANSITIONS))
-    w.scene_transition.setToolTip('How the video moves from this scene to the next one.')
+    w.scene_transition.setToolTip('How the camera goes from this element to the next one.')
     w.scene_transition.activated.connect(lambda index: w.scene_transition_changed())
     trans.addRow('Then',w.scene_transition)
     w.scene_transition_time=w.number(.2,6,1.2,.1)
-    w.scene_transition_time.setToolTip('Length of the move to the next scene (seconds).')
+    w.scene_transition_time.setToolTip('Length of the move to the next element (seconds).')
     w.scene_transition_time.valueChanged.connect(lambda value: w.scene_transition_changed())
     trans.addRow('Move (s)',w.scene_transition_time)
-    w.preview_scope=QComboBox();w.preview_scope.addItems(['This scene','All scenes','Board'])
-    w.preview_scope.setToolTip('This scene: play the scene you edit. All scenes: the whole video. '
-                               'Board: all scenes from above — move and resize their frames.')
+    w.preview_scope=QComboBox();w.preview_scope.addItems(['This element','Whole video','Board'])
+    w.preview_scope.setToolTip('This element: play the element you work on. Whole video: everything with the '
+                               'camera moves. Board: all elements from above — move and resize their frames.')
     w.preview_scope.currentIndexChanged.connect(lambda index: w.preview_scope_changed())
     trans.addRow('Preview',w.preview_scope)
     w.board_arrange=QPushButton('Arrange in a row'); w.board_arrange.setObjectName('subtle')
@@ -1463,6 +1481,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
         widget.valueChanged.connect(w.refresh)
     w.showhand.toggled.connect(w.refresh)
     w.left_handed.toggled.connect(w.refresh)
+    w.entrance.currentIndexChanged.connect(w.refresh)
+    w.pause_after.valueChanged.connect(w.refresh)
     w.res.currentIndexChanged.connect(w.refresh)
     w.use_color.toggled.connect(w.refresh)
     w.color_fade.valueChanged.connect(w.refresh)

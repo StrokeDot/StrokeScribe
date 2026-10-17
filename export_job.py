@@ -45,6 +45,9 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     options['painting_hand'] = painting_hand(s, hand)
     options['erase'] = erase_from_settings(s, hand)
     options['overlays'] = []                     # pictures / titles on top: added from the scene (overlays.py)
+    from frame_render import ENTRANCES
+    options['entrance'] = ENTRANCES.get(s.get('entrance') or '', 'draw')
+    options['pause'] = max(0., float(s.get('pause_after', 0) or 0))
     options['workers'] = 0 if s.get('fast_export', True) else 1
     from frame_render import LAYERS
     options['layers'] = LAYERS.get(s.get('export_layers') or '', 'all')

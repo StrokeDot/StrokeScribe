@@ -160,6 +160,14 @@ The original v0.5.0 release remains independently downloadable: [StrokeScribe Pr
 This remains an experimental prototype. Automated tests passed on the feature branch, but the actual original-color headset PNG is not stored in this repository, so brush movement and full-color alignment need manual Windows visual testing.
 
 
+## Elements, like VideoScribe (v0.5.3-experimental.54)
+
+- **Elements instead of "scenes":** the strip under the preview lists the elements of your video in order. Each card shows how long the element is on screen (⏱) and the camera move to the next one (➜).
+- **Edit… (or double-click an element):** a window for that element only, with its own little player: how it comes in and how long, colours (painting style, paint time, colour hold), the pause, how it goes out, the camera move to the next element, and the hand. Set keeps the changes, Cancel puts everything back.
+- **Comes in:** drawn by the hand, or Fade in, Pop in, Zoom in, Spin in, Slide in from a side (no hand, no pencil sound).
+- **Pause after (s):** the finished element stays on screen, with or without colours.
+- **Goes out:** an eraser (as before), or Fade out, Pop out, Zoom out, Spin out, Move out to a side.
+
 ## One background, 55 fonts, natural pen, left hand (v0.5.3-experimental.53)
 
 - **One Background for everything:** the menu above the preview (Transparent, White, Dark, Whiteboard, Paper, Chalkboard, Cork, Black or any colour) is the background of the whole video: drawings, images and lettering, the preview and every export (MP4, MOV, WebM). "Lettering background" and "MP4 background" are gone. Transparent: MOV, WebM and PNG keep transparency (MP4 is then white).
