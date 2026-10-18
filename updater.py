@@ -6,14 +6,12 @@ read-only GitHub key (token) is only used if the project is made private again.
 It is kept in this PC's StrokeScribe settings.
 
 Updating:
-  1. download the version as a ZIP (or use a ZIP you already have),
-  2. keep a copy of every file it replaces in `_previous_version/`, so the
-     update can be undone,
-  3. copy the new files over the app folder. Nothing else is touched: the
-     .venv packages, the Library, projects, settings and AI models stay,
-  4. if the new version needs other Python packages (requirements.txt
-     changed), install them into the existing .venv,
-  5. restart.
+  1. download and validate an update ZIP into a temporary file,
+  2. stage and verify replacement files without altering the live application,
+  3. preserve rollback copies and write a recovery journal,
+  4. atomically replace application files, preserving user projects and models,
+  5. require the full installer if Python requirements change,
+  6. restart (startup recovers any interrupted transaction).
 """
 from __future__ import annotations
 
@@ -515,12 +513,25 @@ def _read(path):
 
 
 def can_roll_back(app_dir=APP_DIR):
-    return (Path(app_dir) / BACKUP / 'update.json').is_file()
+    app_dir = Path(app_dir)
+    return (not _journal_path(app_dir).exists()
+            and (app_dir / BACKUP / 'update.json').is_file())
+
+
+def rollback_target_version(app_dir=APP_DIR):
+    """Show the exact version that a manual rollback would restore."""
+    try:
+        metadata = json.loads((Path(app_dir) / BACKUP / 'update.json').read_text(encoding='utf-8'))
+        return metadata.get('from') or 'previous version'
+    except (OSError, ValueError, TypeError):
+        return 'previous version'
 
 
 def roll_back(app_dir=APP_DIR):
     """Go back to the version before the last update."""
     app_dir = Path(app_dir)
+    if _journal_path(app_dir).exists():
+        raise UpdateError('An unfinished update must be recovered before manual rollback.')
     backup = app_dir / BACKUP
     info = json.loads((backup / 'update.json').read_text())
     for path in backup.rglob('*'):
