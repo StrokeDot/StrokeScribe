@@ -175,6 +175,7 @@ class UpdateWindowTests(unittest.TestCase):
             pip.assert_not_called()
 
     def test_window(self):
+        previous_config = os.environ.get('STROKESCRIBE_CONFIG_DIR')
         with tempfile.TemporaryDirectory() as tmp:
             os.environ['STROKESCRIBE_CONFIG_DIR'] = tmp
             try:
@@ -210,7 +211,21 @@ class UpdateWindowTests(unittest.TestCase):
                 self.assertIn('experimental.999', w.update_banner_text.text())
                 w.close()
             finally:
-                del os.environ['STROKESCRIBE_CONFIG_DIR']
+                # app.Window initializes a rotating log in this test folder.
+                # Windows refuses to remove an open log file, so close only
+                # the handlers for this disposable directory before cleanup.
+                import applog
+                root = Path(tmp).resolve()
+                for handler in list(applog.log.handlers):
+                    filename = getattr(handler, 'baseFilename', None)
+                    if filename and Path(filename).resolve().is_relative_to(root):
+                        applog.log.removeHandler(handler)
+                        handler.close()
+                        applog.log._ready = False
+                if previous_config is None:
+                    os.environ.pop('STROKESCRIBE_CONFIG_DIR', None)
+                else:
+                    os.environ['STROKESCRIBE_CONFIG_DIR'] = previous_config
 
 
 if __name__ == '__main__':
