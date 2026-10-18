@@ -109,6 +109,41 @@ class WindowLifecycleTests(unittest.TestCase):
         self.assertTrue(self.w.autosave_tick())
         self.assertIsNotNone(autosave.pending())
 
+
+    def test_cancelled_library_replacement_keeps_current_artwork(self):
+        from types import SimpleNamespace
+        source = Path(__file__).parent / 'samples' / 'drawing.svg'
+        old = self.w.drawing
+        self.w.duration.setValue(self.w.duration.value() + .5)
+        with patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Cancel):
+            self.w.use_library_item('images', SimpleNamespace(path=source, name='Other SVG'))
+        self.assertIs(self.w.drawing, old)
+
+    def test_cancelled_ai_replacement_never_starts_image_builder(self):
+        self.w.duration.setValue(self.w.duration.value() + .5)
+        with patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Cancel), \
+             patch.object(self.w, 'build_image') as started:
+            self.w.use_ai_result('image', 'not-started.png')
+        started.assert_not_called()
+
+    def test_cancelled_restart_does_not_launch_new_app(self):
+        self.w.duration.setValue(self.w.duration.value() + .5)
+        with patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Cancel), \
+             patch('updater.restart') as restart:
+            self.w.restart_after_update()
+        self.assertTrue(self.w.isVisible())
+        restart.assert_not_called()
+
+    def test_scene_reorder_and_transition_are_persisted_dirty(self):
+        self.w.add_scene()
+        self.w.project_changes.mark_saved(self.w.project_state())
+        self.w.move_scene(-1)
+        self.assertTrue(self.w.has_unsaved_changes())
+        self.w.project_changes.mark_saved(self.w.project_state())
+        self.w.scene_transition.setCurrentText('Pan right')
+        self.w.scene_transition_changed()
+        self.assertTrue(self.w.has_unsaved_changes())
+
     def test_rejecting_crash_restore_does_not_silently_delete_backup(self):
         self.w.duration.setValue(self.w.duration.value() + .5)
         self.assertTrue(self.w.autosave_tick())
