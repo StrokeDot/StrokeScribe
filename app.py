@@ -1318,8 +1318,18 @@ class Window(QMainWindow):
             f'StrokeScribe did not close normally last time.\n\nRestore "{name}" as it was at {when}?',
             QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No)
         if answer!=QMessageBox.StandardButton.Yes:
-            # Keep the recovery copy available until the user explicitly saves
-            # or discards it; declining to restore does not mean delete.
+            # Declining recovery never silently deletes the user's data.
+            # Archive it as a normal .strokescribe project, freeing the live
+            # autosave slot for new edits in this application session.
+            try:
+                kept=autosave.archive_pending()
+            except Exception as exc:
+                QMessageBox.warning(self,'Recovery copy',
+                    'The recovery file is still in its original location; it could not be archived: '+str(exc))
+                return False
+            if kept:
+                autosave.clear()
+                self.status.setText('Recovery kept for later: '+str(kept))
             return False
         import projects
         try:
