@@ -410,17 +410,29 @@ def _base_python():
 
 
 def _extract_zip(data, target, strip_top=True):
+    """Validate every ComfyUI member and CRC before replacing the old engine."""
+    from archive_safety import validate_archive
     target = Path(target)
-    if target.exists():
-        shutil.rmtree(target)
     with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        for member in archive.infolist():
-            name = member.filename.split('/', 1)[1] if strip_top and '/' in member.filename else member.filename
-            if not name or member.is_dir():
-                continue
-            out = target / name
-            if not str(out.resolve()).startswith(str(target.resolve())):
-                continue                                   # never write outside the folder
+        prefix = ''
+        if strip_top:
+            roots = {info.filename.split('/', 1)[0]
+                     for info in archive.infolist() if info.filename}
+            if len(roots) != 1:
+                raise ValueError('ComfyUI ZIP must have one enclosing folder.')
+            prefix = next(iter(roots)) + '/'
+        files = validate_archive(archive, target, prefix=prefix,
+                                 max_files=60000, max_bytes=4 * 1024 ** 3)
+        if not files:
+            raise ValueError('ComfyUI ZIP contains no installable files.')
+        bad = archive.testzip()
+        if bad is not None:
+            raise ValueError('ComfyUI ZIP is damaged at ' + bad)
+        # No deletion before preflight. The staged/atomic extraction upgrade
+        # is handled separately by the interrupted-installation phase.
+        if target.exists():
+            shutil.rmtree(target)
+        for member, _, out in files:
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(archive.read(member))
 

@@ -197,22 +197,25 @@ def download(token, target, branch=DEFAULT_BRANCH, repo=REPO, progress=lambda do
 
 # ------------------------------------------------------------ applying
 
-def _members(archive):
-    """(member, relative path) of the app files inside the ZIP (any top folder)."""
+def _members(archive, destination_root=APP_DIR):
+    """Preflight the ENTIRE ZIP before returning its eligible application files."""
+    from archive_safety import validate_archive
     names = [n for n in archive.namelist() if not n.endswith('/')]
     version = [n for n in names if n.rsplit('/', 1)[-1] == 'version.py' and n.count('/') <= 1]
     if not version or not any(n.rsplit('/', 1)[-1] == 'app.py' for n in names):
         raise UpdateError('This ZIP is not a StrokeScribe version (version.py and app.py are missing).')
     prefix = version[0][:-len('version.py')]
+    try:
+        checked = validate_archive(archive, destination_root, prefix=prefix,
+                                   max_files=30000, max_bytes=3 * 1024 ** 3)
+    except ValueError as exc:
+        raise UpdateError('Unsafe or oversized StrokeScribe ZIP: ' + str(exc)) from exc
     out = []
-    for name in names:
-        if not name.startswith(prefix):
+    for info, rel, _ in checked:
+        parts = rel.split('/')
+        if parts[0] in SKIP_TOP or rel.endswith('.pyc'):
             continue
-        rel = name[len(prefix):]
-        parts = Path(rel).parts
-        if not parts or parts[0] in SKIP_TOP or '..' in parts or rel.endswith('.pyc'):
-            continue
-        out.append((name, rel))
+        out.append((info.filename, rel))
     return out, prefix
 
 
@@ -228,7 +231,7 @@ def apply_zip(zip_path, app_dir=APP_DIR, log=lambda text: None):
     app_dir = Path(app_dir)
     previous = current_version(app_dir)
     with zipfile.ZipFile(zip_path) as archive:
-        members, prefix = _members(archive)
+        members, prefix = _members(archive, app_dir)
         version = version_in(archive.read(prefix + 'version.py').decode('utf-8', 'replace'))
         old_requirements = _read(app_dir / 'requirements.txt')
         backup = app_dir / BACKUP
