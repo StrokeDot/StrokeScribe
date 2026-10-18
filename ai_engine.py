@@ -15,6 +15,7 @@ is requested, and stopped with the app.
 from __future__ import annotations
 
 import io
+import hashlib
 import json
 import os
 import random
@@ -24,6 +25,7 @@ import socket
 import subprocess
 import sys
 import time
+import tempfile
 import urllib.error
 import urllib.request
 import uuid
@@ -122,7 +124,7 @@ def _open(url, start=None, end=None, timeout=SOCKET_TIMEOUT):
     return urllib.request.urlopen(request, timeout=timeout)
 
 
-def download(url, target, size=None, progress=None, cancelled=lambda: False, connections=None):
+def download(url, target, size=None, progress=None, cancelled=lambda: False, connections=None, sha256=None):
     """Download with resume, progress(done, total) and size check.
 
     Big files with a known size are fetched in pieces over several connections
@@ -131,7 +133,30 @@ def download(url, target, size=None, progress=None, cancelled=lambda: False, con
     so a stopped download continues where it stopped."""
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
-    if size and target.is_file() and target.stat().st_size == size:
+    if sha256 is not None:
+        if not re.fullmatch(r'[0-9a-fA-F]{64}', sha256):
+            raise ValueError('Invalid SHA-256 expected checksum.')
+        sha256 = sha256.lower()
+
+    def matches_hash(path):
+        if sha256 is None:
+            return True
+        digest = hashlib.sha256()
+        with Path(path).open('rb') as stream:
+            for block in iter(lambda: stream.read(1 << 20), b''):
+                digest.update(block)
+        return digest.hexdigest() == sha256
+
+    def finalize_part(part):
+        if not matches_hash(part):
+            part.unlink(missing_ok=True)
+            part.with_name(part.name + '.json').unlink(missing_ok=True)
+            raise RuntimeError('SHA-256 checksum mismatch for ' + target.name +
+                               '; invalid bytes were discarded; retry download.')
+        part.replace(target)
+        return target
+
+    if size and target.is_file() and target.stat().st_size == size and matches_hash(target):
         if progress:
             progress(size, size)
         return target
@@ -146,14 +171,12 @@ def download(url, target, size=None, progress=None, cancelled=lambda: False, con
             final = None
         if final:
             _download_pieces(final, url, part, size, progress, cancelled, connections)
-            part.replace(target)
-            return target
+            return finalize_part(part)
     _download_single(url, part, size, progress, cancelled)
     if size and part.stat().st_size != size:
         raise RuntimeError(f'{target.name} is incomplete ({part.stat().st_size} of {size} bytes). '
                            'Try again to resume.')
-    part.replace(target)
-    return target
+    return finalize_part(part)
 
 
 def _resolve(url):
@@ -409,32 +432,78 @@ def _base_python():
     return str(exe)
 
 
-def _extract_zip(data, target, strip_top=True):
-    """Validate every ComfyUI member and CRC before replacing the old engine."""
+def recover_engine_folder(target):
+    """Restore the old engine if an interrupted folder swap left no active one."""
+    target = Path(target)
+    previous = target.with_name(target.name + '.previous')
+    if not previous.is_dir():
+        return False
+    if target.is_symlink() or previous.is_symlink():
+        raise RuntimeError('Unsafe symlink in AI engine recovery folders.')
+    if target.exists():
+        # The complete, staged replacement was already renamed into place.
+        # A crash only interrupted removal of its previous-version backup.
+        shutil.rmtree(previous)
+        return False
+    os.replace(previous, target)
+    return True
+
+
+def _extract_zip(data, target, strip_top=True, cancelled=lambda: False):
+    """Stage a whole verified engine folder before replacing the current one."""
     from archive_safety import validate_archive
     target = Path(target)
-    with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        prefix = ''
-        if strip_top:
-            roots = {info.filename.split('/', 1)[0]
-                     for info in archive.infolist() if info.filename}
-            if len(roots) != 1:
-                raise ValueError('ComfyUI ZIP must have one enclosing folder.')
-            prefix = next(iter(roots)) + '/'
-        files = validate_archive(archive, target, prefix=prefix,
-                                 max_files=60000, max_bytes=4 * 1024 ** 3)
-        if not files:
-            raise ValueError('ComfyUI ZIP contains no installable files.')
-        bad = archive.testzip()
-        if bad is not None:
-            raise ValueError('ComfyUI ZIP is damaged at ' + bad)
-        # No deletion before preflight. The staged/atomic extraction upgrade
-        # is handled separately by the interrupted-installation phase.
-        if target.exists():
-            shutil.rmtree(target)
-        for member, _, out in files:
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_bytes(archive.read(member))
+    if target.is_symlink():
+        raise ValueError('AI engine destination cannot be a symlink.')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    recover_engine_folder(target)
+    stage = Path(tempfile.mkdtemp(prefix=target.name + '.staging-', dir=str(target.parent)))
+    previous = target.with_name(target.name + '.previous')
+    moved_old = False
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            prefix = ''
+            if strip_top:
+                roots = {info.filename.split('/', 1)[0]
+                         for info in archive.infolist() if info.filename}
+                if len(roots) != 1:
+                    raise ValueError('ComfyUI ZIP must have one enclosing folder.')
+                prefix = next(iter(roots)) + '/'
+            files = validate_archive(archive, target, prefix=prefix,
+                                     max_files=60000, max_bytes=4 * 1024 ** 3)
+            if not files:
+                raise ValueError('ComfyUI ZIP contains no installable files.')
+            bad = archive.testzip()
+            if bad is not None:
+                raise ValueError('ComfyUI ZIP is damaged at ' + bad)
+            for member, rel, _ in files:
+                if cancelled():
+                    raise Cancelled('AI engine extraction cancelled; previous installation preserved.')
+                output = stage / rel
+                output.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(member) as source, output.open('wb') as dest:
+                    for chunk in iter(lambda: source.read(1 << 20), b''):
+                        if cancelled():
+                            raise Cancelled('AI engine extraction cancelled; previous installation preserved.')
+                        dest.write(chunk)
+                    dest.flush()
+                    os.fsync(dest.fileno())
+        if cancelled():
+            raise Cancelled('AI engine extraction cancelled; previous installation preserved.')
+        if target.is_dir():
+            os.replace(target, previous)
+            moved_old = True
+        try:
+            os.replace(stage, target)
+        except Exception:
+            if moved_old and previous.is_dir() and not target.exists():
+                os.replace(previous, target)
+            raise
+        if previous.is_dir():
+            shutil.rmtree(previous)
+    finally:
+        if stage.is_dir():
+            shutil.rmtree(stage, ignore_errors=True)
 
 
 def _fetch(url, log):
@@ -481,7 +550,8 @@ def download_model(paths, files, progress=lambda done, total, name: None, cancel
     for f in files:
         target = paths.model_path(f)
         download(f.url, target, f.size, lambda done, _t, f=f, base=base:
-                 progress(base + done, total, f.name), cancelled)
+                 progress(base + done, total, f.name), cancelled,
+                 sha256=getattr(f, 'sha256', None))
         base += f.size
 
 
