@@ -37,7 +37,10 @@ jobs:
       - run: |
           pip install --only-binary=:all: -r requirements.txt
       - name: Drawer interaction and existing generation UI
-        run: python tools/run_tests.py test_image_generator_updates test_ai.CreateImageWindowTests test_ui_theme
+        # Anchor the process-wide application log outside per-test temporary
+        # folders. Windows otherwise prevents their cleanup while the log is open.
+        run: |
+          python -c "import applog,runpy; applog.setup(); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_image_generator_updates test_ai.CreateImageWindowTests test_ui_theme
       - name: Create review screenshots
         if: hashFiles('render_image_generator_updates.py') != ''
         run: python render_image_generator_updates.py

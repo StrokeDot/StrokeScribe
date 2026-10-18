@@ -124,6 +124,15 @@ class AIWorker(QThread):
         self.done.emit(str(result['path']))
 
 
+class ResultPreview(QLabel):
+    """Notify when the monitor itself changes size, including drawer reflow."""
+    resized=Signal()
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        self.resized.emit()
+
+
 class CreateImageDialog(QDialog):
     """use_result(kind, path, original) is called with kind 'lineart' or 'image'."""
 
@@ -281,10 +290,12 @@ class CreateImageDialog(QDialog):
         form.setRowStretch(row, 1)
 
         right = QVBoxLayout(); body.addLayout(right, 1)
-        self.preview = QLabel('The result appears here.')
+        self.preview = ResultPreview('The result appears here.')
+        self.preview.resized.connect(self.refit_preview)
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumSize(300, 240)
-        self.preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        # Pixmap dimensions must never force the reflowed monitor to stay large.
+        self.preview.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         self.preview.setObjectName('monitorWell')
         self.preview.setStyleSheet('border-radius: 6px;')
         right.addWidget(self.preview, 1)
@@ -373,8 +384,7 @@ class CreateImageDialog(QDialog):
     def resizeEvent(self,event):
         super().resizeEvent(event)
         self.update_layout()
-        if hasattr(self,'reveal_timer') and not self.reveal_timer.isActive():
-            self.show_result(animate=False)
+
 
     def manage_models(self):
         if self.model_manager is not None:
@@ -695,6 +705,18 @@ class CreateImageDialog(QDialog):
         self.refresh()
 
     # ------------------------------------------------------------ the result well
+    def refit_preview(self):
+        if not getattr(self,'result_path',None) or not hasattr(self,'reveal_timer'):
+            return
+        if self.reveal_timer.isActive() and self.task!='sound':
+            pix=QPixmap(str(self.result_path))
+            if not pix.isNull():
+                self._shown=pix.scaled(self.preview.size(),Qt.AspectRatioMode.KeepAspectRatio,
+                                       Qt.TransformationMode.SmoothTransformation)
+                self.reveal_step()
+        else:
+            self.show_result(animate=False)
+
     def show_result(self, animate=False):
         """Show this tab's result (with a short fade-in when it has just been made)."""
         self.preview.setText('')
@@ -843,6 +865,10 @@ class CreateImageDialog(QDialog):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
 
     def closeEvent(self, event):
+        # QDialog.closeEvent calls reject(). Title-bar Close must dismiss the
+        # whole window; only Escape should first dismiss the updates drawer.
+        self.updates_panel.hide()
+        self.check_updates_button.setChecked(False)
         if self.model_manager is not None:
             self.model_manager.close()
         self.work_timer.stop(); self.reveal_timer.stop()
