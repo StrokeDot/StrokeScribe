@@ -78,9 +78,13 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(updater.current_version(self.app), '0.5.3-experimental.38')
         self.assertFalse(updater.can_roll_back(self.app))
 
-    def test_new_packages_are_noticed_and_package_zip_works(self):
+    def test_new_packages_are_rejected_in_place_for_full_installer(self):
         zip_path = self.make_zip(top='StrokeScribe-Prototype-v0.5.3-experimental.39/', requirements='numpy\nnewlib\n')
-        self.assertTrue(updater.apply_zip(zip_path, self.app)['requirements_changed'])
+        with self.assertRaisesRegex(updater.UpdateError, 'installer'):
+            updater.apply_zip(zip_path, self.app)
+        self.assertEqual(updater.current_version(self.app), '0.5.3-experimental.38')
+        self.assertEqual((self.app / 'app.py').read_text(), 'old app')
+        self.assertFalse((self.app / 'new_feature.py').exists())
 
     def test_wrong_zip_is_refused(self):
         path = self.dir / 'other.zip'
