@@ -89,6 +89,19 @@ class CompleteRenderPipelineTests(unittest.TestCase):
                 '-of','json',str(webm)]))['streams'][0]
             self.assertEqual(info['codec_name'],'vp9')
             self.assertEqual(str(info.get('tags',{}).get('alpha_mode')),'1')
+            # The WebM alpha tag alone is not proof that the pixel data
+            # survived the encode/decode round-trip. FFmpeg's native VP9
+            # decoder can discard alpha, so explicitly use libvpx-vp9.
+            rgba=subprocess.check_output([
+                'ffmpeg','-v','error','-c:v','libvpx-vp9',
+                '-i',str(webm),'-map','0:v:0','-frames:v',str(len(frames)),
+                '-f','rawvideo','-pix_fmt','rgba','pipe:1'])
+            self.assertEqual(len(rgba),160*90*4*len(frames))
+            alpha=rgba[3::4]
+            self.assertEqual(min(alpha),0,
+                             'The WebM must preserve fully transparent pixels.')
+            self.assertGreater(max(alpha),127,
+                               'The WebM must also contain visible artwork.')
 
     def test_intermediate_scene_transition_keeps_canvas_transparency(self):
         drawing=import_svg(HERE/'samples'/'drawing.svg')
