@@ -355,6 +355,47 @@ def stage_update(zip_path, app_dir=APP_DIR):
         raise
 
 
+def _recover_manual_rollback(app_dir, journal, stage):
+    """Undo an interrupted manual Go Back without consuming either snapshot."""
+    from archive_safety import validate_archive_member
+    active_backup = app_dir / BACKUP
+    preserved_backup = stage / 'previous_version'
+    # The original rollback data is never discarded while the journal exists.
+    if not (preserved_backup / 'update.json').is_file() and not (active_backup / 'update.json').is_file():
+        raise UpdateError('The original rollback backup is missing; recovery cannot continue.')
+    originals = tuple(journal.get('present', ()))
+    absent = tuple(journal.get('absent', ()))
+    for rel in originals + absent:
+        validate_archive_member(rel, app_dir)
+    for rel in originals:
+        if not (stage / 'current' / rel).is_file():
+            raise UpdateError('Manual rollback recovery snapshot is missing: ' + rel)
+    for rel in originals:
+        source = stage / 'current' / rel
+        target = validate_archive_member(rel, app_dir)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name('.' + target.name + '.' + uuid.uuid4().hex + '.restoring')
+        try:
+            shutil.copy2(source, temporary)
+            with temporary.open('rb') as saved:
+                os.fsync(saved.fileno())
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
+    for rel in absent:
+        target = validate_archive_member(rel, app_dir)
+        if target.is_file():
+            target.unlink()
+    if preserved_backup.is_dir():
+        if active_backup.exists():
+            raise UpdateError('Both previous-version backup locations exist; manual recovery is ambiguous.')
+        os.replace(preserved_backup, active_backup)
+    # Leave the recovery journal in place until original files AND backup are back.
+    _journal_path(app_dir).unlink()
+    shutil.rmtree(stage, ignore_errors=True)
+    return {'recovered': True, 'version': journal.get('from')}
+
+
 def recover_interrupted_update(app_dir=APP_DIR):
     """Restore a previously working installation from the durable journal.
 
@@ -370,6 +411,8 @@ def recover_interrupted_update(app_dir=APP_DIR):
     try:
         journal = json.loads(journal_path.read_text(encoding='utf-8'))
         stage = _safe_transaction_dir(app_dir, journal['stage'])
+        if journal.get('operation') == 'manual_rollback':
+            return _recover_manual_rollback(app_dir, journal, stage)
         transaction_id = journal['transaction_id']
         staged_backup = stage / 'backup'
         active_backup = app_dir / BACKUP
@@ -528,25 +571,99 @@ def rollback_target_version(app_dir=APP_DIR):
 
 
 def roll_back(app_dir=APP_DIR):
-    """Go back to the version before the last update."""
+    """Revert using a durable journal so a failed/manual rollback can recover.
+
+    The pre-rollback version remains runnable if a disk error or power loss
+    happens. The old _previous_version folder is removed only after success.
+    """
+    from archive_safety import validate_archive_member
     app_dir = Path(app_dir)
     if _journal_path(app_dir).exists():
         raise UpdateError('An unfinished update must be recovered before manual rollback.')
     backup = app_dir / BACKUP
-    info = json.loads((backup / 'update.json').read_text())
-    for path in backup.rglob('*'):
-        if path.is_file() and path.name != 'update.json':
-            rel = path.relative_to(backup)
-            target = app_dir / rel
+    try:
+        info = json.loads((backup / 'update.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError) as exc:
+        raise UpdateError('No valid previous-version backup is available.') from exc
+    if not isinstance(info, dict):
+        raise UpdateError('Previous-version backup metadata is invalid.')
+    restore = []
+    for item in sorted(backup.rglob('*')):
+        if item.is_symlink():
+            raise UpdateError('Previous-version backup contains a symlink.')
+        if item.is_file() and item.name != 'update.json':
+            rel = item.relative_to(backup).as_posix()
+            validate_archive_member(rel, app_dir)
+            restore.append(rel)
+    try:
+        removed = list(info.get('added') or [])
+        if any(not isinstance(x, str) for x in removed):
+            raise ValueError('Previous-version backup contains invalid filenames.')
+        for rel in removed:
+            validate_archive_member(rel, app_dir)
+    except ValueError as exc:
+        raise UpdateError('Unsafe previous-version backup metadata: ' + str(exc)) from exc
+    if set(restore).intersection(removed):
+        raise UpdateError('Previous-version backup has conflicting restore/remove paths.')
+    # Stage the currently installed version so we can reverse a partial
+    # rollback without relying on the older backup we are applying.
+    targets = sorted(set(restore + removed))
+    stage = Path(tempfile.mkdtemp(prefix='.strokescribe-update-', dir=str(app_dir)))
+    journal_started = False
+    try:
+        present, absent = [], []
+        for rel in targets:
+            current = validate_archive_member(rel, app_dir)
+            if current.is_symlink():
+                raise UpdateError('Installed file is a symlink: ' + rel)
+            if current.is_file():
+                snapshot = stage / 'current' / rel
+                snapshot.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(current, snapshot)
+                with snapshot.open('rb') as backed:
+                    os.fsync(backed.fileno())
+                if current.read_bytes() != snapshot.read_bytes():
+                    raise UpdateError('Manual rollback snapshot verification failed: ' + rel)
+                present.append(rel)
+            elif current.exists():
+                raise UpdateError('Manual rollback destination is not a file: ' + rel)
+            else:
+                absent.append(rel)
+        journal = {'operation': 'manual_rollback', 'stage': stage.name,
+                   'from': current_version(app_dir), 'to': info.get('from'),
+                   'present': present, 'absent': absent}
+        _atomic_json(_journal_path(app_dir), journal)
+        journal_started = True
+        for rel in restore:
+            source = backup / rel
+            target = validate_archive_member(rel, app_dir)
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, target)
-    for rel in info.get('added', []):
-        try:
-            (app_dir / rel).unlink()
-        except OSError:
-            pass
-    shutil.rmtree(backup)
-    return info.get('from')
+            temp = target.with_name('.' + target.name + '.' + uuid.uuid4().hex + '.rollback')
+            try:
+                shutil.copy2(source, temp)
+                os.replace(temp, target)
+            finally:
+                temp.unlink(missing_ok=True)
+        for rel in removed:
+            target = validate_archive_member(rel, app_dir)
+            if target.is_file():
+                target.unlink()
+        # Preserve rollback metadata across a power cut until the final commit.
+        os.replace(backup, stage / 'previous_version')
+        _journal_path(app_dir).unlink()
+        shutil.rmtree(stage, ignore_errors=True)
+        return info.get('from')
+    except Exception as exc:
+        if journal_started and _journal_path(app_dir).exists():
+            try:
+                recover_interrupted_update(app_dir)
+            except Exception as recovery_exc:
+                raise UpdateError('Manual rollback failed and recovery requires attention: '
+                                  + str(recovery_exc)) from exc
+        else:
+            shutil.rmtree(stage, ignore_errors=True)
+        raise UpdateError('Manual rollback failed; the installed version was restored: '
+                          + str(exc)) from exc
 
 
 def install_requirements(app_dir=APP_DIR, log=lambda text: None):
