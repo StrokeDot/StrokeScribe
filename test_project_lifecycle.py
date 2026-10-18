@@ -51,6 +51,8 @@ class WindowLifecycleTests(unittest.TestCase):
         else:
             os.environ["STROKESCRIBE_CONFIG_DIR"] = self.old
         self.tmp.cleanup()
+        if self.old_discard is not None:
+            os.environ["STROKESCRIBE_TEST_AUTODISCARD"] = self.old_discard
 
     def test_setting_change_is_dirty_before_history_debounce(self):
         self.assertFalse(self.w.has_unsaved_changes())
