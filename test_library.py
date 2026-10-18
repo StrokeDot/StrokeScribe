@@ -134,6 +134,27 @@ class LibraryTests(unittest.TestCase):
         self.assertEqual((target / 'cat.png').read_bytes(), self.picture('same.png', 'red').read_bytes())
         self.assertEqual(len(library.Library().items('images')), 1)
 
+    def test_colliding_existing_suffix_reuses_identical_hand_and_retains_tip(self):
+        import json
+        lib = library.Library()
+        old = lib.add('hands', HAND, name='My calibrated hand', tip=TIP)
+        new_root = self.dir / 'Existing'
+        folder = new_root / 'Hands'
+        folder.mkdir(parents=True)
+        # The unnumbered name differs, but a previous partially copied
+        # identical version already exists under the numbered name.
+        Image.new('RGBA', (8, 8), 'red').save(folder / old.file)
+        suffix = Path(old.file).with_name(Path(old.file).stem + ' (2).png').name
+        (folder / suffix).write_bytes(old.path.read_bytes())
+        (folder / 'index.json').write_text(json.dumps({
+            old.file: {'name': 'Other hand', 'added': 1},
+            suffix: {'name': 'Existing copy', 'added': 2}
+        }))
+        lib.move_to(new_root)
+        existing = next(i for i in library.Library().items('hands') if i.file == suffix)
+        self.assertEqual(existing.tip, TIP)
+        self.assertEqual(len(library.Library().items('hands')), 2)
+
     def test_move_interrupted_copy_never_discards_original(self):
         from unittest.mock import patch
         lib = library.Library()
