@@ -158,10 +158,13 @@ def inspect_models(paths, hardware, progress=lambda message: None,
             continue
         _check_cancel(cancelled)
         preferred, fit = ai_models.choose_variant(model, hardware)
+        # Inspect every known variant before deciding which one is installed:
+        # a power cut may have left only its .previous recovery snapshot.
+        for variant_to_check in model.variants:
+            recover_interrupted_update(paths, variant_to_check.diffusion)
         available = [v for v in model.variants if paths.model_path(v.diffusion).is_file()]
         variant = (preferred if preferred in available else available[0]) if available else preferred
         file = variant.diffusion
-        recover_interrupted_update(paths, file)
         installed = paths.model_path(file).is_file()
         category = "Image editing" if model.tasks == ("edit",) else "Image generation"
         if not installed:
