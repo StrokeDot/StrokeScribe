@@ -331,8 +331,9 @@ class UpdateDialog(QDialog):
     def roll_back(self):
         if self.worker is not None and self.worker.isRunning():
             return
+        target = updater.rollback_target_version()
         if QMessageBox.question(self, 'Restore previous version',
-                'Go back to the previously installed version of StrokeScribe? '
+                f'Go back to StrokeScribe {target}? '
                 'You will need to restart the application afterward.',
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
