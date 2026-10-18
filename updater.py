@@ -249,7 +249,10 @@ def _atomic_json(path, data):
     path = Path(path)
     temp = path.with_name(path.name + '.' + uuid.uuid4().hex + '.writing')
     try:
-        temp.write_text(json.dumps(data, indent=2), encoding='utf-8')
+        with temp.open('w', encoding='utf-8') as stream:
+            json.dump(data, stream, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
         os.replace(temp, path)
     finally:
         temp.unlink(missing_ok=True)
@@ -308,7 +311,10 @@ def stage_update(zip_path, app_dir=APP_DIR):
                     continue
                 destination = payload / rel
                 destination.parent.mkdir(parents=True, exist_ok=True)
-                destination.write_bytes(data)
+                with destination.open('wb') as out:
+                    out.write(data)
+                    out.flush()
+                    os.fsync(out.fileno())
                 if hashlib.sha256(destination.read_bytes()).digest() != hashlib.sha256(data).digest():
                     raise UpdateError('Failed to verify staged update file: ' + rel)
                 changed.append(rel)
@@ -410,13 +416,15 @@ def commit_update(staged, log=lambda text: None):
             snapshot = backup / rel
             snapshot.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(original, snapshot)
+            with snapshot.open('rb') as backed:
+                os.fsync(backed.fileno())
             if original.read_bytes() != snapshot.read_bytes():
                 raise UpdateError('Could not verify rollback copy: ' + rel)
         transaction_id = uuid.uuid4().hex
-        (backup / 'update.json').write_text(json.dumps({
+        _atomic_json(backup / 'update.json', {
             'from': staged.previous, 'to': staged.version,
             'added': list(staged.added), 'transaction_id': transaction_id
-        }, indent=2), encoding='utf-8')
+        })
         journal = {
             'phase': 'applying', 'from': staged.previous, 'to': staged.version,
             'transaction_id': transaction_id, 'stage': stage.name,
