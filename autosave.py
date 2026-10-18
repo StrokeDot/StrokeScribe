@@ -9,6 +9,8 @@ the work back.
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import time
 from pathlib import Path
 
@@ -34,9 +36,36 @@ def save(state, project_path=None, title=''):
     path = backup_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     projects.save(path, state)
-    _meta_path().write_text(json.dumps({'project_path': str(project_path or ''), 'title': title,
-                                        'time': time.time()}))
+    metadata=_meta_path()
+    temporary=metadata.with_name(metadata.name+'.saving')
+    temporary.write_text(json.dumps({'project_path': str(project_path or ''), 'title': title,
+                                     'time': time.time()}))
+    os.replace(temporary,metadata)
     return path
+
+
+def archive_pending():
+    """Keep declined crash recovery as a normal, manually openable project.
+
+    It is copied out of the active autosave slot *before* that slot can be
+    cleared or reused, so later edits cannot overwrite the old recovery.
+    A failed copy leaves the active backup untouched.
+    """
+    source=backup_path()
+    if not source.is_file():
+        return None
+    folder=source.parent / 'Recovered copies'
+    folder.mkdir(parents=True,exist_ok=True)
+    target=folder / f'recovery-{time.time_ns()}.strokescribe'
+    temporary=target.with_name(target.name+'.copying')
+    try:
+        shutil.copy2(source,temporary)
+        if source.read_bytes()!=temporary.read_bytes():
+            raise OSError('Recovery copy failed verification.')
+        os.replace(temporary,target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return target
 
 
 def pending():
