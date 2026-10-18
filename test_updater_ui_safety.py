@@ -15,6 +15,22 @@ from update_dialog import UpdateDialog, UpdateWorker
 APP = QApplication.instance() or QApplication([])
 
 
+def _close_test_log_in(temp):
+    """Release the temporary app log before Windows removes its directory.
+
+    A RotatingFileHandler holds an open handle on Windows. Detach only the
+    handler created in this test's config root, not any regular user log.
+    """
+    import applog
+    root = Path(temp).resolve()
+    for handler in list(applog.log.handlers):
+        filename = getattr(handler, 'baseFilename', None)
+        if filename and Path(filename).resolve().is_relative_to(root):
+            applog.log.removeHandler(handler)
+            handler.close()
+            applog.log._ready = False
+
+
 class DownloadCancellationTests(unittest.TestCase):
     def test_cancellation_does_not_overwrite_existing_good_update_file(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -170,6 +186,7 @@ class RestartSafetyTests(unittest.TestCase):
             finally:
                 with patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Discard):
                     w.close()
+                _close_test_log_in(temp)
                 if old is None: os.environ.pop('STROKESCRIBE_CONFIG_DIR', None)
                 else: os.environ['STROKESCRIBE_CONFIG_DIR'] = old
         if old_discard is not None:
@@ -193,6 +210,7 @@ class RestartSafetyTests(unittest.TestCase):
             finally:
                 with patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Discard):
                     w.close()
+                _close_test_log_in(temp)
                 if old is None: os.environ.pop('STROKESCRIBE_CONFIG_DIR', None)
                 else: os.environ['STROKESCRIBE_CONFIG_DIR'] = old
         if old_discard is not None:
