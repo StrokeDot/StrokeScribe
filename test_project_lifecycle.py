@@ -96,6 +96,29 @@ class WindowLifecycleTests(unittest.TestCase):
         self.assertTrue(self.w.has_unsaved_changes())
         self.assertIsNotNone(autosave.pending())
 
+    def test_failed_open_restores_original_project_state(self):
+        import projects
+        other = Path(self.tmp.name) / 'valid.strokescribe'
+        projects.save(other, self.w.project_state())
+        self.w.duration.setValue(self.w.duration.value() + 1)
+        old = self.w.drawing
+        old_duration = self.w.duration.value()
+        actual_apply = self.w.apply_project
+        called = [False]
+        def fail_once(data):
+            if not called[0]:
+                called[0] = True
+                self.w.drawing = None
+                raise ValueError('Cannot load a damaged artwork component')
+            return actual_apply(data)
+        with patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Discard), \
+             patch.object(self.w, 'apply_project', side_effect=fail_once):
+            with patch.object(QMessageBox, 'warning'):
+                self.assertFalse(self.w.open_project(str(other)))
+        self.assertIsNotNone(self.w.drawing)
+        self.assertEqual(self.w.duration.value(), old_duration)
+        self.assertTrue(self.w.has_unsaved_changes())
+
     def test_successful_save_marks_clean(self):
         self.w.duration.setValue(self.w.duration.value() + .5)
         with patch.object(self.w, "project_path", str(Path(self.tmp.name) / "saved.strokescribe"), create=True):
