@@ -214,7 +214,7 @@ class Library:
         # A failed transfer must not switch the configured Library location.
         new_root.mkdir(parents=True, exist_ok=True)
         mappings = {}
-        index_dirs = {Path(label) for label in CATEGORIES.values()}
+        index_dirs = set(CATEGORIES.values())
         sources = sorted(p for p in old_root.rglob('*') if p.is_file() or p.is_symlink()) \
             if old_root.is_dir() else []
         for source in sources:
