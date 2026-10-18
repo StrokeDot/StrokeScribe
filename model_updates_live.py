@@ -13,6 +13,7 @@ import os
 import re
 import tempfile
 import urllib.request
+import urllib.error
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -58,7 +59,22 @@ def official_revision(file, timeout=8):
     req = urllib.request.Request(
         file.url, method="HEAD", headers={"User-Agent": "StrokeScribe-model-updates"}
     )
-    with urllib.request.urlopen(req, timeout=timeout) as response:
+    # HF serves LFS artifacts through a redirect. X-Linked-Etag and
+    # X-Linked-Size are supplied on the *initial* response, not reliably on
+    # the CDN destination. Never follow a signed URL to fetch model data
+    # during a lightweight update check.
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None
+
+    opener = urllib.request.build_opener(NoRedirect())
+    try:
+        response = opener.open(req, timeout=timeout)
+    except urllib.error.HTTPError as exc:
+        if exc.code not in (301, 302, 303, 307, 308):
+            raise
+        response = exc
+    with response:
         headers = response.headers
         digest = (headers.get("X-Linked-Etag") or headers.get("ETag") or "").strip('"')
         raw_size = headers.get("X-Linked-Size") or headers.get("Content-Length")
