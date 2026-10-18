@@ -55,6 +55,8 @@ class ArchiveSafetyTests(unittest.TestCase):
         link.external_attr = (stat.S_IFLNK | 0o777) << 16
         for items in [[("src/A.py", b"1"), ("src/a.py", b"2")],
                       [("src/a.py", b"1"), ("src/a.py", b"2")],
+                      [("src/Foo/", b""), ("src/foo", b"x")],
+                      [("src/Foo/one.py", b"1"), ("src/foo/two.py", b"2")],
                       [(link, b"../../outside")]]:
             with self.subTest(items=items):
                 with zipfile.ZipFile(io.BytesIO(make_zip(items))) as archive:
