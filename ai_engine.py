@@ -99,8 +99,20 @@ class Paths:
                 and (self.comfy / 'main.py').is_file())
 
     def has_files(self, files):
-        return all(self.model_path(f).is_file() and self.model_path(f).stat().st_size == f.size
-                   for f in files)
+        """Require valid byte size and, where published, a trusted SHA-256."""
+        for item in files:
+            path = self.model_path(item)
+            if not path.is_file() or path.stat().st_size != item.size:
+                return False
+            checksum = getattr(item, 'sha256', None)
+            if checksum:
+                h = hashlib.sha256()
+                with path.open('rb') as stream:
+                    for chunk in iter(lambda: stream.read(1 << 20), b''):
+                        h.update(chunk)
+                if h.hexdigest() != checksum.lower():
+                    return False
+        return True
 
 
 # ---------------------------------------------------------------- downloads
