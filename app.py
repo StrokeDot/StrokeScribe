@@ -1350,10 +1350,24 @@ class Window(QMainWindow):
             if not path: return False
         try:
             data=projects.load(path)
-            if not self.confirm_leave_project('open another project'):
-                return False
+        except Exception as exc:
+            QMessageBox.warning(self,'Open project',str(exc)); return False
+        if not self.confirm_leave_project('open another project'):
+            return False
+        # Loading can fail after partially changing scene/widget state. Keep a
+        # full in-memory snapshot and restore it on failure, rather than leave
+        # the user's unsaved work half-replaced.
+        previous=self.project_state() if self.drawing is not None else None
+        try:
             self.apply_project(data)
         except Exception as exc:
+            if previous is not None:
+                try:
+                    self.apply_project(previous)
+                except Exception as recovery_exc:
+                    import applog; applog.error('Could not restore failed project load',recovery_exc)
+                    import autosave
+                    autosave.save(previous,getattr(self,'project_path',None),self.project_title)
             QMessageBox.warning(self,'Open project',str(exc)); return False
         self.project_path=str(path)
         self.setWindowTitle(f'{Path(path).stem}  •  {DISPLAY_NAME}')
