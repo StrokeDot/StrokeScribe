@@ -183,33 +183,101 @@ class Library:
         return target
 
     def move_to(self, new_root):
-        """Move the whole library to another folder and use it from now on."""
-        new_root = Path(new_root)
-        if new_root.resolve() == self.root.resolve():
+        """Safely migrate the complete library, even into an existing library.
+
+        Copy and verify *everything* before updating the configured root or
+        deleting the old folder. A filename collision with different contents
+        receives a numbered name, and its index metadata follows the rename.
+        An interrupted copy leaves the original library fully usable.
+        """
+        import hashlib
+        import uuid
+
+        old_root = self.root.resolve()
+        new_root = Path(new_root).resolve()
+        if new_root == old_root:
             return self.root
+        if new_root.is_relative_to(old_root) or old_root.is_relative_to(new_root):
+            raise ValueError('Choose a Library folder outside the existing Library tree.')
+
+        def identical(a, b):
+            if a.stat().st_size != b.stat().st_size:
+                return False
+            def digest(path):
+                h = hashlib.sha256()
+                with path.open('rb') as stream:
+                    for chunk in iter(lambda: stream.read(1 << 20), b''):
+                        h.update(chunk)
+                return h.digest()
+            return digest(a) == digest(b)
+
+        # A failed transfer must not switch the configured Library location.
         new_root.mkdir(parents=True, exist_ok=True)
-        if self.root.is_dir():
-            for child in self.root.iterdir():
-                destination = new_root / child.name
-                if destination.exists():
-                    if child.is_dir():
-                        for path in child.rglob('*'):
-                            if path.is_file():
-                                out = destination / path.relative_to(child)
-                                out.parent.mkdir(parents=True, exist_ok=True)
-                                if not out.exists():
-                                    shutil.copy2(path, out)
-                        shutil.rmtree(child)
+        mappings = {}
+        index_dirs = {Path(label) for label in CATEGORIES.values()}
+        sources = sorted(p for p in old_root.rglob('*') if p.is_file() or p.is_symlink()) \
+            if old_root.is_dir() else []
+        for source in sources:
+            if source.is_symlink():
+                raise ValueError('Library contains a symlink; move it manually before relocation.')
+            rel = source.relative_to(old_root)
+            if len(rel.parts) == 2 and rel.parts[0] in index_dirs and rel.name == 'index.json':
+                continue
+            folder = new_root / rel.parent
+            folder.mkdir(parents=True, exist_ok=True)
+            target = folder / source.name
+            if target.exists() and not identical(source, target):
+                number = 2
+                while True:
+                    other = folder / f'{source.stem} ({number}){source.suffix}'
+                    if not other.exists() or identical(source, other):
+                        target = other
+                        break
+                    number += 1
+            if not target.exists():
+                temporary = folder / ('.' + target.name + '.' + uuid.uuid4().hex + '.migrating')
+                try:
+                    shutil.copy2(source, temporary)
+                    if not identical(source, temporary):
+                        raise OSError('Library copy failed verification: ' + str(rel))
+                    os.replace(temporary, target)
+                finally:
+                    temporary.unlink(missing_ok=True)
+            if not identical(source, target):
+                raise OSError('Library destination failed verification: ' + str(rel))
+            mappings[rel] = target.relative_to(new_root)
+
+        # Merge every category index *after* the bytes have been verified.
+        for label in CATEGORIES.values():
+            source_index = old_root / label / 'index.json'
+            destination_index = new_root / label / 'index.json'
+            if not source_index.is_file() and not destination_index.is_file():
+                continue
+            old_data = json.loads(source_index.read_text(encoding='utf-8')) if source_index.is_file() else {}
+            merged = json.loads(destination_index.read_text(encoding='utf-8')) if destination_index.is_file() else {}
+            for name, metadata in old_data.items():
+                mapped = mappings.get(Path(label) / name)
+                if mapped is None:
                     continue
-                shutil.move(str(child), str(destination))
-            try:
-                self.root.rmdir()
-            except OSError:
-                pass
-        self.root = new_root
+                target_name = mapped.name
+                if target_name not in merged:
+                    merged[target_name] = metadata
+                elif target_name == name:
+                    # Same file content already existed. Preserve destination
+                    # metadata, adding missing source attributes (notably tip).
+                    for key, value in metadata.items():
+                        merged[target_name].setdefault(key, value)
+            destination_index.parent.mkdir(parents=True, exist_ok=True)
+            temporary = destination_index.with_name('index.json.migrating')
+            temporary.write_text(json.dumps(merged, indent=2), encoding='utf-8')
+            os.replace(temporary, destination_index)
+
         settings = load_settings()
         settings['root'] = str(new_root)
         save_settings(settings)
+        self.root = new_root
+        if old_root.is_dir():
+            shutil.rmtree(old_root)
         return new_root
 
 
