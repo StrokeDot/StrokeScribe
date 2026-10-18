@@ -1,8 +1,5 @@
 name: Updater transaction checks
 on:
-  push:
-    branches:
-      - safety/controlled-refactor-phase6
   pull_request:
   workflow_dispatch:
 permissions:
