@@ -28,6 +28,52 @@ class EngineInstallSafetyTests(unittest.TestCase):
         (self.engine/'main.py').write_text('previous working engine')
         self.content = packed({'main.py': 'new engine', 'extras/nodes.py': 'node'})
 
+    def test_engine_detection_recovers_power_cut_before_launch(self):
+        # If power fails after renaming ComfyUI to ComfyUI.previous, users
+        # must still be able to start the former working engine.
+        import json
+        paths = ai_engine.Paths(self.root)
+        if paths.comfy.exists():
+            paths.comfy.rename(paths.comfy.with_name('ComfyUI.previous'))
+        paths.python.parent.mkdir(parents=True, exist_ok=True)
+        paths.python.touch()
+        paths.marker.write_text(json.dumps({'comfy': ai_engine.COMFY_VERSION}))
+        self.assertTrue(paths.engine_installed())
+        self.assertTrue((paths.comfy / 'main.py').is_file())
+        self.assertFalse(paths.comfy.with_name('ComfyUI.previous').exists())
+
+    def test_detection_does_not_delete_backup_while_new_engine_is_present(self):
+        import json
+        paths = ai_engine.Paths(self.root)
+        previous = paths.comfy.with_name('ComfyUI.previous')
+        previous.mkdir()
+        (previous / 'main.py').write_text('recoverable older engine')
+        paths.python.parent.mkdir(parents=True, exist_ok=True)
+        paths.python.touch()
+        paths.marker.write_text(json.dumps({'comfy': ai_engine.COMFY_VERSION}))
+        self.assertTrue(paths.engine_installed())
+        self.assertTrue((previous / 'main.py').is_file(),
+                        'Do not silently delete an older backup during engine detection.')
+
+    def test_recovery_check_never_discards_older_engine_when_current_exists(self):
+        previous = self.root/'ComfyUI.previous'
+        previous.mkdir()
+        (previous/'main.py').write_text('older engine - keep intact')
+        self.assertFalse(ai_engine.recover_engine_folder(self.engine))
+        self.assertEqual((previous/'main.py').read_text(), 'older engine - keep intact')
+        self.assertEqual((self.engine/'main.py').read_text(), 'previous working engine')
+
+    def test_replacement_refuses_unresolved_backup_without_touching_either_engine(self):
+        previous = self.root/'ComfyUI.previous'
+        previous.mkdir()
+        (previous/'main.py').write_text('older engine - keep intact')
+        with self.assertRaisesRegex(RuntimeError, 'backup'):
+            ai_engine._extract_zip(self.content, self.engine)
+        self.assertEqual((previous/'main.py').read_text(), 'older engine - keep intact')
+        self.assertEqual((self.engine/'main.py').read_text(), 'previous working engine')
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()),
+                         ['ComfyUI', 'ComfyUI.previous'])
+
     def test_cancelled_extraction_preserves_previous_engine(self):
         calls = [0]
         def cancel():

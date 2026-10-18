@@ -91,6 +91,13 @@ class Paths:
         return self.models / model_file.folder / model_file.name
 
     def engine_installed(self):
+        # A power failure can interrupt the two-directory rename between
+        # ComfyUI -> ComfyUI.previous and staged -> ComfyUI. Restore the
+        # previous working engine before reporting the installation missing.
+        # Never remove a previous-version backup during an ordinary check.
+        previous = self.comfy.with_name(self.comfy.name + '.previous')
+        if not self.comfy.exists() and previous.is_dir():
+            recover_engine_folder(self.comfy)
         try:
             info = json.loads(self.marker.read_text())
         except Exception:
@@ -491,9 +498,8 @@ def recover_engine_folder(target):
     if target.is_symlink() or previous.is_symlink():
         raise RuntimeError('Unsafe symlink in AI engine recovery folders.')
     if target.exists():
-        # The complete, staged replacement was already renamed into place.
-        # A crash only interrupted removal of its previous-version backup.
-        shutil.rmtree(previous)
+        # An available engine does not prove an older backup is disposable.
+        # Preserve ComfyUI.previous until a separate, verified cleanup.
         return False
     os.replace(previous, target)
     return True
@@ -506,9 +512,14 @@ def _extract_zip(data, target, strip_top=True, cancelled=lambda: False):
     if target.is_symlink():
         raise ValueError('AI engine destination cannot be a symlink.')
     target.parent.mkdir(parents=True, exist_ok=True)
-    recover_engine_folder(target)
-    stage = Path(tempfile.mkdtemp(prefix=target.name + '.staging-', dir=str(target.parent)))
     previous = target.with_name(target.name + '.previous')
+    recover_engine_folder(target)
+    # Never overwrite or delete an unresolved recovery backup. If both
+    # directories exist, the app cannot safely infer which should survive.
+    if previous.exists() or previous.is_symlink():
+        raise RuntimeError('An older AI engine backup is still present. '
+                           'Inspect ComfyUI.previous before replacing the engine.')
+    stage = Path(tempfile.mkdtemp(prefix=target.name + '.staging-', dir=str(target.parent)))
     moved_old = False
     try:
         with zipfile.ZipFile(io.BytesIO(data)) as archive:

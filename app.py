@@ -405,6 +405,7 @@ class Window(QMainWindow):
         self.history=History()
         self.project_changes=ProjectChangeTracker()
         self._autosaved_signature=None
+        self._closed=False
         self._restoring=False
         self._lines_cache=None
         self.busy=False
@@ -1240,21 +1241,21 @@ class Window(QMainWindow):
         return self.project_changes.changed(self.project_state())
 
     def confirm_leave_project(self, reason='leave this project'):
-        """Save, explicitly discard, or cancel before replacing/closing work."""
-        if not self.has_unsaved_changes():
-            return True
-        # A headless CI test cannot click a dialog. This explicit, test-only
-        # opt-in is not set by a normal installed application.
+        """Use one tested decision policy for Save / Discard / Cancel."""
+        from project_lifecycle import resolve_project_leave
         import os
-        if os.environ.get('STROKESCRIBE_TEST_AUTODISCARD') == '1' and QApplication.platformName() == 'offscreen':
-            return True
-        answer=QMessageBox.question(self,'Unsaved changes',
-            'Your StrokeScribe project has unsaved changes.\\n\\nSave before you '+reason+'?',
-            QMessageBox.StandardButton.Save|QMessageBox.StandardButton.Discard|QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel)
-        if answer==QMessageBox.StandardButton.Save:
-            return bool(self.save_project())
-        return answer==QMessageBox.StandardButton.Discard
+        return resolve_project_leave(
+            self.has_unsaved_changes(),
+            ask=lambda: QMessageBox.question(
+                self, 'Unsaved changes',
+                'Your StrokeScribe project has unsaved changes.\\n\\nSave before you '+reason+'?',
+                QMessageBox.StandardButton.Save|QMessageBox.StandardButton.Discard|QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel),
+            save=self.save_project,
+            save_choice=QMessageBox.StandardButton.Save,
+            discard_choice=QMessageBox.StandardButton.Discard,
+            auto_discard=(os.environ.get('STROKESCRIBE_TEST_AUTODISCARD') == '1'
+                          and QApplication.platformName() == 'offscreen'))
 
     def save_project(self,save_as=False):
         if not self.drawing or (self.builder and self.builder.isRunning()):
@@ -1290,7 +1291,9 @@ class Window(QMainWindow):
     # ------------------------------------------------------------ autosave
     def autosave_tick(self):
         """Every minute: back up the project if something changed since the last backup."""
-        if not self.drawing or (self.builder and self.builder.isRunning()) or self.busy:
+        # Qt can deliver an already queued timer event after a close. Never
+        # recreate a crash-recovery backup for a window that closed normally.
+        if self._closed or not self.drawing or (self.builder and self.builder.isRunning()) or self.busy:
             return False
         try:
             state=self.project_state()
@@ -3380,6 +3383,10 @@ class Window(QMainWindow):
                 return
             if self.ai_engine is not None:
                 self.ai_engine.stop()        # never leave the AI engine running
+            # Only a successful close stops autosaving; a rejected close must
+            # leave the recovery timer active for the still-open project.
+            self._closed=True
+            self.autosave_timer.stop()
             if not getattr(self,'_keep_autosave',False):
                 import autosave; autosave.clear()
             event.accept()

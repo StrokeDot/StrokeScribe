@@ -19,6 +19,9 @@ on:
         type: boolean
         required: true
         default: false
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
 jobs:
@@ -35,11 +38,12 @@ jobs:
         with:
           python-version: '3.12'
       - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 ffmpeg
-      - run: python -m pip install --only-binary=:all: -r requirements.txt
+      - run: |
+          python -m pip install --only-binary=:all: -r requirements.txt
       - name: Verify syntax
         run: python -m compileall -q .
       - name: Full Linux regression suite
-        run: python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_release_policy
+        run: python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_release_policy
       - name: Record exact validated commit
         id: proof
         shell: bash
@@ -57,11 +61,33 @@ jobs:
         with:
           python-version: '3.14'
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install --only-binary=:all: -r requirements.txt
+      - run: |
+          python -m pip install --only-binary=:all: -r requirements.txt
+      - name: Install FFmpeg and FFprobe if missing, then require both
+        shell: pwsh
+        run: |
+          if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue) -or
+              !(Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+            if ($LASTEXITCODE -ne 0) {
+              Write-Error "Chocolatey could not install FFmpeg and FFprobe."
+              exit 1
+            }
+          }
+          if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            Write-Error "FFmpeg is required: refusing to skip the end-to-end video tests."
+            exit 1
+          }
+          if (!(Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            Write-Error "FFprobe is required: refusing to skip the end-to-end video tests."
+            exit 1
+          }
+          ffmpeg -version
+          ffprobe -version
       - name: Verify syntax
         run: python -m compileall -q .
       - name: Full Windows regression suite
-        run: python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_release_policy
+        run: python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_release_policy
       - name: Record exact validated commit
         id: proof
         shell: bash

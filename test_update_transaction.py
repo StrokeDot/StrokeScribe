@@ -68,12 +68,15 @@ class TransactionTests(unittest.TestCase):
 
     def test_failed_staging_write_does_not_touch_installed_app(self):
         candidate=self.zip_with()
-        real=Path.write_bytes
-        def fail_staging(target,payload):
-            if any(part.startswith('.strokescribe-update-') for part in target.parts):
+        # The staging implementation streams files with Path.open('wb');
+        # patch that actual write path, not the obsolete Path.write_bytes API.
+        real=Path.open
+        def fail_staging(target, mode='r', *args, **kwargs):
+            if ('w' in mode or 'x' in mode) and any(
+                    part.startswith('.strokescribe-update-') for part in target.parts):
                 raise OSError('disk full while staging')
-            return real(target,payload)
-        with patch.object(Path,'write_bytes',autospec=True,side_effect=fail_staging):
+            return real(target, mode, *args, **kwargs)
+        with patch.object(Path,'open',autospec=True,side_effect=fail_staging):
             with self.assertRaises(OSError):
                 updater.stage_update(candidate,self.app)
         self.assert_old()

@@ -377,7 +377,7 @@ def _recover_manual_rollback(app_dir, journal, stage):
         temporary = target.with_name('.' + target.name + '.' + uuid.uuid4().hex + '.restoring')
         try:
             shutil.copy2(source, temporary)
-            with temporary.open('rb') as saved:
+            with temporary.open('r+b') as saved:
                 os.fsync(saved.fileno())
             os.replace(temporary, target)
         finally:
@@ -481,7 +481,7 @@ def commit_update(staged, log=lambda text: None):
             snapshot = backup / rel
             snapshot.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(original, snapshot)
-            with snapshot.open('rb') as backed:
+            with snapshot.open('r+b') as backed:
                 os.fsync(backed.fileno())
             if original.read_bytes() != snapshot.read_bytes():
                 raise UpdateError('Could not verify rollback copy: ' + rel)
@@ -620,7 +620,7 @@ def roll_back(app_dir=APP_DIR):
                 snapshot = stage / 'current' / rel
                 snapshot.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(current, snapshot)
-                with snapshot.open('rb') as backed:
+                with snapshot.open('r+b') as backed:
                     os.fsync(backed.fileno())
                 if current.read_bytes() != snapshot.read_bytes():
                     raise UpdateError('Manual rollback snapshot verification failed: ' + rel)
