@@ -1,17 +1,73 @@
-name: Windows installer
+name: Windows installer (tested, manually approved)
 on:
-  push:
+  pull_request:
     paths:
+      - 'app.py'
+      - 'updater.py'
+      - 'update_dialog.py'
+      - 'startup.py'
       - 'version.py'
       - 'requirements.txt'
       - 'installer/**'
-      - 'tools/build_windows_installer.py'
+      - 'tools/**'
+      - 'test_*.py'
       - '.github/workflows/windows-installer.yml'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish tested installer to GitHub Releases? (approved branches only)'
+        type: boolean
+        required: true
+        default: false
 permissions:
-  contents: write
+  contents: read
 jobs:
+  validate-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      tested_sha: ${{ steps.proof.outputs.sha }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 ffmpeg
+      - run: python -m pip install --only-binary=:all: -r requirements.txt
+      - name: Verify syntax
+        run: python -m compileall -q .
+      - name: Full Linux regression suite
+        run: python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_release_policy
+      - name: Record exact validated commit
+        id: proof
+        shell: bash
+        run: echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+  validate-windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    outputs:
+      tested_sha: ${{ steps.proof.outputs.sha }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install --only-binary=:all: -r requirements.txt
+      - name: Verify syntax
+        run: python -m compileall -q .
+      - name: Full Windows regression suite
+        run: python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_release_policy
+      - name: Record exact validated commit
+        id: proof
+        shell: bash
+        run: echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
   installer:
+    needs: [validate-linux, validate-windows]
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -51,17 +107,50 @@ jobs:
           Start-Sleep -Seconds 3
           if (Test-Path "$dir\runtime") { Write-Error "uninstall left files"; exit 1 }
           Write-Output "Installed, started and uninstalled OK"
-      - name: Publish on the GitHub Releases page
+      - name: Keep tested Windows installer as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StrokeScribe-validated-installer
+          path: dist/StrokeScribe-Setup-*.exe
+          if-no-files-found: error
+  publish:
+    needs: [validate-linux, validate-windows, installer]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish == true && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/svg-guide-coverage-experimental12') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: StrokeScribe-validated-installer
+          path: dist
+      - name: Verify explicit authorization and exact tested commit
+        shell: bash
+        env:
+          TESTED_LINUX: ${{ needs.validate-linux.outputs.tested_sha }}
+          TESTED_WINDOWS: ${{ needs.validate-windows.outputs.tested_sha }}
+          PUBLISH_REQUESTED: ${{ inputs.publish }}
+        run: |
+          python tools/release_policy.py --event "$GITHUB_EVENT_NAME" --ref "$GITHUB_REF" \
+            --publish "$PUBLISH_REQUESTED" --sha "$GITHUB_SHA" \
+            --linux-sha "$TESTED_LINUX" --windows-sha "$TESTED_WINDOWS"
+      - name: Publish a new, immutable version tag (never overwrite an existing release)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="installer-${VERSION}"
-          file=$(ls dist/StrokeScribe-Setup-*.exe | head -1)
+          version=$(python -c 'import version; print(version.APP_VERSION)')
+          tag="installer-${version}"
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "$file" --clobber
-          else
-            gh release create "$tag" "$file" --prerelease --target "$GITHUB_SHA" \
-              --title "StrokeScribe ${VERSION} (Windows installer)" \
-              --notes "Double-click StrokeScribe-Setup to install. Updates then come through the app (File → Update StrokeScribe…)."
+            echo "Release $tag already exists; refusing to overwrite a previously published build."
+            exit 1
           fi
+          file=$(find dist -type f -name 'StrokeScribe-Setup-*.exe' | head -1)
+          test -n "$file"
+          gh release create "$tag" "$file" --prerelease --target "$GITHUB_SHA" \
+            --title "StrokeScribe ${version} (Windows installer)" \
+            --notes "Verified Windows installer built from $GITHUB_SHA after Linux and Windows tests passed."
