@@ -14,6 +14,7 @@ import tempfile
 from zipfile import ZipFile, ZIP_DEFLATED
 
 ROOT=Path(__file__).resolve().parent.parent
+sys.path.insert(0,str(ROOT))
 BASELINES=(
     ('cd4ff3d298f9653239de45e447b84fa4c9249d80','0.5.3-experimental.58'),
     ('c23fd37f9a37468192b49d5fdd2fb40d008c84f9','0.5.3-experimental.59'),
