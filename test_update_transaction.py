@@ -55,6 +55,30 @@ class TransactionTests(unittest.TestCase):
             self.assertEqual((self.app/name).read_text(),value,name)
         self.assertFalse((self.app/'fresh.py').exists())
 
+    def test_journal_and_backup_are_flushed_before_live_file_replacement(self):
+        original=updater.os.fsync
+        calls=[]
+        def observed(fd):
+            calls.append(fd)
+            return original(fd)
+        with patch.object(updater.os,'fsync',side_effect=observed):
+            updater.apply_zip(self.zip_with(),self.app)
+        self.assertGreaterEqual(len(calls),2,
+                                'Journal and staged files need disk flushes before commit')
+
+    def test_failed_staging_write_does_not_touch_installed_app(self):
+        candidate=self.zip_with()
+        real=Path.write_bytes
+        def fail_staging(target,payload):
+            if any(part.startswith('.strokescribe-update-') for part in target.parts):
+                raise OSError('disk full while staging')
+            return real(target,payload)
+        with patch.object(Path,'write_bytes',autospec=True,side_effect=fail_staging):
+            with self.assertRaises(OSError):
+                updater.stage_update(candidate,self.app)
+        self.assert_old()
+        self.assertFalse((self.app/updater.JOURNAL).exists())
+
     def test_stage_has_no_effect_on_active_application(self):
         staged=updater.stage_update(self.zip_with(),self.app)
         self.assertIsNotNone(staged)
