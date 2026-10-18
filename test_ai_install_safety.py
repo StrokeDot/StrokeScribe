@@ -72,6 +72,30 @@ class EngineInstallSafetyTests(unittest.TestCase):
         self.assertEqual((self.engine/'main.py').read_text(), 'previous working engine')
 
 
+class InstallerCancellationTests(unittest.TestCase):
+    def test_installer_forwards_cancellation_to_archive_extraction(self):
+        with tempfile.TemporaryDirectory() as temp:
+            paths=ai_engine.Paths(temp)
+            (paths.venv/'bin').mkdir(parents=True,exist_ok=True)
+            (paths.venv/'bin'/'python').touch()
+            from unittest.mock import MagicMock
+            with patch.object(ai_engine,'_run'), \
+                 patch.object(ai_engine,'_fetch',return_value=b'archive'), \
+                 patch.object(ai_engine,'_extract_zip') as extract:
+                ai_engine.install_engine(paths,nvidia=False,log=lambda _:None,cancelled=lambda:False)
+            self.assertEqual(extract.call_count,2)
+            self.assertTrue(all('cancelled' in call.kwargs for call in extract.call_args_list))
+
+    def test_silent_subprocess_cancels_promptly_without_leaking_process(self):
+        import sys
+        import time
+        begin=time.monotonic()
+        with self.assertRaises(ai_engine.Cancelled):
+            ai_engine._run([sys.executable,'-c','import time; time.sleep(10)'],
+                           log=lambda _:None, cancelled=lambda:time.monotonic()-begin>0.45)
+        self.assertLess(time.monotonic()-begin,4,'Cancel must not wait for silent process stdout')
+
+
 class ModelIntegrityTests(unittest.TestCase):
     def test_incorrect_sha256_never_promotes_model_file(self):
         with tempfile.TemporaryDirectory() as temp:
