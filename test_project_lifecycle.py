@@ -149,7 +149,11 @@ class WindowLifecycleTests(unittest.TestCase):
         self.assertTrue(self.w.autosave_tick())
         with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.No):
             self.assertFalse(self.w.offer_recovery())
-        self.assertIsNotNone(autosave.pending())
+        archived = sorted((Path(self.tmp.name) / 'autosave' / 'Recovered copies').glob('*.strokescribe'))
+        self.assertEqual(len(archived), 1, 'Declined recovery must be archived rather than deleted')
+        import projects
+        self.assertIsNotNone(projects.load(archived[0]).get('drawing'))
+        self.assertIsNone(autosave.pending())
 
 
 if __name__ == "__main__":
