@@ -9,6 +9,14 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Functional model updates (v0.5.3-experimental.61)
+
+- Create Image → Check for updates now reads installed image-model weights from the configured AI folder and compares their SHA-256 to trusted publisher metadata.
+- Each model appears once. Update verifies the downloaded file before swapping it into use; the previous weights are retained as a .previous backup.
+- Install/Repair use the existing engine/model download worker and license controls.
+- Unknown or unavailable publisher revisions are never advertised as verified updates. A changed official checksum may not mean a newer model.
+- Application updates still use File → Update StrokeScribe; this is a separate image-model feature.
+
 ## Image Generator Updates drawer (v0.5.3-experimental.60)
 
 - Create Image or Sound (AI) now has a standalone Check for updates button and a right-side Image Generator Updates drawer.
