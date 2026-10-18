@@ -19,7 +19,7 @@ font_family='DejaVu Sans'
 if os.name=='nt':
     fonts=Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts'
     families=[]
-    for filename in ('segoeui.ttf','segoeuib.ttf','arial.ttf','arialbd.ttf'):
+    for filename in ('segoeui.ttf','segoeuib.ttf','arial.ttf','arialbd.ttf','seguisym.ttf'):
         font_id=QFontDatabase.addApplicationFont(str(fonts/filename))
         if font_id>=0:
             families.extend(QFontDatabase.applicationFontFamilies(font_id))

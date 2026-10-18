@@ -211,7 +211,7 @@ class CreateImageDialog(QDialog):
         root.addWidget(self.body_scroll,1)
         form = QGridLayout(); form.setHorizontalSpacing(10); form.setVerticalSpacing(8)
         left = QFrame(); left.setLayout(form); left.setMinimumWidth(380)
-        body.addWidget(left, 0)
+        body.addWidget(left, 1)
         row = 0
         form.addWidget(QLabel('Model'), row, 0)
         self.model_box = QComboBox(); self.model_box.currentIndexChanged.connect(self.refresh)
