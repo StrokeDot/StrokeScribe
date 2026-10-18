@@ -11,7 +11,6 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from zipfile import ZipFile, ZIP_DEFLATED
 
 ROOT=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(ROOT))
@@ -25,14 +24,13 @@ def source(ref,path):
 
 def main():
     from version import APP_VERSION
-    files=subprocess.check_output(['git','ls-files','-z'],cwd=ROOT).decode().split('\0')
     with tempfile.TemporaryDirectory(prefix='strokescribe-update-probe-') as tmp:
         area=Path(tmp)
         package=area/'candidate.zip'
-        with ZipFile(package,'w',ZIP_DEFLATED) as archive:
-            for name in files:
-                if name and (ROOT/name).is_file():
-                    archive.write(ROOT/name,'candidate/'+name)
+        # GitHub zipball uses repository blobs, not checkout-converted CRLF
+        # files. Match those exact archive bytes on both Windows and Linux.
+        package.write_bytes(subprocess.check_output(
+            ['git','archive','--format=zip','--prefix=candidate/','HEAD'],cwd=ROOT))
         for index,(ref,old_version) in enumerate(BASELINES):
             installed=area/f'installed-{index}';installed.mkdir()
             for name in ('version.py','requirements.txt','updater.py','create_image_dialog.py'):
