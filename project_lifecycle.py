@@ -38,3 +38,18 @@ class ProjectChangeTracker:
         if self.saved_signature is None:
             return self.is_dirty
         return self.signature(project) != self.saved_signature
+
+
+def resolve_project_leave(is_dirty, ask, save, *,
+                          save_choice, discard_choice, auto_discard=False):
+    """Pure decision step shared by close, project-open and artwork replacement.
+
+    No Qt types, dialogs, or I/O are imported into this module: callers supply
+    the question and saving functions. Unknown responses fail closed.
+    """
+    if not is_dirty or auto_discard:
+        return True
+    answer = ask()
+    if answer == save_choice:
+        return bool(save())
+    return answer == discard_choice
