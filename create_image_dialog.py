@@ -19,7 +19,7 @@ from PySide6.QtGui import QPixmap, QDesktopServices, QPainter, QColor, QLinearGr
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QComboBox,
     QPlainTextEdit, QProgressBar, QSpinBox, QCheckBox, QFileDialog, QMessageBox, QFrame,
-    QButtonGroup, QSizePolicy,
+    QButtonGroup, QSizePolicy, QScrollArea, QBoxLayout, QWidget,
 )
 
 import ai_engine
@@ -131,7 +131,8 @@ class CreateImageDialog(QDialog):
                  hardware=None, task=None):
         super().__init__(parent)
         self.setWindowTitle('Create Image or Sound (AI)')
-        self.resize(980, 720)
+        self.resize(1100, 800)
+        self.setMinimumSize(900, 620)
         self.use_result = use_result
         self.settings = ai_engine.load_settings()
         self.paths = ai_engine.Paths(self.settings['root'])
@@ -141,11 +142,27 @@ class CreateImageDialog(QDialog):
         self.result_path = None; self.kept_path = None
         self.worker = None
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(20, 18, 20, 16); root.setSpacing(10)
+        # The drawer is a sibling, never an overlay over generation controls.
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(18,16,18,16);outer.setSpacing(14)
+        self.main_panel=QWidget()
+        self.main_panel.setMinimumWidth(440)
+        outer.addWidget(self.main_panel,1)
+        root = QVBoxLayout(self.main_panel)
+        root.setContentsMargins(0,0,0,0); root.setSpacing(10)
+        self.model_manager=None
         title = QLabel('Create Image'); title.setObjectName('dialogTitle')
         title.setStyleSheet('font-size: 18px; font-weight: 700;')
-        root.addWidget(title)
+        header=QHBoxLayout()
+        header.addWidget(title,1)
+        self.check_updates_button=QPushButton('↻  Check for updates')
+        self.check_updates_button.setCheckable(True)
+        self.check_updates_button.setAutoDefault(False)
+        self.check_updates_button.setAccessibleName('Check for image generator updates')
+        self.check_updates_button.setToolTip('Open the image-generator updates drawer (demonstration data)')
+        self.check_updates_button.clicked.connect(self.open_updates)
+        header.addWidget(self.check_updates_button)
+        root.addLayout(header)
         self.hw_label = QLabel('Your PC: ' + self.hw.summary()); self.hw_label.setObjectName('note')
         self.hw_label.setWordWrap(True)
         root.addWidget(self.hw_label)
@@ -163,30 +180,49 @@ class CreateImageDialog(QDialog):
         root.addLayout(engine_row)
 
         # Task buttons
-        tasks = QHBoxLayout(); tasks.setSpacing(6)
+        self.tasks_layout = QGridLayout();self.tasks_layout.setSpacing(6)
+        tasks = self.tasks_layout
         self.task_group = QButtonGroup(self); self.task_buttons = {}
         for key, text in TASKS:
             button = QPushButton(text); button.setCheckable(True); button.setMinimumHeight(34)
             button.clicked.connect(lambda checked=False, k=key: self.set_task(k))
             self.task_group.addButton(button); self.task_buttons[key] = button
-            tasks.addWidget(button)
+            tasks.addWidget(button,0,len(self.task_buttons)-1)
         root.addLayout(tasks)
 
-        body = QHBoxLayout(); body.setSpacing(16)
-        root.addLayout(body, 1)
+        self.body_scroll=QScrollArea()
+        self.body_scroll.setWidgetResizable(True)
+        self.body_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.body_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        body_widget=QWidget()
+        body = QBoxLayout(QBoxLayout.Direction.LeftToRight,body_widget)
+        body.setContentsMargins(0,0,4,0);body.setSpacing(16)
+        self.body_layout=body
+        self.body_scroll.setWidget(body_widget)
+        root.addWidget(self.body_scroll,1)
         form = QGridLayout(); form.setHorizontalSpacing(10); form.setVerticalSpacing(8)
-        left = QFrame(); left.setLayout(form); left.setMinimumWidth(430)
+        left = QFrame(); left.setLayout(form); left.setMinimumWidth(380)
         body.addWidget(left, 0)
         row = 0
         form.addWidget(QLabel('Model'), row, 0)
         self.model_box = QComboBox(); self.model_box.currentIndexChanged.connect(self.refresh)
-        form.addWidget(self.model_box, row, 1); row += 1
+        self.model_box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.model_box.setMinimumContentsLength(12)
+        model_row=QHBoxLayout();model_row.setSpacing(8)
+        model_row.addWidget(self.model_box,1)
+        self.manage_models_button=QPushButton('⚙  Manage models…')
+        self.manage_models_button.setAutoDefault(False)
+        self.manage_models_button.clicked.connect(self.manage_models)
+        model_row.addWidget(self.manage_models_button)
+        form.addLayout(model_row,row,1);row+=1
         self.model_info = QLabel(); self.model_info.setWordWrap(True); self.model_info.setObjectName('note')
         self.model_info.setTextFormat(Qt.TextFormat.RichText)
         self.model_info.setOpenExternalLinks(True)
         form.addWidget(self.model_info, row, 0, 1, 2); row += 1
         form.addWidget(QLabel('Version'), row, 0)
         self.variant_box = QComboBox(); self.variant_box.currentIndexChanged.connect(self.variant_changed)
+        self.variant_box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.variant_box.setMinimumContentsLength(16)
         self.variant_box.setToolTip('Auto picks the best version for your graphics card. '
                                     'Larger versions look better but need more memory.')
         form.addWidget(self.variant_box, row, 1); row += 1
@@ -247,7 +283,7 @@ class CreateImageDialog(QDialog):
         right = QVBoxLayout(); body.addLayout(right, 1)
         self.preview = QLabel('The result appears here.')
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setMinimumSize(360, 300)
+        self.preview.setMinimumSize(300, 240)
         self.preview.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.preview.setObjectName('monitorWell')
         self.preview.setStyleSheet('border-radius: 6px;')
@@ -267,11 +303,13 @@ class CreateImageDialog(QDialog):
 
         bottom = QHBoxLayout()
         self.status = QLabel('Ready.'); self.status.setObjectName('status'); self.status.setWordWrap(True)
-        bottom.addWidget(self.status, 1)
-        self.progress = QProgressBar(); self.progress.setFixedWidth(280); self.progress.setTextVisible(True)
+        root.addWidget(self.status)
+        bottom.addStretch(1)
+        self.progress = QProgressBar(); self.progress.setMaximumWidth(280)
+        self.progress.setMinimumWidth(80); self.progress.setTextVisible(True)
         self.progress.setFixedHeight(18); self.progress.setFormat('%p%')
         self.progress.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        bottom.addWidget(self.progress)
+        bottom.addWidget(self.progress,1)
         self.log_button = QPushButton('Engine log'); self.log_button.setObjectName('subtle')
         self.log_button.setCheckable(True)
         bottom.addWidget(self.log_button)
@@ -294,8 +332,86 @@ class CreateImageDialog(QDialog):
         self.work_timer.timeout.connect(self.paint_working)
         self.reveal_timer = QTimer(self); self.reveal_timer.setInterval(30)
         self.reveal_timer.timeout.connect(self.reveal_step)
+        from image_generator_updates import UpdatePanel
+        self.updates_panel=UpdatePanel(self)
+        self.updates_panel.hide()
+        self.updates_panel.close_requested.connect(self.close_updates)
+        outer.addWidget(self.updates_panel)
         self.task = None
         self.set_task(task or ('lineart' if current_image else 'generate'))
+
+    def open_updates(self):
+        self.updates_panel.show()
+        self.check_updates_button.setChecked(True)
+        self.update_layout()
+
+    def close_updates(self):
+        self.updates_panel.hide()
+        self.check_updates_button.setChecked(False)
+        self.check_updates_button.setFocus()
+        self.update_layout()
+
+    def reject(self):
+        if hasattr(self,'updates_panel') and self.updates_panel.isVisible():
+            self.close_updates()
+            return
+        super().reject()
+
+    def update_layout(self):
+        if not hasattr(self,'body_layout'):
+            return
+        # Use the available left column, including a pending drawer opening.
+        drawer_open=hasattr(self,'updates_panel') and not self.updates_panel.isHidden()
+        available=self.width()-36-(414 if drawer_open else 0)
+        compact=available<850
+        self.body_layout.setDirection(QBoxLayout.Direction.TopToBottom if compact
+                                      else QBoxLayout.Direction.LeftToRight)
+        columns=2 if compact else 4
+        for index,button in enumerate(self.task_buttons.values()):
+            self.tasks_layout.addWidget(button,index//columns,index%columns)
+
+    def resizeEvent(self,event):
+        super().resizeEvent(event)
+        self.update_layout()
+        if hasattr(self,'reveal_timer') and not self.reveal_timer.isActive():
+            self.show_result(animate=False)
+
+    def manage_models(self):
+        if self.model_manager is not None:
+            self.model_manager.close()
+        manager=QDialog(self)
+        manager.setWindowTitle('Manage AI models')
+        manager.resize(620,500)
+        layout=QVBoxLayout(manager)
+        note=QLabel('Choose a model to view its versions, license and download options in the main form. '
+                    'These are the app’s real model settings; the updates drawer uses demonstration data.')
+        note.setWordWrap(True);layout.addWidget(note)
+        scroll=QScrollArea();scroll.setWidgetResizable(True)
+        content=QWidget();items=QVBoxLayout(content)
+        for model in ai_models.MODELS:
+            variant,fit=ai_models.choose_variant(model,self.hw)
+            card=QFrame();card_layout=QVBoxLayout(card)
+            have=self.paths.has_files(model.files(variant,self.hw.ram_gb))
+            title=QLabel(model.name+'  —  '+('Ready' if have else 'Download needed'))
+            title.setWordWrap(True);card_layout.addWidget(title)
+            info=QLabel(f'{model.maker}  •  {variant.label}  •  {ai_models.fit_text(fit)}')
+            info.setWordWrap(True);card_layout.addWidget(info)
+            choose=QPushButton('Choose model')
+            choose.setProperty('modelId',model.id)
+            choose.clicked.connect(lambda checked=False,m=model:self.choose_managed_model(m))
+            card_layout.addWidget(choose);items.addWidget(card)
+        items.addStretch(1);scroll.setWidget(content);layout.addWidget(scroll)
+        close=QPushButton('Close');close.clicked.connect(manager.close);layout.addWidget(close)
+        self.model_manager=manager
+        manager.show()
+
+    def choose_managed_model(self,model):
+        task='sound' if 'sound' in model.tasks else 'generate' if 'generate' in model.tasks else 'edit'
+        self.set_task(task)
+        self.model_box.setCurrentIndex(self.model_box.findData(model.id))
+        self.model_box.setFocus()
+        if self.model_manager is not None:
+            self.model_manager.close()
 
     # ------------------------------------------------------------ state
     def models_for_task(self):
@@ -402,6 +518,7 @@ class CreateImageDialog(QDialog):
                if ai_engine.free_space_gb(self.paths.root) is not None else ''))
         self.install_button.setVisible(not engine_ok)
         self.install_button.setEnabled(not busy)
+        self.manage_models_button.setEnabled(not busy)
         self.download_button.setVisible(not have)
         self.download_button.setText(f'Download model ({ai_models.gb(size)})')
         self.download_button.setToolTip(f'{model.name} — {variant.label}: model, text encoder and '
@@ -726,6 +843,8 @@ class CreateImageDialog(QDialog):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
 
     def closeEvent(self, event):
+        if self.model_manager is not None:
+            self.model_manager.close()
         self.work_timer.stop(); self.reveal_timer.stop()
         if self.player is not None:
             self.player.stop()
