@@ -18,3 +18,13 @@ jobs:
           python-version: '3.12'
       - name: Verify updater and transaction regressions
         run: python -m unittest -v test_update_transaction test_updater.UpdaterTests
+  transaction-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Verify updater and transaction regressions
+        run: python -m unittest -v test_update_transaction test_updater.UpdaterTests
