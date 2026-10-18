@@ -127,6 +127,50 @@ class TransactionTests(unittest.TestCase):
         self.assertTrue(result['recovered'])
         self.assert_old()
 
+    def test_power_loss_after_backup_rotation_preserves_old_install_and_rollback(self):
+        previous_backup=self.app/updater.BACKUP
+        previous_backup.mkdir()
+        (previous_backup/'update.json').write_text(json.dumps({
+            'from':'0.9.0','to':'1.0.0','added':[]
+        }))
+        (previous_backup/'app.py').write_text('previous previous version')
+        real=updater.os.replace
+        def lose_power(source,dest):
+            if Path(dest)==previous_backup and Path(source).name=='backup':
+                raise KeyboardInterrupt('power lost between backup renames')
+            return real(source,dest)
+        with patch.object(updater.os,'replace',side_effect=lose_power):
+            with self.assertRaises(KeyboardInterrupt):
+                updater.apply_zip(self.zip_with(),self.app)
+        self.assertTrue((self.app/updater.JOURNAL).exists())
+        result=updater.recover_interrupted_update(self.app)
+        self.assertTrue(result['recovered'])
+        self.assert_old()
+        self.assertEqual((previous_backup/'app.py').read_text(),'previous previous version')
+
+    def test_power_loss_after_new_backup_installed_can_still_recover(self):
+        previous_backup=self.app/updater.BACKUP
+        previous_backup.mkdir()
+        (previous_backup/'update.json').write_text(json.dumps({
+            'from':'0.9.0','to':'1.0.0','added':[]
+        }))
+        (previous_backup/'app.py').write_text('previous previous version')
+        real=updater._atomic_json
+        writes=[0]
+        def interrupt(path,data):
+            writes[0]+=1
+            if writes[0]==2:
+                raise KeyboardInterrupt('power lost after backup swap')
+            return real(path,data)
+        with patch.object(updater,'_atomic_json',side_effect=interrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                updater.apply_zip(self.zip_with(),self.app)
+        self.assertTrue((self.app/updater.JOURNAL).exists())
+        self.assertTrue(updater.recover_interrupted_update(self.app)['recovered'])
+        self.assert_old()
+        self.assertEqual((previous_backup/'app.py').read_text(),'previous previous version')
+        self.assertFalse(updater.recover_interrupted_update(self.app)['recovered'])
+
     def test_second_failed_attempt_retains_previous_backup(self):
         # A retry after an ordinary error must not destroy the prior
         # successful update's rollback snapshot.
