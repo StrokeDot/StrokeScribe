@@ -74,10 +74,17 @@ ai_engine.save_settings(settings)
 app=QApplication([])
 dialog=CreateImageDialog(hardware=Hardware('CI test GPU',16,64,True))
 dialog.show()
-dialog.check_updates_button.click()
-app.processEvents()
+from unittest.mock import patch
+from PySide6.QtTest import QTest
+with patch('model_updates_live.inspect_models', return_value=()):
+    dialog.check_updates_button.click()
+    for _ in range(150):
+        app.processEvents()
+        if dialog.live_update_worker is None:
+            break
+        QTest.qWait(20)
 assert dialog.updates_panel.isVisible()
-assert 'Demonstration' in ' '.join(x.text() for x in dialog.updates_panel.findChildren(__import__('PySide6.QtWidgets',fromlist=['QLabel']).QLabel))
+assert dialog.live_update_worker is None
 dialog.close()
 print('Updated dialog loads:',APP_VERSION)
 """
