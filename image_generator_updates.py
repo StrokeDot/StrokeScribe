@@ -100,6 +100,7 @@ class ModelStatusCard(QFrame):
 class UpdatePanel(QFrame):
     close_requested = Signal()
     action_requested = Signal(str, str)
+    cancel_requested = Signal()
 
     def __init__(self, parent=None, items=None):
         super().__init__(parent)
@@ -133,6 +134,11 @@ class UpdatePanel(QFrame):
         self.feedback = label("No model files changed.", "updateFeedback")
         self.feedback.setAccessibleName("Model update action feedback")
         root.addWidget(self.feedback)
+        self.cancel_button = QPushButton("Cancel current check or download")
+        self.cancel_button.setObjectName("secondary")
+        self.cancel_button.hide()
+        self.cancel_button.clicked.connect(self.cancel_requested.emit)
+        root.addWidget(self.cancel_button)
         self.set_items(self.items)
         self.close_requested.connect(self.hide)
 
@@ -169,6 +175,9 @@ class UpdatePanel(QFrame):
 
     def show_feedback(self, message):
         self.feedback.setText(str(message))
+
+    def set_busy(self, busy):
+        self.cancel_button.setVisible(bool(busy))
 
     @staticmethod
     def panel_style():
