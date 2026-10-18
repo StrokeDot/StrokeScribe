@@ -109,6 +109,20 @@ class ModelIntegrityTests(unittest.TestCase):
                     ai_engine.download('file://fake', target, len(payload), sha256=wanted, connections=1)
             self.assertFalse(target.exists())
 
+    def test_model_registry_checksum_must_match_for_installed_file(self):
+        from ai_models import ModelFile
+        with tempfile.TemporaryDirectory() as temp:
+            paths = ai_engine.Paths(temp)
+            data = b'authentic'
+            file = ModelFile('https://example.invalid/weights.gguf','diffusion_models',len(data),
+                             hashlib.sha256(data).hexdigest())
+            dest = paths.model_path(file)
+            dest.parent.mkdir(parents=True)
+            dest.write_bytes(b'CORRUPTED')
+            self.assertFalse(paths.has_files([file]))
+            dest.write_bytes(data)
+            self.assertTrue(paths.has_files([file]))
+
     def test_matching_sha256_accepts_model_file(self):
         with tempfile.TemporaryDirectory() as temp:
             target = Path(temp)/'model.gguf'
