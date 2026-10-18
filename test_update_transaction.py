@@ -106,6 +106,46 @@ class TransactionTests(unittest.TestCase):
         self.assert_old()
         self.assertFalse((self.app/'.strokescribe-update-journal.json').exists())
 
+    def test_launcher_recovers_interrupted_update_before_loading_ui(self):
+        # The launcher must not attempt a potentially mixed Qt/application
+        # import before inspecting the durable journal.
+        import startup
+        real=updater.os.replace
+        called=[0]
+        def interrupt(source,dest):
+            target=Path(dest)
+            if target.parent==self.app and target.name=='core.py':
+                called[0]+=1
+                if called[0]==1:
+                    raise KeyboardInterrupt('power loss')
+            return real(source,dest)
+        with patch.object(updater.os,'replace',side_effect=interrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                updater.apply_zip(self.zip_with(),self.app)
+        with patch.object(startup,'root',self.app):
+            result=startup.recover_pending_update()
+        self.assertTrue(result['recovered'])
+        self.assert_old()
+
+    def test_second_failed_attempt_retains_previous_backup(self):
+        # A retry after an ordinary error must not destroy the prior
+        # successful update's rollback snapshot.
+        first = updater.apply_zip(self.zip_with(),self.app)
+        self.assertEqual(first['version'],'1.0.1')
+        old_backup=(self.app/updater.BACKUP/'app.py').read_bytes()
+        newer=dict(self.new, **{'app.py':'newer app','version.py':'APP_VERSION = "1.0.2"\\n'})
+        candidate=self.zip_with(newer)
+        real=updater.os.replace
+        def broken(source,dest):
+            if Path(dest)==self.app/'app.py':
+                raise OSError('disk full')
+            return real(source,dest)
+        with patch.object(updater.os,'replace',side_effect=broken):
+            with self.assertRaises(updater.UpdateError):
+                updater.apply_zip(candidate,self.app)
+        self.assertEqual((self.app/'app.py').read_text(),'new app')
+        self.assertEqual((self.app/updater.BACKUP/'app.py').read_bytes(),old_backup)
+
     def test_existing_rollback_backup_survives_failed_update(self):
         former=self.app/updater.BACKUP
         former.mkdir()
