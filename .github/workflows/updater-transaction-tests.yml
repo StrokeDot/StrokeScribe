@@ -1,5 +1,8 @@
 name: Updater transaction fault-injection checks
 on:
+  push:
+    branches:
+      - 'safety/controlled-refactor-phase6'
   pull_request:
   workflow_dispatch:
 permissions:
