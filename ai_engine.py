@@ -411,18 +411,56 @@ def free_space_gb(path):
 # ---------------------------------------------------------------- installing the engine
 
 def _run(cmd, log, cancelled, cwd=None):
-    """Run a command, streaming its output lines to log(); raise on failure."""
+    """Run a subprocess with prompt cancellation even if it prints nothing.
+
+    A dedicated reader drains stdout; the owner can check cancellation every
+    100ms rather than blocking indefinitely waiting for a line from pip.
+    """
+    import queue
+    import threading
+    if cancelled():
+        raise Cancelled('Installation cancelled before starting.')
     log('> ' + ' '.join(str(c) for c in cmd))
     proc = subprocess.Popen([str(c) for c in cmd], cwd=cwd, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True, errors='replace',
                             creationflags=NO_WINDOW)
-    for line in proc.stdout:
-        log(line.rstrip())
-        if cancelled():
-            proc.terminate()
-            raise Cancelled('Installation cancelled.')
-    if proc.wait() != 0:
-        raise RuntimeError(f'Step failed: {Path(str(cmd[0])).name} {" ".join(map(str, cmd[1:3]))}')
+    lines = queue.Queue()
+    def read_output():
+        try:
+            for item in proc.stdout:
+                lines.put(item.rstrip())
+        finally:
+            lines.put(None)
+    reader = threading.Thread(target=read_output, daemon=True)
+    reader.start()
+    try:
+        while True:
+            if cancelled():
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                raise Cancelled('Installation cancelled.')
+            try:
+                message = lines.get(timeout=.1)
+            except queue.Empty:
+                if proc.poll() is not None and not reader.is_alive():
+                    break
+                continue
+            if message is None:
+                break
+            log(message)
+        if proc.wait() != 0:
+            raise RuntimeError(f'Step failed: {Path(str(cmd[0])).name} {" ".join(map(str, cmd[1:3]))}')
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if proc.stdout is not None:
+            proc.stdout.close()
+        reader.join(timeout=1)
 
 
 def _base_python():
@@ -506,11 +544,22 @@ def _extract_zip(data, target, strip_top=True, cancelled=lambda: False):
             shutil.rmtree(stage, ignore_errors=True)
 
 
-def _fetch(url, log):
+def _fetch(url, log, cancelled=lambda: False):
+    """Fetch archive chunks while checking for user cancellation."""
     log('Downloading ' + url)
     request = urllib.request.Request(url, headers={'User-Agent': 'StrokeScribe'})
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return response.read()
+    output = io.BytesIO()
+    with urllib.request.urlopen(request, timeout=30) as response:
+        while True:
+            if cancelled():
+                raise Cancelled('AI engine download cancelled.')
+            block = response.read(256 << 10)
+            if not block:
+                break
+            output.write(block)
+    if cancelled():
+        raise Cancelled('AI engine download cancelled.')
+    return output.getvalue()
 
 
 def install_engine(paths, nvidia=True, log=print, step=lambda i, n, text: None,
@@ -530,11 +579,11 @@ def install_engine(paths, nvidia=True, log=print, step=lambda i, n, text: None,
     _run([paths.python, '-m', 'pip', 'install', 'torch', 'torchvision', 'torchaudio',
           '--index-url', TORCH_INDEX['nvidia' if nvidia else 'cpu']], log, cancelled)
     step(2, n, steps[2])
-    _extract_zip(_fetch(COMFY_ZIP, log), paths.comfy)
+    _extract_zip(_fetch(COMFY_ZIP, log, cancelled=cancelled), paths.comfy, cancelled=cancelled)
     step(3, n, steps[3])
     _run([paths.python, '-m', 'pip', 'install', '-r', paths.comfy / 'requirements.txt'], log, cancelled)
     step(4, n, steps[4])
-    _extract_zip(_fetch(GGUF_ZIP, log), paths.custom_nodes / 'ComfyUI-GGUF')
+    _extract_zip(_fetch(GGUF_ZIP, log, cancelled=cancelled), paths.custom_nodes / 'ComfyUI-GGUF', cancelled=cancelled)
     _run([paths.python, '-m', 'pip', 'install', 'gguf>=0.13.0', 'sentencepiece', 'protobuf'],
          log, cancelled)
     step(5, n, steps[5])
