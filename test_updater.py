@@ -139,8 +139,21 @@ class UpdaterTests(unittest.TestCase):
         self.assertGreaterEqual(updater.parse_version(version), (0, 5, 3, 38))
         zip_path = updater.download(token, self.dir / 'real.zip', branch)
         self.assertEqual(updater.zip_version(zip_path), version)
-        updater.apply_zip(zip_path, self.app)
-        self.assertNotEqual((self.app / 'app.py').read_text(), 'old app')
+        # The real development branch has a different requirements.txt from
+        # this tiny fixture; transactional updates must route it to a full
+        # installer rather than pip-modifying the current environment.
+        with zipfile.ZipFile(zip_path) as archive:
+            members, _ = updater._members(archive, self.app)
+            req = next((name for name, rel in members if rel == 'requirements.txt'), None)
+            self.assertIsNotNone(req)
+            changed = archive.read(req).decode('utf-8', 'replace') != (self.app / 'requirements.txt').read_text()
+        if changed:
+            with self.assertRaisesRegex(updater.UpdateError, 'installer'):
+                updater.apply_zip(zip_path, self.app)
+            self.assertEqual((self.app / 'app.py').read_text(), 'old app')
+        else:
+            updater.apply_zip(zip_path, self.app)
+            self.assertNotEqual((self.app / 'app.py').read_text(), 'old app')
         self.assertEqual((self.app / '.venv/Lib/site.py').read_text(), 'my packages')
 
 
