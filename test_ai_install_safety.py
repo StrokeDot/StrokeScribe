@@ -55,6 +55,25 @@ class EngineInstallSafetyTests(unittest.TestCase):
         self.assertTrue((previous / 'main.py').is_file(),
                         'Do not silently delete an older backup during engine detection.')
 
+    def test_recovery_check_never_discards_older_engine_when_current_exists(self):
+        previous = self.root/'ComfyUI.previous'
+        previous.mkdir()
+        (previous/'main.py').write_text('older engine - keep intact')
+        self.assertFalse(ai_engine.recover_engine_folder(self.engine))
+        self.assertEqual((previous/'main.py').read_text(), 'older engine - keep intact')
+        self.assertEqual((self.engine/'main.py').read_text(), 'previous working engine')
+
+    def test_replacement_refuses_unresolved_backup_without_touching_either_engine(self):
+        previous = self.root/'ComfyUI.previous'
+        previous.mkdir()
+        (previous/'main.py').write_text('older engine - keep intact')
+        with self.assertRaisesRegex(RuntimeError, 'backup'):
+            ai_engine._extract_zip(self.content, self.engine)
+        self.assertEqual((previous/'main.py').read_text(), 'older engine - keep intact')
+        self.assertEqual((self.engine/'main.py').read_text(), 'previous working engine')
+        self.assertEqual(sorted(p.name for p in self.root.iterdir()),
+                         ['ComfyUI', 'ComfyUI.previous'])
+
     def test_cancelled_extraction_preserves_previous_engine(self):
         calls = [0]
         def cancel():
