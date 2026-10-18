@@ -216,6 +216,17 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual((self.app/'app.py').read_text(),'new app')
         self.assertEqual((self.app/updater.BACKUP/'app.py').read_bytes(),old_backup)
 
+    def test_manual_rollback_refuses_while_recovery_journal_is_active(self):
+        backup=self.app/updater.BACKUP
+        backup.mkdir()
+        (backup/'update.json').write_text(json.dumps({'from':'0.9','to':'1.0.0','added':[]}))
+        (backup/'app.py').write_text('older app')
+        (self.app/updater.JOURNAL).write_text(json.dumps({'phase':'applying'}))
+        with self.assertRaisesRegex(updater.UpdateError, 'recover|unfinished|incomplete'):
+            updater.roll_back(self.app)
+        self.assertEqual((self.app/'app.py').read_text(),'old app')
+        self.assertTrue((backup/'update.json').exists())
+
     def test_existing_rollback_backup_survives_failed_update(self):
         former=self.app/updater.BACKUP
         former.mkdir()

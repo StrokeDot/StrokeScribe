@@ -3326,14 +3326,42 @@ class Window(QMainWindow):
         UpdateDialog(self,self.latest_version).exec()
 
     def restart_after_update(self):
-        """Close (asking to save, like a normal close) and start the updated version."""
-        # closeEvent uses the same Save / Discard / Cancel protection.
+        """Confirm and spawn the replacement before closing this working app.
+
+        A failed restart never leaves the user without an application window.
+        """
+        if ((self.font_worker and self.font_worker.isRunning())
+                or (self.builder and self.builder.isRunning())
+                or (self.worker and self.worker.isRunning())):
+            QMessageBox.information(self, 'Restart',
+                'Wait for downloads, analysis, or export to finish before restarting.')
+            return False
+        if not self.confirm_leave_project('restart StrokeScribe'):
+            return False
         import updater
-        self._restart_requested=True
-        self.close()
-        if not self.isVisible():
-            updater.restart()
-            QApplication.instance().quit()
+        try:
+            new_process = updater.restart()
+        except Exception as exc:
+            QMessageBox.warning(self, 'Restart',
+                'Could not launch the new StrokeScribe. This window will stay open.\n\n' + str(exc))
+            return False
+        # We just confirmed a save/discard decision; do not ask twice.
+        self._restart_preconfirmed = True
+        try:
+            self.close()
+        finally:
+            self._restart_preconfirmed = False
+        if self.isVisible():
+            # A late export or another close veto must not leave two copies
+            # running; stop the newly launched child where possible.
+            if new_process is not None and hasattr(new_process, 'terminate'):
+                try:
+                    new_process.terminate()
+                except Exception:
+                    pass
+            return False
+        QApplication.instance().quit()
+        return True
 
     def closeEvent(self,event):
         if self.preview_sound is not None: self.preview_sound.stop()
@@ -3347,7 +3375,7 @@ class Window(QMainWindow):
         if self.worker and self.worker.isRunning():
             self.cancel_export(); QMessageBox.information(self,'Export running','Please wait for the current export to stop before closing.'); event.ignore()
         else:
-            if not self.confirm_leave_project('close StrokeScribe'):
+            if not getattr(self, '_restart_preconfirmed', False) and not self.confirm_leave_project('close StrokeScribe'):
                 event.ignore()
                 return
             if self.ai_engine is not None:

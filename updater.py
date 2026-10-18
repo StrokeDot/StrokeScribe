@@ -6,14 +6,12 @@ read-only GitHub key (token) is only used if the project is made private again.
 It is kept in this PC's StrokeScribe settings.
 
 Updating:
-  1. download the version as a ZIP (or use a ZIP you already have),
-  2. keep a copy of every file it replaces in `_previous_version/`, so the
-     update can be undone,
-  3. copy the new files over the app folder. Nothing else is touched: the
-     .venv packages, the Library, projects, settings and AI models stay,
-  4. if the new version needs other Python packages (requirements.txt
-     changed), install them into the existing .venv,
-  5. restart.
+  1. download and validate an update ZIP into a temporary file,
+  2. stage and verify replacement files without altering the live application,
+  3. preserve rollback copies and write a recovery journal,
+  4. atomically replace application files, preserving user projects and models,
+  5. require the full installer if Python requirements change,
+  6. restart (startup recovers any interrupted transaction).
 """
 from __future__ import annotations
 
@@ -44,6 +42,11 @@ NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 
 class UpdateError(Exception):
+    pass
+
+
+class CancelledUpdate(UpdateError):
+    """The user cancelled before installation started. Existing files are untouched."""
     pass
 
 
@@ -180,24 +183,43 @@ def notes_for(readme, version):
     return re.sub(r'\*\*|`', '', text)
 
 
-def download(token, target, branch=DEFAULT_BRANCH, repo=REPO, progress=lambda done, total: None):
-    """The newest StrokeScribe as a ZIP file."""
+def download(token, target, branch=DEFAULT_BRANCH, repo=REPO, progress=lambda done, total: None,
+             cancelled=lambda: False):
+    """Fetch to a sidecar and replace the final ZIP only after complete download.
+
+    Cancel and network errors discard the incomplete temporary copy, leaving
+    any previously downloaded valid ZIP unchanged.
+    """
     from urllib.parse import quote
     url = f'https://api.github.com/repos/{repo}/zipball/{quote(branch, safe="")}'
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
-    with _request(url, token, timeout=120) as response, open(target, 'wb') as out:
-        total = int(response.headers.get('Content-Length') or 0)
-        done = 0
-        while True:
-            block = response.read(1 << 16)
-            if not block:
-                break
-            out.write(block)
-            done += len(block)
-            progress(done, total)
-    return target
-
+    partial = target.with_name(target.name + '.partial')
+    try:
+        if cancelled():
+            raise CancelledUpdate('Update cancelled before installation.')
+        with _request(url, token, timeout=120) as response, partial.open('wb') as out:
+            total = int(response.headers.get('Content-Length') or 0)
+            done = 0
+            while True:
+                if cancelled():
+                    raise CancelledUpdate('Update cancelled before installation.')
+                block = response.read(1 << 16)
+                if not block:
+                    break
+                out.write(block)
+                done += len(block)
+                progress(done, total)
+            if cancelled():
+                raise CancelledUpdate('Update cancelled before installation.')
+            if total and done != total:
+                raise UpdateError(f'Incomplete update download: received {done} of {total} bytes.')
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(partial, target)
+        return target
+    finally:
+        partial.unlink(missing_ok=True)
 
 # ------------------------------------------------------------ applying
 
@@ -465,9 +487,22 @@ def commit_update(staged, log=lambda text: None):
         raise UpdateError('Update failed; the previous application was retained/restored: ' + str(exc)) from exc
 
 
-def apply_zip(zip_path, app_dir=APP_DIR, log=lambda text: None):
-    """Compatible API for fully staged, rollback-safe file updates."""
-    return commit_update(stage_update(zip_path, app_dir), log=log)
+def apply_zip(zip_path, app_dir=APP_DIR, log=lambda text: None,
+              *, cancelled=lambda: False, on_commit=lambda: None):
+    """Stage while cancellable; never interrupt the atomic replacement phase."""
+    if cancelled():
+        raise CancelledUpdate('Update cancelled before installation.')
+    staged = stage_update(zip_path, app_dir)
+    try:
+        if cancelled():
+            raise CancelledUpdate('Update cancelled before installation.')
+        on_commit()
+        # Cancellation is deliberately no longer consulted: from this point
+        # commit_update owns all rollback and recovery guarantees.
+        return commit_update(staged, log=log)
+    finally:
+        if staged.stage_dir.exists() and not _journal_path(staged.app_dir).exists():
+            shutil.rmtree(staged.stage_dir, ignore_errors=True)
 
 
 def _read(path):
@@ -478,12 +513,25 @@ def _read(path):
 
 
 def can_roll_back(app_dir=APP_DIR):
-    return (Path(app_dir) / BACKUP / 'update.json').is_file()
+    app_dir = Path(app_dir)
+    return (not _journal_path(app_dir).exists()
+            and (app_dir / BACKUP / 'update.json').is_file())
+
+
+def rollback_target_version(app_dir=APP_DIR):
+    """Show the exact version that a manual rollback would restore."""
+    try:
+        metadata = json.loads((Path(app_dir) / BACKUP / 'update.json').read_text(encoding='utf-8'))
+        return metadata.get('from') or 'previous version'
+    except (OSError, ValueError, TypeError):
+        return 'previous version'
 
 
 def roll_back(app_dir=APP_DIR):
     """Go back to the version before the last update."""
     app_dir = Path(app_dir)
+    if _journal_path(app_dir).exists():
+        raise UpdateError('An unfinished update must be recovered before manual rollback.')
     backup = app_dir / BACKUP
     info = json.loads((backup / 'update.json').read_text())
     for path in backup.rglob('*'):
