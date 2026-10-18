@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import Path
 from zipfile import ZipFile, ZipInfo
 
-WINDOWS_SPECIAL = re.compile(r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\..*)?$', re.I)
+WINDOWS_SPECIAL = re.compile(r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?$', re.I)
 
 
 def validate_archive_member(member_name: str, destination_root: Path) -> Path:
