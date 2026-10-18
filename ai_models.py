@@ -23,6 +23,7 @@ class ModelFile:
     url: str
     folder: str          # ComfyUI models sub-folder
     size: int            # bytes (checked after download)
+    sha256: str | None = None  # trusted publisher checksum, when available
 
     @property
     def name(self):
