@@ -216,6 +216,84 @@ class TransactionTests(unittest.TestCase):
         self.assertEqual((self.app/'app.py').read_text(),'new app')
         self.assertEqual((self.app/updater.BACKUP/'app.py').read_bytes(),old_backup)
 
+
+    def test_manual_rollback_failure_midway_restores_new_version_and_backup(self):
+        updater.apply_zip(self.zip_with(),self.app)
+        previous=(self.app/updater.BACKUP/'app.py').read_bytes()
+        real=updater.os.replace
+        replaces=[0]
+        def break_restore(src,dest):
+            if Path(dest).parent==self.app and Path(dest).name in ('app.py','core.py','version.py'):
+                replaces[0]+=1
+                if replaces[0]==2:
+                    raise OSError('simulated disk full during rollback')
+            return real(src,dest)
+        with patch.object(updater.os,'replace',side_effect=break_restore):
+            with self.assertRaises(updater.UpdateError):
+                updater.roll_back(self.app)
+        self.assertGreater(replaces[0],1)
+        self.assertEqual((self.app/'app.py').read_text(),'new app')
+        self.assertEqual((self.app/'version.py').read_text(),self.new['version.py'])
+        self.assertTrue((self.app/'fresh.py').exists())
+        self.assertTrue(updater.can_roll_back(self.app))
+        self.assertEqual((self.app/updater.BACKUP/'app.py').read_bytes(),previous)
+        self.assertFalse((self.app/updater.JOURNAL).exists())
+
+    def test_manual_rollback_power_loss_recovers_new_version_at_startup(self):
+        updater.apply_zip(self.zip_with(),self.app)
+        real=updater.os.replace
+        seen=[0]
+        def kill(src,dest):
+            if Path(dest).parent==self.app and Path(dest).name in ('app.py','core.py','version.py'):
+                seen[0]+=1
+                if seen[0]==2:
+                    raise KeyboardInterrupt('power loss while reverting')
+            return real(src,dest)
+        with patch.object(updater.os,'replace',side_effect=kill):
+            with self.assertRaises(KeyboardInterrupt):
+                updater.roll_back(self.app)
+        self.assertTrue((self.app/updater.JOURNAL).exists())
+        import startup
+        with patch.object(startup,'root',self.app):
+            self.assertTrue(startup.recover_pending_update()['recovered'])
+        self.assertEqual((self.app/'app.py').read_text(),'new app')
+        self.assertEqual((self.app/'version.py').read_text(),self.new['version.py'])
+        self.assertTrue((self.app/'fresh.py').exists())
+        self.assertTrue(updater.can_roll_back(self.app))
+        self.assertFalse((self.app/updater.JOURNAL).exists())
+
+    def test_power_loss_after_manual_rollback_backup_rotation_can_recover(self):
+        updater.apply_zip(self.zip_with(),self.app)
+        real=updater.os.replace
+        def crash_after_swap(src,dest):
+            if Path(src)==self.app/updater.BACKUP and Path(dest).name=='previous_version':
+                real(src,dest)
+                raise KeyboardInterrupt('power loss just after saving rollback backup')
+            return real(src,dest)
+        with patch.object(updater.os,'replace',side_effect=crash_after_swap):
+            with self.assertRaises(KeyboardInterrupt):
+                updater.roll_back(self.app)
+        self.assertTrue((self.app/updater.JOURNAL).exists())
+        self.assertTrue(updater.recover_interrupted_update(self.app)['recovered'])
+        self.assertEqual((self.app/'app.py').read_text(),'new app')
+        self.assertTrue(updater.can_roll_back(self.app))
+        self.assertEqual(updater.roll_back(self.app),'1.0.0')
+        self.assert_old()
+
+    def test_invalid_manual_rollback_metadata_never_touches_outside_files(self):
+        updater.apply_zip(self.zip_with(),self.app)
+        outside=self.root/'user-file.txt'
+        outside.write_text('keep me')
+        metadata=self.app/updater.BACKUP/'update.json'
+        info=json.loads(metadata.read_text())
+        info['added'].append('../user-file.txt')
+        metadata.write_text(json.dumps(info))
+        with self.assertRaises(updater.UpdateError):
+            updater.roll_back(self.app)
+        self.assertEqual(outside.read_text(),'keep me')
+        self.assertEqual((self.app/'app.py').read_text(),'new app')
+        self.assertFalse((self.app/updater.JOURNAL).exists())
+
     def test_manual_rollback_refuses_while_recovery_journal_is_active(self):
         backup=self.app/updater.BACKUP
         backup.mkdir()
