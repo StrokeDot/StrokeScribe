@@ -108,6 +108,32 @@ class DrawerTests(unittest.TestCase):
         self.assertEqual(d.model_box.currentData(),ai_models.QWEN_EDIT.id)
         self.assertFalse(manager.isVisible())
 
+    def test_result_rescales_when_drawer_opens_and_closes(self):
+        self.drawer()
+        d=self.dialog
+        path=Path(self.tmp.name)/'large-result.png'
+        pix=QPixmap(1200,800);pix.fill(QColor('#794fe8'));pix.save(str(path))
+        d.resize(1500,900);d.show();APP.processEvents()
+        d.result_path=str(path);d.show_result(animate=False)
+        for opened in (True,False):
+            if opened:d.check_updates_button.click()
+            else:d.updates_panel.close_button.click()
+            QTest.qWait(50);APP.processEvents()
+            shown=d.preview.pixmap()
+            self.assertLessEqual(shown.width(),d.preview.width())
+            self.assertLessEqual(shown.height(),d.preview.height())
+            self.assertTrue(abs(shown.width()-d.preview.width())<=1 or
+                            abs(shown.height()-d.preview.height())<=1,
+                            'Result should fit the current preview, not its previous size')
+
+    def test_title_bar_close_closes_dialog_even_when_drawer_is_open(self):
+        drawer=self.drawer()
+        d=self.dialog
+        d.show();d.check_updates_button.click();APP.processEvents()
+        self.assertTrue(drawer.isVisible())
+        d.close();APP.processEvents()
+        self.assertFalse(d.isVisible(),'Window close must not merely hide the drawer')
+
     def test_drawer_is_image_only_even_on_sound_tab(self):
         drawer=self.drawer()
         self.dialog.set_task('sound')
