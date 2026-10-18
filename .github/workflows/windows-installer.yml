@@ -1,8 +1,5 @@
 name: Windows installer (tested, manually approved)
 on:
-  push:
-    branches:
-      - 'safety/controlled-refactor-phase6'
   pull_request:
     paths:
       - 'app.py'
