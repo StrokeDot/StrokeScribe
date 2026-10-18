@@ -405,6 +405,7 @@ class Window(QMainWindow):
         self.history=History()
         self.project_changes=ProjectChangeTracker()
         self._autosaved_signature=None
+        self._closed=False
         self._restoring=False
         self._lines_cache=None
         self.busy=False
@@ -1290,7 +1291,9 @@ class Window(QMainWindow):
     # ------------------------------------------------------------ autosave
     def autosave_tick(self):
         """Every minute: back up the project if something changed since the last backup."""
-        if not self.drawing or (self.builder and self.builder.isRunning()) or self.busy:
+        # Qt can deliver an already queued timer event after a close. Never
+        # recreate a crash-recovery backup for a window that closed normally.
+        if self._closed or not self.drawing or (self.builder and self.builder.isRunning()) or self.busy:
             return False
         try:
             state=self.project_state()
@@ -3380,6 +3383,10 @@ class Window(QMainWindow):
                 return
             if self.ai_engine is not None:
                 self.ai_engine.stop()        # never leave the AI engine running
+            # Only a successful close stops autosaving; a rejected close must
+            # leave the recovery timer active for the still-open project.
+            self._closed=True
+            self.autosave_timer.stop()
             if not getattr(self,'_keep_autosave',False):
                 import autosave; autosave.clear()
             event.accept()
