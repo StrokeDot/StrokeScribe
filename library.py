@@ -194,10 +194,14 @@ class Library:
         import uuid
 
         old_root = self.root.resolve()
-        new_root = Path(new_root).resolve()
-        if new_root == old_root:
+        # Keep the user's original spelling (Windows temp folders can use
+        # short 8.3 names that Path.resolve expands), but validate using
+        # canonical paths to prevent nested/self moves.
+        new_root = Path(new_root)
+        canonical_new = new_root.resolve()
+        if canonical_new == old_root:
             return self.root
-        if new_root.is_relative_to(old_root) or old_root.is_relative_to(new_root):
+        if canonical_new.is_relative_to(old_root) or old_root.is_relative_to(canonical_new):
             raise ValueError('Choose a Library folder outside the existing Library tree.')
 
         def identical(a, b):
