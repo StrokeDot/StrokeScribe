@@ -1681,10 +1681,10 @@ class Window(QMainWindow):
             self.letter()
         elif how=='library':
             scene['name']=str(getattr(item,'name','') or 'Picture')[:30]
-            self.use_library_item('images',item)
+            self.use_library_item('images',item,as_element=True)
         elif how=='ai':
             scene['name']=Path(path).stem[:30]
-            self.use_ai_result('image',path,None)
+            self.use_ai_result('image',path,None,as_element=True)
         # One timeline: with two or more elements, show the whole video.
         if len(self.scenes)>1 and self.preview_scope.currentIndex()==0:
             self.preview_scope.setCurrentIndex(1)
@@ -2244,7 +2244,7 @@ class Window(QMainWindow):
         dialog=CreateImageDialog(self,current,self.use_ai_result,self.ai_engine,task=task)
         dialog.exec()
 
-    def use_ai_result(self,kind,path,original=None):
+    def use_ai_result(self,kind,path,original=None,as_element=False):
         """Line art: trace it over `original`; image: import it as the image source;
         sound: use it as the pencil/brush/eraser sound (original = which one)."""
         if kind=='sound':
@@ -2258,6 +2258,8 @@ class Window(QMainWindow):
             self.status.setText('New '+{'sound_pencil_file':'pencil','sound_brush_file':'brush',
                                        'sound_eraser_file':'eraser'}.get(original,'pencil')
                                 +' sound in use (saved in the Library → Audio). Press Play to hear it.')
+            return
+        if not as_element and not self.confirm_leave_project('replace this artwork'):
             return
         self.source_type.setCurrentIndex(1)
         if kind=='lineart' and original:
@@ -2623,7 +2625,7 @@ class Window(QMainWindow):
         from library_dialog import LibraryDialog
         LibraryDialog(self,category,self.use_library_item).exec()
 
-    def use_library_item(self,category,item):
+    def use_library_item(self,category,item,as_element=False):
         if category=='audio':
             self.set_audio(str(item.path)); return
         if category=='hands':
@@ -2633,6 +2635,8 @@ class Window(QMainWindow):
             self.set_hand(image,item.name,str(item.path),item.tip)
             return
         path=str(item.path)
+        if not as_element and not self.confirm_leave_project('replace this artwork'):
+            return
         if path.lower().endswith('.svg'):
             self.source_type.setCurrentIndex(0)
             try:
