@@ -15,6 +15,16 @@ def _error_box(text):
             pass
 
 
+def recover_pending_update():
+    """Recover an interrupted file transaction before any GUI or render imports.
+
+    This uses the already-present updater module from the application folder.
+    It is safe to call repeatedly: no pending journal is a normal no-op.
+    """
+    import updater
+    return updater.recover_interrupted_update(root)
+
+
 def main():
     # Only when started by the launcher: export worker processes import this
     # file under another name and must not open a window or touch the log.
@@ -40,6 +50,10 @@ def main():
     try:
         faulthandler.enable(file=log)
         faulthandler.dump_traceback_later(20,file=log)
+        stage('Checking unfinished updates...')
+        recovered = recover_pending_update()
+        if recovered['recovered']:
+            stage('Recovered interrupted update; restored version ' + str(recovered.get('version')))
         stage('Starting StrokeScribe...')
         from PySide6.QtWidgets import QApplication
         from PySide6.QtCore import QTimer
