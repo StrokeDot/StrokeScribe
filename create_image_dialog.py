@@ -200,6 +200,7 @@ class CreateImageDialog(QDialog):
         root.setContentsMargins(0,0,0,0); root.setSpacing(10)
         self.model_manager=None
         self.live_update_worker = None
+        self._rescan_after_update = False
         title = QLabel('Create Image'); title.setObjectName('dialogTitle')
         title.setStyleSheet('font-size: 18px; font-weight: 700;')
         header=QHBoxLayout()
@@ -388,6 +389,7 @@ class CreateImageDialog(QDialog):
         self.updates_panel.hide()
         self.updates_panel.close_requested.connect(self.close_updates)
         self.updates_panel.action_requested.connect(self.model_update_action)
+        self.updates_panel.cancel_requested.connect(self.cancel_live_model_update)
         outer.addWidget(self.updates_panel)
         self.task = None
         self.set_task(task or ('lineart' if current_image else 'generate'))
@@ -404,6 +406,7 @@ class CreateImageDialog(QDialog):
             return
         self.live_update_worker = worker
         self.check_updates_button.setEnabled(False)
+        self.updates_panel.set_busy(True)
         self.updates_panel.show_feedback(
             'Checking the actual AI folder and official model sources…' if mode == 'scan'
             else 'Downloading and verifying the replacement. The current model stays in place.')
@@ -429,15 +432,24 @@ class CreateImageDialog(QDialog):
             self.updates_panel.show_feedback(
                 'Model updated and verified. The previous weights were kept as a backup.')
             self.refresh()
-            QTimer.singleShot(0, self.check_live_model_updates)
+            self._rescan_after_update = True
 
     def on_live_model_failed(self, message):
         self.updates_panel.show_feedback('Model operation: ' + message)
 
     def on_live_model_finished(self):
         self.check_updates_button.setEnabled(True)
+        self.updates_panel.set_busy(False)
         # Keep the QThread referenced until the finished signal, never while running.
         self.live_update_worker = None
+        if self._rescan_after_update:
+            self._rescan_after_update = False
+            QTimer.singleShot(0, self.check_live_model_updates)
+
+    def cancel_live_model_update(self):
+        if self.live_update_worker is not None and self.live_update_worker.isRunning():
+            self.live_update_worker.cancel()
+            self.updates_panel.show_feedback('Stopping operation; current model files are retained.')
 
     def model_update_action(self, action, model_id):
         model = ai_models.BY_ID.get(model_id)
@@ -997,6 +1009,12 @@ class CreateImageDialog(QDialog):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
 
     def closeEvent(self, event):
+        # Do not close a dialog while a QThread is still reading model weights
+        # or staging a download. Let the user cancel, then close when finished.
+        if self.live_update_worker is not None and self.live_update_worker.isRunning():
+            self.cancel_live_model_update()
+            event.ignore()
+            return
         # QDialog.closeEvent calls reject(). Title-bar Close must dismiss the
         # whole window; only Escape should first dismiss the updates drawer.
         self.updates_panel.hide()
