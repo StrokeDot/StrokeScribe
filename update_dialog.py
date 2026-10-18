@@ -41,8 +41,7 @@ class UpdateWorker(QThread):
         self.progress.emit(-1, 'Installing the new version…')
         result = updater.apply_zip(zip_path, log=self.log.emit)
         if result['requirements_changed']:
-            self.progress.emit(-1, 'Installing new Python packages for this version…')
-            updater.install_requirements(log=self.log.emit)
+            raise updater.UpdateError('This update needs new Python packages. Use the verified full Windows installer; the running runtime will not be modified.')
         self.done.emit(('updated', result))
 
 
