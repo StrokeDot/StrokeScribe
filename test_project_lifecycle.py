@@ -34,6 +34,7 @@ class TrackerTests(unittest.TestCase):
 class WindowLifecycleTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.old_discard = os.environ.pop("STROKESCRIBE_TEST_AUTODISCARD", None)
         self.old = os.environ.get("STROKESCRIBE_CONFIG_DIR")
         os.environ["STROKESCRIBE_CONFIG_DIR"] = self.tmp.name
         from app import Window
