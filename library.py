@@ -266,9 +266,10 @@ class Library:
                 target_name = mapped.name
                 if target_name not in merged:
                     merged[target_name] = metadata
-                elif target_name == name:
-                    # Same file content already existed. Preserve destination
-                    # metadata, adding missing source attributes (notably tip).
+                else:
+                    # Reused byte-identical file, possibly a numbered name from
+                    # an interrupted earlier move. Preserve existing metadata,
+                    # but transfer missing source attributes (notably pen tip).
                     for key, value in metadata.items():
                         merged[target_name].setdefault(key, value)
             destination_index.parent.mkdir(parents=True, exist_ok=True)
