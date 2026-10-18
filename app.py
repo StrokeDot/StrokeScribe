@@ -1240,21 +1240,21 @@ class Window(QMainWindow):
         return self.project_changes.changed(self.project_state())
 
     def confirm_leave_project(self, reason='leave this project'):
-        """Save, explicitly discard, or cancel before replacing/closing work."""
-        if not self.has_unsaved_changes():
-            return True
-        # A headless CI test cannot click a dialog. This explicit, test-only
-        # opt-in is not set by a normal installed application.
+        """Use one tested decision policy for Save / Discard / Cancel."""
+        from project_lifecycle import resolve_project_leave
         import os
-        if os.environ.get('STROKESCRIBE_TEST_AUTODISCARD') == '1' and QApplication.platformName() == 'offscreen':
-            return True
-        answer=QMessageBox.question(self,'Unsaved changes',
-            'Your StrokeScribe project has unsaved changes.\\n\\nSave before you '+reason+'?',
-            QMessageBox.StandardButton.Save|QMessageBox.StandardButton.Discard|QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Cancel)
-        if answer==QMessageBox.StandardButton.Save:
-            return bool(self.save_project())
-        return answer==QMessageBox.StandardButton.Discard
+        return resolve_project_leave(
+            self.has_unsaved_changes(),
+            ask=lambda: QMessageBox.question(
+                self, 'Unsaved changes',
+                'Your StrokeScribe project has unsaved changes.\\n\\nSave before you '+reason+'?',
+                QMessageBox.StandardButton.Save|QMessageBox.StandardButton.Discard|QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel),
+            save=self.save_project,
+            save_choice=QMessageBox.StandardButton.Save,
+            discard_choice=QMessageBox.StandardButton.Discard,
+            auto_discard=(os.environ.get('STROKESCRIBE_TEST_AUTODISCARD') == '1'
+                          and QApplication.platformName() == 'offscreen'))
 
     def save_project(self,save_as=False):
         if not self.drawing or (self.builder and self.builder.isRunning()):
