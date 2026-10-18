@@ -91,6 +91,13 @@ class Paths:
         return self.models / model_file.folder / model_file.name
 
     def engine_installed(self):
+        # A power failure can interrupt the two-directory rename between
+        # ComfyUI -> ComfyUI.previous and staged -> ComfyUI. Restore the
+        # previous working engine before reporting the installation missing.
+        # Never remove a previous-version backup during an ordinary check.
+        previous = self.comfy.with_name(self.comfy.name + '.previous')
+        if not self.comfy.exists() and previous.is_dir():
+            recover_engine_folder(self.comfy)
         try:
             info = json.loads(self.marker.read_text())
         except Exception:
