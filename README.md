@@ -9,6 +9,17 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Image Generator Updates drawer (v0.5.3-experimental.60)
+
+- Create Image or Sound (AI) now has a standalone Check for updates button and a right-side Image Generator Updates drawer.
+- The drawer shows example installed models, available updates, compatible models, expandable details and model discovery.
+- Manage models beside the Model dropdown opens the actual model list and existing version, license and download controls.
+- Opening or closing the drawer preserves prompts, seeds, model selection and results. Previews resize with the available space.
+- Escape closes the drawer first; the window close button closes the entire dialog.
+- Update/Install buttons inside the new drawer are demonstration actions only. Live model-update checking and downloads are not connected.
+- This experimental app update retains the tested safety/refactor baseline used for the .59 review build. Python dependencies are unchanged.
+- Use File → Update StrokeScribe… for application updates. The image-generator drawer is a separate feature.
+
 ## Run on this computer
 
 Run **Setup.cmd** once in the extracted release folder, then double-click **Launch.cmd**. The local `.venv` directory stores this prototype's dependencies. A sample drawing loads automatically. Click **Play / pause** or **Restart**.
