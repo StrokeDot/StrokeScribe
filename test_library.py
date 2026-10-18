@@ -99,6 +99,54 @@ class LibraryTests(unittest.TestCase):
         self.assertFalse((self.dir / 'Lib' / 'Images' / item.file).exists())
 
 
+    def test_move_conflicting_names_keeps_both_images_and_indexes(self):
+        import json
+        lib = library.Library()
+        old = lib.add('images', self.picture('cat.png', 'red'), name='Original red')
+        new_root = self.dir / 'Elsewhere' / 'StrokeScribe Library'
+        target_folder = new_root / 'Images'
+        target_folder.mkdir(parents=True)
+        Image.new('RGB', (40, 30), 'blue').save(target_folder / 'cat.png')
+        (target_folder / 'index.json').write_text(json.dumps({
+            'cat.png': {'name': 'Already there blue', 'added': 1.}
+        }))
+        lib.move_to(new_root)
+        items = {item.name: item for item in library.Library().items('images')}
+        self.assertEqual(set(items), {'Already there blue', 'Original red'})
+        self.assertEqual(items['Already there blue'].file, 'cat.png')
+        self.assertEqual(items['Original red'].file, 'cat (2).png')
+        self.assertEqual(Image.open(items['Original red'].path).getpixel((0, 0)), (255, 0, 0))
+        self.assertEqual(Image.open(items['Already there blue'].path).getpixel((0, 0)), (0, 0, 255))
+        self.assertFalse(old.path.exists())
+
+    def test_move_same_contents_preserves_destination_and_source_metadata(self):
+        import json
+        lib = library.Library()
+        old = lib.add('images', self.picture('cat.png', 'red'), name='Red original')
+        new_root = self.dir / 'Another'
+        target = new_root / 'Images'
+        target.mkdir(parents=True)
+        Image.open(old.path).save(target / 'cat.png')
+        (target / 'index.json').write_text(json.dumps({
+            'cat.png': {'name': 'Already there', 'added': 1.}
+        }))
+        lib.move_to(new_root)
+        self.assertEqual((target / 'cat.png').read_bytes(), self.picture('same.png', 'red').read_bytes())
+        self.assertEqual(len(library.Library().items('images')), 1)
+
+    def test_move_interrupted_copy_never_discards_original(self):
+        from unittest.mock import patch
+        lib = library.Library()
+        old = lib.add('images', self.picture('cat.png', 'green'))
+        new_root = self.dir / 'Broken'
+        with patch.object(library.shutil, 'copy2', side_effect=OSError('disk disconnected')):
+            with self.assertRaises(OSError):
+                lib.move_to(new_root)
+        self.assertTrue(old.path.is_file())
+        self.assertEqual(library.load_settings()['root'], str(self.dir / 'Lib'))
+        self.assertEqual(library.Library().items('images')[0].file, 'cat.png')
+
+
 @unittest.skipIf(os.environ.get('STROKESCRIBE_SKIP_QT') == '1', 'needs Qt')
 class LibraryWindowTests(LibraryTests):
     @classmethod
