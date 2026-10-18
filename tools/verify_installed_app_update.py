@@ -11,6 +11,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import zipfile
 
 ROOT=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(ROOT))
@@ -27,10 +28,12 @@ def main():
     with tempfile.TemporaryDirectory(prefix='strokescribe-update-probe-') as tmp:
         area=Path(tmp)
         package=area/'candidate.zip'
-        # GitHub zipball uses repository blobs, not checkout-converted CRLF
-        # files. Match those exact archive bytes on both Windows and Linux.
-        package.write_bytes(subprocess.check_output(
-            ['git','archive','--format=zip','--prefix=candidate/','HEAD'],cwd=ROOT))
+        # Read raw Git blobs: Windows checkout/archive filters can change
+        # line endings, unlike the source ZIP downloaded from GitHub.
+        names=subprocess.check_output(['git','ls-tree','-r','--name-only','HEAD'],cwd=ROOT).decode().splitlines()
+        with zipfile.ZipFile(package,'w',zipfile.ZIP_DEFLATED) as archive:
+            for name in names:
+                archive.writestr('candidate/'+name,source('HEAD',name))
         for index,(ref,old_version) in enumerate(BASELINES):
             installed=area/f'installed-{index}';installed.mkdir()
             for name in ('version.py','requirements.txt','updater.py','create_image_dialog.py'):
@@ -79,9 +82,20 @@ dialog.close()
 print('Updated dialog loads:',APP_VERSION)
 """
             subprocess.run([sys.executable,'-c',check],cwd=installed,env=env,check=True)
-            restored=updater.roll_back(installed)
-            if restored!=old_version or updater.current_version(installed)!=old_version:
+            rollback="""from pathlib import Path
+import updater
+import sys
+assert updater.current_version()==sys.argv[1]
+assert updater.roll_back(Path.cwd())==sys.argv[2]
+print('Updated updater restored:',updater.current_version())
+"""
+            subprocess.run([sys.executable,'-c',rollback,APP_VERSION,old_version],
+                           cwd=installed,env=env,check=True)
+            if updater.current_version(installed)!=old_version:
                 raise AssertionError('Rollback did not restore the installed baseline')
+            for name in ('version.py','requirements.txt','updater.py','create_image_dialog.py'):
+                if (installed/name).read_bytes()!=source(ref,name):
+                    raise AssertionError('Rollback did not restore original file: '+name)
             for path,data in sentinels.items():
                 if path.read_bytes()!=data:
                     raise AssertionError('Rollback changed preserved user/runtime data')
