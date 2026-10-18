@@ -287,7 +287,7 @@ def stage_update(zip_path, app_dir=APP_DIR):
             if not members:
                 raise UpdateError('This ZIP has no eligible application files.')
             new_version = version_in(archive.read(prefix + 'version.py').decode('utf-8', 'replace'))
-            if not new_version or not re.fullmatch(r'\\d+\\.\\d+\\.\\d+(?:[-.][A-Za-z0-9.]+)?', new_version):
+            if not new_version or not re.fullmatch(r'\d+\.\d+\.\d+(?:[-.][A-Za-z0-9.]+)?', new_version):
                 raise UpdateError('The ZIP contains malformed version metadata.')
             incoming_req = next((name for name, rel in members if rel == 'requirements.txt'), None)
             if incoming_req is None:
