@@ -29,7 +29,7 @@ class DrawerTests(unittest.TestCase):
         settings["root"] = str(Path(self.tmp.name) / "engine")
         ai_engine.save_settings(settings)
         self.scan_patch = patch("model_updates_live.inspect_models", return_value=())
-        self.scan_patch.start()
+        self.scan_mock = self.scan_patch.start()
         self.dialog = CreateImageDialog(hardware=ai_models.Hardware("Test GPU", 16, 64, True))
         self.addCleanup(self.scan_patch.stop)
         self.addCleanup(self.cleanup)
@@ -61,11 +61,11 @@ class DrawerTests(unittest.TestCase):
 
     def test_header_triggers_real_background_check_and_keep_open(self):
         drawer = self.show_drawer()
-        self.assertEqual(self.scan_patch.call_count, 1)
+        self.assertEqual(self.scan_mock.call_count, 1)
         self.dialog.check_updates_button.click()
         self.wait_scan()
         self.assertTrue(drawer.isVisible())
-        self.assertEqual(self.scan_patch.call_count, 2)
+        self.assertEqual(self.scan_mock.call_count, 2)
         drawer.close_button.click()
         self.assertFalse(drawer.isVisible())
 
