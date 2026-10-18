@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from PySide6.QtWidgets import QApplication
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics
 import ai_engine
 from ai_models import Hardware
 from create_image_dialog import CreateImageDialog
@@ -13,7 +13,23 @@ import theme
 
 app=QApplication.instance() or QApplication([])
 app.setStyle('Fusion')
-app.setFont(QFont('Segoe UI' if os.name=='nt' else 'DejaVu Sans',10))
+# The offscreen Qt platform on Windows does not enumerate native fonts.
+# Register existing OS fonts explicitly for screenshots only.
+font_family='DejaVu Sans'
+if os.name=='nt':
+    fonts=Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts'
+    families=[]
+    for filename in ('segoeui.ttf','segoeuib.ttf','arial.ttf','arialbd.ttf'):
+        font_id=QFontDatabase.addApplicationFont(str(fonts/filename))
+        if font_id>=0:
+            families.extend(QFontDatabase.applicationFontFamilies(font_id))
+    if not families:
+        raise RuntimeError('Headless screenshot font registration failed')
+    font_family=families[0]
+font=QFont(font_family,10)
+if not QFontMetrics(font).inFont('A'):
+    raise RuntimeError('Screenshot font cannot render Latin text')
+app.setFont(font)
 out=Path('samples/image-generator-updates')
 out.mkdir(parents=True,exist_ok=True)
 with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,{'STROKESCRIBE_CONFIG_DIR':tmp}):
