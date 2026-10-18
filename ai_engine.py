@@ -109,8 +109,16 @@ class Paths:
         """Require valid byte size and, where published, a trusted SHA-256."""
         for item in files:
             path = self.model_path(item)
-            if not path.is_file() or path.stat().st_size != item.size:
+            if not path.is_file():
                 return False
+            if path.stat().st_size != item.size:
+                # A verified official model revision can differ in size from
+                # the original static registry entry; require the recorded
+                # size and file timestamp from the completed update swap.
+                from model_updates_live import recorded_revision
+                if recorded_revision(self, item) is None:
+                    return False
+                continue
             checksum = getattr(item, 'sha256', None)
             if checksum:
                 h = hashlib.sha256()

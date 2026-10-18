@@ -9,6 +9,8 @@ from PySide6.QtGui import QFont, QFontDatabase, QFontMetrics
 import ai_engine
 from ai_models import Hardware
 from create_image_dialog import CreateImageDialog
+from model_updates_live import ModelState, RemoteRevision
+from PySide6.QtTest import QTest
 import theme
 
 app=QApplication.instance() or QApplication([])
@@ -44,7 +46,23 @@ with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,{'STROKESCRIBE_
     dialog.download_button.hide()
     dialog.resize(1200,900);dialog.show();app.processEvents()
     dialog.grab().save(str(out/'create-image-drawer-closed.png'))
-    dialog.check_updates_button.click();dialog.resize(1680,1080);app.processEvents()
+    from ai_models import QWEN_EDIT, FLUX2_KLEIN, FLUX2_DEV
+    examples=(
+        ModelState(QWEN_EDIT.id,QWEN_EDIT.name,QWEN_EDIT.maker,'Image editing',
+                   'q4','GGUF Q4','update_available','Illustrative publisher checksum difference',
+                   True,RemoteRevision('a'*64,13244758624),QWEN_EDIT.variants[2].diffusion),
+        ModelState(FLUX2_KLEIN.id,FLUX2_KLEIN.name,FLUX2_KLEIN.maker,'Image generation',
+                   'bf16','BF16','up_to_date','Illustrative matching weights',True),
+        ModelState(FLUX2_DEV.id,FLUX2_DEV.name,FLUX2_DEV.maker,'Image generation',
+                   'q3','GGUF Q3','not_installed','Illustrative uninstalled model',False),
+    )
+    with patch('model_updates_live.inspect_models', return_value=examples):
+        dialog.check_updates_button.click()
+        for _ in range(150):
+            app.processEvents()
+            if dialog.live_update_worker is None: break
+            QTest.qWait(20)
+    dialog.resize(1680,1080);app.processEvents()
     dialog.grab().save(str(out/'create-image-drawer-open.png'))
     dialog.resize(1000,740);app.processEvents()
     dialog.grab().save(str(out/'create-image-drawer-compact.png'))
