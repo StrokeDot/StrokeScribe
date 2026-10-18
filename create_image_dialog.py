@@ -489,6 +489,11 @@ class CreateImageDialog(QDialog):
                 ModelUpdateWorker('update', self.paths, state=state), 'update')
             return
         self.choose_managed_model(model)
+        # Preserve the actual installed variant when repairing a model rather
+        # than silently downloading the machine's default other quantization.
+        idx = self.variant_box.findData(state.variant_id)
+        if idx >= 0:
+            self.variant_box.setCurrentIndex(idx)
         if action in ('install', 'repair'):
             if not self.paths.engine_installed():
                 self.updates_panel.show_feedback('Install the AI engine in the main form first.')
