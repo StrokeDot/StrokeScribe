@@ -138,12 +138,16 @@ class LiveModelUpdateTests(unittest.TestCase):
                        "X-Linked-Size": str(self.remote.size)}
             def __enter__(self): return self
             def __exit__(self, *exc): return False
-        with patch.object(live.urllib.request, "urlopen", return_value=Response()) as get:
+        from unittest.mock import Mock
+        handler = Mock()
+        handler.open.return_value = Response()
+        with patch.object(live.urllib.request, "build_opener", return_value=handler):
             self.assertEqual(live.official_revision(self.file), self.remote)
-            self.assertEqual(get.call_args.args[0].get_method(), "HEAD")
-        with patch.object(live.urllib.request, "urlopen", return_value=type(
-                "Bad", (), {"headers": {"ETag": '"not-a-sha"'}, "__enter__": lambda s: s,
-                            "__exit__": lambda s,*a: False})()):
+            self.assertEqual(handler.open.call_args.args[0].get_method(), "HEAD")
+        class Bad(Response):
+            headers = {"ETag": '"not-a-sha"'}
+        handler.open.return_value = Bad()
+        with patch.object(live.urllib.request, "build_opener", return_value=handler):
             with self.assertRaises(ValueError):
                 live.official_revision(self.file)
 
