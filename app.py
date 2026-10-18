@@ -401,7 +401,10 @@ class Window(QMainWindow):
         self.letter_bg_color=None
         self.last_letter_bg_index=0
         from history import History
+        from project_lifecycle import ProjectChangeTracker
         self.history=History()
+        self.project_changes=ProjectChangeTracker()
+        self._autosaved_signature=None
         self._restoring=False
         self._lines_cache=None
         self.busy=False
@@ -469,6 +472,7 @@ class Window(QMainWindow):
         self.analysis_timer.setInterval(1000)
         self.analysis_timer.timeout.connect(self.update_analysis_elapsed)
         self.reset_history()
+        self.project_changes.mark_saved(self.project_state())
 
     # ---------------------------------------------------------------- theme
     def apply_theme(self,name):
@@ -682,12 +686,14 @@ class Window(QMainWindow):
     def note_change(self,*args):
         """A setting changed: remember it once the user pauses (one undo step per edit)."""
         if self._restoring or not hasattr(self,'history_timer'): return
+        self.project_changes.mark_changed()
         self.history_timer.start()
 
     def commit_history(self):
         if self._restoring: return
         self.history_timer.stop()
-        self.history.record(self.snapshot())
+        if self.history.record(self.snapshot()):
+            self.project_changes.mark_changed()
         self.update_history_controls()
 
     def watch_settings(self):
@@ -854,6 +860,7 @@ class Window(QMainWindow):
         used={int(o.get('track',0)) for o in busy}
         item['track']=next(t for t in range(10) if t not in used)
         self.overlays.append(item)
+        self.project_changes.mark_changed()
         self.selected_overlay=item['id']
         if self.board_mode(): self.preview_scope.setCurrentIndex(1)
         self.commit_history(); self.refresh()
@@ -895,6 +902,7 @@ class Window(QMainWindow):
         item=self.find_overlay(oid)
         if item is None: return
         item.update(start=start,duration=duration,track=track)
+        self.project_changes.mark_changed()
         self.refresh()
 
     def edit_overlay(self,oid):
@@ -1139,6 +1147,8 @@ class Window(QMainWindow):
     def number(self,minimum,maximum,value,step):
         w=QDoubleSpinBox(); w.setRange(minimum,maximum); w.setValue(value); w.setSingleStep(step); return w
     def set_drawing(self,drawing):
+        if not getattr(self,'_entering_scene',False) and hasattr(self,'project_changes'):
+            self.project_changes.mark_changed()
         self.playing=False
         self.drawing=drawing
         self.fill_order()
@@ -1221,6 +1231,31 @@ class Window(QMainWindow):
             state['overlays']=copy.deepcopy(self.overlays)
         return state
 
+    def has_unsaved_changes(self):
+        """Compare the complete persisted project, not just committed undo edits."""
+        if not self.drawing:
+            return self.project_changes.is_dirty
+        if hasattr(self, 'history_timer') and self.history_timer.isActive():
+            self.commit_history()
+        return self.project_changes.changed(self.project_state())
+
+    def confirm_leave_project(self, reason='leave this project'):
+        """Save, explicitly discard, or cancel before replacing/closing work."""
+        if not self.has_unsaved_changes():
+            return True
+        # A headless CI test cannot click a dialog. This explicit, test-only
+        # opt-in is not set by a normal installed application.
+        import os
+        if os.environ.get('STROKESCRIBE_TEST_AUTODISCARD') == '1' and QApplication.platformName() == 'offscreen':
+            return True
+        answer=QMessageBox.question(self,'Unsaved changes',
+            'Your StrokeScribe project has unsaved changes.\\n\\nSave before you '+reason+'?',
+            QMessageBox.StandardButton.Save|QMessageBox.StandardButton.Discard|QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel)
+        if answer==QMessageBox.StandardButton.Save:
+            return bool(self.save_project())
+        return answer==QMessageBox.StandardButton.Discard
+
     def save_project(self,save_as=False):
         if not self.drawing or (self.builder and self.builder.isRunning()):
             QMessageBox.information(self,'Save project','There is no finished drawing to save yet.'); return None
@@ -1232,14 +1267,17 @@ class Window(QMainWindow):
             path,_=QFileDialog.getSaveFileName(self,'Save project',suggested,'StrokeScribe project (*.strokescribe)')
             if not path: return None
         try:
-            path=projects.save(path,self.project_state())
+            state=self.project_state()
+            path=projects.save(path,state)
         except Exception as exc:
             QMessageBox.warning(self,'Save project',str(exc)); return None
         self.project_path=str(path)
         self.status.setText('Project saved: '+str(path))
         self.setWindowTitle(f'{Path(path).stem}  •  {DISPLAY_NAME}')
         self.remember_recent(path)
-        self._autosaved=self.history.current         # nothing unsaved now
+        self.project_changes.mark_saved(state)
+        self._autosaved_signature=None
+        self._autosaved=self.history.current
         import autosave; autosave.clear()
         return path
 
@@ -1252,13 +1290,16 @@ class Window(QMainWindow):
     # ------------------------------------------------------------ autosave
     def autosave_tick(self):
         """Every minute: back up the project if something changed since the last backup."""
-        if not self.drawing or self.history.current is getattr(self,'_autosaved',None):
-            return False
-        if (self.builder and self.builder.isRunning()) or self.busy:
+        if not self.drawing or (self.builder and self.builder.isRunning()) or self.busy:
             return False
         try:
+            state=self.project_state()
+            signature=self.project_changes.signature(state)
+            if signature==self.project_changes.saved_signature or signature==self._autosaved_signature:
+                return False
             import autosave
-            autosave.save(self.project_state(),getattr(self,'project_path',None),self.project_title)
+            autosave.save(state,getattr(self,'project_path',None),self.project_title)
+            self._autosaved_signature=signature
             self._autosaved=self.history.current
             return True
         except Exception as exc:
@@ -1277,13 +1318,16 @@ class Window(QMainWindow):
             f'StrokeScribe did not close normally last time.\n\nRestore "{name}" as it was at {when}?',
             QMessageBox.StandardButton.Yes|QMessageBox.StandardButton.No)
         if answer!=QMessageBox.StandardButton.Yes:
-            autosave.clear(); return False
+            # Keep the recovery copy available until the user explicitly saves
+            # or discards it; declining to restore does not mean delete.
+            return False
         import projects
         try:
             self.apply_project(projects.load(info['path']))
         except Exception as exc:
             QMessageBox.warning(self,'Restore',f'The backup could not be opened: {exc}'); return False
         self.project_path=info.get('project_path') or None
+        self.project_changes.mark_changed()
         self.status.setText('Restored your work from the autosave. Save it (Ctrl+S) to keep it.')
         return True
 
@@ -1296,6 +1340,8 @@ class Window(QMainWindow):
             if not path: return False
         try:
             data=projects.load(path)
+            if not self.confirm_leave_project('open another project'):
+                return False
             self.apply_project(data)
         except Exception as exc:
             QMessageBox.warning(self,'Open project',str(exc)); return False
@@ -1303,6 +1349,9 @@ class Window(QMainWindow):
         self.setWindowTitle(f'{Path(path).stem}  •  {DISPLAY_NAME}')
         self.status.setText('Opened project: '+str(path))
         self.remember_recent(path)
+        self.project_changes.mark_saved(self.project_state())
+        self._autosaved_signature=None
+        import autosave; autosave.clear()
         self._autosaved=self.history.current
         return True
 
@@ -1568,6 +1617,7 @@ class Window(QMainWindow):
                  transition_seconds=current['transition_seconds'],name=f'Element {len(self.scenes)+1}',
                  thumb=current.get('thumb'))
         self.scenes.insert(self.scene_index+1,new)
+        self.project_changes.mark_changed()
         self._enter_scene(self.scene_index+1)
         self.status.setText(f'Scene {self.scene_index+1} added as a copy. Import an SVG or image for it '
                             '(Import, Library or Create image); its settings are its own.')
@@ -2341,7 +2391,8 @@ class Window(QMainWindow):
     def load(self):
         if self.source_type.currentIndex():
             name,_=QFileDialog.getOpenFileName(self,'Import image','','Images (*.png *.jpg *.jpeg *.webp *.bmp)')
-            if name: self.build_image(self.keep_in_library('images',name))
+            if name and self.confirm_leave_project('replace this artwork'):
+                self.build_image(self.keep_in_library('images',name))
             return
         name,_=QFileDialog.getOpenFileName(self,'Import SVG','','SVG (*.svg)')
         if name:
@@ -2352,6 +2403,8 @@ class Window(QMainWindow):
                     drawing=import_svg(name)
                 finally:
                     self.clear_busy()
+                if not self.confirm_leave_project('replace this artwork'):
+                    return
                 self.update_project_title(Path(name).name)
                 self.set_drawing(drawing)
             except Exception as e: QMessageBox.warning(self,'Cannot import',str(e))
@@ -3246,9 +3299,7 @@ class Window(QMainWindow):
 
     def restart_after_update(self):
         """Close (asking to save, like a normal close) and start the updated version."""
-        if self.drawing is not None and QMessageBox.question(self,'Restart',
-                'Save your project before restarting?')==QMessageBox.StandardButton.Yes:
-            if not self.save_project(): return
+        # closeEvent uses the same Save / Discard / Cancel protection.
         import updater
         self._restart_requested=True
         self.close()
@@ -3268,10 +3319,13 @@ class Window(QMainWindow):
         if self.worker and self.worker.isRunning():
             self.cancel_export(); QMessageBox.information(self,'Export running','Please wait for the current export to stop before closing.'); event.ignore()
         else:
+            if not self.confirm_leave_project('close StrokeScribe'):
+                event.ignore()
+                return
             if self.ai_engine is not None:
                 self.ai_engine.stop()        # never leave the AI engine running
             if not getattr(self,'_keep_autosave',False):
-                import autosave; autosave.clear()     # a normal close: no recovery needed
+                import autosave; autosave.clear()
             event.accept()
 
 if __name__=='__main__':
