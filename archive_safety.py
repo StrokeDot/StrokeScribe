@@ -46,7 +46,8 @@ def validate_archive(archive: ZipFile, destination_root: Path,
         raise ValueError('Invalid archive prefix')
     root = Path(destination_root)
     members = []
-    seen_files = set()
+    seen_files, seen_dirs = set(), set()
+    spelling = {}
     total_bytes, count = 0, 0
     for info in archive.infolist():
         name = info.filename
@@ -58,23 +59,36 @@ def validate_archive(archive: ZipFile, destination_root: Path,
         kind = (info.external_attr >> 16) & 0o170000
         if kind == stat.S_IFLNK:
             raise ValueError('ZIP symlinks are not allowed')
-        if info.is_dir():
-            continue
-        count += 1
-        total_bytes += info.file_size
-        if count > max_files or total_bytes > max_bytes:
-            raise ValueError('Archive exceeds the safe file count or expanded-byte limit')
+        if not info.is_dir():
+            count += 1
+            total_bytes += info.file_size
+            if count > max_files or total_bytes > max_bytes:
+                raise ValueError('Archive exceeds the safe file count or expanded-byte limit')
         if prefix and not name.startswith(prefix):
             continue
         rel = name[len(prefix):]
         if not rel:
             continue
         target = validate_archive_member(rel, root)
-        normalized = unicodedata.normalize('NFC', rel).casefold()
-        if normalized in seen_files:
-            raise ValueError(f'Duplicate or case-colliding ZIP destination: {rel!r}')
-        seen_files.add(normalized)
+        parts = rel.split('/')
+        # Detect aliases of any path component, not just complete filenames.
+        # On Windows, "Foo/a" and "foo/b" share one ambiguous directory.
+        for i in range(1, len(parts) + 1):
+            written = '/'.join(parts[:i])
+            normalized = unicodedata.normalize('NFC', written).casefold()
+            previous = spelling.setdefault(normalized, written)
+            if previous != written:
+                raise ValueError(f'Case-colliding ZIP entry: {written!r}')
+        key = unicodedata.normalize('NFC', rel).casefold()
+        if info.is_dir():
+            seen_dirs.add(key)
+            continue
+        if key in seen_files:
+            raise ValueError(f'Duplicate ZIP destination: {rel!r}')
+        seen_files.add(key)
         members.append((info, rel, target))
+    if seen_files.intersection(seen_dirs):
+        raise ValueError('A ZIP entry is both a file and a directory')
     for rel in seen_files:
         parts = rel.split('/')
         for i in range(1, len(parts)):
