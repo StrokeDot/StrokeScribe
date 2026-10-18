@@ -99,6 +99,14 @@ class DialogSafetyTests(unittest.TestCase):
         self.assertIn('0.5.3-experimental.57', self.d.status.text())
         self.assertIn('Restart', self.d.status.text())
 
+    def test_rollback_confirmation_names_restored_version(self):
+        with patch.object(updater, 'rollback_target_version', return_value='0.5.3-experimental.57'), \
+             patch.object(updater, 'roll_back') as rollback, \
+             patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.No) as confirm:
+            self.d.roll_back()
+            self.assertIn('0.5.3-experimental.57', str(confirm.call_args))
+            rollback.assert_not_called()
+
     def test_running_worker_cannot_destroy_dialog_and_requests_cancel(self):
         busy = MagicMock()
         busy.isRunning.return_value = True
