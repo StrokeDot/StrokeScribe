@@ -15,6 +15,7 @@ is requested, and stopped with the app.
 from __future__ import annotations
 
 import io
+import hashlib
 import json
 import os
 import random
@@ -24,6 +25,7 @@ import socket
 import subprocess
 import sys
 import time
+import tempfile
 import urllib.error
 import urllib.request
 import uuid
@@ -89,6 +91,13 @@ class Paths:
         return self.models / model_file.folder / model_file.name
 
     def engine_installed(self):
+        # A power failure can interrupt the two-directory rename between
+        # ComfyUI -> ComfyUI.previous and staged -> ComfyUI. Restore the
+        # previous working engine before reporting the installation missing.
+        # Never remove a previous-version backup during an ordinary check.
+        previous = self.comfy.with_name(self.comfy.name + '.previous')
+        if not self.comfy.exists() and previous.is_dir():
+            recover_engine_folder(self.comfy)
         try:
             info = json.loads(self.marker.read_text())
         except Exception:
@@ -97,8 +106,20 @@ class Paths:
                 and (self.comfy / 'main.py').is_file())
 
     def has_files(self, files):
-        return all(self.model_path(f).is_file() and self.model_path(f).stat().st_size == f.size
-                   for f in files)
+        """Require valid byte size and, where published, a trusted SHA-256."""
+        for item in files:
+            path = self.model_path(item)
+            if not path.is_file() or path.stat().st_size != item.size:
+                return False
+            checksum = getattr(item, 'sha256', None)
+            if checksum:
+                h = hashlib.sha256()
+                with path.open('rb') as stream:
+                    for chunk in iter(lambda: stream.read(1 << 20), b''):
+                        h.update(chunk)
+                if h.hexdigest() != checksum.lower():
+                    return False
+        return True
 
 
 # ---------------------------------------------------------------- downloads
@@ -122,7 +143,7 @@ def _open(url, start=None, end=None, timeout=SOCKET_TIMEOUT):
     return urllib.request.urlopen(request, timeout=timeout)
 
 
-def download(url, target, size=None, progress=None, cancelled=lambda: False, connections=None):
+def download(url, target, size=None, progress=None, cancelled=lambda: False, connections=None, sha256=None):
     """Download with resume, progress(done, total) and size check.
 
     Big files with a known size are fetched in pieces over several connections
@@ -131,7 +152,30 @@ def download(url, target, size=None, progress=None, cancelled=lambda: False, con
     so a stopped download continues where it stopped."""
     target = Path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
-    if size and target.is_file() and target.stat().st_size == size:
+    if sha256 is not None:
+        if not re.fullmatch(r'[0-9a-fA-F]{64}', sha256):
+            raise ValueError('Invalid SHA-256 expected checksum.')
+        sha256 = sha256.lower()
+
+    def matches_hash(path):
+        if sha256 is None:
+            return True
+        digest = hashlib.sha256()
+        with Path(path).open('rb') as stream:
+            for block in iter(lambda: stream.read(1 << 20), b''):
+                digest.update(block)
+        return digest.hexdigest() == sha256
+
+    def finalize_part(part):
+        if not matches_hash(part):
+            part.unlink(missing_ok=True)
+            part.with_name(part.name + '.json').unlink(missing_ok=True)
+            raise RuntimeError('SHA-256 checksum mismatch for ' + target.name +
+                               '; invalid bytes were discarded; retry download.')
+        part.replace(target)
+        return target
+
+    if size and target.is_file() and target.stat().st_size == size and matches_hash(target):
         if progress:
             progress(size, size)
         return target
@@ -146,14 +190,12 @@ def download(url, target, size=None, progress=None, cancelled=lambda: False, con
             final = None
         if final:
             _download_pieces(final, url, part, size, progress, cancelled, connections)
-            part.replace(target)
-            return target
+            return finalize_part(part)
     _download_single(url, part, size, progress, cancelled)
     if size and part.stat().st_size != size:
         raise RuntimeError(f'{target.name} is incomplete ({part.stat().st_size} of {size} bytes). '
                            'Try again to resume.')
-    part.replace(target)
-    return target
+    return finalize_part(part)
 
 
 def _resolve(url):
@@ -388,18 +430,56 @@ def free_space_gb(path):
 # ---------------------------------------------------------------- installing the engine
 
 def _run(cmd, log, cancelled, cwd=None):
-    """Run a command, streaming its output lines to log(); raise on failure."""
+    """Run a subprocess with prompt cancellation even if it prints nothing.
+
+    A dedicated reader drains stdout; the owner can check cancellation every
+    100ms rather than blocking indefinitely waiting for a line from pip.
+    """
+    import queue
+    import threading
+    if cancelled():
+        raise Cancelled('Installation cancelled before starting.')
     log('> ' + ' '.join(str(c) for c in cmd))
     proc = subprocess.Popen([str(c) for c in cmd], cwd=cwd, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True, errors='replace',
                             creationflags=NO_WINDOW)
-    for line in proc.stdout:
-        log(line.rstrip())
-        if cancelled():
-            proc.terminate()
-            raise Cancelled('Installation cancelled.')
-    if proc.wait() != 0:
-        raise RuntimeError(f'Step failed: {Path(str(cmd[0])).name} {" ".join(map(str, cmd[1:3]))}')
+    lines = queue.Queue()
+    def read_output():
+        try:
+            for item in proc.stdout:
+                lines.put(item.rstrip())
+        finally:
+            lines.put(None)
+    reader = threading.Thread(target=read_output, daemon=True)
+    reader.start()
+    try:
+        while True:
+            if cancelled():
+                proc.terminate()
+                try:
+                    proc.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                raise Cancelled('Installation cancelled.')
+            try:
+                message = lines.get(timeout=.1)
+            except queue.Empty:
+                if proc.poll() is not None and not reader.is_alive():
+                    break
+                continue
+            if message is None:
+                break
+            log(message)
+        if proc.wait() != 0:
+            raise RuntimeError(f'Step failed: {Path(str(cmd[0])).name} {" ".join(map(str, cmd[1:3]))}')
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+        if proc.stdout is not None:
+            proc.stdout.close()
+        reader.join(timeout=1)
 
 
 def _base_python():
@@ -409,27 +489,100 @@ def _base_python():
     return str(exe)
 
 
-def _extract_zip(data, target, strip_top=True):
+def recover_engine_folder(target):
+    """Restore the old engine if an interrupted folder swap left no active one."""
     target = Path(target)
+    previous = target.with_name(target.name + '.previous')
+    if not previous.is_dir():
+        return False
+    if target.is_symlink() or previous.is_symlink():
+        raise RuntimeError('Unsafe symlink in AI engine recovery folders.')
     if target.exists():
-        shutil.rmtree(target)
-    with zipfile.ZipFile(io.BytesIO(data)) as archive:
-        for member in archive.infolist():
-            name = member.filename.split('/', 1)[1] if strip_top and '/' in member.filename else member.filename
-            if not name or member.is_dir():
-                continue
-            out = target / name
-            if not str(out.resolve()).startswith(str(target.resolve())):
-                continue                                   # never write outside the folder
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_bytes(archive.read(member))
+        # An available engine does not prove an older backup is disposable.
+        # Preserve ComfyUI.previous until a separate, verified cleanup.
+        return False
+    os.replace(previous, target)
+    return True
 
 
-def _fetch(url, log):
+def _extract_zip(data, target, strip_top=True, cancelled=lambda: False):
+    """Stage a whole verified engine folder before replacing the current one."""
+    from archive_safety import validate_archive
+    target = Path(target)
+    if target.is_symlink():
+        raise ValueError('AI engine destination cannot be a symlink.')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    previous = target.with_name(target.name + '.previous')
+    recover_engine_folder(target)
+    # Never overwrite or delete an unresolved recovery backup. If both
+    # directories exist, the app cannot safely infer which should survive.
+    if previous.exists() or previous.is_symlink():
+        raise RuntimeError('An older AI engine backup is still present. '
+                           'Inspect ComfyUI.previous before replacing the engine.')
+    stage = Path(tempfile.mkdtemp(prefix=target.name + '.staging-', dir=str(target.parent)))
+    moved_old = False
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            prefix = ''
+            if strip_top:
+                roots = {info.filename.split('/', 1)[0]
+                         for info in archive.infolist() if info.filename}
+                if len(roots) != 1:
+                    raise ValueError('ComfyUI ZIP must have one enclosing folder.')
+                prefix = next(iter(roots)) + '/'
+            files = validate_archive(archive, target, prefix=prefix,
+                                     max_files=60000, max_bytes=4 * 1024 ** 3)
+            if not files:
+                raise ValueError('ComfyUI ZIP contains no installable files.')
+            bad = archive.testzip()
+            if bad is not None:
+                raise ValueError('ComfyUI ZIP is damaged at ' + bad)
+            for member, rel, _ in files:
+                if cancelled():
+                    raise Cancelled('AI engine extraction cancelled; previous installation preserved.')
+                output = stage / rel
+                output.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(member) as source, output.open('wb') as dest:
+                    for chunk in iter(lambda: source.read(1 << 20), b''):
+                        if cancelled():
+                            raise Cancelled('AI engine extraction cancelled; previous installation preserved.')
+                        dest.write(chunk)
+                    dest.flush()
+                    os.fsync(dest.fileno())
+        if cancelled():
+            raise Cancelled('AI engine extraction cancelled; previous installation preserved.')
+        if target.is_dir():
+            os.replace(target, previous)
+            moved_old = True
+        try:
+            os.replace(stage, target)
+        except Exception:
+            if moved_old and previous.is_dir() and not target.exists():
+                os.replace(previous, target)
+            raise
+        if previous.is_dir():
+            shutil.rmtree(previous)
+    finally:
+        if stage.is_dir():
+            shutil.rmtree(stage, ignore_errors=True)
+
+
+def _fetch(url, log, cancelled=lambda: False):
+    """Fetch archive chunks while checking for user cancellation."""
     log('Downloading ' + url)
     request = urllib.request.Request(url, headers={'User-Agent': 'StrokeScribe'})
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return response.read()
+    output = io.BytesIO()
+    with urllib.request.urlopen(request, timeout=30) as response:
+        while True:
+            if cancelled():
+                raise Cancelled('AI engine download cancelled.')
+            block = response.read(256 << 10)
+            if not block:
+                break
+            output.write(block)
+    if cancelled():
+        raise Cancelled('AI engine download cancelled.')
+    return output.getvalue()
 
 
 def install_engine(paths, nvidia=True, log=print, step=lambda i, n, text: None,
@@ -449,11 +602,11 @@ def install_engine(paths, nvidia=True, log=print, step=lambda i, n, text: None,
     _run([paths.python, '-m', 'pip', 'install', 'torch', 'torchvision', 'torchaudio',
           '--index-url', TORCH_INDEX['nvidia' if nvidia else 'cpu']], log, cancelled)
     step(2, n, steps[2])
-    _extract_zip(_fetch(COMFY_ZIP, log), paths.comfy)
+    _extract_zip(_fetch(COMFY_ZIP, log, cancelled=cancelled), paths.comfy, cancelled=cancelled)
     step(3, n, steps[3])
     _run([paths.python, '-m', 'pip', 'install', '-r', paths.comfy / 'requirements.txt'], log, cancelled)
     step(4, n, steps[4])
-    _extract_zip(_fetch(GGUF_ZIP, log), paths.custom_nodes / 'ComfyUI-GGUF')
+    _extract_zip(_fetch(GGUF_ZIP, log, cancelled=cancelled), paths.custom_nodes / 'ComfyUI-GGUF', cancelled=cancelled)
     _run([paths.python, '-m', 'pip', 'install', 'gguf>=0.13.0', 'sentencepiece', 'protobuf'],
          log, cancelled)
     step(5, n, steps[5])
@@ -469,7 +622,8 @@ def download_model(paths, files, progress=lambda done, total, name: None, cancel
     for f in files:
         target = paths.model_path(f)
         download(f.url, target, f.size, lambda done, _t, f=f, base=base:
-                 progress(base + done, total, f.name), cancelled)
+                 progress(base + done, total, f.name), cancelled,
+                 sha256=getattr(f, 'sha256', None))
         base += f.size
 
 

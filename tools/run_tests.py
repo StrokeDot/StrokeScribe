@@ -52,6 +52,10 @@ def main(argv):
     if argv[:1] == ['--limit']:
         limit = float(argv[1]); argv = argv[2:]
     threading.Thread(target=_watch, args=(limit,), daemon=True).start()
+    if os.environ.get('QT_QPA_PLATFORM') == 'offscreen':
+        # Only the headless regression harness opts into unattended shutdown;
+        # production keeps the Save / Discard / Cancel dialog.
+        os.environ.setdefault('STROKESCRIBE_TEST_AUTODISCARD', '1')
     suite = unittest.defaultTestLoader.loadTestsFromNames(argv)
     runner = unittest.TextTestRunner(verbosity=2, resultclass=_Result)
     result = runner.run(suite)

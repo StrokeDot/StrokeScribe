@@ -1,6 +1,8 @@
 """Create visual review screenshots for the original StrokeScribe Studio UI."""
 import os
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
+from tools.preview_environment import configure_preview_environment
+configure_preview_environment(os.environ)
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
 from app import Window

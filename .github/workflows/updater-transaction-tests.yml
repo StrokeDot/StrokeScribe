@@ -1,0 +1,64 @@
+name: Updater transaction checks
+on:
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions:
+  contents: read
+jobs:
+  transaction-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify updater and transaction regressions
+        run: python -m unittest -v test_update_transaction test_updater.UpdaterTests
+  transaction-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Verify updater and transaction regressions
+        run: python -m unittest -v test_update_transaction test_updater.UpdaterTests
+  ui-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+      STROKESCRIBE_TEST_AUTODISCARD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install system graphics dependencies
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 ffmpeg
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --only-binary=:all: -r requirements.txt
+      - name: Verify updater window tests
+        run: python -m unittest -v test_updater_ui_safety test_updater.UpdateWindowTests
+  ui-windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+      STROKESCRIBE_TEST_AUTODISCARD: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --only-binary=:all: -r requirements.txt
+      - name: Verify updater window tests
+        run: python -m unittest -v test_updater_ui_safety test_updater.UpdateWindowTests

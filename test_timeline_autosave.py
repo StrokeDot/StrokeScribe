@@ -185,6 +185,11 @@ class WindowTests(ConfigDir):
         self.assertIsNone(autosave.pending(), f'closed={closed} visible={w.isVisible()} cleared={len(calls)} '
                           f'busy={w.busy} builder={bool(w.builder and w.builder.isRunning())} '
                           f'font={bool(w.font_worker and w.font_worker.isRunning())}')
+        # A closed window must never resurrect an autosave through a queued
+        # timer or an explicit callback after close.
+        self.assertFalse(w.autosave_timer.isActive())
+        self.assertFalse(w.autosave_tick())
+        self.assertIsNone(autosave.pending())
 
     def test_update_banner(self):
         w = self.w

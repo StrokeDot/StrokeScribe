@@ -78,9 +78,13 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(updater.current_version(self.app), '0.5.3-experimental.38')
         self.assertFalse(updater.can_roll_back(self.app))
 
-    def test_new_packages_are_noticed_and_package_zip_works(self):
+    def test_new_packages_are_rejected_in_place_for_full_installer(self):
         zip_path = self.make_zip(top='StrokeScribe-Prototype-v0.5.3-experimental.39/', requirements='numpy\nnewlib\n')
-        self.assertTrue(updater.apply_zip(zip_path, self.app)['requirements_changed'])
+        with self.assertRaisesRegex(updater.UpdateError, 'installer'):
+            updater.apply_zip(zip_path, self.app)
+        self.assertEqual(updater.current_version(self.app), '0.5.3-experimental.38')
+        self.assertEqual((self.app / 'app.py').read_text(), 'old app')
+        self.assertFalse((self.app / 'new_feature.py').exists())
 
     def test_wrong_zip_is_refused(self):
         path = self.dir / 'other.zip'
@@ -135,8 +139,21 @@ class UpdaterTests(unittest.TestCase):
         self.assertGreaterEqual(updater.parse_version(version), (0, 5, 3, 38))
         zip_path = updater.download(token, self.dir / 'real.zip', branch)
         self.assertEqual(updater.zip_version(zip_path), version)
-        updater.apply_zip(zip_path, self.app)
-        self.assertNotEqual((self.app / 'app.py').read_text(), 'old app')
+        # The real development branch has a different requirements.txt from
+        # this tiny fixture; transactional updates must route it to a full
+        # installer rather than pip-modifying the current environment.
+        with zipfile.ZipFile(zip_path) as archive:
+            members, _ = updater._members(archive, self.app)
+            req = next((name for name, rel in members if rel == 'requirements.txt'), None)
+            self.assertIsNotNone(req)
+            changed = archive.read(req).decode('utf-8', 'replace') != (self.app / 'requirements.txt').read_text()
+        if changed:
+            with self.assertRaisesRegex(updater.UpdateError, 'installer'):
+                updater.apply_zip(zip_path, self.app)
+            self.assertEqual((self.app / 'app.py').read_text(), 'old app')
+        else:
+            updater.apply_zip(zip_path, self.app)
+            self.assertNotEqual((self.app / 'app.py').read_text(), 'old app')
         self.assertEqual((self.app / '.venv/Lib/site.py').read_text(), 'my packages')
 
 
@@ -147,7 +164,18 @@ class UpdateWindowTests(unittest.TestCase):
         from PySide6.QtWidgets import QApplication
         cls.app = QApplication.instance() or QApplication([])
 
+    def test_update_worker_never_mutates_running_python_packages(self):
+        from update_dialog import UpdateWorker
+        worker = UpdateWorker('update', zip_path='pretend.zip')
+        with mock.patch.object(updater, 'apply_zip', return_value={
+                'version': '2.0.0', 'requirements_changed': True}), \
+             mock.patch.object(updater, 'install_requirements') as pip:
+            with self.assertRaisesRegex(updater.UpdateError, 'installer'):
+                worker._update(zip_path='pretend.zip')
+            pip.assert_not_called()
+
     def test_window(self):
+        previous_config = os.environ.get('STROKESCRIBE_CONFIG_DIR')
         with tempfile.TemporaryDirectory() as tmp:
             os.environ['STROKESCRIBE_CONFIG_DIR'] = tmp
             try:
@@ -183,7 +211,21 @@ class UpdateWindowTests(unittest.TestCase):
                 self.assertIn('experimental.999', w.update_banner_text.text())
                 w.close()
             finally:
-                del os.environ['STROKESCRIBE_CONFIG_DIR']
+                # app.Window initializes a rotating log in this test folder.
+                # Windows refuses to remove an open log file, so close only
+                # the handlers for this disposable directory before cleanup.
+                import applog
+                root = Path(tmp).resolve()
+                for handler in list(applog.log.handlers):
+                    filename = getattr(handler, 'baseFilename', None)
+                    if filename and Path(filename).resolve().is_relative_to(root):
+                        applog.log.removeHandler(handler)
+                        handler.close()
+                        applog.log._ready = False
+                if previous_config is None:
+                    os.environ.pop('STROKESCRIBE_CONFIG_DIR', None)
+                else:
+                    os.environ['STROKESCRIBE_CONFIG_DIR'] = previous_config
 
 
 if __name__ == '__main__':
