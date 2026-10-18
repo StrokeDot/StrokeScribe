@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 import ai_engine
 import ai_models
+import model_updates_live
 from ai_workflows import LINE_ART_PROMPT, SIZES, SOUND_PROMPTS, build
 
 TASKS = (('lineart', 'Line art for my image'), ('generate', 'Create from text'),
@@ -40,6 +41,44 @@ def suggested_prompt(task, sound_for='Pencil'):
 
 
 SOUND_SETTINGS = {'Pencil': 'sound_pencil_file', 'Brush': 'sound_brush_file', 'Eraser': 'sound_eraser_file'}
+
+
+class ModelUpdateWorker(QThread):
+    """Check publisher revisions or replace a single verified model off the UI thread."""
+    progress_message = Signal(str)
+    succeeded = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, mode, paths, hardware=None, state=None):
+        super().__init__()
+        self.mode, self.paths = mode, paths
+        self.hardware, self.state = hardware, state
+        self._cancel = False
+
+    def cancel(self):
+        self._cancel = True
+
+    def cancelled(self):
+        return self._cancel
+
+    def run(self):
+        try:
+            if self.mode == 'scan':
+                result = model_updates_live.inspect_models(
+                    self.paths, self.hardware,
+                    progress=self.progress_message.emit,
+                    cancelled=self.cancelled)
+            elif self.mode == 'update':
+                def progress(done, total, name):
+                    self.progress_message.emit(
+                        f'Updating {name}: {done / 1e9:.1f} / {total / 1e9:.1f} GB')
+                result = model_updates_live.install_verified_revision(
+                    self.paths, self.state, progress, self.cancelled)
+            else:
+                raise ValueError('Unknown model update operation.')
+            self.succeeded.emit(result)
+        except Exception as exc:
+            self.failed.emit(str(exc))
 
 
 class AIWorker(QThread):
@@ -160,6 +199,7 @@ class CreateImageDialog(QDialog):
         root = QVBoxLayout(self.main_panel)
         root.setContentsMargins(0,0,0,0); root.setSpacing(10)
         self.model_manager=None
+        self.live_update_worker = None
         title = QLabel('Create Image'); title.setObjectName('dialogTitle')
         title.setStyleSheet('font-size: 18px; font-weight: 700;')
         header=QHBoxLayout()
@@ -168,7 +208,7 @@ class CreateImageDialog(QDialog):
         self.check_updates_button.setCheckable(True)
         self.check_updates_button.setAutoDefault(False)
         self.check_updates_button.setAccessibleName('Check for image generator updates')
-        self.check_updates_button.setToolTip('Open the image-generator updates drawer (demonstration data)')
+        self.check_updates_button.setToolTip('Check official image model revisions installed on this PC')
         self.check_updates_button.clicked.connect(self.open_updates)
         header.addWidget(self.check_updates_button)
         root.addLayout(header)
@@ -347,6 +387,7 @@ class CreateImageDialog(QDialog):
         self.updates_panel=UpdatePanel(self)
         self.updates_panel.hide()
         self.updates_panel.close_requested.connect(self.close_updates)
+        self.updates_panel.action_requested.connect(self.model_update_action)
         outer.addWidget(self.updates_panel)
         self.task = None
         self.set_task(task or ('lineart' if current_image else 'generate'))
@@ -355,6 +396,97 @@ class CreateImageDialog(QDialog):
         self.updates_panel.show()
         self.check_updates_button.setChecked(True)
         self.update_layout()
+        self.check_live_model_updates()
+
+    def _run_live_model_worker(self, worker, mode):
+        if self.live_update_worker is not None and self.live_update_worker.isRunning():
+            self.updates_panel.show_feedback('A model check or download is already in progress.')
+            return
+        self.live_update_worker = worker
+        self.check_updates_button.setEnabled(False)
+        self.updates_panel.show_feedback(
+            'Checking the actual AI folder and official model sources…' if mode == 'scan'
+            else 'Downloading and verifying the replacement. The current model stays in place.')
+        worker.progress_message.connect(self.updates_panel.show_feedback)
+        worker.succeeded.connect(lambda result: self.on_live_model_done(mode, result))
+        worker.failed.connect(self.on_live_model_failed)
+        worker.finished.connect(self.on_live_model_finished)
+        worker.start()
+
+    def check_live_model_updates(self):
+        if self.live_update_worker is not None and self.live_update_worker.isRunning():
+            return
+        self._run_live_model_worker(
+            ModelUpdateWorker('scan', self.paths, hardware=self.hw), 'scan')
+
+    def on_live_model_done(self, mode, result):
+        if mode == 'scan':
+            self.updates_panel.set_items(result)
+            changed = sum(s.status == 'update_available' for s in result)
+            self.updates_panel.show_feedback(
+                f'Checked {len(result)} registered image models. {changed} different official file(s) found.')
+        else:
+            self.updates_panel.show_feedback(
+                'Model updated and verified. The previous weights were kept as a backup.')
+            self.refresh()
+            QTimer.singleShot(0, self.check_live_model_updates)
+
+    def on_live_model_failed(self, message):
+        self.updates_panel.show_feedback('Model operation: ' + message)
+
+    def on_live_model_finished(self):
+        self.check_updates_button.setEnabled(True)
+        # Keep the QThread referenced until the finished signal, never while running.
+        self.live_update_worker = None
+
+    def model_update_action(self, action, model_id):
+        model = ai_models.BY_ID.get(model_id)
+        if model is None:
+            self.updates_panel.show_feedback('Model is not in the trusted registry.')
+            return
+        if action == 'rescan':
+            self.check_live_model_updates()
+            return
+        if self.live_update_worker is not None and self.live_update_worker.isRunning():
+            self.updates_panel.show_feedback('Please wait for the current model operation.')
+            return
+        states = [s for s in self.updates_panel.items if s.model_id == model_id]
+        if len(states) != 1:
+            self.updates_panel.show_feedback('Recheck model status before continuing.')
+            return
+        state = states[0]
+        if action == 'update':
+            if state.status != 'update_available' or state.remote is None:
+                self.updates_panel.show_feedback('A verified model replacement is not available.')
+                return
+            if self.worker is not None and self.worker.isRunning():
+                self.updates_panel.show_feedback('Finish or cancel the current generation first.')
+                return
+            if QMessageBox.question(
+                    self, 'Update installed AI model',
+                    f'Replace the weights for {state.name} ({state.variant_label})?\n\n'
+                    f'Download: {state.remote.size / 1e9:.1f} GB.\n'
+                    'The currently installed weights will be kept as a .previous backup.\n'
+                    'This may be a changed official revision rather than a newer release.',
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+                return
+            # Never replace model weights while the local inference server may use them.
+            self.engine.stop()
+            self._run_live_model_worker(
+                ModelUpdateWorker('update', self.paths, state=state), 'update')
+            return
+        self.choose_managed_model(model)
+        if action in ('install', 'repair'):
+            if not self.paths.engine_installed():
+                self.updates_panel.show_feedback('Install the AI engine in the main form first.')
+            elif model.needs_acceptance and model.id not in self.settings.get('accepted_licenses', []):
+                self.updates_panel.show_feedback('Accept this model’s license in the main form first.')
+            else:
+                self.download_model()
+                self.updates_panel.show_feedback('Started the existing model download in the main form.')
+        else:
+            self.updates_panel.show_feedback('Selected the model in the main controls.')
 
     def close_updates(self):
         self.updates_panel.hide()
@@ -393,8 +525,8 @@ class CreateImageDialog(QDialog):
         manager.setWindowTitle('Manage AI models')
         manager.resize(620,500)
         layout=QVBoxLayout(manager)
-        note=QLabel('Choose a model to view its versions, license and download options in the main form. '
-                    'These are the app’s real model settings; the updates drawer uses demonstration data.')
+        note=QLabel('Choose a model to view its variants, license and download options. '
+                    'The updates drawer now checks installed weights against their official sources.')
         note.setWordWrap(True);layout.addWidget(note)
         scroll=QScrollArea();scroll.setWidgetResizable(True)
         content=QWidget();items=QVBoxLayout(content)
@@ -874,6 +1006,11 @@ class CreateImageDialog(QDialog):
         self.work_timer.stop(); self.reveal_timer.stop()
         if self.player is not None:
             self.player.stop()
+        if self.live_update_worker is not None and self.live_update_worker.isRunning():
+            self.live_update_worker.cancel()
+            self.updates_panel.show_feedback('Stopping model operation. Close again when finished.')
+            event.ignore()
+            return
         if self.worker and self.worker.isRunning():
             self.worker.cancel()
             self.worker.wait(3000)
