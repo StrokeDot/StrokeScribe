@@ -1,0 +1,11 @@
+name: Safety CI diagnostic
+on:
+  push:
+    branches:
+      - safety/controlled-refactor-phase6
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show runner
+        run: echo "Runner is working"
