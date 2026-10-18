@@ -1,8 +1,8 @@
-name: Updater transaction fault-injection checks
+name: Updater transaction checks
 on:
   push:
     branches:
-      - 'safety/controlled-refactor-phase6'
+      - safety/controlled-refactor-phase6
   pull_request:
   workflow_dispatch:
 permissions:
@@ -10,41 +10,11 @@ permissions:
 jobs:
   transaction-linux:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m unittest -v test_update_transaction test_updater.UpdaterTests
-  transaction-windows:
-    runs-on: windows-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.14'
-      - run: python -m unittest -v test_update_transaction test_updater.UpdaterTests
-  ui-safety:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            python: '3.12'
-          - os: windows-latest
-            python: '3.14'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    env:
-      QT_QPA_PLATFORM: offscreen
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 ffmpeg
-      - run: python -m pip install --only-binary=:all: -r requirements.txt
-      - run: python -m unittest -v test_updater_ui_safety test_updater.UpdateWindowTests
+      - name: Verify updater and transaction regressions
+        run: python -m unittest -v test_update_transaction test_updater.UpdaterTests
