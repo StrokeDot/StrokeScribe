@@ -183,7 +183,9 @@ class TransactionTests(unittest.TestCase):
         writes=[0]
         def interrupt(path,data):
             writes[0]+=1
-            if writes[0]==2:
+            # First write is rollback/update.json; second is the prepared
+            # journal; third is the installed journal after backup rotation.
+            if writes[0]==3:
                 raise KeyboardInterrupt('power lost after backup swap')
             return real(path,data)
         with patch.object(updater,'_atomic_json',side_effect=interrupt):
