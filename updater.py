@@ -18,12 +18,16 @@ Updating:
 from __future__ import annotations
 
 import io
+import hashlib
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import uuid
+from dataclasses import dataclass
 import urllib.error
 import urllib.request
 import zipfile
@@ -34,7 +38,7 @@ REPO = 'StrokeDot/StrokeScribe'
 DEFAULT_BRANCH = 'fix/svg-guide-coverage-experimental12'      # where new versions are published
 BACKUP = '_previous_version'
 # Never copied from an update: your packages, the backup, and repository-only parts.
-SKIP_TOP = {'.venv', 'venv', 'runtime', BACKUP, '.git', '.github', 'dist', '__pycache__', 'test-output', 'build'}
+SKIP_TOP = {'.venv', 'venv', 'runtime', BACKUP, '.strokescribe-update-journal.json', '.git', '.github', 'dist', '__pycache__', 'test-output', 'build'}
 TOKEN_HELP = 'https://github.com/settings/personal-access-tokens/new'
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
@@ -213,7 +217,7 @@ def _members(archive, destination_root=APP_DIR):
     out = []
     for info, rel, _ in checked:
         parts = rel.split('/')
-        if parts[0] in SKIP_TOP or rel.endswith('.pyc'):
+        if parts[0] in SKIP_TOP or parts[0].startswith('.strokescribe-update-') or rel.endswith('.pyc'):
             continue
         out.append((info.filename, rel))
     return out, prefix
@@ -225,40 +229,245 @@ def zip_version(zip_path):
         return version_in(archive.read(prefix + 'version.py').decode('utf-8', 'replace'))
 
 
-def apply_zip(zip_path, app_dir=APP_DIR, log=lambda text: None):
-    """Copy the version in `zip_path` over `app_dir`. Returns
-    {'version', 'previous', 'files', 'requirements_changed'}."""
+JOURNAL = '.strokescribe-update-journal.json'
+
+
+@dataclass
+class StagedUpdate:
+    app_dir: Path
+    stage_dir: Path
+    version: str
+    previous: str | None
+    files: tuple[str, ...]
+    changed: tuple[str, ...]
+    backups: tuple[str, ...]
+    added: tuple[str, ...]
+
+
+def _atomic_json(path, data):
+    """Write the journal through a same-directory rename."""
+    path = Path(path)
+    temp = path.with_name(path.name + '.' + uuid.uuid4().hex + '.writing')
+    try:
+        with temp.open('w', encoding='utf-8') as stream:
+            json.dump(data, stream, indent=2)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+def _journal_path(app_dir):
+    return Path(app_dir) / JOURNAL
+
+
+def _safe_transaction_dir(app_dir, name):
+    """Never follow a malicious/stale journal path outside the app folder."""
+    folder = Path(app_dir)
+    if not isinstance(name, str) or not name.startswith('.strokescribe-update-') or '/' in name or '\\' in name:
+        raise UpdateError('The incomplete update journal has an invalid staging path.')
+    path = folder / name
+    if path.is_symlink() or path.resolve().parent != folder.resolve():
+        raise UpdateError('The incomplete update journal points outside the application.')
+    return path
+
+
+def stage_update(zip_path, app_dir=APP_DIR):
+    """Validate and unpack a complete candidate away from the live application.
+
+    Existing dependencies cannot be updated safely in-place because pip is not
+    transactional. Require a verified Windows installer instead.
+    """
     app_dir = Path(app_dir)
-    previous = current_version(app_dir)
-    with zipfile.ZipFile(zip_path) as archive:
-        members, prefix = _members(archive, app_dir)
-        version = version_in(archive.read(prefix + 'version.py').decode('utf-8', 'replace'))
-        old_requirements = _read(app_dir / 'requirements.txt')
-        backup = app_dir / BACKUP
-        if backup.exists():
-            shutil.rmtree(backup)
-        backup.mkdir()
-        added = []
-        for name, rel in members:
-            target = app_dir / rel
-            data = archive.read(name)
-            if target.is_file():
-                if target.read_bytes() == data:
+    if _journal_path(app_dir).exists():
+        raise UpdateError('An interrupted update must be recovered before installing another.')
+    old_version = current_version(app_dir)
+    stage = None
+    try:
+        with zipfile.ZipFile(zip_path) as archive:
+            members, prefix = _members(archive, app_dir)
+            if not members:
+                raise UpdateError('This ZIP has no eligible application files.')
+            new_version = version_in(archive.read(prefix + 'version.py').decode('utf-8', 'replace'))
+            if not new_version or not re.fullmatch(r'\d+\.\d+\.\d+(?:[-.][A-Za-z0-9.]+)?', new_version):
+                raise UpdateError('The ZIP contains malformed version metadata.')
+            incoming_req = next((name for name, rel in members if rel == 'requirements.txt'), None)
+            if incoming_req is None:
+                raise UpdateError('The ZIP does not include dependency metadata (requirements.txt).')
+            if archive.read(incoming_req).decode('utf-8', 'replace') != _read(app_dir / 'requirements.txt'):
+                raise UpdateError('This update changes Python packages. Use the verified full Windows installer.')
+            bad = archive.testzip()
+            if bad:
+                raise UpdateError('The update ZIP is damaged at ' + bad)
+            stage = Path(tempfile.mkdtemp(prefix='.strokescribe-update-', dir=str(app_dir)))
+            payload = stage / 'payload'
+            changed, backups, added = [], [], []
+            for name, rel in members:
+                from archive_safety import validate_archive_member
+                target = validate_archive_member(rel, app_dir)
+                data = archive.read(name)
+                if target.is_file() and target.read_bytes() == data:
                     continue
-                saved = backup / rel
-                saved.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(target, saved)
-            else:
-                added.append(rel)
+                destination = payload / rel
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with destination.open('wb') as out:
+                    out.write(data)
+                    out.flush()
+                    os.fsync(out.fileno())
+                if hashlib.sha256(destination.read_bytes()).digest() != hashlib.sha256(data).digest():
+                    raise UpdateError('Failed to verify staged update file: ' + rel)
+                changed.append(rel)
+                if target.exists():
+                    if not target.is_file():
+                        raise UpdateError('Update destination is not a normal file: ' + rel)
+                    backups.append(rel)
+                else:
+                    added.append(rel)
+        return StagedUpdate(app_dir, stage, new_version, old_version,
+                            tuple(rel for _, rel in members), tuple(changed),
+                            tuple(backups), tuple(added))
+    except Exception:
+        if stage is not None:
+            shutil.rmtree(stage, ignore_errors=True)
+        raise
+
+
+def recover_interrupted_update(app_dir=APP_DIR):
+    """Restore a previously working installation from the durable journal.
+
+    Recovery is idempotent: backups are copied (not consumed) until all
+    restored files and the previous rollback snapshot are in place. Keep the
+    journal and backup on any failure so the next startup can retry.
+    """
+    from archive_safety import validate_archive_member
+    app_dir = Path(app_dir)
+    journal_path = _journal_path(app_dir)
+    if not journal_path.is_file():
+        return {'recovered': False}
+    try:
+        journal = json.loads(journal_path.read_text(encoding='utf-8'))
+        stage = _safe_transaction_dir(app_dir, journal['stage'])
+        transaction_id = journal['transaction_id']
+        staged_backup = stage / 'backup'
+        active_backup = app_dir / BACKUP
+        if staged_backup.is_dir():
+            backing = staged_backup
+        elif (active_backup / 'update.json').is_file():
+            data = json.loads((active_backup / 'update.json').read_text(encoding='utf-8'))
+            if data.get('transaction_id') != transaction_id:
+                raise UpdateError('The update rollback folder does not match the journal.')
+            backing = active_backup
+        else:
+            raise UpdateError('Recovery backup is missing; do not restart or reinstall yet.')
+        names = list(journal.get('backups', ()))
+        added = list(journal.get('added', ()))
+        # Validate all targets, and ensure all required backups exist, before
+        # writing any live file. This also makes retry after failed recovery safe.
+        for rel in names:
+            target = validate_archive_member(rel, app_dir)
+            if not (backing / rel).is_file():
+                raise UpdateError('Recovery backup is incomplete: ' + rel)
+        for rel in added:
+            validate_archive_member(rel, app_dir)
+        for rel in names:
+            source = backing / rel
+            target = validate_archive_member(rel, app_dir)
             target.parent.mkdir(parents=True, exist_ok=True)
-            temp = target.with_name(target.name + '.updating')
-            temp.write_bytes(data)
-            os.replace(temp, target)
-        (backup / 'update.json').write_text(json.dumps({'from': previous, 'to': version, 'added': added},
-                                                       indent=2))
-    changed = _read(app_dir / 'requirements.txt') != old_requirements
-    log(f'Updated {previous} -> {version} ({len(members)} files checked, {len(added)} new).')
-    return dict(version=version, previous=previous, files=len(members), requirements_changed=changed)
+            temp = target.with_name('.' + target.name + '.' + uuid.uuid4().hex + '.restoring')
+            try:
+                shutil.copy2(source, temp)
+                os.replace(temp, target)
+            finally:
+                temp.unlink(missing_ok=True)
+        for rel in added:
+            target = validate_archive_member(rel, app_dir)
+            if target.is_file():
+                target.unlink()
+        prior = stage / 'old_previous_version'
+        if prior.is_dir():
+            if active_backup.is_dir():
+                shutil.rmtree(active_backup)
+            os.replace(prior, active_backup)
+        elif active_backup.is_dir() and backing == active_backup:
+            shutil.rmtree(active_backup)
+        journal_path.unlink()
+        shutil.rmtree(stage, ignore_errors=True)
+        return {'recovered': True, 'version': journal.get('from')}
+    except Exception as exc:
+        if isinstance(exc, UpdateError):
+            raise
+        raise UpdateError('Recovery failed; original backup and journal were preserved: ' + str(exc)) from exc
+
+
+def commit_update(staged, log=lambda text: None):
+    """Install a prepared candidate with a restart-recoverable transaction."""
+    app_dir = staged.app_dir
+    stage = staged.stage_dir
+    journal_path = _journal_path(app_dir)
+    if journal_path.exists():
+        raise UpdateError('An earlier update must be recovered first.')
+    backup = stage / 'backup'
+    backup.mkdir(exist_ok=True)
+    # Snapshot all originals BEFORE the first file replacement.
+    try:
+        for rel in staged.backups:
+            original = app_dir / rel
+            snapshot = backup / rel
+            snapshot.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(original, snapshot)
+            with snapshot.open('rb') as backed:
+                os.fsync(backed.fileno())
+            if original.read_bytes() != snapshot.read_bytes():
+                raise UpdateError('Could not verify rollback copy: ' + rel)
+        transaction_id = uuid.uuid4().hex
+        _atomic_json(backup / 'update.json', {
+            'from': staged.previous, 'to': staged.version,
+            'added': list(staged.added), 'transaction_id': transaction_id
+        })
+        journal = {
+            'phase': 'applying', 'from': staged.previous, 'to': staged.version,
+            'transaction_id': transaction_id, 'stage': stage.name,
+            'backups': list(staged.backups), 'added': list(staged.added)
+        }
+        _atomic_json(journal_path, journal)
+        # Each rename is atomic and source payload lives on the app filesystem.
+        for rel in staged.changed:
+            from archive_safety import validate_archive_member
+            target = validate_archive_member(rel, app_dir)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(stage / 'payload' / rel, target)
+
+        current_backup = app_dir / BACKUP
+        prior = stage / 'old_previous_version'
+        if current_backup.exists():
+            os.replace(current_backup, prior)
+        os.replace(backup, current_backup)
+        journal['phase'] = 'installed'
+        _atomic_json(journal_path, journal)
+        # This final unlink is the transaction commit point.
+        journal_path.unlink()
+        shutil.rmtree(stage, ignore_errors=True)
+        result = {'version': staged.version, 'previous': staged.previous,
+                  'files': len(staged.files), 'requirements_changed': False}
+        log(f"Updated {staged.previous} -> {staged.version} ({len(staged.files)} files verified).")
+        return result
+    except Exception as exc:
+        if journal_path.exists():
+            try:
+                recover_interrupted_update(app_dir)
+            except Exception as restore_error:
+                raise UpdateError('Update failed; recovery also failed. Keep the recovery files: '
+                                  + str(restore_error)) from exc
+        else:
+            # Failure during backup preparation: no live application files changed.
+            shutil.rmtree(stage, ignore_errors=True)
+        raise UpdateError('Update failed; the previous application was retained/restored: ' + str(exc)) from exc
+
+
+def apply_zip(zip_path, app_dir=APP_DIR, log=lambda text: None):
+    """Compatible API for fully staged, rollback-safe file updates."""
+    return commit_update(stage_update(zip_path, app_dir), log=log)
 
 
 def _read(path):

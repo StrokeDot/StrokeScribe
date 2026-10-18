@@ -78,9 +78,13 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(updater.current_version(self.app), '0.5.3-experimental.38')
         self.assertFalse(updater.can_roll_back(self.app))
 
-    def test_new_packages_are_noticed_and_package_zip_works(self):
+    def test_new_packages_are_rejected_in_place_for_full_installer(self):
         zip_path = self.make_zip(top='StrokeScribe-Prototype-v0.5.3-experimental.39/', requirements='numpy\nnewlib\n')
-        self.assertTrue(updater.apply_zip(zip_path, self.app)['requirements_changed'])
+        with self.assertRaisesRegex(updater.UpdateError, 'installer'):
+            updater.apply_zip(zip_path, self.app)
+        self.assertEqual(updater.current_version(self.app), '0.5.3-experimental.38')
+        self.assertEqual((self.app / 'app.py').read_text(), 'old app')
+        self.assertFalse((self.app / 'new_feature.py').exists())
 
     def test_wrong_zip_is_refused(self):
         path = self.dir / 'other.zip'
@@ -135,8 +139,21 @@ class UpdaterTests(unittest.TestCase):
         self.assertGreaterEqual(updater.parse_version(version), (0, 5, 3, 38))
         zip_path = updater.download(token, self.dir / 'real.zip', branch)
         self.assertEqual(updater.zip_version(zip_path), version)
-        updater.apply_zip(zip_path, self.app)
-        self.assertNotEqual((self.app / 'app.py').read_text(), 'old app')
+        # The real development branch has a different requirements.txt from
+        # this tiny fixture; transactional updates must route it to a full
+        # installer rather than pip-modifying the current environment.
+        with zipfile.ZipFile(zip_path) as archive:
+            members, _ = updater._members(archive, self.app)
+            req = next((name for name, rel in members if rel == 'requirements.txt'), None)
+            self.assertIsNotNone(req)
+            changed = archive.read(req).decode('utf-8', 'replace') != (self.app / 'requirements.txt').read_text()
+        if changed:
+            with self.assertRaisesRegex(updater.UpdateError, 'installer'):
+                updater.apply_zip(zip_path, self.app)
+            self.assertEqual((self.app / 'app.py').read_text(), 'old app')
+        else:
+            updater.apply_zip(zip_path, self.app)
+            self.assertNotEqual((self.app / 'app.py').read_text(), 'old app')
         self.assertEqual((self.app / '.venv/Lib/site.py').read_text(), 'my packages')
 
 
@@ -146,6 +163,16 @@ class UpdateWindowTests(unittest.TestCase):
     def setUpClass(cls):
         from PySide6.QtWidgets import QApplication
         cls.app = QApplication.instance() or QApplication([])
+
+    def test_update_worker_never_mutates_running_python_packages(self):
+        from update_dialog import UpdateWorker
+        worker = UpdateWorker('update', zip_path='pretend.zip')
+        with mock.patch.object(updater, 'apply_zip', return_value={
+                'version': '2.0.0', 'requirements_changed': True}), \
+             mock.patch.object(updater, 'install_requirements') as pip:
+            with self.assertRaisesRegex(updater.UpdateError, 'installer'):
+                worker._update(zip_path='pretend.zip')
+            pip.assert_not_called()
 
     def test_window(self):
         with tempfile.TemporaryDirectory() as tmp:
