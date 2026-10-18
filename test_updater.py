@@ -151,6 +151,16 @@ class UpdateWindowTests(unittest.TestCase):
         from PySide6.QtWidgets import QApplication
         cls.app = QApplication.instance() or QApplication([])
 
+    def test_update_worker_never_mutates_running_python_packages(self):
+        from update_dialog import UpdateWorker
+        worker = UpdateWorker('update', zip_path='pretend.zip')
+        with mock.patch.object(updater, 'apply_zip', return_value={
+                'version': '2.0.0', 'requirements_changed': True}), \
+             mock.patch.object(updater, 'install_requirements') as pip:
+            with self.assertRaisesRegex(updater.UpdateError, 'installer'):
+                worker._update(zip_path='pretend.zip')
+            pip.assert_not_called()
+
     def test_window(self):
         with tempfile.TemporaryDirectory() as tmp:
             os.environ['STROKESCRIBE_CONFIG_DIR'] = tmp
