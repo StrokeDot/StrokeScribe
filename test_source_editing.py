@@ -75,6 +75,25 @@ class PaintSourceTests(WorkflowFixture):
         self.assertEqual(self.w.image_result.image.pixelColor(30,30),before)
         self.w.redo()
         self.assertEqual(self.w.image_result.image.pixelColor(50,40).blue(),225)
+    def test_outline_svg_first_paint_is_one_undo_and_named_after_reopen(self):
+        self.w.request_artwork(str(self.svg),kind='svg',placement='add')
+        old=self.w.color_path;count=len(self.w.history.undo_stack)
+        self.w.replace_paint_source(str(self.blue()))
+        self.assertEqual(len(self.w.history.undo_stack),count+1)
+        self.w.undo();self.assertEqual(self.w.color_path,old);self.assertIsNone(self.w.final_image)
+        self.w.redo()
+        state=self.w.scene_state();self.w.apply_scene_state(state)
+        self.assertIn('blue.png',self.w.color_note.text())
+        self.w.clean_color.setChecked(not self.w.clean_color.isChecked())
+        self.assertIn('blue.png',self.w.color_note.text())
+    def test_svg_jpeg_and_webp_reclean_from_original_without_png_restriction(self):
+        self.w.request_artwork(str(self.svg),kind='svg',placement='add')
+        for name in ('colors.jpg','colors.webp','colors.bmp'):
+            p=Path(self.tmp.name)/name;Image.new('RGB',(100,80),(30,70,225)).save(p)
+            self.w.replace_paint_source(str(p))
+            self.w.clean_color.setChecked(True);self.w.clean_color.setChecked(False)
+            self.assertIn(name,self.w.color_note.text())
+            self.assertGreater(self.w.final_image.pixelColor(50,40).blue(),220)
     def test_svg_matching_color_replacement_retains_native_vectors(self):
         self.api_source()
         self.svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="80"><rect x="10" y="10" width="80" height="60" fill="black"/></svg>')
