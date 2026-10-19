@@ -36,6 +36,7 @@ if role in ("child", "grandchild"):
 if role == "early":
     until = time.monotonic() + 10
     while not (here / "grandchild.ready").exists() and time.monotonic() < until: time.sleep(.02)
+    while not (here / "allow_exit").exists() and time.monotonic() < until: time.sleep(.02)
     sys.exit(0)
 if role == "idle":
     while True: time.sleep(.1)
@@ -199,6 +200,7 @@ class OwnedProcessTests(unittest.TestCase):
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         self.addCleanup(owner.stop)
         workers = self.fixture.workers("early")
+        (self.fixture.root / "allow_exit").write_text("exit after probes own process identities")
         owner.proc.wait(timeout=10)
         self.assertTrue(all(p.alive() for p in workers[1:]), "Fixture children must outlive root")
         owner.stop(timeout=1)
