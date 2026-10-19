@@ -459,8 +459,10 @@ class CreateImageDialog(QDialog):
         self.check_live_model_updates()
 
     def _run_live_model_worker(self, worker, mode):
-        if self.live_update_worker is not None and self.live_update_worker.isRunning():
-            self.updates_panel.show_feedback('A model check or download is already in progress.')
+        # Hold the QThread reference until finished() *and* native cleanup
+        # complete. isRunning() can already be false during that short gap.
+        if self.live_update_worker is not None:
+            self.updates_panel.show_feedback('A model check or download is already finishing.')
             return
         self.live_update_worker = worker
         self.check_updates_button.setEnabled(False)
@@ -475,7 +477,7 @@ class CreateImageDialog(QDialog):
         worker.start()
 
     def check_live_model_updates(self):
-        if self.live_update_worker is not None and self.live_update_worker.isRunning():
+        if self.live_update_worker is not None:
             return
         self._run_live_model_worker(
             ModelUpdateWorker('scan', self.paths, hardware=self.hw), 'scan')
@@ -529,7 +531,7 @@ class CreateImageDialog(QDialog):
         if action == 'rescan':
             self.check_live_model_updates()
             return
-        if self.live_update_worker is not None and self.live_update_worker.isRunning():
+        if self.live_update_worker is not None:
             self.updates_panel.show_feedback('Please wait for the current model operation.')
             return
         states = [s for s in self.updates_panel.items if s.model_id == model_id]

@@ -120,6 +120,25 @@ class SmoothGeneratorTests(unittest.TestCase):
         self.assertIsNone(d.live_update_worker)
         self.assertEqual(w.wait.call_count, 2)
 
+    def test_new_model_check_waits_for_previous_native_cleanup(self):
+        d = self.dialog
+        previous = MagicMock()
+        previous.isRunning.return_value = False
+        previous.wait.return_value = False
+        d.live_update_worker = previous
+        try:
+            # No new QThread should even be constructed while the last one is
+            # between isRunning() becoming false and native thread teardown.
+            with patch('create_image_dialog.ModelUpdateWorker') as construct:
+                d.check_live_model_updates()
+                construct.assert_not_called()
+            another = MagicMock()
+            d._run_live_model_worker(another, 'scan')
+            another.start.assert_not_called()
+            self.assertIs(d.live_update_worker, previous)
+        finally:
+            d.live_update_worker = None
+
     def test_placeholder_has_icon_heading_and_explanation_after_reset(self):
         d=self.dialog
         d.show();d.show_result()
