@@ -594,6 +594,16 @@ class CreateImageDialog(QDialog):
         if hasattr(self,'updates_panel') and self.updates_panel.isVisible():
             self.close_updates()
             return
+        # Escape invokes QDialog.reject() without going through closeEvent.
+        # Apply the same worker-lifetime safeguard to keyboard dismissal.
+        if self.live_update_worker is not None and self.live_update_worker.isRunning():
+            self.cancel_live_model_update()
+            self.status.setText('Stopping the model operation. Close again when it has finished.')
+            return
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.cancel()
+            self.status.setText('Stopping the AI operation. Close again when it has finished.')
+            return
         super().reject()
 
     def update_layout(self):

@@ -82,6 +82,29 @@ class SmoothGeneratorTests(unittest.TestCase):
         APP.processEvents()
         self.assertFalse(d.isVisible(), 'Closing should work after cancellation finishes')
 
+    def test_escape_does_not_dismiss_running_ai_or_model_workers(self):
+        d = self.dialog
+        d.show()
+        APP.processEvents()
+        ai_worker = MagicMock()
+        ai_worker.isRunning.return_value = True
+        d.worker = ai_worker
+        d.reject()  # Same route as Escape when the drawer is closed.
+        ai_worker.cancel.assert_called_once()
+        self.assertTrue(d.isVisible(), 'Escape must not dismiss active AI generation')
+        ai_worker.isRunning.return_value = False
+
+        model_worker = MagicMock()
+        model_worker.isRunning.return_value = True
+        d.live_update_worker = model_worker
+        d.reject()
+        model_worker.cancel.assert_called_once()
+        self.assertTrue(d.isVisible(), 'Escape must not dismiss active model updates')
+        model_worker.isRunning.return_value = False
+        d.reject()
+        APP.processEvents()
+        self.assertFalse(d.isVisible())
+
     def test_placeholder_has_icon_heading_and_explanation_after_reset(self):
         d=self.dialog
         d.show();d.show_result()
