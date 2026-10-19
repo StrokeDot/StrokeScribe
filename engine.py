@@ -91,7 +91,7 @@ def import_svg(filename):
         raise ValueError('SVG document entities are unsupported.')
     if '<!DOCTYPE' in raw.upper():
         allowed = re.search(
-            r'''<!DOCTYPE\s+svg\s+(?:PUBLIC\s+"[^"]+"\s+"[^"]+"|SYSTEM\s+"[^"]+")\s*>''',
+            r'''<!DOCTYPE\s+svg\s+PUBLIC\s+"[^"]+"\s+"[^"]+"\s*>''',
             raw, re.IGNORECASE)
         if allowed is None or raw.upper().count('<!DOCTYPE') != 1:
             raise ValueError('SVG document entities are unsupported.')
