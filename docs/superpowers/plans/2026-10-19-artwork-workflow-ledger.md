@@ -23,3 +23,6 @@
 
 - Task 3 GREEN: run39236419454 Windows118006469738/Linux118006469358: all35 focused tests passed. Pairing survives Library migration and external removal; the Add-AI result kind/original, old projects, Drawing only/Paint Only, portrait guide framing and24 MP compatibility are covered.
 - Task 4 start: reproduce native filled SVG loss, coordinate frames, resource/size limits, cache bounds; additionally cover existing same-page placement semantics before integrating.
+
+- Task 4 RED: run39236707337 Linux118007419560: five native-appearance tests and same-page join failed, existing35 passed. Task 4 GREEN: run39237112607 Windows118008830769/Linux118008831060 all42 tests passed, normal exits. Includes persisted native appearance, viewBox/group transforms, compound transparent holes, opacity, resource rejection and cache budget.
+- Task 5 start: real frame acceptance added for Image/AI-lineart/Library intake, exact completed source appearance and exported PNG equality; synthetic house, letterboxed portrait and filled-controller review frames follow.
