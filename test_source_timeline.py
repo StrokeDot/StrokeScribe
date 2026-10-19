@@ -123,7 +123,11 @@ class DrawingSourceTests(WorkflowFixture):
         self.w.apply_scene_state(self.w.scene_state())
         self.assertEqual(self.w.drawing.drawing_source_kind,'svg')
         self.assertTrue(self.w.replace_drawing_source(None,reconstruct=True))
-        self.assertEqual(self.w.image_result.image,before)
+        # Reconstructed Qt images may have distinct storage formats
+        # (ARGB32 vs RGBA8888), but must retain identical final RGBA pixels.
+        import numpy as np
+        from test_artwork_rendering import rgba
+        np.testing.assert_array_equal(rgba(self.w.image_result.image),rgba(before))
         self.assertTrue(self.w.is_image_artwork())
     def test_svg_raster_drawing_guide_is_independent_of_later_paint_replacement(self):
         original,guide=pair(self.tmp.name)

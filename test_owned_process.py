@@ -105,7 +105,9 @@ class ProcessProbe:
         try:
             state = Path(f"/proc/{self.pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
             return state != "Z"
-        except FileNotFoundError:
+        except (FileNotFoundError, ProcessLookupError):
+            # Linux can reap a process between opening /proc/<pid>/stat and
+            # reading its contents. That is evidence it exited, not a leak.
             return False
 
     def resident_bytes(self):
