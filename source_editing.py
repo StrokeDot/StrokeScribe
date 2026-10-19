@@ -42,22 +42,27 @@ class SourceEditing:
             self.color_note.setText('Original SVG appearance • native fills')
         else:self.color_note.setText('No matching color image loaded')
 
-    def _commit_source(self,values):
+    def _commit_source(self,values,settings=None):
         self.commit_history()
         self.playing=False
         for name,value in values.items():setattr(self,name,value)
+        if settings:
+            from projects import set_widget_value
+            for name,value in settings.items():
+                widget=getattr(self,name)
+                widget.blockSignals(True);set_widget_value(widget,value);widget.blockSignals(False)
         self._source_snapshot_key=None
         self.scenes[self.scene_index]['thumb']=None
-        self._scene_base_cache=None
+        self._base_cache.clear()
         self.clear_frames()
         self.fill_order()
         self.update_source_labels()
         self.commit_history()
         self.project_changes.mark_changed()
-        self.sync_workspace();self.refresh()
+        self.sync_workspace();self.fill_scenes();self.refresh()
         return True
 
-    def replace_paint_source(self,path):
+    def replace_paint_source(self,path,settings=None):
         if not path:return False
         if self._artwork_busy() or not self.drawing:
             self.status.setText('Finish the current import/export before changing a source.')
@@ -94,9 +99,96 @@ class SourceEditing:
             QMessageBox.warning(self,'Cannot change painting source',str(exc))
             return False
         # Preparation above has no effect on the selected element or history.
-        enabled=self.use_color.isChecked()
-        result=self._commit_source(values)
-        if not self.is_image_artwork() and not enabled:
-            self.use_color.setChecked(True);self.commit_history()
+        changes=dict(settings or {})
+        if not self.is_image_artwork():changes['use_color']=True
+        result=self._commit_source(values,changes)
         self.status.setText('Painting source changed. Existing drawing paths and placement were kept.')
         return result
+
+    def replace_drawing_source(self,path,reconstruct=False,settings=None):
+        if self._artwork_busy() or not self.drawing:return False
+        if not path and not reconstruct:return False
+        try:
+            if reconstruct and getattr(self.drawing,'drawing_source_kind',None)=='svg':
+                from engine import import_svg
+                import tempfile
+                # Validated native source is already retained by the project serializer.
+                with tempfile.TemporaryDirectory() as folder:
+                    saved=Path(folder)/'drawing.svg'
+                    saved.write_text(self.drawing.svg_source,encoding='utf-8')
+                    drawing=import_svg(saved)
+                return self._apply_drawing_source(drawing,None,settings,
+                        getattr(self.drawing,'drawing_source_name','Drawing.svg'),'svg')
+            if path and Path(path).suffix.lower()=='.svg':
+                from engine import import_svg
+                drawing=import_svg(path)
+                return self._apply_drawing_source(drawing,None,settings,Path(path).name,'svg')
+            from artwork_assets import capture_assets,materialize_assets
+            old=self.image_result if self.is_image_artwork() else None
+            source=self.image_path if old else None
+            if reconstruct:
+                guide=self.image_guide if old else None
+                if not source:
+                    raise ValueError('Choose an SVG or line-art image to reconstruct this drawing.')
+                metadata=copy.deepcopy(self.drawing.artwork_assets)
+            else:
+                metadata=capture_assets(source or path,path if source else None)
+            managed,guide=materialize_assets(metadata)
+            ctx=dict(source_edit=True,generation=getattr(self,'_artwork_generation',0),
+                     target=self.scenes[self.scene_index],drawing=self.drawing,
+                     strokes=tuple(self.drawing.strokes),source=managed,guide=guide,assets=metadata,
+                     name=Path(path).name if path else getattr(self.drawing,'drawing_source_name','Reconstructed drawing'),
+                     settings=settings,cancelled=False,committed=False)
+            self._pending_artwork=ctx
+            self.build_image(managed,line_guide=guide,intake=ctx)
+            return True
+        except Exception as exc:
+            self._pending_artwork=None
+            QMessageBox.warning(self,'Cannot change drawing source',str(exc))
+            return False
+
+    def accept_drawing_source(self,result,ctx):
+        unchanged=(ctx['drawing'] is self.drawing and len(ctx['strokes'])==len(self.drawing.strokes)
+                   and all(a is b for a,b in zip(ctx['strokes'],self.drawing.strokes)))
+        if (ctx.get('cancelled') or not unchanged or ctx['generation']!=getattr(self,'_artwork_generation',0)
+                or ctx['target'] is not self.scenes[self.scene_index]):
+            self.status.setText('Drawing source was not applied because the editing target changed.')
+            return False
+        metadata=ctx['assets']
+        if hasattr(result.drawing,'source_frame'):metadata['frame']=result.drawing.source_frame
+        committed=self._apply_drawing_source(result.drawing,metadata,ctx.get('settings'),ctx['name'],'raster')
+        ctx['committed']=committed
+        return committed
+
+    def _apply_drawing_source(self,drawing,metadata,settings,name,kind):
+        from image_reconstruct import Reconstruction
+        from artwork_assets import materialize_assets
+        drawing.drawing_source_name=name
+        drawing.drawing_source_kind=kind
+        values=dict(drawing=drawing)
+        old=self.image_result if self.is_image_artwork() else None
+        if metadata is None:
+            metadata=copy.deepcopy(getattr(self.drawing,'artwork_assets',None))
+            if metadata:metadata['guide']=None
+        if metadata:drawing.artwork_assets=metadata
+        if old:
+            drawing.source_kind='image'
+            drawing.image_regions=old.regions
+            values.update(image_result=Reconstruction(drawing,old.image,old.regions,old.mode,old.detail,old.filename),
+                          image_guide=materialize_assets(metadata)[1] if metadata else None)
+        else:
+            # A line-art image is a drawing source, not an implicit new paint source.
+            drawing.source_kind='svg'
+            if self.final_image is not None:values['color_path']=self.color_path or 'from-project'
+        result=self._commit_source(values,settings)
+        self.status.setText('Drawing source changed. Original colors, timing and hand settings were retained.')
+        return result
+
+    def edit_stage_source(self,stage,index):
+        if stage not in ('draw','paint') or self._artwork_busy() or not 0<=index<len(self.scenes):return
+        if index!=self.scene_index:
+            self.select_scene(index)
+            if index!=self.scene_index:return
+        self.playing=False
+        from source_editor import SourceEditor
+        SourceEditor(self,stage).exec()

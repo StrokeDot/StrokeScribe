@@ -728,6 +728,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if snapshot is None: return
         from projects import set_widget_value
         self._restoring=True
+        source_changed=snapshot.get('source') is not self.source_snapshot()
         try:
             self.restore_source_snapshot(snapshot.get('source'))
             settings=snapshot['settings']
@@ -755,7 +756,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         finally:
             self._restoring=False
         self.update_history_controls()
-        self.refresh()
+        if source_changed:
+            self.scenes[self.scene_index]['thumb']=None
+            self.fill_scenes()
+        self.sync_workspace();self.refresh()
 
     # ------------------------------------------------ lines: select and edit
     def fill_order(self,keep=(),current=None):
@@ -1118,6 +1122,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         brush_item=self.reveal_mode.model().item(0)
         if brush_item is not None:
             brush_item.setEnabled(not image_source)
+        self.reveal_mode.view().setRowHidden(0,image_source)
         if image_source and self.reveal_mode.currentIndex()==0:
             self.reveal_mode.setCurrentIndex(1)
         self.paint_form.setRowVisible(self.image_paint_hint,image_source)
@@ -1214,7 +1219,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             original=getattr(self,'color_original',None)
             keep=original if original is not None else self.final_image
             state['color_png']=None if getattr(self.drawing,'svg_has_fill',False) and not self.color_path else qimage_to_b64(keep)
-            state['svg_color_override']=bool(getattr(self.drawing,'svg_has_fill',False) and self.color_path)
+            state['svg_color_override']=bool(self.color_path)
         if self.paint_hand_path and Path(self.paint_hand_path).is_file():
             import base64
             state['paint_hand_png']=base64.b64encode(Path(self.paint_hand_path).read_bytes()).decode('ascii')
@@ -1501,6 +1506,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.status.setText('The project audio track was not found: '+audio); audio=None
         self.set_audio(audio,refresh=False)
         self.set_drawing(drawing)
+        self.update_source_labels()
 
     # ------------------------------------------------------------ scenes
     def edit_element(self,k):
@@ -2401,6 +2407,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def image_ready(self,result):
         ctx=getattr(self.builder,'_artwork_request',None)
+        if ctx is not None and ctx.get('source_edit'):
+            self.accept_drawing_source(result,ctx)
+            return
         if ctx is not None:
             self._accept_artwork_result(result,ctx)
             return
@@ -2783,42 +2792,25 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.hand_name.setText('Hand: StrokeScribe built-in hand')
         if refresh: self.refresh()
     def reload_color(self):
-        """(Re)load the matching colored PNG, cleaned or not."""
+        """Re-clean retained normalized source pixels, for every supported image type."""
+        if self.is_image_artwork():return False
         name=getattr(self,'color_path',None)
-        if self.is_image_artwork(): return False
         if getattr(self.drawing,'svg_has_fill',False) and not name:
             from svg_appearance import render_appearance
             self.final_image=render_appearance(self.drawing)
-            self.color_note.setText('Original SVG appearance • native fills')
-            self.refresh();return True
-        if name=='from-project':name=None
-        clean=self.clean_color.isChecked()
+            self.update_source_labels();self.refresh();return True
         original=getattr(self,'color_original',None)
-        if not name and original is not None and not original.isNull():
-            # Colour picture from a project file: clean it, or show it as saved.
-            from color_reveal import clean_qimage
-            self.final_image=clean_qimage(original) if clean else original
-            self.color_note.setText('Colour image from project'+(' • background cleaned' if clean else ''))
-            self.refresh()
-            return True
-        if not name: return False
         try:
-            self.final_image=load_color_image(name,clean=clean)
-        except Exception as e:
-            QMessageBox.warning(self,'Final artwork',str(e)); return False
-        note=''
-        if clean:
-            try:
-                from PIL import Image
-                from png_cleanup import clean_background, report
-                with Image.open(name) as im:
-                    rgba=im.convert('RGBA')
-                    note=' • '+report(rgba,clean_background(rgba))
-            except Exception:
-                note=''
-        self.color_note.setText(Path(name).name+note)
-        self.refresh()
-        return True
+            if original is None and name and name!='from-project':
+                from image_reconstruct import load_raster
+                from adaptive_hand import qimage
+                original=qimage(load_raster(name));self.color_original=original
+            if original is None:return False
+            from color_reveal import clean_qimage
+            self.final_image=clean_qimage(original) if self.clean_color.isChecked() else original
+            self.update_source_labels();self.refresh();return True
+        except Exception as exc:
+            QMessageBox.warning(self,'Final artwork',str(exc));return False
 
     def load_color(self):
         name,_=QFileDialog.getOpenFileName(self,'Change original image' if self.is_image_artwork() else 'Change matching colors','',
@@ -3070,7 +3062,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             total=sum(lengths)+sum(joins)
             self._view=dict(all=True,length=total,ratio=ratio,token=self._view_token())
             return True
-        self.stage_timeline.set_scenes(None)
+        self.stage_timeline.set_scenes(None,current=self.scene_index)
         self.stage_timeline.set_overlays(self.overlays,self.selected_overlay)
         self.stage_timeline.set_audio(self.timeline_audio())
         self.stage_timeline.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() \

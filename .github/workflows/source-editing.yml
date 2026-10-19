@@ -9,7 +9,7 @@ permissions:
   contents: read
 concurrency:
   group: source-editing-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   focused:
     runs-on: ${{ matrix.os }}

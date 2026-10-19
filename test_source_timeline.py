@@ -50,7 +50,8 @@ class SourceTimelineTests(WorkflowFixture):
         self.assertTrue(hasattr(t,'stage_source_edit'),'Stage source signal missing')
         spy=QSignalSpy(t.stage_source_edit)
         t.set_scenes(None,0);t.update_state(4,0,0,0)
-        QTest.keyClick(t,Qt.Key.Key_P,Qt.KeyboardModifier.ControlModifier|Qt.KeyboardModifier.ShiftModifier)
+        with patch('source_editor.SourceEditor.exec',return_value=0):
+            QTest.keyClick(t,Qt.Key.Key_P,Qt.KeyboardModifier.ControlModifier|Qt.KeyboardModifier.ShiftModifier)
         self.assertEqual(spy.count(),1);self.assertEqual(spy.at(0),['paint',0])
     def test_cancel_editor_keeps_project_and_history(self):
         self.assertTrue(callable(getattr(self.w,'edit_stage_source',None)),'Source editor missing')

@@ -74,6 +74,8 @@ class StageTimeline(QFrame):
     element_clicked=Signal(int)         # whole video: an element's block was clicked
     element_edit=Signal(int)            # whole video: an element's block was double-clicked
 
+    stage_source_edit=Signal(str,int)   # Draw/Paint source editor, exact clicked element
+
     STAGE_KEYS=('draw','paint','hold','erase')
     EDGE=6.                             # pixels: grab distance for a clip edge
 
@@ -226,6 +228,39 @@ class StageTimeline(QFrame):
             if secs<=0: continue
             out.append((key,self._x(t+secs),t)); t+=secs
         return out
+
+    def source_at(self,pos):
+        """Match the actual coloured part rectangles; joins/other tracks are not sources."""
+        if self.locked:return None
+        _,clips,_=self._rows()
+        if not clips.top()+3<=pos.y()<=clips.bottom()-3:return None
+        if self.scene_segments:
+            for index,start,seconds,segment in self._blocks():
+                if index is None or seconds<=0:continue
+                x=self._x(start)+1.5
+                width=max(1.,self._x(start+seconds)-self._x(start)-3)
+                parts=[(key,value) for key,value in (segment[3] or ()) if value>0] or [('draw',seconds)]
+                total=sum(value for _,value in parts)
+                for key,value in parts:
+                    right=x+width*value/total
+                    if x<=pos.x()<right:return (key,index) if key in ('draw','paint') else None
+                    x=right
+        else:
+            start=0.
+            for key,value in zip(self.STAGE_KEYS,(self.draw_seconds,self.paint_seconds,self.hold_seconds,self.erase_seconds)):
+                if value<=0:continue
+                left=self._x(start)+1.5;right=max(left+1.,self._x(start+value)-1.5)
+                if left<=pos.x()<right:return (key,self.current_scene) if key in ('draw','paint') else None
+                start+=value
+        return None
+
+    def source_menu(self,index,global_pos):
+        from PySide6.QtWidgets import QMenu
+        if self.locked:return
+        menu=QMenu(self)
+        menu.addAction('Edit Drawing Source…',lambda:self.stage_source_edit.emit('draw',index))
+        menu.addAction('Edit Painting Source…',lambda:self.stage_source_edit.emit('paint',index))
+        menu.exec(global_pos)
 
     def _edge_at(self, pos):
         if self.locked: return None
@@ -460,6 +495,9 @@ class StageTimeline(QFrame):
                 menu=QMenu(self)
                 menu.addAction('Remove the audio track',self.audio_remove.emit)
                 menu.exec(event.globalPosition().toPoint())
+                event.accept();return
+            source=self.source_at(pos)
+            if source is not None:self.source_menu(source[1],event.globalPosition().toPoint())
             event.accept(); return
         if event.button()!=Qt.MouseButton.LeftButton or self.total()<=0:
             return super().mousePressEvent(event)
@@ -531,7 +569,7 @@ class StageTimeline(QFrame):
         elif self._block_at(pos) is not None:
             k=self._block_at(pos)
             self.setCursor(Qt.CursorShape.PointingHandCursor)
-            self.setToolTip(f'Element {k+1}: click to work on it, double-click for its settings' if k!=self.current_scene
+            self.setToolTip(f'Element {k+1}: click to work on it, double-click Draw/Paint to edit its source' if k!=self.current_scene
                             else 'The element you are editing: drag a white edge to change a part\'s length, '
                                  'double-click for its settings.')
         else:
@@ -541,12 +579,18 @@ class StageTimeline(QFrame):
         super().mouseMoveEvent(event)
 
     def mouseDoubleClickEvent(self,event):
+        if self.locked or event.button()!=Qt.MouseButton.LeftButton:
+            event.accept();return
+        self._drag=None;self._frozen=None
         item,_=self._overlay_at(event.position())
         if item is not None:
-            self.overlay_edit.emit(item.get('id')); event.accept(); return
+            self.overlay_edit.emit(item.get('id'));event.accept();return
+        source=self.source_at(event.position())
+        if source is not None:
+            self.stage_source_edit.emit(*source);event.accept();return
         k=self._block_at(event.position())
         if k is not None:
-            self.element_edit.emit(k); event.accept(); return
+            self.element_edit.emit(k);event.accept();return
         super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self,event):
@@ -593,6 +637,13 @@ class StageTimeline(QFrame):
     def keyPressEvent(self,event):
         if self.locked:
             event.accept(); return
+        mods=event.modifiers()
+        if mods & Qt.KeyboardModifier.ControlModifier and mods & Qt.KeyboardModifier.ShiftModifier and event.key() in (Qt.Key.Key_D,Qt.Key.Key_P):
+            self.stage_source_edit.emit('draw' if event.key()==Qt.Key.Key_D else 'paint',self.current_scene)
+            event.accept();return
+        if event.key()==Qt.Key.Key_Menu or (event.key()==Qt.Key.Key_F10 and mods & Qt.KeyboardModifier.ShiftModifier):
+            self.source_menu(self.current_scene,self.mapToGlobal(self.rect().center()))
+            event.accept();return
         if event.key() in (Qt.Key.Key_Delete,Qt.Key.Key_Backspace) and self.selected_overlay:
             self.overlay_action.emit(self.selected_overlay,'delete'); return
         if event.key() in (Qt.Key.Key_Left,Qt.Key.Key_Right):
@@ -1608,6 +1659,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.overlay_dropped.connect(lambda path,seconds: w.add_overlay_picture(path,at=seconds))
     w.stage_timeline.element_clicked.connect(lambda k: w.timeline_element_clicked(k))
     w.stage_timeline.element_edit.connect(lambda k: w.edit_element(k))
+    w.stage_timeline.stage_source_edit.connect(w.edit_stage_source)
     w.vertical_splitter.addWidget(timeline)
     w.vertical_splitter.setStretchFactor(0,1)
     w.vertical_splitter.setStretchFactor(1,0)
@@ -1655,7 +1707,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     for name in ('duration','speed','thickness','brush_width','stroke_spacing',
                  'image_duration','color_fade','color_hold','fps','res','order'):
         getattr(w,name).setAccessibleName(name.replace('_',' '))
-    w.stage_timeline.setAccessibleName('Animation timeline: drag to scrub; arrows to step')
+    w.stage_timeline.setAccessibleName('Animation timeline: click to scrub; double-click Draw or Paint to edit source; Ctrl+Shift+D or P edits selected source')
     fit_to_width(asset,stacked=True)       # labels above fields in the narrow column
     for content in (animation,hand,output,sound):
         fit_to_width(content)
