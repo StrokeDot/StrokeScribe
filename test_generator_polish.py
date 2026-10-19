@@ -68,10 +68,10 @@ class SmoothGeneratorTests(unittest.TestCase):
         d=self.dialog
         self.assertLessEqual(d.work_timer.interval(),17)
         d.on_progress(70,'Creating… 70%')
-        APP.processEvents();QTest.qWait(70)
+        d.progress_motion.setCurrentTime(70)
         self.assertGreater(d.progress.value(),0)
         self.assertLess(d.progress.value(),70,'Progress should animate toward the actual report')
-        QTest.qWait(300)
+        d.progress_motion.setCurrentTime(d.progress_motion.duration())
         self.assertEqual(d.progress.value(),70)
         self.assertEqual(d.work['percent'],70)
         d.on_progress(-1,'Loading the model…')
