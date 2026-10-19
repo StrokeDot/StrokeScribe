@@ -105,6 +105,21 @@ class SmoothGeneratorTests(unittest.TestCase):
         APP.processEvents()
         self.assertFalse(d.isVisible())
 
+    def test_model_thread_reference_waits_for_native_cleanup(self):
+        # finished() can arrive before QThread.wait() reports that all native
+        # thread-local cleanup completed. Retain the worker until it is safe.
+        d = self.dialog
+        w = MagicMock()
+        w.wait.side_effect = (False, True)
+        d.live_update_worker = w
+        with patch('create_image_dialog.QTimer.singleShot') as retry:
+            d.on_live_model_finished()
+            self.assertIs(d.live_update_worker, w)
+            retry.assert_called_once()
+            d.on_live_model_finished()
+        self.assertIsNone(d.live_update_worker)
+        self.assertEqual(w.wait.call_count, 2)
+
     def test_placeholder_has_icon_heading_and_explanation_after_reset(self):
         d=self.dialog
         d.show();d.show_result()

@@ -502,9 +502,15 @@ class CreateImageDialog(QDialog):
         self.updates_panel.show_feedback('Model operation: ' + message)
 
     def on_live_model_finished(self):
+        worker = self.live_update_worker
+        # Qt may emit finished() before its native thread cleanup has fully
+        # returned. Do not drop the last Python reference to a QThread while
+        # Windows is still tearing down the underlying thread.
+        if worker is not None and not worker.wait(100):
+            QTimer.singleShot(50, self.on_live_model_finished)
+            return
         self.check_updates_button.setEnabled(True)
         self.updates_panel.set_busy(False)
-        # Keep the QThread referenced until the finished signal, never while running.
         self.live_update_worker = None
         if self._rescan_after_update:
             self._rescan_after_update = False
@@ -596,7 +602,8 @@ class CreateImageDialog(QDialog):
             return
         # Escape invokes QDialog.reject() without going through closeEvent.
         # Apply the same worker-lifetime safeguard to keyboard dismissal.
-        if self.live_update_worker is not None and self.live_update_worker.isRunning():
+        if (self.live_update_worker is not None and
+                (self.live_update_worker.isRunning() or not self.live_update_worker.wait(0))):
             self.cancel_live_model_update()
             self.status.setText('Stopping the model operation. Close again when it has finished.')
             return
@@ -1114,7 +1121,8 @@ class CreateImageDialog(QDialog):
     def closeEvent(self, event):
         # Do not close a dialog while a QThread is still reading model weights
         # or staging a download. Let the user cancel, then close when finished.
-        if self.live_update_worker is not None and self.live_update_worker.isRunning():
+        if (self.live_update_worker is not None and
+                (self.live_update_worker.isRunning() or not self.live_update_worker.wait(0))):
             self.cancel_live_model_update()
             event.ignore()
             return
