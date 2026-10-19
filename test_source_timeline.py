@@ -121,6 +121,16 @@ class DrawingSourceTests(WorkflowFixture):
         self.assertTrue(self.w.replace_drawing_source(None,reconstruct=True))
         self.assertEqual(self.w.image_result.image,before)
         self.assertTrue(self.w.is_image_artwork())
+    def test_svg_raster_drawing_guide_is_independent_of_later_paint_replacement(self):
+        original,guide=pair(self.tmp.name)
+        self.w.request_artwork(str(self.svg),kind='svg',placement='add')
+        self.w.replace_drawing_source(str(guide));self.wait_import()
+        saved_guide=self.w.drawing.artwork_assets.get('guide')
+        self.assertIsNotNone(saved_guide)
+        self.w.replace_paint_source(str(original))
+        self.assertEqual(self.w.drawing.artwork_assets['guide'],saved_guide)
+        self.assertTrue(self.w.replace_drawing_source(None,reconstruct=True));self.wait_import()
+        self.assertEqual(self.w.drawing.artwork_assets['guide'],saved_guide)
     def test_invalid_drawing_and_cancel_keep_source(self):
         self.setup_image();before=self.w.project_state()
         self.assertFalse(self.w.replace_drawing_source(None))
