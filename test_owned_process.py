@@ -152,6 +152,10 @@ class ProcessFixture:
         return self.probes
 
     def close(self):
+        # Windows can report zero active job members just before their process
+        # handles become signalled. Give completed shutdown a bounded settle
+        # interval before attempting emergency fixture cleanup.
+        until(lambda: all(not probe.alive() for probe in self.probes), 1)
         for probe in self.probes:
             # Test emergency cleanup is deliberately scoped to exact fixture PIDs.
             if probe.alive():

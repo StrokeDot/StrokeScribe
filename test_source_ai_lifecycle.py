@@ -220,9 +220,41 @@ class AILifecycleTests(unittest.TestCase):
         self.assertIsNot(self.engine._reader, reader)
 
     def test_cancelled_start_releases_owned_descendants(self):
-        with self.assertRaises(ai_engine.Cancelled):
-            self.engine.start(timeout=10, cancelled=lambda: True)
+        captured = {}
+        def cancelled():
+            if not (self.fixture.root / "grandchild.ready").exists():
+                return False
+            captured["workers"] = self.fixture.workers()
+            captured["reader"] = self.engine._reader
+            captured["proc"] = self.engine.proc
+            return True
+        # Only readiness is held back; real processes, readers and cancellation
+        # execute through the production Engine lifecycle.
+        with patch.object(self.engine, "_get", side_effect=ConnectionRefusedError("not ready")):
+            with self.assertRaises(ai_engine.Cancelled):
+                self.engine.start(timeout=10, cancelled=cancelled)
+        self.assertTrue(captured["workers"], "Cancellation must happen after descendants start")
         self.assertFalse(self.engine.running())
+        self.assertTrue(until(lambda: all(not p.alive() for p in captured["workers"]), 5))
+        self.assertFalse(captured["reader"].is_alive())
+        self.assertTrue(captured["proc"].stdout.closed)
+
+    def test_startup_timeout_releases_owned_processes_and_reader(self):
+        captured = {}
+        def observe():
+            if not captured and (self.fixture.root / "grandchild.ready").exists():
+                captured["workers"] = self.fixture.workers()
+                captured["reader"] = self.engine._reader
+                captured["proc"] = self.engine.proc
+            return False
+        with patch.object(self.engine, "_get", side_effect=ConnectionRefusedError("not ready")):
+            with self.assertRaisesRegex(RuntimeError, "did not start in time"):
+                self.engine.start(timeout=2, cancelled=observe)
+        self.assertTrue(captured["workers"], "Readiness timeout must exercise an actual launch")
+        self.assertFalse(self.engine.running())
+        self.assertTrue(until(lambda: all(not p.alive() for p in captured["workers"]), 5))
+        self.assertFalse(captured["reader"].is_alive())
+        self.assertTrue(captured["proc"].stdout.closed)
 
 
 if __name__ == "__main__":
