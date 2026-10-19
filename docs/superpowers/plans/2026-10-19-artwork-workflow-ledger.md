@@ -20,3 +20,6 @@
 
 - Task 3 RED: Linux job118005526404 reproduced lost AI kind/original, missing Library pairing, missing project metadata, absent Drawing only and unrecorded portrait-guide framing. The additional compatibility test correctly rejected16–24 MP input under the temporary16 MP cap.
 - Ruling: ask destructive-placement confirmation before preparation, and re-confirm only if edits occur during preparation. This preserves the existing cancellation-before-builder contract while preventing stale save decisions from discarding later edits.
+
+- Task 3 GREEN: run39236419454 Windows118006469738/Linux118006469358: all35 focused tests passed. Pairing survives Library migration and external removal; the Add-AI result kind/original, old projects, Drawing only/Paint Only, portrait guide framing and24 MP compatibility are covered.
+- Task 4 start: reproduce native filled SVG loss, coordinate frames, resource/size limits, cache bounds; additionally cover existing same-page placement semantics before integrating.

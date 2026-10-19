@@ -62,6 +62,14 @@ class PlacementTests(WorkflowFixture):
         self.assertEqual(len(self.w.scenes),2)
         self.assertEqual(self.w.scenes[0]['state'],before)
         self.assertEqual(self.w.project_path,'existing.strokescribe')
+    def test_same_page_add_preserves_join_direction_and_planned_position(self):
+        self.api()
+        with patch.object(self.w,'free_spot',return_value=(45.,-20.,0.)):
+            self.assertTrue(self.w.request_artwork(str(self.svg),kind='svg',placement='add',same_spot=True))
+        self.assertEqual(self.w.scenes[0]['transition'],'Same page')
+        self.assertEqual(self.w.artwork_size.value(),45.)
+        self.assertEqual(self.w.picture_x.value(),-20.)
+
     def test_invalid_import_never_adds_a_scene_shell(self):
         self.api()
         self.svg.write_text('broken SVG')
