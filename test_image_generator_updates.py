@@ -73,9 +73,17 @@ class DrawerTests(unittest.TestCase):
         self.wait_scan()
         self.assertTrue(drawer.isVisible())
         self.assertEqual(self.scan_mock.call_count, 2)
+        # Qt's animation clock can lag behind wall time on a saturated CI
+        # Windows runner. First complete opening deterministically, then
+        # verify that the Close button starts the closing transition.
+        self.dialog.drawer_motion.setCurrentTime(self.dialog.drawer_motion.duration())
+        self.assertEqual(drawer.width(), 400)
         drawer.close_button.click()
-        QTest.qWait(300)
+        self.assertFalse(self.dialog._drawer_open)
+        self.assertTrue(drawer.isVisible(), 'The drawer should animate out before hiding')
+        self.dialog.drawer_motion.setCurrentTime(self.dialog.drawer_motion.duration())
         self.assertFalse(drawer.isVisible())
+        self.assertFalse(self.dialog.check_updates_button.isChecked())
 
     def test_one_card_per_real_model_no_demo_duplicates(self):
         drawer = self.show_drawer()
