@@ -117,4 +117,19 @@ class UpdateBeforeSaveTests(unittest.TestCase):
             self.assertFalse(w.has_unsaved_changes())
         finally:fixture.tearDown()
 
+    def test_banner_cancel_does_not_start_update_or_discard_dirty_project(self):
+        from test_project_lifecycle import WindowLifecycleTests
+        fixture=WindowLifecycleTests();fixture.setUp()
+        w=fixture.w
+        try:
+            w.duration.setValue(w.duration.value()+.5)
+            w.update_found('0.5.3-experimental.999')
+            with patch.object(QMessageBox,'exec',return_value=int(QMessageBox.StandardButton.Cancel)),\
+                 patch('update_dialog.UpdateWorker') as worker:
+                w.banner_update_clicked()
+                worker.assert_not_called()
+            self.assertTrue(w.has_unsaved_changes())
+            self.assertTrue(w.isVisible())
+        finally:fixture.tearDown()
+
 if __name__=='__main__':unittest.main(verbosity=2)

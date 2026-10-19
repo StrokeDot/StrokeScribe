@@ -900,6 +900,7 @@ class CreateImageDialog(QDialog):
 
     def on_result(self, path):
         self.work_timer.stop()
+        self.progress_motion.stop()
         task, self.running_task = self.running_task or self.task, None
         if task != self.task:
             # Made for another tab: it waits there (nothing is lost by switching tabs).

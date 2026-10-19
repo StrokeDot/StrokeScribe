@@ -71,6 +71,36 @@ with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,{'STROKESCRIBE_
     dialog.manage_models_button.click();app.processEvents()
     dialog.model_manager.grab().save(str(out/'manage-ai-models.png'))
     dialog.model_manager.close()
+    # Demonstrate transitions and waiting motion only: no model inference.
+    from io import BytesIO
+    from PIL import Image
+    from PySide6.QtCore import QBuffer,QIODevice
+    def frame(widget):
+        buffer=QBuffer();buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        widget.grab().scaledToWidth(min(1000,widget.width())).save(buffer,'PNG')
+        return Image.open(BytesIO(bytes(buffer.data()))).convert('RGB')
+    dialog.close_updates();QTest.qWait(320)
+    dialog.resize(1200,900);app.processEvents()
+    frames=[frame(dialog)]
+    with patch('model_updates_live.inspect_models',return_value=examples):
+        dialog.open_updates()
+        for _ in range(18):
+            QTest.qWait(20);frames.append(frame(dialog))
+        dialog.close_updates()
+        for _ in range(18):
+            QTest.qWait(20);frames.append(frame(dialog))
+    frames[0].save(out/'panel-transition.gif',save_all=True,
+                   append_images=frames[1:],duration=30,loop=0)
+    import time
+    dialog.running_task=dialog.task
+    dialog.work=dict(percent=35,text='Creating… 35%',started=time.monotonic())
+    dialog.work_timer.start()
+    frames=[]
+    for _ in range(30):
+        QTest.qWait(16);frames.append(frame(dialog.preview))
+    frames[0].save(out/'generation-waiting-motion.gif',save_all=True,
+                   append_images=frames[1:],duration=20,loop=0)
+    dialog.work_timer.stop();dialog.running_task=None
     dialog.close()
 # Small preview via CI logs for remote visual inspection.
 import base64
