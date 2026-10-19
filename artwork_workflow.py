@@ -52,7 +52,7 @@ class ArtworkWorkflow:
         self.sync_workspace();self.fill_scenes();self.refresh()
         self.status.setText('New Project. Import artwork to add the first element.')
 
-    def request_artwork(self,path,kind='image',original=None,placement=None,name=None,same_spot=False,assets=None):
+    def request_artwork(self,path,kind='image',original=None,placement=None,name=None,same_spot=False,assets=None,whole_preview=False):
         if self._artwork_busy():
             QMessageBox.information(self,'Import artwork','Wait for the current import/export to finish.')
             return False
@@ -68,7 +68,7 @@ class ArtworkWorkflow:
         before_prepare=self.project_changes.revision
         ctx=dict(placement=placement,generation=getattr(self,'_artwork_generation',0),
                  target=self.scenes[self.scene_index],name=name or Path(original or path).stem,
-                 same_spot=same_spot,cancelled=False,committed=False,path=path,confirmed_revision=before_prepare)
+                 same_spot=same_spot,whole_preview=whole_preview,cancelled=False,committed=False,path=path,confirmed_revision=before_prepare)
         try:
             if kind=='svg' or path.lower().endswith('.svg'):
                 from engine import import_svg
@@ -178,6 +178,8 @@ class ArtworkWorkflow:
             self.scenes[self.scene_index]['thumb']=None
             self.set_drawing(drawing)
             self.position=0;self.slider.setValue(0)
+            if ctx.get('whole_preview') and len(self.scenes)>1 and self.preview_scope.currentIndex()==0:
+                self.preview_scope.setCurrentIndex(1)
             self.project_changes.mark_changed()
             ctx['committed']=True
             try:

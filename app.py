@@ -1699,7 +1699,7 @@ class Window(ArtworkWorkflow,QMainWindow):
                                 'Pictures and SVG (*.svg *.png *.jpg *.jpeg *.webp *.bmp)')
             if not path: return False
             return self.request_artwork(path,kind='svg' if str(path).lower().endswith('.svg') else 'image',
-                                        placement='add',same_spot=same_spot)
+                                        placement='add',same_spot=same_spot,whole_preview=True)
         if how=='library':
             if item is None:
                 from library_dialog import LibraryDialog
@@ -2288,7 +2288,7 @@ class Window(ArtworkWorkflow,QMainWindow):
                                 +' sound in use (saved in the Library → Audio). Press Play to hear it.')
             return
         return self.request_artwork(path,kind=kind,original=original,
-                                    placement='add' if as_element else placement,same_spot=same_spot)
+                                    placement='add' if as_element else placement,same_spot=same_spot,whole_preview=as_element)
 
     def use_own_line_drawing(self):
         """Trace a line drawing you already have (black lines on white) over the image."""
@@ -2677,7 +2677,7 @@ class Window(ArtworkWorkflow,QMainWindow):
             return False
         return self.request_artwork(path,kind='svg' if path.lower().endswith('.svg') else 'image',
                                     placement='add' if as_element else placement,name=item.name,
-                                    same_spot=same_spot,assets=assets)
+                                    same_spot=same_spot,assets=assets,whole_preview=as_element)
 
     def use_builtin_tool(self,name):
         """Built-in hand, pencil or marker, with its tip and a fitting size."""

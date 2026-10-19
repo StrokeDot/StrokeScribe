@@ -122,11 +122,13 @@ class StudioTests(unittest.TestCase):
         w.webm.setChecked(True)
         w.keep_png.setChecked(False)
         self.assertTrue(w.webm.isChecked())
+        actual=w.drawing
         w.source_type.setCurrentIndex(1)
         APP.processEvents()
+        self.assertIs(w.drawing,actual)
         self.assertEqual(w.import_button.text(),'Import image…')
         self.assertTrue(w.image_controls.isVisible())
-        self.assertFalse(w.export.isEnabled())
+        self.assertTrue(w.export.isEnabled())  # the current SVG is still available
         w.source_type.setCurrentIndex(0)
         APP.processEvents()
         self.assertEqual(w.import_button.text(),'Import SVG…')
@@ -150,12 +152,13 @@ class StudioTests(unittest.TestCase):
         self.assertIn('60 fps',w.output_summary.text())
         w.inspector_tabs.setCurrentIndex(0)
         w.source_type.setCurrentIndex(1)
-        self.assertFalse(w.load_color_button.isEnabled())
-        # Images choose Adaptive or Zigzag; plain Brush painting is SVG-only.
+        # The import selector does not turn the existing SVG into an image.
+        self.assertFalse(w.is_image_artwork())
+        self.assertTrue(w.load_color_button.isEnabled())
         self.assertTrue(w.reveal_mode.isVisible())
-        self.assertFalse(w.reveal_mode.model().item(0).isEnabled())
+        self.assertTrue(w.reveal_mode.model().item(0).isEnabled())
         self.assertTrue(w.reveal_mode.model().item(2).isEnabled())
-        self.assertTrue(w.image_duration.isVisible())
+        self.assertFalse(w.image_duration.isVisible())
         w.source_type.setCurrentIndex(0)
         self.assertTrue(w.reveal_mode.isVisible())
         self.assertTrue(w.reveal_mode.model().item(0).isEnabled())

@@ -104,10 +104,10 @@ class ImageSourceTests(unittest.TestCase):
         self.assertFalse(errors)
         self.assertEqual(len(ready),1)
         self.assertTrue(plan_for(ready[0].drawing,ready[0].image).segments)
-    def test_ui_source_switch_preserves_svg(self):
+    def test_import_selector_preserves_actual_artwork_and_image_modes(self):
         from app import Window
-        w=Window(); old=w.drawing
-        w.source_type.setCurrentIndex(1); self.assertIsNone(w.drawing)
+        w=Window(); self.addCleanup(w.close); old=w.drawing
+        w.source_type.setCurrentIndex(1); self.assertIs(w.drawing,old)
         w.image_ready(self.result())
         self.assertEqual(w.options()['reveal_mode'],'adaptive')
         w.reveal_mode.setCurrentIndex(w.reveal_mode.findText('Zigzag sweep'))
@@ -115,7 +115,10 @@ class ImageSourceTests(unittest.TestCase):
         w.reveal_mode.setCurrentIndex(w.reveal_mode.findText('Adaptive Hand Painting'))
         self.assertIsNotNone(w.options()['final_image'])
         w.preserve_colors.setChecked(False); self.assertIsNone(w.options()['final_image'])
-        w.source_type.setCurrentIndex(0); self.assertIs(w.drawing,old)
+        actual=w.drawing
+        w.source_type.setCurrentIndex(0); self.assertIs(w.drawing,actual)
+        self.assertTrue(w.is_image_artwork())
+        self.assertIsNone(w.options()['final_image'])
         self.assertEqual(w.options()['reveal_mode'],'adaptive')
         w.close()
 
