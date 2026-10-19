@@ -1108,6 +1108,14 @@ class CreateImageDialog(QDialog):
             self.cancel_live_model_update()
             event.ignore()
             return
+        if self.worker is not None and self.worker.isRunning():
+            # AI generation, downloads and engine installation may take longer
+            # than a few seconds to acknowledge cancellation. Never destroy
+            # the dialog while its QThread is still working.
+            self.worker.cancel()
+            self.status.setText('Stopping the AI operation. Close again when it has finished.')
+            event.ignore()
+            return
         # QDialog.closeEvent calls reject(). Title-bar Close must dismiss the
         # whole window; only Escape should first dismiss the updates drawer.
         self.drawer_motion.stop()
@@ -1119,14 +1127,6 @@ class CreateImageDialog(QDialog):
         self.work_timer.stop(); self.reveal_timer.stop(); self.progress_motion.stop()
         if self.player is not None:
             self.player.stop()
-        if self.live_update_worker is not None and self.live_update_worker.isRunning():
-            self.live_update_worker.cancel()
-            self.updates_panel.show_feedback('Stopping model operation. Close again when finished.')
-            event.ignore()
-            return
-        if self.worker and self.worker.isRunning():
-            self.worker.cancel()
-            self.worker.wait(3000)
         super().closeEvent(event)
 
 

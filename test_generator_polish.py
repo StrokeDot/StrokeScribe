@@ -4,7 +4,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from PySide6.QtCore import Qt, QEvent, QAbstractAnimation
 from PySide6.QtGui import QPixmap, QColor
@@ -61,6 +61,26 @@ class SmoothGeneratorTests(unittest.TestCase):
         d.drawer_motion.setCurrentTime(d.drawer_motion.duration())
         self.assertFalse(d.updates_panel.isVisible())
         self.assertFalse(d.check_updates_button.isChecked())
+
+    def test_close_waits_for_slow_ai_worker_cancellation(self):
+        # A slow inference/download thread must outlive neither its dialog nor
+        # its Qt children. Do not block the UI with a three-second wait.
+        d = self.dialog
+        d.show()
+        APP.processEvents()
+        worker = MagicMock()
+        worker.isRunning.return_value = True
+        d.worker = worker
+        d.close()
+        APP.processEvents()
+        worker.cancel.assert_called_once()
+        worker.wait.assert_not_called()
+        self.assertTrue(d.isVisible(), 'Closing must be rejected while AI still runs')
+        self.assertIn('Stopping', d.status.text())
+        worker.isRunning.return_value = False
+        d.close()
+        APP.processEvents()
+        self.assertFalse(d.isVisible(), 'Closing should work after cancellation finishes')
 
     def test_placeholder_has_icon_heading_and_explanation_after_reset(self):
         d=self.dialog
