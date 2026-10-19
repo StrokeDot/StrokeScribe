@@ -2471,6 +2471,12 @@ class Window(ArtworkWorkflow,QMainWindow):
                                        int(self.font_size.value()))
             drawing.source_kind=getattr(drawing,'source_kind','lettering')
             self.apply_letter_style(drawing)
+            # A new text source owns its font appearance; retain the preceding
+            # element's image only in its saved scene, never as this text's paint.
+            self.image_result=None;self.image_path=None;self.image_guide=None;self.svg_state=None
+            self.final_image=None;self.color_original=None;self.color_path=None
+            self.use_color.blockSignals(True);self.use_color.setChecked(False);self.use_color.blockSignals(False)
+            self.color_note.setText('Lettering • no image painting')
             self.source_type.setCurrentIndex(0)
             self.update_project_title('Lettering — '+self.text.toPlainText()[:16].replace('\n',' '))
             self.set_drawing(drawing)

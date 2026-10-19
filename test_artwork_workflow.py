@@ -101,8 +101,10 @@ class PlacementTests(WorkflowFixture):
         p=Path(self.tmp.name)/'raster.png';Image.new('RGBA',(80,60),(40,100,200,255)).save(p)
         old=self.w.drawing
         self.w.image_detail.setCurrentText('Low')
-        self.assertTrue(self.w.request_artwork(str(p),placement='add'))
+        scope=self.w.preview_scope.currentIndex()
+        self.assertTrue(self.w.request_artwork(str(p),placement='add',whole_preview=True))
         self.w.cancel_artwork_import();self.wait_import()
         self.assertIs(self.w.drawing,old);self.assertEqual(len(self.w.scenes),1)
+        self.assertEqual(self.w.preview_scope.currentIndex(),scope)
 
 if __name__=='__main__':unittest.main()

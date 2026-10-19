@@ -77,8 +77,9 @@ class PairingTests(WorkflowFixture):
     def test_saved_pair_is_self_contained_and_old_project_still_loads(self):
         self.api();original,guide=pair(self.tmp.name)
         self.w.image_detail.setCurrentText('Low')
-        self.w.request_artwork(str(guide),kind='lineart',original=str(original),placement='add')
+        self.w.use_ai_result('lineart',str(guide),str(original),as_element=True)
         self.wait_import()
+        self.assertEqual(self.w.preview_scope.currentIndex(),1)
         data=self.w.project_state()
         self.assertIn('artwork',data,'Saved project must include its original and guide, not only paths')
         original.unlink();guide.unlink()
