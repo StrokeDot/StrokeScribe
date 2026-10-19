@@ -64,6 +64,7 @@ class PairingTests(WorkflowFixture):
         self.w.image_animation.setCurrentIndex(index)
         self.assertIsNone(self.w.options()['final_image'])
         self.assertGreater(self.w.options()['duration'],0)
+        self.assertAlmostEqual(self.w.element_times(self.w.scene_index)[0],self.w.options()['duration']+self.w.options().get('pause',0))
         self.w.image_animation.setCurrentText('Paint Only')
         self.assertIsNotNone(self.w.options()['final_image'])
         self.assertEqual(self.w.options()['duration'],0)

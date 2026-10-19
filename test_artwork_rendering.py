@@ -39,7 +39,7 @@ class RenderWorkflowTests(WorkflowFixture):
                 elif route=='ai-lineart':
                     self.w.use_ai_result('lineart',str(guide),str(original),placement='add')
                 else:
-                    self.w.use_library_item(item,placement='add')
+                    self.w.use_library_item('images',item,placement='add')
                 self.wait_import()
                 d=self.w.drawing;o=render_options(self.w)
                 self.assertIsNotNone(o['final_image'])
