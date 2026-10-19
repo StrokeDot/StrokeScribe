@@ -373,7 +373,9 @@ class ImageBuilder(QThread):
             self.failed_message=str(exc)
             self.failed.emit(self.failed_message)
 
-class Window(QMainWindow):
+from artwork_workflow import ArtworkWorkflow
+
+class Window(ArtworkWorkflow,QMainWindow):
     def __init__(self):
         super().__init__()
         import os
@@ -650,13 +652,7 @@ class Window(QMainWindow):
         self.inspector_tabs.setCurrentIndex(TABS['export'])
         self.export.setFocus()
 
-    def open_svg_source(self):
-        self.source_type.setCurrentIndex(0)
-        self.load()
 
-    def open_image_source(self):
-        self.source_type.setCurrentIndex(1)
-        self.load()
 
     def show_quick_help(self):
         QMessageBox.information(self,'StrokeScribe Studio — Quick help',
@@ -1110,7 +1106,7 @@ class Window(QMainWindow):
         self.change_lines(strokes,keep=keep,status='New drawing order.')
 
     def sync_workspace(self,*args):
-        image_source=bool(self.source_type.currentIndex())
+        image_source=self.is_image_artwork()
         self.load_color_button.setEnabled(not image_source)
         self.use_color.setEnabled(not image_source and self.final_image is not None)
         # Image sources paint by brush plan only (Adaptive or Zigzag).
@@ -1131,8 +1127,8 @@ class Window(QMainWindow):
         self.output_summary.setText(f'{self.res.currentText()}  •  {self.fps.value()} fps')
         busy=bool((self.worker and self.worker.isRunning()) or (self.builder and self.builder.isRunning())
                   or getattr(self,'busy',False))
-        self.export.setEnabled(self.drawing is not None and not busy)
-        self.quick_export.setEnabled(self.drawing is not None and not busy)
+        self.export.setEnabled(bool(self.drawing) and not busy)
+        self.quick_export.setEnabled(bool(self.drawing) and not busy)
         self.webm_quality.setEnabled(self.webm.isChecked())
         self.keep_png.setEnabled(self.webm.isChecked() or self.mov.isChecked() or self.mp4.isChecked())
         self.mp4_background.setEnabled(self.mp4.isChecked())
@@ -1173,6 +1169,12 @@ class Window(QMainWindow):
             self.scenes[self.scene_index]['thumb']=None      # new artwork: new thumbnail
             if hasattr(self,'scene_list'): QTimer.singleShot(0,self.fill_scenes)
     def change_source(self,index):
+        # This chooses an intake type, never replaces the current element.
+        self.image_controls.setVisible(bool(index))
+        self.import_button.setText('Import image…' if index else 'Import SVG…')
+        self.refresh()
+
+    def _legacy_change_source(self,index):
         self.playing=False
         if index:
             self.svg_state=(self.drawing,self.final_image,self.use_color.isChecked())
@@ -1209,7 +1211,7 @@ class Window(QMainWindow):
         """Everything needed to reopen the scene being edited."""
         from projects import drawing_to_dict, qimage_to_b64, widget_value
         from tools_kit import hand_to_project
-        image_source=bool(self.source_type.currentIndex())
+        image_source=self.is_image_artwork()
         state={'title':self.project_title,'source':'image' if image_source else 'svg',
                'drawing':drawing_to_dict(self.drawing),
                'settings':self.settings_state(),
@@ -1555,6 +1557,9 @@ class Window(QMainWindow):
         from PySide6.QtGui import QIcon, QPixmap
         self.scene_list.blockSignals(True)
         self.scene_list.clear()
+        if not self.drawing:
+            self.scene_list.blockSignals(False)
+            return
         for k,scene in enumerate(self.scenes):
             if k==self.scene_index and self.drawing is not None and scene.get('thumb') is None:
                 self.store_scene()
@@ -1737,22 +1742,6 @@ class Window(QMainWindow):
         self.store_scene(); self.fill_scenes()
         return True
 
-    def import_artwork(self,path):
-        """An SVG or a picture file as the artwork of the element being edited."""
-        path=str(path)
-        if path.lower().endswith('.svg'):
-            self.source_type.setCurrentIndex(0)
-            path=self.keep_in_library('images',path)
-            try:
-                drawing=import_svg(path)
-            except Exception as exc:
-                QMessageBox.warning(self,'Cannot import',str(exc)); return False
-            self.update_project_title(Path(path).name)
-            self.set_drawing(drawing)
-        else:
-            self.source_type.setCurrentIndex(1)
-            self.build_image(self.keep_in_library('images',path))
-        return True
 
     def page_members(self,k=None):
         """The elements drawn on the same page as element k (joined by 'Same page')."""
@@ -2286,7 +2275,7 @@ class Window(QMainWindow):
         import ai_engine
         if self.ai_engine is None:
             self.ai_engine=ai_engine.Engine()
-        current=self.image_path if self.source_type.currentIndex() else None
+        current=self.image_path if self.is_image_artwork() else None
         dialog=CreateImageDialog(self,current,self.use_ai_result,self.ai_engine,task=task)
         dialog.exec()
 
@@ -2343,19 +2332,21 @@ class Window(QMainWindow):
         elif self.analysis_stage:
             self.status.setText(self.analysis_stage)
 
-    def build_image(self,path,line_guide=None):
+    def build_image(self,path,line_guide=None,intake=None):
         if self.builder and self.builder.isRunning(): return
         self.playing=False
-        if path!=self.image_path or line_guide is not None:
-            self.image_guide=line_guide
-        self.image_path=path
+        if intake is None:
+            if path!=self.image_path or line_guide is not None:
+                self.image_guide=line_guide
+            self.image_path=path
         self.builder=ImageBuilder(path,self.image_detail.currentText().lower(),
                                   self.brush_width.value(),self.stroke_spacing.value(),
                                   clean_faint=self.clean_faint.isChecked(),
                                   style=('clean','detailed')[self.image_style.currentIndex()],
                                   animation=('artist','standard')[self.image_animation_style.currentIndex()],
                                   paint_method=self.image_paint_method(),
-                                  line_guide=self.image_guide)
+                                  line_guide=line_guide if intake is not None else self.image_guide)
+        self.builder._artwork_request=intake
         self.builder.ready.connect(self.image_ready)
         self.builder.failed.connect(self.image_failed)
         self.builder.stage.connect(self.image_stage)
@@ -2394,16 +2385,24 @@ class Window(QMainWindow):
         self.status.setWordWrap(True)
         return svg,png
     def image_failed(self,error):
+        if (getattr(self.builder,'_artwork_request',None) or {}).get('cancelled'):
+            return
         self.status.setText('Image analysis failed: '+str(error)[:140])
         QMessageBox.warning(self,'Image reconstruction',error)
 
     def image_ready(self,result):
+        ctx=getattr(self.builder,'_artwork_request',None)
+        if ctx is not None:
+            self._accept_artwork_result(result,ctx)
+            return
         self.image_result=result
         self.update_project_title(result.filename)
         self.set_drawing(result.drawing)
         self.color_note.setText(result.filename+' • original colors; adaptive brush reveal')
 
     def image_finished(self):
+        ctx=getattr(self.builder,'_artwork_request',None)
+        self._pending_artwork=None
         self.analysis_timer.stop()
         self.clear_busy()
         self.source_type.setEnabled(True)
@@ -2423,6 +2422,8 @@ class Window(QMainWindow):
             self.progress.setValue(0)
             message=self.builder.failed_message if self.builder else 'Unknown problem'
             self.status.setText('Image analysis failed: '+str(message)[:140])
+        if ctx is not None and not ctx.get('committed'):
+            self.status.setText('Import cancelled or not applied; existing artwork kept.')
         self.analysis_stage=''
     def keep_in_library(self,category,path):
         """Copy an imported file into the library (if enabled) and return the path to use."""
@@ -2436,26 +2437,7 @@ class Window(QMainWindow):
             self.status.setText('Could not keep a library copy: '+str(exc)[:150])
             return path
 
-    def load(self):
-        if self.source_type.currentIndex():
-            name,_=QFileDialog.getOpenFileName(self,'Import image','','Images (*.png *.jpg *.jpeg *.webp *.bmp)')
-            if name and self.confirm_leave_project('replace this artwork'):
-                self.build_image(self.keep_in_library('images',name))
-            return
-        name,_=QFileDialog.getOpenFileName(self,'Import SVG','','SVG (*.svg)')
-        if name:
-            name=self.keep_in_library('images',name)
-            try:
-                self.show_busy_now('Loading drawing',Path(name).name)
-                try:
-                    drawing=import_svg(name)
-                finally:
-                    self.clear_busy()
-                if not self.confirm_leave_project('replace this artwork'):
-                    return
-                self.update_project_title(Path(name).name)
-                self.set_drawing(drawing)
-            except Exception as e: QMessageBox.warning(self,'Cannot import',str(e))
+
     def letter(self):
         try:
             label=self.font_select.currentText().strip()
@@ -2925,7 +2907,7 @@ class Window(QMainWindow):
     def timing_parts(self):
         """Current stage times (seconds actually played) of the stages that are on."""
         options=self.options()
-        image=bool(self.source_type.currentIndex())
+        image=self.is_image_artwork()
         paint_only=image and self.image_animation.currentIndex()==1
         painting=options['final_image'] is not None
         return dict(draw=0. if paint_only else options['duration'],
@@ -2934,7 +2916,7 @@ class Window(QMainWindow):
                     erase=options['erase']['seconds'] if options.get('erase') else 0.)
 
     def apply_timing(self,times):
-        image=bool(self.source_type.currentIndex())
+        image=self.is_image_artwork()
         widgets=[(self.duration,times['draw']*self.speed.value()),
                  (self.image_duration if image else self.color_fade,times['paint']),
                  (self.color_hold,times['hold']),(self.erase_time,times['erase'])]
@@ -2948,7 +2930,7 @@ class Window(QMainWindow):
         if not self.drawing: return
         import auto_timing
         current=self.timing_parts()
-        image=bool(self.source_type.currentIndex())
+        image=self.is_image_artwork()
         times=auto_timing.suggest(self.drawing,paint=current['paint']>0,erase=current['erase']>0,
                                   image=image,paint_only=image and self.image_animation.currentIndex()==1)
         note='Auto timing: '
@@ -2986,7 +2968,7 @@ class Window(QMainWindow):
 
     def options(self):
         from export_job import options_from_settings
-        image_source=bool(self.source_type.currentIndex())
+        image_source=self.is_image_artwork()
         options=options_from_settings(
             self.settings_state(),self.drawing,
             color_image=None if image_source else self.final_image,hand=self.hand,

@@ -37,6 +37,9 @@ class Drawing:
     bounds: tuple[float, float, float, float]
     warnings: list[str]
 
+    def __bool__(self):
+        return bool(self.strokes)
+
 def _sample_svg_segment(seg, *, tolerance=0.35, max_chord=10.0, budget=500_000):
     """Adaptively flatten curves instead of sampling every 0.4 SVG units.
 

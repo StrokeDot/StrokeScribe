@@ -64,6 +64,8 @@ def build_menus(w):
 
     # ---------------------------------------------------------------- File
     file = bar.addMenu('&File'); w.menus['file'] = file
+    action=file.addAction('New Project',w.new_project)
+    action.setShortcut('Ctrl+N')
     file.addAction('Open project…\tCtrl+O', lambda: w.open_project())
     file.addAction('Save project\tCtrl+S', lambda: w.save_project())
     file.addAction('Save project as…', lambda: w.save_project(save_as=True))
