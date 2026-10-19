@@ -101,6 +101,8 @@ def import_svg(filename):
         raw = raw[:allowed.start()] + raw[allowed.end():]
         safe_doctype = True
     root = ET.fromstring(raw)
+    from svg_appearance import validate_source
+    validate_source(root)
     warnings = set()
     for e in root.iter():
         tag = e.tag.split('}')[-1]
@@ -109,11 +111,17 @@ def import_svg(filename):
         if any(k in e.attrib for k in ('clip-path','mask','filter')):
             warnings.add('Clipping, masks and filters are ignored.')
     svg = SVG.parse(io.StringIO(raw) if safe_doctype else filename, reify=True)
+    viewport=(float(svg.width or 1000),float(svg.height or 1000))
+    if not all(math.isfinite(v) and 0<v<=10_000_000 for v in viewport):
+        raise ValueError('SVG dimensions exceed the safe coordinate limit.')
+    has_fill=False
     strokes = []
     total_points = 0
     for el in svg.elements():
         if not isinstance(el, Shape): continue
         if el.values.get('visibility') == 'hidden' or el.values.get('display') == 'none': continue
+        fill=str(el.fill) if el.fill is not None else 'none'
+        has_fill=has_fill or fill.lower() not in ('none','transparent')
         p = SVGPath(el)
         p.reify()
         if not len(p): continue
@@ -150,7 +158,13 @@ def import_svg(filename):
                 bounds=(fx,fy,fx+fw,fy+fh)
         except ValueError:
             pass
-    return Drawing(strokes,bounds,sorted(warnings))
+    if not all(math.isfinite(v) and abs(v)<=10_000_000 for v in bounds):
+        raise ValueError('SVG dimensions exceed the safe coordinate limit.')
+    drawing=Drawing(strokes,bounds,sorted(warnings))
+    drawing.svg_source=raw
+    drawing.svg_viewport=viewport
+    drawing.svg_has_fill=has_fill
+    return drawing
 
 def render(drawing, progress, width=1920, height=1080, thickness=1.0, hand=None, hand_scale=0.18, anchor=(0.1,0.1),image_timing=True):
     if getattr(drawing,'source_kind',None)=='font':

@@ -122,16 +122,28 @@ class ArtworkWorkflow:
         history=copy.deepcopy(self.history)
         old_path=getattr(self,'project_path',None)
         self._preparing=True
+        spot=None
         try:
             if placement=='new':
                 self._reset_artwork_project()
             elif placement=='add' and self.drawing:
+                if ctx.get('same_spot'):
+                    self.store_scene(thumbnail=False)
+                    members=self.page_members()
+                    spot=self.free_spot(self.page_occupancy(members))
+                    if spot is None and members==[self.scene_index] and self.artwork_size.value()>60:
+                        self.artwork_size.setValue(55.);self.picture_x.setValue(-22.);self.picture_y.setValue(0.)
+                        self.store_scene(thumbnail=False)
+                        spot=self.free_spot(self.page_occupancy(members))
                 self._leave_scene()
                 from scenes import DEFAULT_TRANSITION,DEFAULT_TRANSITION_SECONDS
                 scene=dict(state=None,transition=DEFAULT_TRANSITION,
                            transition_seconds=DEFAULT_TRANSITION_SECONDS,name=ctx['name'],thumb=None)
-                if ctx.get('same_spot'):
-                    scene['transition']='Same page'
+                if spot is not None:
+                    current=self.scenes[self.scene_index]
+                    scene['transition']=current['transition']
+                    scene['transition_seconds']=current['transition_seconds']
+                    current['transition']='Same page'
                 self.scene_index+=1;self.scenes.insert(self.scene_index,scene)
             if placement!='replace':
                 self.overlays=[];self.selected_overlay=None
@@ -150,9 +162,17 @@ class ArtworkWorkflow:
                 self.preserve_colors.blockSignals(True);self.preserve_colors.setChecked(True);self.preserve_colors.blockSignals(False)
                 self.color_note.setText(ctx['name']+' • original colors; paired drawing')
             else:
-                self.color_note.setText('No original PNG loaded')
+                if getattr(drawing,'svg_has_fill',False):
+                    from svg_appearance import render_appearance
+                    self.final_image=render_appearance(drawing)
+                    self.color_original=self.final_image
+                    self.use_color.blockSignals(True);self.use_color.setChecked(True);self.use_color.blockSignals(False)
+                    self.color_note.setText('Original SVG appearance • native fills')
+                else:
+                    self.color_note.setText('Outline-only SVG')
             if placement!='replace':
-                for control,value in ((self.picture_x,0.),(self.picture_y,0.),(self.artwork_size,100.)):
+                size,x,y=spot or (100.,0.,0.)
+                for control,value in ((self.picture_x,x),(self.picture_y,y),(self.artwork_size,size)):
                     control.blockSignals(True);control.setValue(value);control.blockSignals(False)
             self.scenes[self.scene_index]['name']=ctx['name']
             self.scenes[self.scene_index]['thumb']=None

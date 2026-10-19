@@ -1497,6 +1497,10 @@ class Window(ArtworkWorkflow,QMainWindow):
                     self.final_image=clean_qimage(self.final_image)
                 except Exception:
                     self.final_image=self.color_original
+            if getattr(drawing,'svg_source',None) and getattr(drawing,'svg_has_fill',False) and not data.get('color_png'):
+                from svg_appearance import render_appearance
+                self.final_image=render_appearance(drawing)
+                self.color_original=self.final_image
             self.use_color.setEnabled(self.final_image is not None)
             if self.final_image is None:
                 self.use_color.blockSignals(True); self.use_color.setChecked(False); self.use_color.blockSignals(False)
@@ -2983,6 +2987,9 @@ class Window(ArtworkWorkflow,QMainWindow):
             color_image=None if image_source else self.final_image,hand=self.hand,
             image_source=self.image_result.image if image_source and self.image_result else None,
             image_mode=image_source)
+        if getattr(self.drawing,'svg_has_fill',False) and self.use_color.isChecked() and not self.color_path:
+            from svg_appearance import render_appearance
+            options['final_image']=render_appearance(self.drawing,max(options['width'],options['height']))
         options['overlays']=list(getattr(self,'overlays',[]))
         return options
 
