@@ -156,6 +156,8 @@ class ProcessFixture:
             if probe.alive():
                 try: os.kill(probe.pid, signal.SIGTERM if os.name == "nt" else signal.SIGKILL)
                 except ProcessLookupError: pass
+        until(lambda: all(not probe.alive() for probe in self.probes), 5)
+        for probe in self.probes:
             probe.close()
         self.tmp.cleanup()
 

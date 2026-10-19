@@ -239,6 +239,7 @@ class CreateImageDialog(QDialog):
         self.image_path = current_image
         self.result_path = None; self.kept_path = None
         self.worker = None
+        self._dialog_exiting = False
 
         # The drawer is a sibling, never an overlay over generation controls.
         outer = QHBoxLayout(self)
@@ -278,6 +279,15 @@ class CreateImageDialog(QDialog):
         self.install_button.clicked.connect(self.install_engine)
         engine_row.addWidget(self.install_button)
         root.addLayout(engine_row)
+        self.release_ai_memory = QCheckBox('Release AI memory when I close Create Image')
+        self.release_ai_memory.setChecked(bool(self.settings['release_ai_memory_on_close']))
+        self.release_ai_memory.setToolTip(
+            'Keep the AI model loaded while this window is open for faster repeat generations. '
+            'When this window closes, stop the background AI engine to release RAM and GPU memory. '
+            'Uncheck to keep the engine ready between sessions.')
+        self.release_ai_memory.toggled.connect(self.set_release_ai_memory)
+        root.addWidget(self.release_ai_memory)
+        self.finished.connect(self.release_ai_memory_on_close)
 
         # Task buttons
         self.tasks_layout = QGridLayout();self.tasks_layout.setSpacing(6)
@@ -477,7 +487,7 @@ class CreateImageDialog(QDialog):
         worker.start()
 
     def check_live_model_updates(self):
-        if self.live_update_worker is not None:
+        if self._dialog_exiting or self.live_update_worker is not None:
             return
         self._run_live_model_worker(
             ModelUpdateWorker('scan', self.paths, hardware=self.hw), 'scan')
@@ -514,7 +524,7 @@ class CreateImageDialog(QDialog):
         self.check_updates_button.setEnabled(True)
         self.updates_panel.set_busy(False)
         self.live_update_worker = None
-        if self._rescan_after_update:
+        if self._rescan_after_update and not self._dialog_exiting:
             self._rescan_after_update = False
             QTimer.singleShot(0, self.check_live_model_updates)
 
@@ -598,22 +608,57 @@ class CreateImageDialog(QDialog):
     def close_updates(self):
         self._animate_drawer(False)
 
+    @staticmethod
+    def _thread_busy(worker):
+        # finished() and isRunning() can precede completion of native thread-local
+        # cleanup. wait(0) checks without blocking the user interface.
+        return worker is not None and (worker.isRunning() or not worker.wait(0))
+
+    def _workers_busy(self, cancel=False):
+        busy = False
+        for worker in (self.worker, self.live_update_worker):
+            if self._thread_busy(worker):
+                busy = True
+                if cancel and worker.isRunning():
+                    worker.cancel()
+        if busy and cancel:
+            self.status.setText('Stopping the AI operation. Close again when it has finished.')
+        return busy
+
+    def accept(self):
+        self.done(QDialog.DialogCode.Accepted)
+
     def reject(self):
-        if hasattr(self,'updates_panel') and self.updates_panel.isVisible():
+        if hasattr(self, 'updates_panel') and self.updates_panel.isVisible():
             self.close_updates()
             return
-        # Escape invokes QDialog.reject() without going through closeEvent.
-        # Apply the same worker-lifetime safeguard to keyboard dismissal.
-        if (self.live_update_worker is not None and
-                (self.live_update_worker.isRunning() or not self.live_update_worker.wait(0))):
-            self.cancel_live_model_update()
-            self.status.setText('Stopping the model operation. Close again when it has finished.')
+        self.done(QDialog.DialogCode.Rejected)
+
+    def done(self, result):
+        # All real dismissal routes share the same native QThread safeguard.
+        if self._workers_busy(cancel=True):
             return
-        if self.worker is not None and self.worker.isRunning():
-            self.worker.cancel()
-            self.status.setText('Stopping the AI operation. Close again when it has finished.')
-            return
-        super().reject()
+        self._dialog_exiting = True
+        self._rescan_after_update = False
+        self._prepare_exit_ui()
+        super().done(result)
+
+    def _prepare_exit_ui(self):
+        self.drawer_motion.stop()
+        self._drawer_open = False
+        self.updates_panel.hide()
+        self.check_updates_button.setChecked(False)
+        if self.model_manager is not None:
+            self.model_manager.close()
+        self.work_timer.stop()
+        self.reveal_timer.stop()
+        self.progress_motion.stop()
+        if self.player is not None:
+            self.player.stop()
+
+    def showEvent(self, event):
+        self._dialog_exiting = False
+        super().showEvent(event)
 
     def update_layout(self):
         if not hasattr(self,'body_layout'):
@@ -766,7 +811,7 @@ class CreateImageDialog(QDialog):
         self.accept_license.blockSignals(False)
         license_ok = not model.needs_acceptance or accepted
         engine_ok = self.paths.engine_installed()
-        busy = self.worker is not None and self.worker.isRunning()
+        busy = self._workers_busy()
         self.engine_label.setText(
             ('AI engine: installed' if engine_ok else
              'AI engine: not installed yet (about 5 GB; needs internet once)')
@@ -813,6 +858,20 @@ class CreateImageDialog(QDialog):
         self.refresh()
 
     # ------------------------------------------------------------ actions
+    def set_release_ai_memory(self, checked):
+        self.settings['release_ai_memory_on_close'] = bool(checked)
+        ai_engine.save_settings(self.settings)
+
+    def release_ai_memory_on_close(self, _result):
+        if not self.release_ai_memory.isChecked() or self._workers_busy():
+            return
+        try:
+            self.engine.stop()
+        except Exception as exc:
+            # Engine retains its exact process ownership on failure; the app can
+            # retry cleanup instead of losing the handle to a still-running tree.
+            self.log_view.appendPlainText(f'Could not release AI memory: {exc}')
+
     def change_folder(self):
         folder = QFileDialog.getExistingDirectory(self, 'Folder for the AI engine and models (needs 20–80 GB)',
                                                   str(self.paths.root.parent))
@@ -833,14 +892,30 @@ class CreateImageDialog(QDialog):
             self.refresh()
 
     def _start(self, worker, on_done):
+        if self._workers_busy():
+            self.status.setText('Please wait for the current AI operation to finish.')
+            return
+        if self.worker is not None:
+            self.on_worker_finished(self.worker)
         self.worker = worker
         worker.progress.connect(self.on_progress)
         worker.log.connect(self.log_view.appendPlainText)
         worker.done.connect(on_done)
         worker.failed.connect(self.on_failed)
-        worker.finished.connect(self.refresh)
+        worker.finished.connect(lambda current=worker: self.on_worker_finished(current))
         worker.start()
         self.refresh()
+
+    def on_worker_finished(self, worker=None):
+        worker = self.worker if worker is None else worker
+        if worker is not self.worker:
+            return
+        if worker is not None and not worker.wait(0):
+            QTimer.singleShot(50, lambda current=worker: self.on_worker_finished(current))
+            return
+        self.worker = None
+        if not self._dialog_exiting:
+            self.refresh()
 
     def install_engine(self):
         if not self.hw.nvidia and self.task != 'sound' and QMessageBox.question(
@@ -1083,6 +1158,8 @@ class CreateImageDialog(QDialog):
             self.status.setText('Cannot play here: ' + str(exc)[:120] + ' — use Save sound… to listen.')
 
     def use(self):
+        if self._workers_busy(cancel=True):
+            return
         if not self.result_path or not self.use_result:
             return
         if self.task == 'sound':
@@ -1124,32 +1201,12 @@ class CreateImageDialog(QDialog):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
 
     def closeEvent(self, event):
-        # Do not close a dialog while a QThread is still reading model weights
-        # or staging a download. Let the user cancel, then close when finished.
-        if (self.live_update_worker is not None and
-                (self.live_update_worker.isRunning() or not self.live_update_worker.wait(0))):
-            self.cancel_live_model_update()
+        if self._workers_busy(cancel=True):
             event.ignore()
             return
-        if self.worker is not None and self.worker.isRunning():
-            # AI generation, downloads and engine installation may take longer
-            # than a few seconds to acknowledge cancellation. Never destroy
-            # the dialog while its QThread is still working.
-            self.worker.cancel()
-            self.status.setText('Stopping the AI operation. Close again when it has finished.')
-            event.ignore()
-            return
-        # QDialog.closeEvent calls reject(). Title-bar Close must dismiss the
-        # whole window; only Escape should first dismiss the updates drawer.
-        self.drawer_motion.stop()
-        self._drawer_open=False
-        self.updates_panel.hide()
-        self.check_updates_button.setChecked(False)
-        if self.model_manager is not None:
-            self.model_manager.close()
-        self.work_timer.stop(); self.reveal_timer.stop(); self.progress_motion.stop()
-        if self.player is not None:
-            self.player.stop()
+        # QDialog.closeEvent calls reject(). Title-bar Close dismisses the full
+        # window; Escape alone first closes the updates drawer.
+        self._prepare_exit_ui()
         super().closeEvent(event)
 
 

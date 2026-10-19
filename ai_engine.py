@@ -62,6 +62,7 @@ def load_settings():
     data.setdefault('root', str(default_root()))
     data.setdefault('accepted_licenses', [])
     data.setdefault('variant_override', {})
+    data.setdefault('release_ai_memory_on_close', True)
     return data
 
 
@@ -651,6 +652,10 @@ class Engine:
     def __init__(self, paths=None, log=None):
         self.paths = paths or Paths()
         self.proc = None
+        self._owned_process = None
+        self._reader = None
+        import threading
+        self._lifecycle_lock = threading.RLock()
         self.port = None
         self.percent = None
         self.log_lines = []
@@ -661,36 +666,55 @@ class Engine:
         return self.proc is not None and self.proc.poll() is None
 
     def start(self, timeout=240, cancelled=lambda: False):
+        # One owner at a time; cancellation can reenter stop() on this thread.
+        with self._lifecycle_lock:
+            self._start_locked(timeout, cancelled)
+
+    def _start_locked(self, timeout, cancelled):
         if self.running():
             return
+        if self._owned_process is not None:
+            self.stop()  # An exited root may still own children and an output reader.
+        if cancelled():
+            raise Cancelled('Cancelled.')
         if not self.paths.engine_installed():
             raise RuntimeError('The AI engine is not installed yet.')
         self.port = _free_port()
         cmd = [str(self.paths.python), str(self.paths.comfy / 'main.py'), '--listen', '127.0.0.1',
                '--port', str(self.port), '--base-directory', str(self.paths.data),
                '--disable-auto-launch', '--preview-method', 'none']
-        self.proc = subprocess.Popen(cmd, cwd=str(self.paths.comfy), stdout=subprocess.PIPE,
-                                     stderr=subprocess.STDOUT, text=True, errors='replace',
-                                     creationflags=NO_WINDOW)
+        from owned_process import OwnedProcess
+        owner = OwnedProcess(cmd, cwd=str(self.paths.comfy), stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True, errors='replace',
+                             creationflags=NO_WINDOW)
+        self._owned_process = owner
+        proc = self.proc = owner.proc
         import threading
-        threading.Thread(target=self._read_output, daemon=True).start()
-        started = time.time()
-        while time.time() - started < timeout:
-            if cancelled():
-                self.stop(); raise Cancelled('Cancelled.')
-            if self.proc.poll() is not None:
-                raise RuntimeError('The AI engine stopped while starting:\n' + '\n'.join(self.log_lines[-15:]))
-            try:
-                self._get('/system_stats')
-                return
-            except Exception:
-                time.sleep(1)
-        self.stop()
-        raise RuntimeError('The AI engine did not start in time.')
+        self._reader = threading.Thread(target=self._read_output, args=(proc,), daemon=True)
+        self._reader.start()
+        started = time.monotonic()
+        try:
+            while time.monotonic() - started < timeout:
+                if cancelled():
+                    raise Cancelled('Cancelled.')
+                if proc.poll() is not None:
+                    raise RuntimeError('The AI engine stopped while starting:\n' + '\n'.join(self.log_lines[-15:]))
+                try:
+                    self._get('/system_stats')
+                    return
+                except Exception:
+                    time.sleep(.2)
+            raise RuntimeError('The AI engine did not start in time.')
+        except BaseException:
+            self.stop()
+            raise
 
-    def _read_output(self):
-        for line in self.proc.stdout:
+    def _read_output(self, proc):
+        # The reader belongs to this exact launch, never to a replacement self.proc.
+        for line in proc.stdout:
             line = line.rstrip()
+            if self.proc is not proc:
+                continue
             self.log_lines = (self.log_lines + [line])[-200:]
             match = self.PROGRESS.search(line)
             if match:
@@ -698,13 +722,24 @@ class Engine:
             self.log(line)
 
     def stop(self):
-        if self.running():
-            self.proc.terminate()
-            try:
-                self.proc.wait(10)
-            except subprocess.TimeoutExpired:
-                self.proc.kill()
-        self.proc = None
+        with self._lifecycle_lock:
+            owner = self._owned_process
+            if owner is None:
+                return
+            # Keep ownership intact on any failure so another stop can retry.
+            owner.stop()
+            reader = self._reader
+            if reader is not None:
+                reader.join(timeout=3)
+                if reader.is_alive():
+                    raise RuntimeError('The AI engine output is still closing; try closing again.')
+            if owner.proc.stdout is not None:
+                owner.proc.stdout.close()
+            self._reader = None
+            self._owned_process = None
+            self.proc = None
+            self.port = None
+            self.percent = None
 
     # -- HTTP
     def _url(self, path):

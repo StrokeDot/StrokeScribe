@@ -91,19 +91,29 @@ class AILifecycleTests(unittest.TestCase):
                 self.dialog.show()
                 self.start_engine()
                 workers = list(self.fixture.probes)
-                if route.startswith("done_"):
-                    self.dialog.done(QDialog.DialogCode.Accepted if route == "done_accept"
-                                     else QDialog.DialogCode.Rejected)
-                else:
-                    getattr(self.dialog, route)()
-                APP.processEvents()
-                self.assertFalse(self.dialog.isVisible())
-                self.assertTrue(until(lambda: all(not p.alive() for p in workers), 5),
-                                route + " left owned AI memory alive")
-                for probe in workers: probe.close()
-                self.fixture.probes = []
-                for path in self.fixture.root.glob("*.pid"): path.unlink()
-                for path in self.fixture.root.glob("*.ready"): path.unlink()
+                try:
+                    if route.startswith("done_"):
+                        self.dialog.done(QDialog.DialogCode.Accepted if route == "done_accept"
+                                         else QDialog.DialogCode.Rejected)
+                    else:
+                        getattr(self.dialog, route)()
+                    APP.processEvents()
+                    self.assertFalse(self.dialog.isVisible())
+                    self.assertTrue(until(lambda: all(not p.alive() for p in workers), 5),
+                                    route + " left owned AI memory alive")
+                finally:
+                    self.engine.stop()
+                    # Preserve test isolation even against the leaking pre-fix implementation.
+                    import signal
+                    for probe in workers:
+                        if probe.alive():
+                            try: os.kill(probe.pid, signal.SIGTERM if os.name == "nt" else signal.SIGKILL)
+                            except ProcessLookupError: pass
+                    until(lambda: all(not p.alive() for p in workers), 5)
+                    for probe in workers: probe.close()
+                    self.fixture.probes = []
+                    for path in self.fixture.root.glob("*.pid"): path.unlink()
+                    for path in self.fixture.root.glob("*.ready"): path.unlink()
 
     def test_saved_optout_keeps_engine_between_dialog_sessions(self):
         workers = self.start_engine()
