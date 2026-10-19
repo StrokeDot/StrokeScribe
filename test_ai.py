@@ -327,42 +327,51 @@ class CreateImageWindowTests(unittest.TestCase):
         del os.environ['STROKESCRIBE_CONFIG_DIR']
         self.tmp.cleanup()
 
-    def test_ai_memory_is_released_after_result_error_and_cancel(self):
+    def test_ai_model_stays_loaded_between_generations_even_after_failure(self):
         from unittest.mock import Mock
         from create_image_dialog import AIWorker
-        for outcome in ('success', 'error', 'cancel'):
-            with self.subTest(outcome=outcome):
-                engine = Mock()
-                engine.percent = None
-                engine.run.return_value = str(Path(self.tmp.name) / 'generated.png')
-                if outcome == 'error':
-                    engine.run.side_effect = RuntimeError('bad model')
-                if outcome == 'cancel':
-                    engine.run.side_effect = ai_engine.Cancelled('Cancelled.')
-                worker = AIWorker('generate')
-                ready = []
-                worker.done.connect(ready.append)
-                if outcome == 'success':
-                    worker._generate(engine, {}, None)
-                    self.assertEqual(ready, [str(Path(self.tmp.name) / 'generated.png')])
-                else:
-                    with self.assertRaisesRegex(Exception, 'bad model|Cancelled'):
-                        worker._generate(engine, {}, None)
-                    self.assertEqual(ready, [])
-                engine.stop.assert_called_once()
+        engine = Mock()
+        engine.percent = None
+        engine.run.return_value = 'generated.png'
+        worker = AIWorker('generate')
+        for _ in range(2):
+            worker._generate(engine, {}, None)
+        self.assertEqual(engine.run.call_count, 2)
+        engine.stop.assert_not_called()
+        engine.run.side_effect = RuntimeError('bad model')
+        with self.assertRaisesRegex(RuntimeError, 'bad model'):
+            worker._generate(engine, {}, None)
+        engine.stop.assert_not_called()
 
-    def test_keeping_ai_loaded_is_explicit_opt_in(self):
+    def test_ai_memory_released_on_all_dialog_exit_paths(self):
         from unittest.mock import Mock
-        from create_image_dialog import AIWorker, CreateImageDialog
-        dialog = CreateImageDialog(None, None, hardware=pc(16, 64))
+        from create_image_dialog import CreateImageDialog
+        for exit_path in ('close', 'reject', 'accept'):
+            with self.subTest(exit_path=exit_path):
+                engine = Mock()
+                dialog = CreateImageDialog(None, None, engine=engine, hardware=pc(16, 64))
+                try:
+                    dialog.show()
+                    self.app.processEvents()
+                    self.assertTrue(dialog.release_ai_memory.isChecked())
+                    self.assertTrue(ai_engine.load_settings()['release_ai_memory_on_close'])
+                    getattr(dialog, exit_path)()
+                    self.app.processEvents()
+                    engine.stop.assert_called_once()
+                finally:
+                    dialog.close()
+
+    def test_release_ai_memory_on_close_can_be_disabled_and_saved(self):
+        from unittest.mock import Mock
+        from create_image_dialog import CreateImageDialog
+        engine = Mock()
+        dialog = CreateImageDialog(None, None, engine=engine, hardware=pc(16, 64))
         try:
-            self.assertTrue(dialog.release_ai_memory.isChecked())
+            dialog.show()
+            self.app.processEvents()
             dialog.release_ai_memory.setChecked(False)
-            self.assertFalse(ai_engine.load_settings()['release_ai_memory'])
-            engine = Mock()
-            engine.percent = None
-            engine.run.return_value = 'generated.png'
-            AIWorker('generate')._generate(engine, {}, None, release_after=False)
+            self.assertFalse(ai_engine.load_settings()['release_ai_memory_on_close'])
+            dialog.close()
             engine.stop.assert_not_called()
         finally:
             dialog.close()
