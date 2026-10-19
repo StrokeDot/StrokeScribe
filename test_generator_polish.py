@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox
 import test_image_generator_updates as drawer_fixtures
@@ -55,6 +56,17 @@ class SmoothGeneratorTests(unittest.TestCase):
         self.assertEqual(d.work['percent'],70)
         d.on_progress(-1,'Loading the model…')
         self.assertEqual(d.progress.maximum(),0)
+
+    def test_finished_result_cannot_be_overwritten_by_pending_progress(self):
+        d=self.dialog
+        image=Path(self.tmp.name)/'made.png'
+        pix=QPixmap(120,90);pix.fill(QColor('#7954dc'));pix.save(str(image))
+        d.on_progress(70,'Creating… 70%')
+        with patch('create_image_dialog.keep_in_library',return_value=None):
+            d.on_result(str(image))
+        self.assertEqual(d.progress.value(),100)
+        QTest.qWait(320)
+        self.assertEqual(d.progress.value(),100,'Completion must stop stale progress motion')
 
 class PlainStatusTests(unittest.TestCase):
     def test_unknown_check_is_not_no_updates_and_optional_is_not_upgrade(self):
