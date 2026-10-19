@@ -18,6 +18,18 @@ def pair(root):
     return original,guide
 
 class PairingTests(WorkflowFixture):
+    def test_invalid_library_pair_is_reported_without_mutating_artwork(self):
+        class BrokenItem:
+            name='broken pair'
+            path=Path('bad.png')
+            @property
+            def artwork(self):raise ValueError('Invalid artwork metadata')
+        before=self.w.drawing
+        with patch.object(QMessageBox,'warning') as warning:
+            self.assertFalse(self.w.use_library_item('images',BrokenItem(),placement='add'))
+        self.assertIs(self.w.drawing,before)
+        self.assertEqual(len(self.w.scenes),1)
+        self.assertIn('pairing',warning.call_args.args[2])
     def test_library_retention_preference_applies_to_svg_and_paired_raster(self):
         import library
         settings=library.load_settings()

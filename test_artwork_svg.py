@@ -65,7 +65,8 @@ class SvgAppearanceTests(unittest.TestCase):
         m=self.module()
         for align in ('xMidYMid meet','xMinYMin meet','xMaxYMax slice'):
             with self.subTest(align=align):
-                d=self.load('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 100 100" preserveAspectRatio="'+align+'"><circle cx="50" cy="50" r="20" fill="#3366cc"/></svg>')
+                cy='75' if 'slice' in align else '50'
+                d=self.load('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 100 100" preserveAspectRatio="'+align+'"><circle cx="50" cy="'+cy+'" r="20" fill="#3366cc"/></svg>')
                 image=m.render_appearance(d,200)
                 self.assertEqual((image.width(),image.height()),(200,200))
                 self.assertGreater(image.pixelColor(100,100).alpha(),250)

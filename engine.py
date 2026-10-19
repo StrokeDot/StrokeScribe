@@ -115,6 +115,7 @@ def import_svg(filename):
     if not all(math.isfinite(v) and 0<v<=10_000_000 for v in viewport):
         raise ValueError('SVG dimensions exceed the safe coordinate limit.')
     has_fill=False
+    visual_boxes=[]
     strokes = []
     total_points = 0
     for el in svg.elements():
@@ -125,6 +126,8 @@ def import_svg(filename):
         p = SVGPath(el)
         p.reify()
         if not len(p): continue
+        box=el.bbox(with_stroke=True)
+        if box is not None:visual_boxes.append(tuple(float(v) for v in box))
         color = str(el.stroke) if el.stroke is not None else 'None'
         if color in ('None', 'none'):
             color = str(el.fill) if el.fill is not None else '#153c54'
@@ -148,6 +151,9 @@ def import_svg(filename):
     allpts=[pt for s in strokes for pt in s.points]
     xs,ys=zip(*allpts)
     bounds=(min(xs),min(ys),max(xs),max(ys))
+    if has_fill and visual_boxes:
+        bounds=(min(bounds[0],min(b[0] for b in visual_boxes)),min(bounds[1],min(b[1] for b in visual_boxes)),
+                max(bounds[2],max(b[2] for b in visual_boxes)),max(bounds[3],max(b[3] for b in visual_boxes)))
     # SVGs exported by StrokeScribe record their exact image frame so the
     # matching colour PNG lines up even when lines don't reach the edges.
     frame=root.attrib.get('data-strokescribe-frame')

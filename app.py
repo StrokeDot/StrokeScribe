@@ -1174,23 +1174,6 @@ class Window(ArtworkWorkflow,QMainWindow):
         self.import_button.setText('Import image…' if index else 'Import SVG…')
         self.refresh()
 
-    def _legacy_change_source(self,index):
-        self.playing=False
-        if index:
-            self.svg_state=(self.drawing,self.final_image,self.use_color.isChecked())
-            self.image_controls.show(); self.import_button.setText('Import image…')
-            if self.image_result: self.set_drawing(self.image_result.drawing)
-            else:
-                self.drawing=None; self.order.clear(); self.canvas.frame=None; self.canvas.highlight=[]; self.canvas.update()
-                self.note.setText('Import a PNG, JPEG, WebP or BMP to begin.')
-        else:
-            self.image_controls.hide(); self.import_button.setText('Import SVG…')
-            if self.svg_state:
-                drawing,self.final_image,checked=self.svg_state
-                self.use_color.setChecked(checked); self.set_drawing(drawing)
-        self.export.setEnabled(self.drawing is not None)
-        self.quick_export.setEnabled(self.drawing is not None)
-        self.refresh()
     # ------------------------------------------------------------ projects
     PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
@@ -1529,10 +1512,10 @@ class Window(ArtworkWorkflow,QMainWindow):
         """(seconds on screen, seconds of the camera move after it) of element k, from its settings."""
         try:
             s=self.settings_state() if k==self.scene_index else dict((self.scenes[k]['state'] or {}).get('settings',{}))
-            image=(self.source_type.currentIndex()==1) if k==self.scene_index else \
+            image=self.is_image_artwork() if k==self.scene_index else \
                   ((self.scenes[k]['state'] or {}).get('source')=='image')
             paint_only=image and s.get('image_animation')=='Paint Only'
-            colour=bool(s.get('preserve_colors',True)) if image else bool(s.get('use_color'))
+            colour=(bool(s.get('preserve_colors',True)) and s.get('image_animation')!='Drawing only') if image else bool(s.get('use_color'))
             length=0. if paint_only else float(s.get('duration',4))/max(.01,float(s.get('speed',1)))
             if colour or paint_only:
                 length+=float(s.get('image_duration',8) if image else s.get('color_fade',.4))
@@ -2687,9 +2670,14 @@ class Window(ArtworkWorkflow,QMainWindow):
             self.set_hand(image,item.name,str(item.path),item.tip)
             return
         path=str(item.path)
+        try:
+            assets=getattr(item,'artwork',None)
+        except Exception as exc:
+            QMessageBox.warning(self,'Cannot import artwork','The Library artwork pairing could not be read: '+str(exc))
+            return False
         return self.request_artwork(path,kind='svg' if path.lower().endswith('.svg') else 'image',
                                     placement='add' if as_element else placement,name=item.name,
-                                    same_spot=same_spot,assets=getattr(item,'artwork',None))
+                                    same_spot=same_spot,assets=assets)
 
     def use_builtin_tool(self,name):
         """Built-in hand, pencil or marker, with its tip and a fitting size."""
@@ -2785,7 +2773,13 @@ class Window(ArtworkWorkflow,QMainWindow):
     def reload_color(self):
         """(Re)load the matching colored PNG, cleaned or not."""
         name=getattr(self,'color_path',None)
-        if self.source_type.currentIndex(): return False
+        if self.is_image_artwork(): return False
+        if getattr(self.drawing,'svg_has_fill',False) and not name:
+            from svg_appearance import render_appearance
+            self.final_image=render_appearance(self.drawing)
+            self.color_note.setText('Original SVG appearance • native fills')
+            self.refresh();return True
+        if name=='from-project':name=None
         clean=self.clean_color.isChecked()
         original=getattr(self,'color_original',None)
         if not name and original is not None and not original.isNull():
@@ -2886,7 +2880,7 @@ class Window(ArtworkWorkflow,QMainWindow):
             if not self.duration.isEnabled(): return
             self.duration.setValue(seconds*self.speed.value())
         elif key=='paint':
-            (self.image_duration if self.source_type.currentIndex() else self.color_fade).setValue(seconds)
+            (self.image_duration if self.is_image_artwork() else self.color_fade).setValue(seconds)
         elif key=='hold':
             # The hold clip shows the colour hold plus the pause after the element.
             if self.options().get('final_image') is not None:
@@ -3049,6 +3043,7 @@ class Window(ArtworkWorkflow,QMainWindow):
         self.clear_frames(); self._view=None
         self.sync_workspace()
         if not self.drawing:
+            self.canvas.frame=None;self.canvas.highlight=[];self.canvas.update()
             self.stage_timeline.update_state(0,0,0,0)
             self.clock.setText(timecode(0)); self.clock_total.setText(timecode(0))
             return False

@@ -180,15 +180,15 @@ class ArtworkWorkflow:
             self.position=0;self.slider.setValue(0)
             self.project_changes.mark_changed()
             ctx['committed']=True
-            if result is not None:
-                try:
-                    import library
+            try:
+                import library
+                if library.load_settings().get('keep_imports',True):
                     lib=library.Library()
                     item=lib.add('images',ctx['path'],name=ctx['name'])
-                    lib.set_artwork(item,ctx['assets'])
-                except Exception as exc:
-                    import applog
-                    applog.error('Could not preserve paired artwork in the Library',exc)
+                    if result is not None:lib.set_artwork(item,ctx['assets'])
+            except Exception as exc:
+                import applog
+                applog.error('Could not preserve artwork in the Library',exc)
             self.status.setText('Artwork added.' if placement=='add' else 'Selected artwork replaced.' if placement=='replace' else 'Artwork added to New Project.')
         except Exception as exc:
             self.apply_project(previous)
