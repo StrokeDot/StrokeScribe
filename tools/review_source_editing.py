@@ -41,6 +41,20 @@ def main():
         assert QImage(str(files[-1])).pixelColor(0,0).alpha()==0
         save(output/'source-workflow-review',w.project_state())
         print('Source editors captured; changed-source drawing/paint/final and exported alpha frames match.')
-    finally:fixture.tearDown()
+    finally:
+        # A GUI callback can raise while the disposable Qt window is closing;
+        # show the original traceback in CI rather than reporting only exit 1.
+        try:
+            fixture.tearDown()
+        except BaseException:
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            raise
+        print('Source review window cleanup completed.', flush=True)
+        import applog
+        recent=applog.tail(35)
+        if recent:
+            print('Application diagnostics after review cleanup:\n'+recent,
+                  file=sys.stderr, flush=True)
 
 if __name__=='__main__':main()
