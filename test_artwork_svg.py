@@ -61,6 +61,29 @@ class SvgAppearanceTests(unittest.TestCase):
         self.assertIsNone(options['final_image'])
         self.assertEqual(drawing_to_dict(restored)['strokes'],data['drawing']['strokes'])
 
+    def test_unequal_viewport_aspect_preserves_circle_geometry(self):
+        m=self.module()
+        for align in ('xMidYMid meet','xMinYMin meet','xMaxYMax slice'):
+            with self.subTest(align=align):
+                d=self.load('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100" viewBox="0 0 100 100" preserveAspectRatio="'+align+'"><circle cx="50" cy="50" r="20" fill="#3366cc"/></svg>')
+                image=m.render_appearance(d,200)
+                self.assertEqual((image.width(),image.height()),(200,200))
+                self.assertGreater(image.pixelColor(100,100).alpha(),250)
+                self.assertEqual(image.pixelColor(20,20).alpha(),0)
+    def test_visible_stroke_border_is_not_cropped_from_native_filled_art(self):
+        m=self.module()
+        d=self.load('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect x="20" y="20" width="60" height="60" fill="blue" stroke="red" stroke-width="20"/></svg>')
+        image=m.render_appearance(d,160)
+        self.assertEqual(tuple(round(x) for x in d.bounds),(10,10,90,90))
+        self.assertEqual(image.pixelColor(5,80).name(),'#ff0000')
+        self.assertEqual(image.pixelColor(80,80).name(),'#0000ff')
+    def test_saved_svg_cannot_bypass_external_resource_validation(self):
+        m=self.module()
+        d=self.load('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="90" height="90"/></svg>')
+        d.svg_source='<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><image href="file:///private.png"/><rect width="90" height="90"/></svg>'
+        with self.assertRaisesRegex(ValueError,'external|resource'):
+            m.render_appearance(d)
+
     def test_repeated_large_appearance_renders_obey_cache_budget(self):
         m=self.module();m.clear_cache()
         try:

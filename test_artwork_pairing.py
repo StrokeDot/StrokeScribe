@@ -18,6 +18,19 @@ def pair(root):
     return original,guide
 
 class PairingTests(WorkflowFixture):
+    def test_library_retention_preference_applies_to_svg_and_paired_raster(self):
+        import library
+        settings=library.load_settings()
+        with patch('library.load_settings',return_value=dict(settings,keep_imports=False)):
+            self.assertTrue(self.w.request_artwork(str(self.svg),kind='svg',placement='add'))
+            original,guide=pair(self.tmp.name)
+            self.w.request_artwork(str(guide),kind='lineart',original=str(original),placement='add')
+            self.wait_import()
+            self.assertEqual(library.Library().items('images'),[])
+        with patch('library.load_settings',return_value=dict(settings,keep_imports=True)):
+            self.assertTrue(self.w.request_artwork(str(self.svg),kind='svg',placement='add'))
+            self.assertTrue(any(i.path.suffix=='.svg' for i in library.Library().items('images')))
+
     def test_add_ai_element_does_not_erase_result_kind_or_original(self):
         self.api();original,guide=pair(self.tmp.name);calls=[]
         def dialog(parent,current,callback,engine):
