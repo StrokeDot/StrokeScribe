@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox
@@ -15,6 +15,21 @@ from model_updates_live import ModelState
 from image_generator_updates import UpdatePanel
 from update_dialog import UpdateDialog
 APP=QApplication.instance() or QApplication([])
+
+def close_window_fixture(fixture):
+    # Window registers a strong application-log callback. Unregister only
+    # this disposable fixture before destroying Qt children with APP alive.
+    import applog
+    fixture.tearDown()
+    applog._on_error[:]=[callback for callback in applog._on_error
+                        if getattr(callback,'__self__',None) is not fixture.w]
+    destroyed=[]
+    fixture.w.destroyed.connect(lambda:destroyed.append(True))
+    fixture.w.deleteLater()
+    APP.sendPostedEvents(None,QEvent.Type.DeferredDelete)
+    APP.processEvents()
+    if not destroyed:
+        raise AssertionError('Disposable project window was not destroyed')
 
 class SmoothGeneratorTests(unittest.TestCase):
     setUp=drawer_fixtures.DrawerTests.setUp
@@ -115,7 +130,7 @@ class UpdateBeforeSaveTests(unittest.TestCase):
                  patch.object(w,'project_path',str(Path(fixture.tmp.name)/'saved.strokescribe'),create=True):
                 self.assertTrue(w.confirm_before_app_update())
             self.assertFalse(w.has_unsaved_changes())
-        finally:fixture.tearDown()
+        finally:close_window_fixture(fixture)
 
     def test_banner_cancel_does_not_start_update_or_discard_dirty_project(self):
         from test_project_lifecycle import WindowLifecycleTests
@@ -130,6 +145,6 @@ class UpdateBeforeSaveTests(unittest.TestCase):
                 worker.assert_not_called()
             self.assertTrue(w.has_unsaved_changes())
             self.assertTrue(w.isVisible())
-        finally:fixture.tearDown()
+        finally:close_window_fixture(fixture)
 
 if __name__=='__main__':unittest.main(verbosity=2)

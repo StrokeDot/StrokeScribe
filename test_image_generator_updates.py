@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QMessageBox
@@ -41,6 +41,12 @@ class DrawerTests(unittest.TestCase):
             w.wait(8000)
         self.dialog.close()
         APP.processEvents()
+        destroyed=[]
+        self.dialog.destroyed.connect(lambda:destroyed.append(True))
+        self.dialog.deleteLater()
+        APP.sendPostedEvents(None,QEvent.Type.DeferredDelete)
+        APP.processEvents()
+        self.assertTrue(destroyed,'Fixture must release its Qt widgets before shutdown')
         self.env.stop()
         self.tmp.cleanup()
 
