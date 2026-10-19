@@ -10,7 +10,6 @@ permissions:
   pull-requests: write
 jobs:
   test:
-    if: github.head_ref != 'feature/artwork-workflow-draw-paint'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:

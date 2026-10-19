@@ -9,7 +9,6 @@ permissions:
   contents: read
 jobs:
   transaction-linux:
-    if: github.head_ref != 'feature/artwork-workflow-draw-paint'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -20,7 +19,6 @@ jobs:
       - name: Verify updater and transaction regressions
         run: python -m unittest -v test_update_transaction test_updater.UpdaterTests
   transaction-windows:
-    if: github.head_ref != 'feature/artwork-workflow-draw-paint'
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -31,7 +29,6 @@ jobs:
       - name: Verify updater and transaction regressions
         run: python -m unittest -v test_update_transaction test_updater.UpdaterTests
   ui-linux:
-    if: github.head_ref != 'feature/artwork-workflow-draw-paint'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -50,7 +47,6 @@ jobs:
       - name: Verify updater window tests
         run: python -m unittest -v test_updater_ui_safety test_updater.UpdateWindowTests
   ui-windows:
-    if: github.head_ref != 'feature/artwork-workflow-draw-paint'
     runs-on: windows-latest
     timeout-minutes: 20
     env:

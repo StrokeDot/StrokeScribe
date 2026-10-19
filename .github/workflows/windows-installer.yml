@@ -26,7 +26,6 @@ permissions:
   contents: read
 jobs:
   validate-linux:
-    if: github.head_ref != 'feature/artwork-workflow-draw-paint'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     outputs:
@@ -44,13 +43,12 @@ jobs:
       - name: Verify syntax
         run: python -m compileall -q .
       - name: Full Linux regression suite
-        run: python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_live_model_updates test_image_generator_updates test_generator_polish test_release_policy
+        run: python -X faulthandler -c "import applog,runpy,logging,sys; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_live_model_updates test_image_generator_updates test_generator_polish test_artwork_assets test_artwork_workflow test_artwork_pairing test_artwork_svg test_artwork_rendering test_release_policy
       - name: Record exact validated commit
         id: proof
         shell: bash
         run: echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
   validate-windows:
-    if: github.head_ref != 'feature/artwork-workflow-draw-paint'
     runs-on: windows-latest
     timeout-minutes: 35
     outputs:
@@ -109,7 +107,7 @@ jobs:
       - name: Verify syntax
         run: python -m compileall -q .
       - name: Full Windows regression suite
-        run: python tools/run_tests.py test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_live_model_updates test_image_generator_updates test_generator_polish test_release_policy
+        run: python -X faulthandler -c "import applog,runpy,logging,sys; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_prototype test_adaptive test_image_source test_webm test_studio test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_live_model_updates test_image_generator_updates test_generator_polish test_artwork_assets test_artwork_workflow test_artwork_pairing test_artwork_svg test_artwork_rendering test_release_policy
       - name: Record exact validated commit
         id: proof
         shell: bash
