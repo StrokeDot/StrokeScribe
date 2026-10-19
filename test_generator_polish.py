@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import Qt, QEvent, QAbstractAnimation
 from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox
@@ -40,14 +40,20 @@ class SmoothGeneratorTests(unittest.TestCase):
         d=self.dialog
         d.resize(1500,900);d.show();APP.processEvents()
         d.open_updates()
+        self.assertEqual(d.drawer_motion.state(),QAbstractAnimation.State.Running)
         d.drawer_motion.setCurrentTime(85)
         partial=d.updates_panel.width()
         self.assertGreater(partial,0)
         self.assertLess(partial,400,'Panel should not jump directly to its final width')
         d.close_updates()
+        self.assertEqual(d.updates_panel.width(),partial,'Closing must continue from the visible width')
+        self.assertEqual(d.drawer_motion.state(),QAbstractAnimation.State.Running)
         d.drawer_motion.setCurrentTime(35)
         self.assertTrue(d.updates_panel.isVisible(),'Closing needs a visible transition')
+        closing_width=d.updates_panel.width()
         d.open_updates()
+        self.assertEqual(d.updates_panel.width(),closing_width,'Reopening must not reset the width')
+        self.assertEqual(d.drawer_motion.state(),QAbstractAnimation.State.Running)
         d.drawer_motion.setCurrentTime(d.drawer_motion.duration())
         self.wait_scan()
         self.assertEqual(d.updates_panel.width(),400)
@@ -68,6 +74,7 @@ class SmoothGeneratorTests(unittest.TestCase):
         d=self.dialog
         self.assertLessEqual(d.work_timer.interval(),17)
         d.on_progress(70,'Creating… 70%')
+        self.assertEqual(d.progress_motion.state(),QAbstractAnimation.State.Running)
         d.progress_motion.setCurrentTime(70)
         self.assertGreater(d.progress.value(),0)
         self.assertLess(d.progress.value(),70,'Progress should animate toward the actual report')
