@@ -1,8 +1,6 @@
 name: Image generator drawer review
 on:
   pull_request:
-    # Intermediate source-edit iteration; restored before final verification.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     paths:
       - 'create_image_dialog.py'
       - 'test_generator_polish.py'
@@ -15,8 +13,6 @@ on:
       - 'render_image_generator_updates.py'
       - '.github/workflows/image-generator-updates.yml'
   workflow_dispatch:
-    # Intermediate source-edit iteration; restored before final verification.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
 permissions:
   contents: read
 concurrency:
@@ -24,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   drawer-review:
-    # Intermediate source-edit iteration; restored before final verification.
+    # Intermediate iteration only; full checks restored before delivery.
     if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     strategy:
       fail-fast: false

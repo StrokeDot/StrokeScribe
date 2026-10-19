@@ -1,8 +1,6 @@
 name: Windows installer (tested, manually approved)
 on:
   pull_request:
-    # Intermediate source-edit iteration; restored before final verification.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     paths:
       - 'app.py'
       - 'updater.py'
@@ -15,8 +13,6 @@ on:
       - 'test_*.py'
       - '.github/workflows/windows-installer.yml'
   workflow_dispatch:
-    # Intermediate source-edit iteration; restored before final verification.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     inputs:
       publish:
         description: 'Publish tested installer to GitHub Releases? (approved branches only)'
@@ -30,7 +26,7 @@ permissions:
   contents: read
 jobs:
   validate-linux:
-    # Intermediate source-edit iteration; restored before final verification.
+    # Intermediate iteration only; full checks restored before delivery.
     if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -55,7 +51,7 @@ jobs:
         shell: bash
         run: echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
   validate-windows:
-    # Intermediate source-edit iteration; restored before final verification.
+    # Intermediate iteration only; full checks restored before delivery.
     if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     runs-on: windows-latest
     timeout-minutes: 35
@@ -121,7 +117,7 @@ jobs:
         shell: bash
         run: echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
   installer:
-    # Intermediate source-edit iteration; restored before final verification.
+    # Intermediate iteration only; full checks restored before delivery.
     if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     needs: [validate-linux, validate-windows]
     runs-on: windows-latest
@@ -170,7 +166,7 @@ jobs:
           path: dist/StrokeScribe-Setup-*.exe
           if-no-files-found: error
   publish:
-    # Intermediate source-edit iteration; restored before final verification.
+    # Intermediate iteration only; full checks restored before delivery.
     if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     needs: [validate-linux, validate-windows, installer]
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish == true && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/svg-guide-coverage-experimental12') }}

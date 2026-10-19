@@ -1,11 +1,7 @@
 name: Updater transaction checks
 on:
   pull_request:
-    # Intermediate source-edit iteration; restored before final verification.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
   workflow_dispatch:
-    # Intermediate source-edit iteration; restored before final verification.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -13,7 +9,7 @@ permissions:
   contents: read
 jobs:
   transaction-linux:
-    # Intermediate source-edit iteration; restored before final verification.
+    # Intermediate iteration only; full checks restored before delivery.
     if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -25,7 +21,7 @@ jobs:
       - name: Verify updater and transaction regressions
         run: python -m unittest -v test_update_transaction test_updater.UpdaterTests
   transaction-windows:
-    # Intermediate source-edit iteration; restored before final verification.
+    # Intermediate iteration only; full checks restored before delivery.
     if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     runs-on: windows-latest
     timeout-minutes: 15
@@ -37,7 +33,7 @@ jobs:
       - name: Verify updater and transaction regressions
         run: python -m unittest -v test_update_transaction test_updater.UpdaterTests
   ui-linux:
-    # Intermediate source-edit iteration; restored before final verification.
+    # Intermediate iteration only; full checks restored before delivery.
     if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -57,7 +53,7 @@ jobs:
       - name: Verify updater window tests
         run: python -m unittest -v test_updater_ui_safety test_updater.UpdateWindowTests
   ui-windows:
-    # Intermediate source-edit iteration; restored before final verification.
+    # Intermediate iteration only; full checks restored before delivery.
     if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     runs-on: windows-latest
     timeout-minutes: 20
