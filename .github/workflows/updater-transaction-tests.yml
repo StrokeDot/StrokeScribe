@@ -10,7 +10,6 @@ permissions:
 jobs:
   transaction-linux:
     # Intermediate iteration only; full checks restored before delivery.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -22,7 +21,6 @@ jobs:
         run: python -m unittest -v test_update_transaction test_updater.UpdaterTests
   transaction-windows:
     # Intermediate iteration only; full checks restored before delivery.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -34,7 +32,6 @@ jobs:
         run: python -m unittest -v test_update_transaction test_updater.UpdaterTests
   ui-linux:
     # Intermediate iteration only; full checks restored before delivery.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -54,7 +51,6 @@ jobs:
         run: python -m unittest -v test_updater_ui_safety test_updater.UpdateWindowTests
   ui-windows:
     # Intermediate iteration only; full checks restored before delivery.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     runs-on: windows-latest
     timeout-minutes: 20
     env:

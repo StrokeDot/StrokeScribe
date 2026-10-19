@@ -13,7 +13,6 @@ concurrency:
 jobs:
   focused:
     # Intermediate iteration only; full checks restored before delivery.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     strategy:
       fail-fast: false
       matrix:

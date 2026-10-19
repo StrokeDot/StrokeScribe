@@ -10,7 +10,6 @@ permissions:
 jobs:
   model-files:
     # Intermediate iteration only; full checks restored before delivery.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,7 +21,6 @@ jobs:
         run: python tools/ci_ai_check.py urls
   workflows-on-real-comfyui:
     # Intermediate iteration only; full checks restored before delivery.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

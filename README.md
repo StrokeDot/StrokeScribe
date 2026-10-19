@@ -21,6 +21,14 @@ This branch contains a review candidate, **not an approved application update**.
 - Source SVGs keep the existing 5 MB/500,000 sampled-point limits. Native appearance surfaces are bounded to 8 million pixels and the appearance cache to 128 MiB; external resources are rejected. Original raster assets are bounded to 64 MiB each and 24 million pixels.
 - Review instructions and remaining limitations: [ARTWORK_WORKFLOW_REVIEW.md](ARTWORK_WORKFLOW_REVIEW.md). Run `python render_artwork_workflow.py` to create representative alpha frames and contact sheets remotely or in a separate test installation.
 
+## Source editors and AI memory lifecycle (v0.5.3-experimental.65)
+
+- Painting sources can be changed repeatedly through the Inspector. Changing colors does not reset an existing drawing, project, timing, hand configuration, or other timeline elements.
+- Double-click Draw or Paint on the timeline to open an editor for that source. Cancel changes nothing; successful edits remain in project history and saved/reopened projects.
+- The SVG-only Brush painting choice is hidden for raster Image sources but remains available for SVG artwork.
+- Create Image keeps the AI engine warm for successive generations. **Release AI memory when I close Create Image** is enabled by default and shuts down the owned background AI processes on actual dialog dismissal (not after each generation). The setting can be disabled for repeated sessions, and downloaded model weights remain on disk.
+- This version preserves the experimental.64 Add/Replace/New Project workflow, AI line-art/original pairing and native SVG fills. Real model-equipped Windows RAM/VRAM behavior still needs a user-machine smoke test.
+
 ## Adaptive SVG vector import (v0.5.3-experimental.63)
 
 - Complex original SVGs import with curvature-aware vector sampling; long straight lines use their exact endpoints. The existing 500,000-point safety limit remains in effect but unnecessary over-sampling no longer consumes it.

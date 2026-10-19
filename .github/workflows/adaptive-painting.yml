@@ -11,7 +11,6 @@ permissions:
 jobs:
   test:
     # Intermediate iteration only; full checks restored before delivery.
-    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
