@@ -72,4 +72,9 @@ def make_samples():
         sheet.save(OUT/(name+'-contact-sheet.png'))
     (OUT/'README.txt').write_text('Original synthetic fixtures, not the user Cain/Abel or beach-girl files. Individual PNGs retain alpha. Contact sheets show a checkerboard only for review. Created on the remote runner. Native SVG source and paired PNG/guide are included.\n')
 
-if __name__=='__main__':make_samples()
+if __name__=='__main__':
+    make_samples()
+    import sys,base64,json
+    if '--review-log-images' in sys.argv:
+        for path in sorted(OUT.glob('*-contact-sheet.png')):
+            print('ARTWORK_REVIEW_IMAGE '+json.dumps(dict(name=path.name,png=base64.b64encode(path.read_bytes()).decode())))

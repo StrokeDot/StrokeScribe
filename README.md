@@ -9,11 +9,23 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Artwork workflow review candidate (v0.5.3-experimental.64)
+
+This branch contains a review candidate, **not an approved application update**. The official downloads and installed-app update channel are unchanged.
+
+- **File → New Project (Ctrl+N)** explicitly starts an empty project. Save / Discard / Cancel protects unsaved work.
+- File, Library and Create Image artwork share **Add to current project**, **Replace selected artwork** and **New Project** placement. Add is the first/default choice; explicit “new element” commands add without another placement prompt. A failed or cancelled import keeps existing elements.
+- Generated line art retains its original image as a durable pair in the project and, when “keep imports” is enabled, in Library. Reopening or moving Library no longer depends on the external original/guide paths.
+- Newly imported raster artwork defaults to **Draw, then Paint**. Choose **Drawing only** to omit painting, or keep **Paint Only**. Original-image pairing and guide alignment use the same path from each entry point.
+- Supported filled SVGs retain their source and editable vector stroke order. Native SVG appearance supplies the painting phase, including black fills, compound holes and fill opacity. Uncheck “Reveal original artwork after drawing” for SVG drawing-only.
+- Source SVGs keep the existing 5 MB/500,000 sampled-point limits. Native appearance surfaces are bounded to 8 million pixels and the appearance cache to 128 MiB; external resources are rejected. Original raster assets are bounded to 64 MiB each and 24 million pixels.
+- Review instructions and remaining limitations: [ARTWORK_WORKFLOW_REVIEW.md](ARTWORK_WORKFLOW_REVIEW.md). Run `python render_artwork_workflow.py` to create representative alpha frames and contact sheets remotely or in a separate test installation.
+
 ## Adaptive SVG vector import (v0.5.3-experimental.63)
 
 - Complex original SVGs import with curvature-aware vector sampling; long straight lines use their exact endpoints. The existing 500,000-point safety limit remains in effect but unnecessary over-sampling no longer consumes it.
 - Stroke order, SVG source coordinates, animation and export continue as vector-based workflows—no forced PNG conversion.
-- **Known limit:** Filled SVG shapes are still drawn as outlines and do not reproduce their filled colors or advanced effects. This is an import/performance fix, not a new filled-vector animation feature.
+- **Historical .63 limit:** Filled SVG shapes drew as outlines. The .64 review candidate above adds native appearance painting for supported filled SVGs; advanced SVG effects still need visual review.
 - Save work before updating with File → Update StrokeScribe. Existing project, model and library files are not rewritten by the SVG sampler.
 
 ## Functional model updates (v0.5.3-experimental.61)

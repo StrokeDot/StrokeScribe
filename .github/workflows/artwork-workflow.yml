@@ -38,7 +38,7 @@ jobs:
       - name: Review frames and source ZIP
         if: hashFiles('render_artwork_workflow.py') != ''
         run: |
-          python render_artwork_workflow.py
+          python render_artwork_workflow.py --review-log-images
           python package_prototype.py
       - uses: actions/upload-artifact@v4
         if: always()
