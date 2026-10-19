@@ -1552,7 +1552,9 @@ class Window(ArtworkWorkflow,QMainWindow):
                 scene['thumb']=None
 
     def fill_scenes(self):
-        """Rebuild the scene strip."""
+        """Rebuild the scene strip; ignore deferred calls after window close."""
+        if getattr(self,'_closed',False):
+            return
         from PySide6.QtWidgets import QListWidgetItem
         from PySide6.QtGui import QIcon, QPixmap
         self.scene_list.blockSignals(True)

@@ -11,3 +11,5 @@
 - Task 1 RED: run39233729114 job117997639953 — all four new asset tests failed because durable storage is absent; existing19 policy/SVG tests passed.
 
 - Ruling: during staged implementation, scope full-suite jobs off this feature branch only; artwork-focused CI remains active. Restore original workflows before final validation. This reduces redundant heavy runs; no final check is waived.
+
+- Task 2 diagnostics: placement assertions passed, but three teardown errors exposed queued fill_scenes callbacks touching a deleted QListWidget after close. Added an accepted-close guard; no errors are suppressed while the window is active. The fixture now restores environment even on errors.
