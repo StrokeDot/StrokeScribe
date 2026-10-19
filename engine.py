@@ -1,6 +1,6 @@
 """Local vector-stroke renderer. All raster output starts with transparent pixels."""
 from __future__ import annotations
-import bisect, math, json, shutil, subprocess
+import bisect, math, json, shutil, subprocess, io, re
 from dataclasses import dataclass
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -83,7 +83,20 @@ def _sample_svg_segment(seg, *, tolerance=0.35, max_chord=10.0, budget=500_000):
 def import_svg(filename):
     raw = Path(filename).read_text(encoding='utf-8-sig')
     if len(raw) > 5_000_000: raise ValueError('SVG is too large for this prototype (5 MB limit).')
-    if '<!DOCTYPE' in raw.upper() or '<!ENTITY' in raw.upper(): raise ValueError('SVG document entities are unsupported.')
+    # Many valid SVG exports include the standard SVG 1.1 PUBLIC doctype.
+    # Strip only a simple declaration, without loading its external DTD.
+    # Never allow custom/internal entity definitions or DTD subsets.
+    safe_doctype = False
+    if '<!ENTITY' in raw.upper():
+        raise ValueError('SVG document entities are unsupported.')
+    if '<!DOCTYPE' in raw.upper():
+        allowed = re.search(
+            r'''<!DOCTYPE\s+svg\s+(?:PUBLIC\s+"[^"]+"\s+"[^"]+"|SYSTEM\s+"[^"]+")\s*>''',
+            raw, re.IGNORECASE)
+        if allowed is None or raw.upper().count('<!DOCTYPE') != 1:
+            raise ValueError('SVG document entities are unsupported.')
+        raw = raw[:allowed.start()] + raw[allowed.end():]
+        safe_doctype = True
     root = ET.fromstring(raw)
     warnings = set()
     for e in root.iter():
@@ -92,7 +105,7 @@ def import_svg(filename):
             warnings.add(f'{tag}: unsupported; convert to plain stroked paths for predictable results.')
         if any(k in e.attrib for k in ('clip-path','mask','filter')):
             warnings.add('Clipping, masks and filters are ignored.')
-    svg = SVG.parse(filename, reify=True)
+    svg = SVG.parse(io.StringIO(raw) if safe_doctype else filename, reify=True)
     strokes = []
     total_points = 0
     for el in svg.elements():

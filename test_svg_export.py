@@ -144,6 +144,37 @@ class RoundTripTests(unittest.TestCase):
         self.assertEqual(pts[0], (0., 0.))
         self.assertEqual(pts[-1], (180000., 0.))
 
+    def test_common_svg_public_doctype_imports_without_external_entity_resolution(self):
+        from engine import import_svg
+        dtd = ('<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" '
+               '"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">')
+        with tempfile.TemporaryDirectory() as tmp:
+            svg = Path(tmp) / 'external-dtd.svg'
+            svg.write_text('<?xml version="1.0"?>\n' + dtd + '\n'
+                           '<svg xmlns="http://www.w3.org/2000/svg">'
+                           '<path d="M0 0L50 40" stroke="black" fill="none"/>'
+                           '</svg>')
+            drawing = import_svg(svg)
+        self.assertEqual(len(drawing.strokes), 1)
+        self.assertEqual(drawing.strokes[0].points, [(0., 0.), (50., 40.)])
+
+    def test_svg_rejects_custom_entity_declarations_and_internal_dtd(self):
+        from engine import import_svg
+        blocked = (
+            '<!DOCTYPE svg [<!ENTITY secret SYSTEM "file:///etc/passwd">]>',
+            '<!DOCTYPE svg [<!ELEMENT svg ANY>]>',
+            '<!DOCTYPE svg SYSTEM "file:///etc/passwd">',
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'unsafe.svg'
+            for declaration in blocked:
+                with self.subTest(declaration=declaration):
+                    path.write_text(declaration + '<svg xmlns="http://www.w3.org/2000/svg">'
+                                    '<path stroke="black" fill="none" d="M0 0 L3 3"/>'
+                                    '</svg>')
+                    with self.assertRaises(ValueError):
+                        import_svg(path)
+
     def test_adaptive_curve_tracks_bezier_geometry_and_preserves_fill_warning(self):
         from engine import import_svg
         with tempfile.TemporaryDirectory() as tmp:
