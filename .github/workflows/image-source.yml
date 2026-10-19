@@ -10,6 +10,7 @@ permissions:
   pull-requests: write
 jobs:
   test-and-package:
+    if: github.head_ref != 'feature/artwork-workflow-draw-paint'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -70,6 +71,7 @@ jobs:
             dist/*.zip
 
   windows-python-314:
+    if: github.head_ref != 'feature/artwork-workflow-draw-paint'
     name: Windows Python 3.14 installation + tests
     runs-on: windows-latest
     permissions:

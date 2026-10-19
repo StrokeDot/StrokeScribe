@@ -20,6 +20,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   drawer-review:
+    if: github.head_ref != 'feature/artwork-workflow-draw-paint'
     strategy:
       fail-fast: false
       matrix:

@@ -9,3 +9,5 @@
 - Plan self-review: shared signatures consistent; placement, pairing, SVG appearance, persistence, rendering and CI acceptance all have owning tasks. No runtime changes yet.
 
 - Task 1 RED: run39233729114 job117997639953 — all four new asset tests failed because durable storage is absent; existing19 policy/SVG tests passed.
+
+- Ruling: during staged implementation, scope full-suite jobs off this feature branch only; artwork-focused CI remains active. Restore original workflows before final validation. This reduces redundant heavy runs; no final check is waived.

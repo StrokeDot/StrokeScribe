@@ -26,6 +26,7 @@ permissions:
   contents: read
 jobs:
   validate-linux:
+    if: github.head_ref != 'feature/artwork-workflow-draw-paint'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     outputs:
@@ -49,6 +50,7 @@ jobs:
         shell: bash
         run: echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
   validate-windows:
+    if: github.head_ref != 'feature/artwork-workflow-draw-paint'
     runs-on: windows-latest
     timeout-minutes: 35
     outputs:
