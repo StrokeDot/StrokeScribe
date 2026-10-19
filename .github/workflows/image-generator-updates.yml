@@ -46,7 +46,7 @@ jobs:
         # Anchor the process-wide application log outside per-test temporary
         # folders. Windows otherwise prevents their cleanup while the log is open.
         run: |
-          python -c "import applog,runpy; applog.setup(); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_generator_polish test_live_model_updates test_image_generator_updates test_ai.CreateImageWindowTests test_ui_theme
+          python -X faulthandler -c "import applog,runpy,logging,sys; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_generator_polish test_live_model_updates test_image_generator_updates test_ai.CreateImageWindowTests test_ui_theme
       - name: Verify in-app update from released and review builds
         run: python tools/verify_installed_app_update.py
       - name: Create review screenshots
