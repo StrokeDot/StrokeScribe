@@ -15,6 +15,9 @@ class WorkflowFixture(unittest.TestCase):
         self.env.start()
         import library
         library.save_settings(dict(root=str(Path(self.tmp.name)/'Library'),keep_imports=True))
+        self.warning=patch.object(QMessageBox,'warning',side_effect=lambda *args:self.fail('Unexpected warning: '+str(args[-1])))
+        self.warning.start()
+        self.addCleanup(self.warning.stop)
         from app import Window
         self.w=Window();self.w.show();APP.processEvents()
         self.svg=Path(self.tmp.name)/'new.svg'
