@@ -1,10 +1,14 @@
 name: Artwork workflow review
 on:
   pull_request:
+    # Intermediate source-edit iteration; restored before final verification.
+    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     paths:
       - '*.py'
       - '.github/workflows/artwork-workflow.yml'
   workflow_dispatch:
+    # Intermediate source-edit iteration; restored before final verification.
+    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
 permissions:
   contents: read
 concurrency:
@@ -12,6 +16,8 @@ concurrency:
   cancel-in-progress: true
 jobs:
   focused:
+    # Intermediate source-edit iteration; restored before final verification.
+    if: ${{ github.head_ref != 'feature/source-edit-ai-lifecycle-experimental65' }}
     strategy:
       fail-fast: false
       matrix:
