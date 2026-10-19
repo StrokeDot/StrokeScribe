@@ -68,10 +68,30 @@ jobs:
         run: |
           if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue) -or
               !(Get-Command ffprobe -ErrorAction SilentlyContinue)) {
-            choco install ffmpeg -y --no-progress
-            if ($LASTEXITCODE -ne 0) {
-              Write-Error "Chocolatey could not install FFmpeg and FFprobe."
-              exit 1
+            # Chocolatey's public feed sometimes returns 503/504 on Actions.
+            # Retry, then obtain a complete FFmpeg + FFprobe Windows build.
+            for ($attempt = 1; $attempt -le 2; $attempt++) {
+              choco install ffmpeg -y --no-progress
+              if ((Get-Command ffmpeg -ErrorAction SilentlyContinue) -and
+                  (Get-Command ffprobe -ErrorAction SilentlyContinue)) { break }
+              if ($attempt -lt 2) { Start-Sleep -Seconds 8 }
+            }
+            if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue) -or
+                !(Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+              Write-Warning "Chocolatey unavailable. Fetching Windows FFmpeg build from Gyan."
+              $zip = Join-Path $env:RUNNER_TEMP 'strokescribe-ffmpeg.zip'
+              $folder = Join-Path $env:RUNNER_TEMP 'strokescribe-ffmpeg'
+              Invoke-WebRequest 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $zip
+              Expand-Archive -LiteralPath $zip -DestinationPath $folder -Force
+              $probe = Get-ChildItem -Path $folder -Recurse -Filter ffprobe.exe |
+                Select-Object -First 1
+              if ($null -eq $probe -or
+                  !(Test-Path (Join-Path $probe.DirectoryName 'ffmpeg.exe'))) {
+                throw "Trusted FFmpeg archive did not contain both ffmpeg.exe and ffprobe.exe."
+              }
+              $bin = $probe.DirectoryName
+              $env:PATH = "$bin;$env:PATH"
+              Add-Content -Path $env:GITHUB_PATH -Value $bin
             }
           }
           if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
