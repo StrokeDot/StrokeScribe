@@ -13,6 +13,8 @@ class WorkflowFixture(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory()
         self.env=patch.dict(os.environ,{'STROKESCRIBE_CONFIG_DIR':self.tmp.name,'STROKESCRIBE_TEST_AUTODISCARD':'0'})
         self.env.start()
+        self.addCleanup(self.tmp.cleanup)
+        self.addCleanup(self.env.stop)
         import library
         library.save_settings(dict(root=str(Path(self.tmp.name)/'Library'),keep_imports=True))
         self.warning=patch.object(QMessageBox,'warning',side_effect=lambda *args:self.fail('Unexpected warning: '+str(args[-1])))
