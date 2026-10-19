@@ -56,6 +56,7 @@ class DrawerTests(unittest.TestCase):
         self.dialog.show()
         self.dialog.check_updates_button.click()
         self.wait_scan()
+        QTest.qWait(300)
         self.assertTrue(self.dialog.updates_panel.isVisible())
         return self.dialog.updates_panel
 
@@ -67,6 +68,7 @@ class DrawerTests(unittest.TestCase):
         self.assertTrue(drawer.isVisible())
         self.assertEqual(self.scan_mock.call_count, 2)
         drawer.close_button.click()
+        QTest.qWait(300)
         self.assertFalse(drawer.isVisible())
 
     def test_one_card_per_real_model_no_demo_duplicates(self):
@@ -138,6 +140,7 @@ class DrawerTests(unittest.TestCase):
         d.show_result()
         self.show_drawer()
         QTest.keyClick(d.prompt, Qt.Key.Key_Escape)
+        QTest.qWait(300)
         APP.processEvents()
         self.assertFalse(d.updates_panel.isVisible())
         self.assertTrue(d.isVisible())

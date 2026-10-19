@@ -310,7 +310,17 @@ class UpdateDialog(QDialog):
         self.status.setText('Asking GitHub for the newest version…')
         self._start(UpdateWorker('check', token=self.token, branch=self.settings['branch']))
 
+    def _confirm_install(self):
+        if self.worker is not None and self.worker.isRunning():
+            return False
+        parent=self.parent()
+        if parent is not None and hasattr(parent,'confirm_before_app_update'):
+            return bool(parent.confirm_before_app_update())
+        return True
+
     def update_online(self):
+        if not self._confirm_install():
+            return
         self._start(UpdateWorker('update', token=self.token, branch=self.settings['branch']))
 
     def update_from_zip(self, path=None):
@@ -325,6 +335,8 @@ class UpdateDialog(QDialog):
         if not updater.is_newer(version, self.current) and QMessageBox.question(
                 self, 'Update', f'This ZIP has version {version}, not newer than {self.current}. Use it anyway?') \
                 != QMessageBox.StandardButton.Yes:
+            return
+        if not self._confirm_install():
             return
         self._start(UpdateWorker('update', zip_path=path))
 

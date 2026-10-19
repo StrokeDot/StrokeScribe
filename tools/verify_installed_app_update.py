@@ -16,6 +16,7 @@ import zipfile
 ROOT=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(ROOT))
 BASELINES=(
+    ('a80d9bae0a8ea23a7065a3859ba371e5e8b26a0d','0.5.3-experimental.61'),
     ('cd4ff3d298f9653239de45e447b84fa4c9249d80','0.5.3-experimental.58'),
     ('c23fd37f9a37468192b49d5fdd2fb40d008c84f9','0.5.3-experimental.59'),
 )
@@ -83,6 +84,7 @@ with patch('model_updates_live.inspect_models', return_value=()):
         if dialog.live_update_worker is None:
             break
         QTest.qWait(20)
+QTest.qWait(300)
 assert dialog.updates_panel.isVisible()
 assert dialog.live_update_worker is None
 dialog.close()

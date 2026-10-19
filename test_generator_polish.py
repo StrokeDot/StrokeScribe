@@ -9,16 +9,16 @@ os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox
-from test_image_generator_updates import DrawerTests
+import test_image_generator_updates as drawer_fixtures
 from model_updates_live import ModelState
 from image_generator_updates import UpdatePanel
 from update_dialog import UpdateDialog
 APP=QApplication.instance() or QApplication([])
 
 class SmoothGeneratorTests(unittest.TestCase):
-    setUp=DrawerTests.setUp
-    cleanup=DrawerTests.cleanup
-    wait_scan=DrawerTests.wait_scan
+    setUp=drawer_fixtures.DrawerTests.setUp
+    cleanup=drawer_fixtures.DrawerTests.cleanup
+    wait_scan=drawer_fixtures.DrawerTests.wait_scan
 
     def test_panel_reverses_without_jump_and_x_finishes_closing(self):
         d=self.dialog

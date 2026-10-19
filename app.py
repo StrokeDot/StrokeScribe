@@ -1257,6 +1257,25 @@ class Window(QMainWindow):
             auto_discard=(os.environ.get('STROKESCRIBE_TEST_AUTODISCARD') == '1'
                           and QApplication.platformName() == 'offscreen'))
 
+    def confirm_before_app_update(self):
+        """Save before installing source files; cancellation must stop the update."""
+        if not self.has_unsaved_changes():
+            return True
+        box=QMessageBox(self)
+        box.setWindowTitle('Save before updating StrokeScribe')
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText('Your project has unsaved changes. Save it before installing the update?')
+        box.setStandardButtons(QMessageBox.StandardButton.Save |
+                               QMessageBox.StandardButton.Discard |
+                               QMessageBox.StandardButton.Cancel)
+        box.button(QMessageBox.StandardButton.Save).setText('Save and update')
+        box.button(QMessageBox.StandardButton.Discard).setText('Update without saving')
+        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
+        choice=box.exec()
+        if choice==QMessageBox.StandardButton.Save:
+            return bool(self.save_project())
+        return choice==QMessageBox.StandardButton.Discard
+
     def save_project(self,save_as=False):
         if not self.drawing or (self.builder and self.builder.isRunning()):
             QMessageBox.information(self,'Save project','There is no finished drawing to save yet.'); return None
@@ -3290,6 +3309,8 @@ class Window(QMainWindow):
             self.restart_after_update(); return
         if state=='failed':
             self.open_updates(); return
+        if not self.confirm_before_app_update():
+            return
         import updater
         from update_dialog import UpdateWorker
         settings=updater.load_settings()

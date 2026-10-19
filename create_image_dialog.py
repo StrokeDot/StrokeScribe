@@ -14,8 +14,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QRectF, QPointF
-from PySide6.QtGui import QPixmap, QDesktopServices, QPainter, QColor, QLinearGradient, QPen, QFont
+from PySide6.QtCore import Qt, QThread, Signal, QUrl, QTimer, QRectF, QPointF, QVariantAnimation, QEasingCurve
+from PySide6.QtGui import QPixmap, QDesktopServices, QPainter, QColor, QLinearGradient, QPen, QFont, QPainterPath
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, QComboBox,
     QPlainTextEdit, QProgressBar, QSpinBox, QCheckBox, QFileDialog, QMessageBox, QFrame,
@@ -163,12 +163,62 @@ class AIWorker(QThread):
         self.done.emit(str(result['path']))
 
 
+class PlaceholderIcon(QLabel):
+    """Original vector placeholder icon; no external font or bitmap needed."""
+    def paintEvent(self, event):
+        p=QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(QPen(QColor('#72798d'),3))
+        p.drawRoundedRect(QRectF(5,5,48,48),5,5)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor('#72798d'))
+        p.drawEllipse(QPointF(20,20),5,5)
+        mountain=QPainterPath(QPointF(9,45))
+        for x,y in ((23,29),(31,36),(39,25),(50,41),(50,49),(9,49)):
+            mountain.lineTo(x,y)
+        mountain.closeSubpath();p.drawPath(mountain)
+
+
 class ResultPreview(QLabel):
-    """Notify when the monitor itself changes size, including drawer reflow."""
+    """Result monitor with an illustrated empty state that survives resizing."""
     resized=Signal()
+
+    def __init__(self, text='', parent=None):
+        super().__init__('',parent)
+        self.placeholder=QFrame(self)
+        self.placeholder.setObjectName('resultPlaceholder')
+        self.placeholder.setStyleSheet(
+            'QFrame#resultPlaceholder { border:1px dashed #434b60; border-radius:10px; }'
+            'QLabel { border:none; background:transparent; color:#bac2d4; }')
+        layout=QVBoxLayout(self.placeholder)
+        layout.setContentsMargins(18,22,18,22)
+        layout.setSpacing(10);layout.addStretch(1)
+        icon=PlaceholderIcon();icon.setObjectName('resultPlaceholderIcon')
+        icon.setFixedSize(58,58)
+        layout.addWidget(icon,0,Qt.AlignmentFlag.AlignHCenter)
+        title=QLabel('The result appears here.')
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter);title.setWordWrap(True)
+        title.setStyleSheet('font-weight:600; font-size:13px; color:#e0e3ec;')
+        layout.addWidget(title)
+        self.placeholder_note=QLabel('Generate an image from your prompt to see the result.')
+        self.placeholder_note.setWordWrap(True)
+        self.placeholder_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self.placeholder_note);layout.addStretch(1)
+
+    def setPixmap(self, pixmap):
+        self.placeholder.setVisible(pixmap.isNull())
+        super().setPixmap(pixmap)
+
+    def setText(self, text):
+        # Existing callers clear the label before drawing. Empty state is a
+        # child widget, so text clearing must not accidentally replace it.
+        super().setText('')
+        self.placeholder.setVisible(bool(text))
 
     def resizeEvent(self,event):
         super().resizeEvent(event)
+        w=max(1,min(300,self.width()-40));h=max(1,min(400,self.height()-40))
+        self.placeholder.setGeometry((self.width()-w)//2,(self.height()-h)//2,w,h)
         self.resized.emit()
 
 
@@ -361,6 +411,10 @@ class CreateImageDialog(QDialog):
         self.progress.setMinimumWidth(80); self.progress.setTextVisible(True)
         self.progress.setFixedHeight(18); self.progress.setFormat('%p%')
         self.progress.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.progress_motion=QVariantAnimation(self)
+        self.progress_motion.setDuration(240)
+        self.progress_motion.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self.progress_motion.valueChanged.connect(lambda value:self.progress.setValue(round(value)))
         bottom.addWidget(self.progress,1)
         self.log_button = QPushButton('Engine log'); self.log_button.setObjectName('subtle')
         self.log_button.setCheckable(True)
@@ -380,9 +434,9 @@ class CreateImageDialog(QDialog):
         self.memory = {}
         self.running_task = None
         self.work = dict(percent=-1, text='', started=0.)
-        self.work_timer = QTimer(self); self.work_timer.setInterval(40)
+        self.work_timer = QTimer(self); self.work_timer.setInterval(16); self.work_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.work_timer.timeout.connect(self.paint_working)
-        self.reveal_timer = QTimer(self); self.reveal_timer.setInterval(30)
+        self.reveal_timer = QTimer(self); self.reveal_timer.setInterval(16); self.reveal_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.reveal_timer.timeout.connect(self.reveal_step)
         from image_generator_updates import UpdatePanel
         self.updates_panel=UpdatePanel(self)
@@ -391,13 +445,17 @@ class CreateImageDialog(QDialog):
         self.updates_panel.action_requested.connect(self.model_update_action)
         self.updates_panel.cancel_requested.connect(self.cancel_live_model_update)
         outer.addWidget(self.updates_panel)
+        self._drawer_open=False
+        self.drawer_motion=QVariantAnimation(self)
+        self.drawer_motion.setDuration(250)
+        self.drawer_motion.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self.drawer_motion.valueChanged.connect(lambda value:self.updates_panel.setFixedWidth(round(value)))
+        self.drawer_motion.finished.connect(self._finish_drawer_motion)
         self.task = None
         self.set_task(task or ('lineart' if current_image else 'generate'))
 
     def open_updates(self):
-        self.updates_panel.show()
-        self.check_updates_button.setChecked(True)
-        self.update_layout()
+        self._animate_drawer(True)
         self.check_live_model_updates()
 
     def _run_live_model_worker(self, worker, mode):
@@ -426,8 +484,14 @@ class CreateImageDialog(QDialog):
         if mode == 'scan':
             self.updates_panel.set_items(result)
             changed = sum(s.status == 'update_available' for s in result)
-            self.updates_panel.show_feedback(
-                f'Checked {len(result)} registered image models. {changed} different official file(s) found.')
+            unknown = sum(s.status == 'unverified' for s in result)
+            if changed:
+                summary=f'{changed} installed model(s) have a different official file available.'
+            elif unknown:
+                summary='No updates confirmed. Some installed models could not be checked; try again later.'
+            else:
+                summary='No updates found for the installed models that were checked.'
+            self.updates_panel.show_feedback(summary)
         else:
             self.updates_panel.show_feedback(
                 'Model updated and verified. The previous weights were kept as a backup.')
@@ -505,11 +569,26 @@ class CreateImageDialog(QDialog):
         else:
             self.updates_panel.show_feedback('Selected the model in the main controls.')
 
-    def close_updates(self):
-        self.updates_panel.hide()
-        self.check_updates_button.setChecked(False)
-        self.check_updates_button.setFocus()
+    def _animate_drawer(self, opening):
+        self.drawer_motion.stop()
+        width=self.updates_panel.width() if self.updates_panel.isVisible() else 0
+        self._drawer_open=opening
+        self.check_updates_button.setChecked(opening)
+        self.updates_panel.setFixedWidth(width)
+        self.updates_panel.show()
         self.update_layout()
+        self.drawer_motion.setStartValue(width)
+        self.drawer_motion.setEndValue(400 if opening else 0)
+        self.drawer_motion.start()
+
+    def _finish_drawer_motion(self):
+        if not self._drawer_open:
+            self.updates_panel.hide()
+            self.check_updates_button.setFocus()
+        self.update_layout()
+
+    def close_updates(self):
+        self._animate_drawer(False)
 
     def reject(self):
         if hasattr(self,'updates_panel') and self.updates_panel.isVisible():
@@ -521,7 +600,7 @@ class CreateImageDialog(QDialog):
         if not hasattr(self,'body_layout'):
             return
         # Use the available left column, including a pending drawer opening.
-        drawer_open=hasattr(self,'updates_panel') and not self.updates_panel.isHidden()
+        drawer_open=hasattr(self,'updates_panel') and (self._drawer_open or not self.updates_panel.isHidden())
         available=self.width()-36-(414 if drawer_open else 0)
         compact=available<850
         self.body_layout.setDirection(QBoxLayout.Direction.TopToBottom if compact
@@ -795,14 +874,21 @@ class CreateImageDialog(QDialog):
 
     def on_progress(self, percent, text):
         self.work.update(percent=percent, text=text)
+        self.progress_motion.stop()
         if percent < 0:
             self.progress.setRange(0, 0)
         else:
-            self.progress.setRange(0, 100); self.progress.setValue(percent)
+            previous=max(0,self.progress.value()) if self.progress.maximum() else 0
+            self.progress.setRange(0, 100)
+            self.progress.setValue(min(previous,percent))
+            self.progress_motion.setStartValue(float(min(previous,percent)))
+            self.progress_motion.setEndValue(float(percent))
+            self.progress_motion.start()
         self.status.setText(text)
 
     def on_failed(self, message):
         self.work_timer.stop()
+        self.progress_motion.stop()
         if self.running_task == self.task:
             self.show_result(animate=False)
         self.running_task = None
@@ -883,13 +969,14 @@ class CreateImageDialog(QDialog):
                                  Qt.TransformationMode.SmoothTransformation)
         if animate:
             self._reveal = 0.
+            self._reveal_started=time.monotonic()
             self.reveal_timer.start(); self.reveal_step()
         else:
             self.preview.setPixmap(self._shown)
 
     def reveal_step(self):
         """The new picture fades in and settles from slightly bigger (about half a second)."""
-        self._reveal = min(1., getattr(self, '_reveal', 1.) + .07)
+        self._reveal = min(1., max(0., (time.monotonic()-getattr(self,'_reveal_started',time.monotonic()-.5))/.5))
         f = 1 - (1 - self._reveal) ** 3
         size = self.preview.size()
         canvas = QPixmap(size); canvas.fill(Qt.GlobalColor.transparent)
@@ -1022,11 +1109,13 @@ class CreateImageDialog(QDialog):
             return
         # QDialog.closeEvent calls reject(). Title-bar Close must dismiss the
         # whole window; only Escape should first dismiss the updates drawer.
+        self.drawer_motion.stop()
+        self._drawer_open=False
         self.updates_panel.hide()
         self.check_updates_button.setChecked(False)
         if self.model_manager is not None:
             self.model_manager.close()
-        self.work_timer.stop(); self.reveal_timer.stop()
+        self.work_timer.stop(); self.reveal_timer.stop(); self.progress_motion.stop()
         if self.player is not None:
             self.player.stop()
         if self.live_update_worker is not None and self.live_update_worker.isRunning():

@@ -62,6 +62,7 @@ with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,{'STROKESCRIBE_
             app.processEvents()
             if dialog.live_update_worker is None: break
             QTest.qWait(20)
+    QTest.qWait(300)
     dialog.resize(1680,1080);app.processEvents()
     dialog.grab().save(str(out/'create-image-drawer-open.png'))
     dialog.resize(1000,740);app.processEvents()

@@ -54,15 +54,15 @@ class ModelStatusCard(QFrame):
         status_text = {
             "update_available": "Different official revision available",
             "up_to_date": "Matches published weights",
-            "unverified": "Publisher check unavailable",
+            "unverified": "Couldn’t check for updates",
             "incomplete": "Installation incomplete",
-            "not_installed": "Not installed",
+            "not_installed": "Optional model — not installed",
             "backup_pending": "Previous revision retained",
         }.get(item.status, "Unknown")
         head = QHBoxLayout()
         head.addWidget(label(item.name, "modelName"), 1)
         head.addWidget(StatusBadge(
-            "Installed" if item.installed else "Available",
+            "Installed" if item.installed else "Optional",
             "good" if item.installed else "accent"))
         layout.addLayout(head)
         status = label("● " + status_text, "modelStatus")
@@ -71,8 +71,24 @@ class ModelStatusCard(QFrame):
             else "good" if item.status == "up_to_date" else "accent")
         layout.addWidget(status)
         layout.addWidget(label(f"{item.provider}  |  {item.variant_label}", "updateMuted"))
-        details = label(item.note, "updateMuted")
+        note=item.note
+        if item.status=='unverified':
+            note='Your installed model is unchanged. We couldn’t confirm whether an update is available. Try again later.'
+        elif not item.installed:
+            import ai_models
+            model=next((m for m in ai_models.MODELS if m.id==item.model_id),None)
+            variant=next((v for v in model.variants if v.id==item.variant_id),None) if model else None
+            size=ai_models.gb(ai_models.download_size(model,variant)) if variant else (
+                ai_models.gb(item.file.size) if item.file else 'Size shown before download')
+            note=f'Optional download: {size}. This is a separate model, not a required update. Keep your current model if you’re happy with it.'
+        details = label(note, "updateMuted")
         layout.addWidget(details)
+        if item.status=='unverified':
+            technical=QPushButton('Technical details')
+            technical.setCheckable(True)
+            extra=label(item.note,"updateMuted");extra.hide()
+            technical.toggled.connect(extra.setVisible)
+            layout.addWidget(technical);layout.addWidget(extra)
         if item.remote:
             layout.addWidget(label(
                 f"Publisher SHA-256: {item.remote.sha256[:12]}…  |  "
@@ -140,7 +156,6 @@ class UpdatePanel(QFrame):
         self.cancel_button.clicked.connect(self.cancel_requested.emit)
         root.addWidget(self.cancel_button)
         self.set_items(self.items)
-        self.close_requested.connect(self.hide)
 
     def set_items(self, items):
         self.items = tuple(items)
@@ -160,7 +175,7 @@ class UpdatePanel(QFrame):
              [i for i in self.items if i.status == "update_available"]),
             ("Installed models", "Real models in the configured AI folder.",
              [i for i in self.items if i.installed and i.status != "update_available"]),
-            ("Available models", "Registered image models not yet installed.",
+            ("Optional models", "Other models you can choose; no download is required.",
              [i for i in self.items if not i.installed]),
         )
         for title, description, items in groups:

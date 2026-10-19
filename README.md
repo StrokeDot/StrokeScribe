@@ -17,6 +17,16 @@ A small local desktop tool for short SVG drawing overlays. Built from original a
 - Unknown or unavailable publisher revisions are never advertised as verified updates. A changed official checksum may not mean a newer model.
 - Application updates still use File → Update StrokeScribe; this is a separate image-model feature.
 
+## Smoother image workflow and save-before-update (v0.5.3-experimental.62)
+
+- The model-updates drawer slides open and closed; X and Escape close it smoothly.
+- Failed checks say “Couldn’t check for updates”; they never mean “no updates available”.
+- Uninstalled models are clearly optional, with download sizes and no required-upgrade implication.
+- The result well has an illustrated empty state. Waiting motion is refreshed smoothly, reported progress eases toward the real value, and completed images fade in using elapsed time.
+- Unsaved projects offer Save and update / Update without saving / Cancel before app installation through the dialog or banner. Cancelling or failing to save blocks installation. The restart safety check remains.
+- Live model verification from .61 is preserved. No animation, inference, export or dependency changes.
+- Update via File → Update StrokeScribe… then restart.
+
 ## Image Generator Updates drawer (v0.5.3-experimental.60)
 
 - Create Image or Sound (AI) now has a standalone Check for updates button and a right-side Image Generator Updates drawer.
