@@ -34,7 +34,7 @@ jobs:
       - run: |
           pip install --only-binary=:all: -r requirements.txt
       - name: Artwork regression tests
-        run: python -X faulthandler -c "import pathlib,runpy,sys,applog,logging; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); sys.argv=['tools/run_tests.py']+[p.stem for p in sorted(pathlib.Path('.').glob('test_artwork*.py'))]+['test_project_leave_decisions','test_svg_export']; runpy.run_path('tools/run_tests.py',run_name='__main__')"
+        run: python -X faulthandler -c "import pathlib,runpy,sys,applog,logging; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); sys.argv=['tools/run_tests.py','--limit','120']+[p.stem for p in sorted(pathlib.Path('.').glob('test_artwork*.py'))]+['test_project_leave_decisions','test_svg_export']; runpy.run_path('tools/run_tests.py',run_name='__main__')"
       - name: Review frames and source ZIP
         if: hashFiles('render_artwork_workflow.py') != ''
         run: |
