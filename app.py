@@ -1219,7 +1219,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             original=getattr(self,'color_original',None)
             keep=original if original is not None else self.final_image
             state['color_png']=None if getattr(self.drawing,'svg_has_fill',False) and not self.color_path else qimage_to_b64(keep)
-            state['svg_color_override']=bool(self.color_path)
+            state['svg_color_override']=bool(getattr(self,'color_path',None))
         if self.paint_hand_path and Path(self.paint_hand_path).is_file():
             import base64
             state['paint_hand_png']=base64.b64encode(Path(self.paint_hand_path).read_bytes()).decode('ascii')

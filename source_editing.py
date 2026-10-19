@@ -53,7 +53,8 @@ class SourceEditing:
                 widget.blockSignals(True);set_widget_value(widget,value);widget.blockSignals(False)
         self._source_snapshot_key=None
         self.scenes[self.scene_index]['thumb']=None
-        self._base_cache.clear()
+        from collections import OrderedDict
+        self._base_cache=OrderedDict()
         self.clear_frames()
         self.fill_order()
         self.update_source_labels()
@@ -109,7 +110,7 @@ class SourceEditing:
         if self._artwork_busy() or not self.drawing:return False
         if not path and not reconstruct:return False
         try:
-            if reconstruct and getattr(self.drawing,'drawing_source_kind',None)=='svg':
+            if reconstruct and getattr(self.drawing,'svg_source',None):
                 from engine import import_svg
                 import tempfile
                 # Validated native source is already retained by the project serializer.
@@ -127,10 +128,9 @@ class SourceEditing:
             old=self.image_result if self.is_image_artwork() else None
             source=self.image_path if old else None
             if reconstruct:
-                guide=self.image_guide if old else None
-                if not source:
+                metadata=copy.deepcopy(getattr(self.drawing,'artwork_assets',None))
+                if not metadata:
                     raise ValueError('Choose an SVG or line-art image to reconstruct this drawing.')
-                metadata=copy.deepcopy(self.drawing.artwork_assets)
             else:
                 metadata=capture_assets(source or path,path if source else None)
             managed,guide=materialize_assets(metadata)
@@ -163,6 +163,20 @@ class SourceEditing:
     def _apply_drawing_source(self,drawing,metadata,settings,name,kind):
         from image_reconstruct import Reconstruction
         from artwork_assets import materialize_assets
+        # Keep the shared artwork frame: changing Draw must not rescale Paint.
+        x0,y0,x1,y1=self.drawing.bounds
+        a0,b0,a1,b1=drawing.bounds
+        scale=min(max(1e-9,x1-x0)/max(1e-9,a1-a0),max(1e-9,y1-y0)/max(1e-9,b1-b0))
+        dx=(x0+x1)/2-(a0+a1)/2*scale
+        dy=(y0+y1)/2-(b0+b1)/2*scale
+        fitted=[]
+        for stroke in drawing.strokes:
+            item=copy.copy(stroke)
+            item.points=[(x*scale+dx,y*scale+dy) for x,y in stroke.points]
+            item.width=stroke.width*scale
+            item.__post_init__()
+            fitted.append(item)
+        drawing.strokes=fitted;drawing.bounds=self.drawing.bounds
         drawing.drawing_source_name=name
         drawing.drawing_source_kind=kind
         values=dict(drawing=drawing)
