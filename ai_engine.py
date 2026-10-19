@@ -62,6 +62,9 @@ def load_settings():
     data.setdefault('root', str(default_root()))
     data.setdefault('accepted_licenses', [])
     data.setdefault('variant_override', {})
+    # A ComfyUI process can retain gigabytes of RAM/VRAM when idle. Default
+    # to stopping it after a completed, failed or cancelled generation.
+    data.setdefault('release_ai_memory', True)
     return data
 
 

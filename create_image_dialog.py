@@ -134,33 +134,46 @@ class AIWorker(QThread):
         ai_engine.download_model(paths, files, report, self.cancelled)
         self.done.emit('downloaded')
 
-    def _generate(self, engine, workflow, image_path):
-        self.progress.emit(-1, 'Starting the AI engine (the first time takes a minute)…')
-        engine.start(cancelled=self.cancelled)
-        if image_path:
-            name = engine.put_input(image_path)
-            for node in workflow.values():
-                if node['class_type'] == 'LoadImage':
-                    node['inputs']['image'] = name
-        self.progress.emit(-1, 'Loading the model…')
-        engine.percent = None
-        import threading
-        result = {}
+    def _generate(self, engine, workflow, image_path, release_after=True):
+        # Running model weights remain in Python's memory until the ComfyUI
+        # subprocess exits. Free them by default, even after errors/cancel.
+        try:
+            self.progress.emit(-1, 'Starting the AI engine (the first time takes a minute)…')
+            engine.start(cancelled=self.cancelled)
+            if image_path:
+                name = engine.put_input(image_path)
+                for node in workflow.values():
+                    if node['class_type'] == 'LoadImage':
+                        node['inputs']['image'] = name
+            self.progress.emit(-1, 'Loading the model…')
+            engine.percent = None
+            import threading
+            result = {}
 
-        def job():
-            try:
-                result['path'] = engine.run(workflow, cancelled=self.cancelled)
-            except Exception as exc:
-                result['error'] = exc
-        thread = threading.Thread(target=job, daemon=True)
-        thread.start()
-        while thread.is_alive():
-            thread.join(.5)
-            if engine.percent is not None:
-                self.progress.emit(engine.percent, f'Creating… {engine.percent}%')
-        if 'error' in result:
-            raise result['error']
-        self.done.emit(str(result['path']))
+            def job():
+                try:
+                    result['path'] = engine.run(workflow, cancelled=self.cancelled)
+                except Exception as exc:
+                    result['error'] = exc
+            thread = threading.Thread(target=job, daemon=True)
+            thread.start()
+            while thread.is_alive():
+                thread.join(.5)
+                if engine.percent is not None:
+                    self.progress.emit(engine.percent, f'Creating… {engine.percent}%')
+            if 'error' in result:
+                raise result['error']
+            path = str(result['path'])
+        finally:
+            if release_after:
+                self.progress.emit(-1, 'Releasing AI memory…')
+                try:
+                    engine.stop()
+                except Exception as exc:
+                    # Cleanup failures must not conceal the original job
+                    # failure or discard an image already written to disk.
+                    self.log.emit(f'AI engine cleanup warning: {exc}')
+        self.done.emit(path)
 
 
 class PlaceholderIcon(QLabel):
@@ -278,6 +291,13 @@ class CreateImageDialog(QDialog):
         self.install_button.clicked.connect(self.install_engine)
         engine_row.addWidget(self.install_button)
         root.addLayout(engine_row)
+        self.release_ai_memory = QCheckBox('Release AI memory after each generation')
+        self.release_ai_memory.setChecked(bool(self.settings['release_ai_memory']))
+        self.release_ai_memory.setToolTip(
+            'Stops the local AI engine after each generation to free RAM and GPU memory. '
+            'Uncheck to generate several images faster without reloading the model.')
+        self.release_ai_memory.toggled.connect(self.set_release_ai_memory)
+        root.addWidget(self.release_ai_memory)
 
         # Task buttons
         self.tasks_layout = QGridLayout();self.tasks_layout.setSpacing(6)
@@ -813,6 +833,10 @@ class CreateImageDialog(QDialog):
         self.refresh()
 
     # ------------------------------------------------------------ actions
+    def set_release_ai_memory(self, checked):
+        self.settings['release_ai_memory'] = bool(checked)
+        ai_engine.save_settings(self.settings)
+
     def change_folder(self):
         folder = QFileDialog.getExistingDirectory(self, 'Folder for the AI engine and models (needs 20–80 GB)',
                                                   str(self.paths.root.parent))
@@ -883,7 +907,8 @@ class CreateImageDialog(QDialog):
                                       prompt=self.prompt.toPlainText(), source=image)
         self.work.update(percent=-1, text='Starting…', started=time.monotonic())
         self.reveal_timer.stop(); self.work_timer.start(); self.paint_working()
-        self._start(AIWorker('generate', engine=self.engine, workflow=workflow, image_path=image),
+        self._start(AIWorker('generate', engine=self.engine, workflow=workflow, image_path=image,
+                             release_after=self.release_ai_memory.isChecked()),
                     self.on_result)
 
     def cancel(self):

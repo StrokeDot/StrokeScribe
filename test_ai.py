@@ -327,6 +327,46 @@ class CreateImageWindowTests(unittest.TestCase):
         del os.environ['STROKESCRIBE_CONFIG_DIR']
         self.tmp.cleanup()
 
+    def test_ai_memory_is_released_after_result_error_and_cancel(self):
+        from unittest.mock import Mock
+        from create_image_dialog import AIWorker
+        for outcome in ('success', 'error', 'cancel'):
+            with self.subTest(outcome=outcome):
+                engine = Mock()
+                engine.percent = None
+                engine.run.return_value = str(Path(self.tmp.name) / 'generated.png')
+                if outcome == 'error':
+                    engine.run.side_effect = RuntimeError('bad model')
+                if outcome == 'cancel':
+                    engine.run.side_effect = ai_engine.Cancelled('Cancelled.')
+                worker = AIWorker('generate')
+                ready = []
+                worker.done.connect(ready.append)
+                if outcome == 'success':
+                    worker._generate(engine, {}, None)
+                    self.assertEqual(ready, [str(Path(self.tmp.name) / 'generated.png')])
+                else:
+                    with self.assertRaisesRegex(Exception, 'bad model|Cancelled'):
+                        worker._generate(engine, {}, None)
+                    self.assertEqual(ready, [])
+                engine.stop.assert_called_once()
+
+    def test_keeping_ai_loaded_is_explicit_opt_in(self):
+        from unittest.mock import Mock
+        from create_image_dialog import AIWorker, CreateImageDialog
+        dialog = CreateImageDialog(None, None, hardware=pc(16, 64))
+        try:
+            self.assertTrue(dialog.release_ai_memory.isChecked())
+            dialog.release_ai_memory.setChecked(False)
+            self.assertFalse(ai_engine.load_settings()['release_ai_memory'])
+            engine = Mock()
+            engine.percent = None
+            engine.run.return_value = 'generated.png'
+            AIWorker('generate')._generate(engine, {}, None, release_after=False)
+            engine.stop.assert_not_called()
+        finally:
+            dialog.close()
+
     def test_created_pictures_are_kept_in_library(self):
         import time as _t
         import library
