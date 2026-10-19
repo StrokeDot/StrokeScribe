@@ -21,7 +21,8 @@ class History:
             return a is b
         return (a['settings'] == b['settings'] and len(a['strokes']) == len(b['strokes'])
                 and all(x is y for x, y in zip(a['strokes'], b['strokes']))
-                and a.get('overlays') == b.get('overlays'))
+                and a.get('overlays') == b.get('overlays')
+                and a.get('source') is b.get('source'))
 
     def reset(self, snapshot):
         self.undo_stack.clear(); self.redo_stack.clear()

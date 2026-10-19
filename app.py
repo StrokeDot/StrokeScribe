@@ -375,7 +375,9 @@ class ImageBuilder(QThread):
 
 from artwork_workflow import ArtworkWorkflow
 
-class Window(ArtworkWorkflow,QMainWindow):
+from source_editing import SourceEditing
+
+class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def __init__(self):
         super().__init__()
         import os
@@ -673,7 +675,8 @@ class Window(ArtworkWorkflow,QMainWindow):
         import json
         return {'settings':self.settings_state(),
                 'strokes':tuple(self.drawing.strokes) if self.drawing else (),
-                'overlays':json.dumps(getattr(self,'overlays',[]))}
+                'overlays':json.dumps(getattr(self,'overlays',[])),
+                'source':self.source_snapshot()}
 
     def reset_history(self):
         if hasattr(self,'history_timer'): self.history_timer.stop()
@@ -726,6 +729,7 @@ class Window(ArtworkWorkflow,QMainWindow):
         from projects import set_widget_value
         self._restoring=True
         try:
+            self.restore_source_snapshot(snapshot.get('source'))
             settings=snapshot['settings']
             for name in self.PROJECT_SETTINGS:
                 widget=getattr(self,name,None)
@@ -1107,7 +1111,8 @@ class Window(ArtworkWorkflow,QMainWindow):
 
     def sync_workspace(self,*args):
         image_source=self.is_image_artwork()
-        self.load_color_button.setEnabled(not image_source)
+        self.load_color_button.setEnabled(bool(self.drawing) and not self._artwork_busy())
+        self.load_color_button.setText('Change original image…' if image_source else 'Change matching colors…')
         self.use_color.setEnabled(not image_source and self.final_image is not None)
         # Image sources paint by brush plan only (Adaptive or Zigzag).
         brush_item=self.reveal_mode.model().item(0)
@@ -1207,7 +1212,7 @@ class Window(ArtworkWorkflow,QMainWindow):
                             'path':str(self.image_path or ''),'guide':str(self.image_guide or '')}
         else:
             original=getattr(self,'color_original',None)
-            keep=original if (not getattr(self,'color_path',None) and original is not None) else self.final_image
+            keep=original if original is not None else self.final_image
             state['color_png']=None if getattr(self.drawing,'svg_has_fill',False) and not self.color_path else qimage_to_b64(keep)
             state['svg_color_override']=bool(getattr(self.drawing,'svg_has_fill',False) and self.color_path)
         if self.paint_hand_path and Path(self.paint_hand_path).is_file():
@@ -1460,6 +1465,7 @@ class Window(ArtworkWorkflow,QMainWindow):
             detail=info.get('detail','medium')
             regions=segment_regions(pil_image(image),'high' if detail=='max' else detail)
             drawing.image_regions=regions
+            self.color_path=None;self.color_original=None;self.final_image=None
             self.image_result=Reconstruction(drawing,image,regions,'line_art',detail,info.get('filename','image'))
             self.image_path=managed[0] if managed else info.get('path') or None
             self.image_guide=managed[1] if managed else info.get('guide') or None
@@ -2815,15 +2821,10 @@ class Window(ArtworkWorkflow,QMainWindow):
         return True
 
     def load_color(self):
-        if self.is_image_artwork():
-            QMessageBox.information(self,'Image colors','Image mode uses the imported image. Switch to SVG to load a matching colored PNG.'); return
-        name,_=QFileDialog.getOpenFileName(self,'Load final colored artwork','','PNG (*.png)')
-        if not name: return
-        self.color_path=name
-        if not self.reload_color(): return
-        self.use_color.setEnabled(True)
-        self.use_color.setChecked(True)
-        self.refresh()
+        name,_=QFileDialog.getOpenFileName(self,'Change original image' if self.is_image_artwork() else 'Change matching colors','',
+                                        'Images (*.png *.jpg *.jpeg *.webp *.bmp)')
+        return self.replace_paint_source(name) if name else False
+
     def effective_duration(self): return self.duration.value()/self.speed.value()
     def timeline_length(self):
         from frame_render import timeline_seconds
@@ -2988,7 +2989,7 @@ class Window(ArtworkWorkflow,QMainWindow):
             color_image=None if image_source else self.final_image,hand=self.hand,
             image_source=self.image_result.image if image_source and self.image_result else None,
             image_mode=image_source)
-        if getattr(self.drawing,'svg_has_fill',False) and self.use_color.isChecked() and not self.color_path:
+        if not image_source and getattr(self.drawing,'svg_has_fill',False) and self.use_color.isChecked() and not self.color_path:
             from svg_appearance import render_appearance
             options['final_image']=render_appearance(self.drawing,max(options['width'],options['height']))
         options['overlays']=list(getattr(self,'overlays',[]))
