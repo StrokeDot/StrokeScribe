@@ -25,9 +25,14 @@ class ArtworkAssetsTests(unittest.TestCase):
     def test_source_pixel_budget_is_checked_before_decoding(self):
         m=self.module()
         with tempfile.TemporaryDirectory() as tmp:
-            p=Path(tmp)/'large.png';Image.new('L',(4001,4000),0).save(p)
+            p=Path(tmp)/'large.png';Image.new('L',(5001,4800),0).save(p)
             with self.assertRaisesRegex(ValueError,'pixel|large'):
                 m.capture_assets(p)
+    def test_existing_supported_images_above_16_megapixels_remain_supported(self):
+        m=self.module()
+        with tempfile.TemporaryDirectory() as tmp:
+            p=Path(tmp)/'supported.png';Image.new('L',(4100,4000),0).save(p)
+            self.assertEqual(m.capture_assets(p)['schema'],1)
     def test_materialization_does_not_trust_provenance_paths(self):
         m=self.module()
         with tempfile.TemporaryDirectory() as tmp:
