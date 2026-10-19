@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QLabel,QPushButto
 class SourceEditor(QDialog):
     def __init__(self,window,stage):
         super().__init__(window)
-        self.window=window;self.stage=stage;self.path=None;self.controls={}
+        self.window=window;self.stage=stage;self.path=None;self.controls={};self.initial_settings={}
         self.setWindowTitle('Edit Drawing Source' if stage=='draw' else 'Edit Painting Source')
         self.resize(620,600)
         layout=QVBoxLayout(self)
@@ -33,7 +33,7 @@ class SourceEditor(QDialog):
             source=getattr(window,key);control=QDoubleSpinBox()
             control.setDecimals(source.decimals());control.setRange(source.minimum(),source.maximum())
             control.setSingleStep(source.singleStep());control.setValue(source.value())
-            form.addRow(label,control);self.controls[key]=control
+            form.addRow(label,control);self.controls[key]=control;self.initial_settings[key]=control.value()
         note=QLabel('Drawing paths and original colors are separate. A replacement is fitted proportionally to the existing artwork bounds. '
                     'If its composition differs, choose a matching drawing source too. Hand calibration and placement are kept.')
         note.setWordWrap(True);layout.addWidget(note)
@@ -81,7 +81,7 @@ class SourceEditor(QDialog):
         elif self.stage=='draw':self.reconstruct.setChecked(True)
 
     def apply(self):
-        settings={key:control.value() for key,control in self.controls.items()}
+        settings={key:control.value() for key,control in self.controls.items() if control.value()!=self.initial_settings[key]}
         w=self.window
         if self.stage=='draw' and (self.path or self.reconstruct.isChecked()):
             ok=w.replace_drawing_source(self.path,reconstruct=not bool(self.path),settings=settings)

@@ -101,7 +101,8 @@ class SourceEditing:
             return False
         # Preparation above has no effect on the selected element or history.
         changes=dict(settings or {})
-        if not self.is_image_artwork():changes['use_color']=True
+        if not self.is_image_artwork():
+            changes.setdefault('use_color',self.use_color.isChecked() or self.final_image is None)
         result=self._commit_source(values,changes)
         self.status.setText('Painting source changed. Existing drawing paths and placement were kept.')
         return result
