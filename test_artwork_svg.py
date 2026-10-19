@@ -48,6 +48,19 @@ class SvgAppearanceTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError,'external|resource|dimensions|large|limit'):
                 self.load(text)
+    def test_saved_native_svg_rebuilds_same_final_image_and_drawing_only(self):
+        from scenes import job_from_state
+        m=self.module()
+        d=self.load('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect x="10" y="10" width="80" height="80" fill="black"/></svg>')
+        data=dict(drawing=drawing_to_dict(d),source='svg',settings=dict(use_color=True,res='320 × 180',showhand=False))
+        restored,options,_=job_from_state(data)
+        self.assertIsNotNone(options['final_image'])
+        self.assertEqual(options['final_image'].pixelColor(50,50).name(),'#000000')
+        data['settings']['use_color']=False
+        _,options,_=job_from_state(data)
+        self.assertIsNone(options['final_image'])
+        self.assertEqual(drawing_to_dict(restored)['strokes'],data['drawing']['strokes'])
+
     def test_repeated_large_appearance_renders_obey_cache_budget(self):
         m=self.module();m.clear_cache()
         try:

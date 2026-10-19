@@ -1225,7 +1225,8 @@ class Window(ArtworkWorkflow,QMainWindow):
         else:
             original=getattr(self,'color_original',None)
             keep=original if (not getattr(self,'color_path',None) and original is not None) else self.final_image
-            state['color_png']=qimage_to_b64(keep)
+            state['color_png']=None if getattr(self.drawing,'svg_has_fill',False) and not self.color_path else qimage_to_b64(keep)
+            state['svg_color_override']=bool(getattr(self.drawing,'svg_has_fill',False) and self.color_path)
         if self.paint_hand_path and Path(self.paint_hand_path).is_file():
             import base64
             state['paint_hand_png']=base64.b64encode(Path(self.paint_hand_path).read_bytes()).decode('ascii')
@@ -1488,7 +1489,7 @@ class Window(ArtworkWorkflow,QMainWindow):
             self.image_controls.hide(); self.import_button.setText('Import SVG…')
             # The colour picture as saved; cleaned like a newly loaded PNG (an older
             # project may have kept a painted checkerboard or faint leftovers).
-            self.color_path=None
+            self.color_path='from-project' if data.get('svg_color_override') else None
             self.color_original=qimage_from_b64(data.get('color_png'))
             self.final_image=self.color_original
             if self.final_image is not None and (data.get('settings') or {}).get('clean_color',True):
@@ -2814,7 +2815,7 @@ class Window(ArtworkWorkflow,QMainWindow):
         return True
 
     def load_color(self):
-        if self.source_type.currentIndex():
+        if self.is_image_artwork():
             QMessageBox.information(self,'Image colors','Image mode uses the imported image. Switch to SVG to load a matching colored PNG.'); return
         name,_=QFileDialog.getOpenFileName(self,'Load final colored artwork','','PNG (*.png)')
         if not name: return
@@ -2833,7 +2834,7 @@ class Window(ArtworkWorkflow,QMainWindow):
     def change_image_animation(self,*args):
         # Direct painting has to retain its color source; never let the user
         # accidentally request an invisible, no-color animation.
-        if self.image_animation.currentIndex()==1 and self.source_type.currentIndex():
+        if self.image_animation.currentIndex()==1 and self.is_image_artwork():
             self.preserve_colors.setChecked(True)
         self.preserve_colors.setEnabled(self.image_animation.currentIndex()!=1)
         self.refresh()

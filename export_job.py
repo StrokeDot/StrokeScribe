@@ -23,6 +23,9 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     painted and the Image source rules apply).
     """
     width, height = [int(x.strip()) for x in str(s.get('res', '1920 × 1080')).split('×')]
+    if color_image is None and getattr(drawing,'svg_has_fill',False) and s.get('use_color',False):
+        from svg_appearance import render_appearance
+        color_image=render_appearance(drawing,max(width,height))
     if s.get('left_handed'):
         # Left-handed: the hand (and brush, eraser) mirrored; its pen tip moves to the other side.
         from tools_kit import mirrored
