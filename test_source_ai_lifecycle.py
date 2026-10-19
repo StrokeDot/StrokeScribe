@@ -179,7 +179,7 @@ class AILifecycleTests(unittest.TestCase):
     def test_start_cannot_replace_a_worker_still_in_native_cleanup(self):
         finishing = NativeFinishing()
         self.dialog.worker = finishing
-        replacement = AIWorker("generate")
+        replacement = AIWorker("download", paths=self.fixture.paths, files=[], name="fixture")
         try:
             self.dialog._start(replacement, lambda _: None)
             self.assertIs(self.dialog.worker, finishing)
