@@ -7,3 +7,5 @@
 - Release gate: no main merge and no published update without separate user release approval.
 - Ruling: preserve additive project format 1 fields and immutable source bytes; raster intake uses explicit 64 MiB / 16 million pixel bounds — avoids unbounded embedded sources; unusually large assets are rejected clearly.
 - Plan self-review: shared signatures consistent; placement, pairing, SVG appearance, persistence, rendering and CI acceptance all have owning tasks. No runtime changes yet.
+
+- Task 1 RED: run39233729114 job117997639953 — all four new asset tests failed because durable storage is absent; existing19 policy/SVG tests passed.
