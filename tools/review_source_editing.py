@@ -1,6 +1,7 @@
 """Remote review artifacts; representative art, no user artwork or AI weights."""
 import sys
 from pathlib import Path
+from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parent.parent))
 from PySide6.QtGui import QImage
 from test_artwork_workflow import WorkflowFixture,APP
@@ -14,7 +15,15 @@ import numpy as np
 
 def main():
     output=Path('samples/source-editing');output.mkdir(parents=True,exist_ok=True)
-    fixture=WorkflowFixture();fixture.setUp()
+    # The test fixture's config lives in a disposable directory. On Windows
+    # an open RotatingFileHandler prevents deleting that directory. Keep the
+    # review-only log alongside the other captured artifacts instead.
+    import applog
+    review_logs=output/'logs'
+    review_logs.mkdir(parents=True,exist_ok=True)
+    fixture=WorkflowFixture()
+    with patch.object(applog,'folder',return_value=review_logs):
+        fixture.setUp()
     try:
         w=fixture.w
         original,guide=pair(fixture.tmp.name)
@@ -51,10 +60,5 @@ def main():
             traceback.print_exc(file=sys.stderr)
             raise
         print('Source review window cleanup completed.', flush=True)
-        import applog
-        recent=applog.tail(35)
-        if recent:
-            print('Application diagnostics after review cleanup:\n'+recent,
-                  file=sys.stderr, flush=True)
 
 if __name__=='__main__':main()
