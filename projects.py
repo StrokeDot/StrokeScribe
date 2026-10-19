@@ -14,7 +14,7 @@ from pathlib import Path
 FORMAT = 'strokescribe-project'
 VERSION = 1
 SUFFIX = '.strokescribe'
-SKIP_ATTRIBUTES = {'strokes', 'bounds', 'warnings', 'image_regions'}
+SKIP_ATTRIBUTES = {'strokes', 'bounds', 'warnings', 'image_regions', 'artwork_assets'}
 
 
 # ---------------------------------------------------------------- values
@@ -146,6 +146,11 @@ def load(path):
         raise ValueError('This is not a StrokeScribe project file.')
     if int(data.get('version', 0)) > VERSION:
         raise ValueError('This project was saved by a newer StrokeScribe. Update the app to open it.')
+    from artwork_assets import validate_assets
+    records=[data]+[s.get('state') for s in data.get('scenes',[]) if isinstance(s,dict) and s.get('state')]
+    for record in records:
+        if record.get('artwork') is not None:
+            record['artwork']=validate_assets(record['artwork'])
     return data
 
 

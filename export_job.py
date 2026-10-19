@@ -69,10 +69,11 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
         image_mode = image_source is not None
     if image_mode:
         paint_only = s.get('image_animation') == 'Paint Only'
+        drawing_only = s.get('image_animation') == 'Drawing only'
         if drawing is not None:
             drawing.image_animation = 'paint_only' if paint_only else 'draw_paint'
             drawing.drawing_visibility = 'progressive'
-        options.update(final_image=image_source if image_source is not None
+        options.update(final_image=image_source if not drawing_only and image_source is not None
                        and (s.get('preserve_colors', True) or paint_only) else None,
                        fade_duration=float(s.get('image_duration', 8)),
                        reveal_mode=reveal if reveal in ('adaptive', 'zigzag', 'rows', 'columns') else 'adaptive',

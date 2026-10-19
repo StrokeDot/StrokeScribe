@@ -1231,11 +1231,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     a2.addRow('Image paint time (s)',w.image_duration)
     w.paint_form=a2
     w.image_animation=QComboBox()
-    w.image_animation.addItems(['Draw, then Paint','Paint Only'])
+    w.image_animation.addItems(['Draw, then Paint','Paint Only','Drawing only'])
     w.image_animation.setToolTip(
         'Draw, then Paint: draw temporary lines and replace them while painting. '
         'Paint Only: skip all visible line drawing and paint colors directly. '
-        'Both use the same AI path analysis and brush coverage; there is no separate erasing phase.')
+        'Drawing only: animate the strokes without revealing original colors. '
+        'Both painting modes use the same AI path analysis and brush coverage; there is no separate erasing phase.')
     a2.addRow('Image animation',w.image_animation)
     w.image_animation.currentIndexChanged.connect(w.change_image_animation)
     w.brush_width=w.number(.02,.5,.14,.02);a2.addRow('Brush width',w.brush_width)

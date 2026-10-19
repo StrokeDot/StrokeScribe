@@ -925,7 +925,8 @@ class CreateImageDialog(QDialog):
             # Made for another tab: it waits there (nothing is lost by switching tabs).
             kept = None
             if task != 'sound':
-                kept = keep_in_library(path, task, self.memory.get(task, {}).get('prompt', ''))
+                kept = keep_in_library(path, task, self.memory.get(task, {}).get('prompt', ''),
+                                       self.memory.get(task,{}).get('source') if task=='lineart' else None)
             self.memory[task] = dict(self.memory.get(task, {}), result_path=path, kept_path=kept)
             name = dict(TASKS).get(task, task)
             self.progress.setRange(0, 100); self.progress.setValue(100)
@@ -950,7 +951,8 @@ class CreateImageDialog(QDialog):
             if QGuiApplication.platformName() != 'offscreen':
                 self.listen()                     # play it right away
             return
-        self.kept_path = keep_in_library(path, self.task, self.prompt.toPlainText())
+        self.kept_path = keep_in_library(path, self.task, self.prompt.toPlainText(),
+                                         (self.memory.get(self.task,{}).get('source') or self.image_path) if self.task=='lineart' else None)
         kept = ' Kept in your Library → Images.' if self.kept_path else ''
         self.status.setText('Done.' + kept + ' ' + ('Click “Draw it in StrokeScribe” to trace these lines and paint '
                                                    'your original colours.' if self.task == 'lineart' else
@@ -1089,7 +1091,8 @@ class CreateImageDialog(QDialog):
             return
         stable = str(getattr(self, 'kept_path', None) or self.result_path)   # the Library copy stays
         if self.task == 'lineart':
-            self.use_result('lineart', stable, self.image_path)
+            original=self.memory.get(self.task,{}).get('source') or self.image_path
+            self.use_result('lineart', stable, original)
         else:
             self.use_result('image', stable, None)
         self.accept()
@@ -1163,14 +1166,18 @@ def picture_name(task, prompt, when=None):
     return ' - '.join(x for x in (KIND_NAMES.get(task, 'AI picture'), words, stamp) if x) + '.png'
 
 
-def keep_in_library(path, task, prompt=''):
+def keep_in_library(path, task, prompt='', original=None):
     """Copy a created picture into Library → Images (the engine's folder is only a work folder)."""
     try:
         import shutil, tempfile
         import library
         named = Path(tempfile.mkdtemp()) / picture_name(task, prompt)
         shutil.copy2(path, named)
-        item = library.Library().add('images', named, name=named.stem)
+        lib=library.Library()
+        item = lib.add('images', named, name=named.stem)
+        if task=='lineart' and original:
+            from artwork_assets import capture_assets
+            lib.set_artwork(item,capture_assets(original,path))
         shutil.rmtree(named.parent, ignore_errors=True)
         return item.path
     except Exception:

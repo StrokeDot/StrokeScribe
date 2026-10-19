@@ -61,16 +61,23 @@ class ArtworkWorkflow:
             return False
         if placement=='replace' and not self.drawing:
             return False
+        if placement in ('replace','new') and not self.confirm_leave_project(
+                'replace the selected artwork' if placement=='replace' else 'create a New Project'):
+            return False
         path=str(path)
+        before_prepare=self.project_changes.revision
         ctx=dict(placement=placement,generation=getattr(self,'_artwork_generation',0),
                  target=self.scenes[self.scene_index],name=name or Path(original or path).stem,
-                 same_spot=same_spot,cancelled=False,committed=False,path=path)
+                 same_spot=same_spot,cancelled=False,committed=False,path=path,confirmed_revision=before_prepare)
         try:
             if kind=='svg' or path.lower().endswith('.svg'):
                 from engine import import_svg
                 drawing=import_svg(path)
                 return self._commit_artwork(ctx,drawing)
             from artwork_assets import capture_assets,validate_assets,materialize_assets
+            if assets is None:
+                import library
+                assets=library.Library().artwork_for(path)
             metadata=validate_assets(assets) if assets else capture_assets(original or path,path if kind=='lineart' and original else None)
             source,guide=materialize_assets(metadata)
             ctx.update(assets=metadata,source=source,guide=guide)
@@ -97,6 +104,8 @@ class ArtworkWorkflow:
             ctx['cancelled']=True
             self.status.setText('Import result was not applied because the editing target changed.')
             return False
+        if hasattr(result.drawing,'source_frame'):
+            ctx['assets']['frame']=result.drawing.source_frame
         result.drawing.artwork_assets=ctx['assets']
         return self._commit_artwork(ctx,result.drawing,result)
 
@@ -104,7 +113,7 @@ class ArtworkWorkflow:
         placement=ctx['placement']
         if ctx.get('cancelled'):
             return False
-        if placement in ('replace','new') and not self.confirm_leave_project(
+        if placement in ('replace','new') and ctx.get('confirmed_revision')!=self.project_changes.revision and not self.confirm_leave_project(
                 'replace the selected artwork' if placement=='replace' else 'create a New Project'):
             ctx['cancelled']=True
             return False
@@ -151,6 +160,15 @@ class ArtworkWorkflow:
             self.position=0;self.slider.setValue(0)
             self.project_changes.mark_changed()
             ctx['committed']=True
+            if result is not None:
+                try:
+                    import library
+                    lib=library.Library()
+                    item=lib.add('images',ctx['path'],name=ctx['name'])
+                    lib.set_artwork(item,ctx['assets'])
+                except Exception as exc:
+                    import applog
+                    applog.error('Could not preserve paired artwork in the Library',exc)
             self.status.setText('Artwork added.' if placement=='add' else 'Selected artwork replaced.' if placement=='replace' else 'Artwork added to New Project.')
         except Exception as exc:
             self.apply_project(previous)

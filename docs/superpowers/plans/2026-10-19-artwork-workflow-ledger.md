@@ -17,3 +17,6 @@
 - Task 1/2 GREEN: run39235908173, Windows job118004790795 and Linux118004791199: all29 tests passed with normal exits. Includes all placement transactions, cancelled asynchronous completion, empty clean New Project, and existing SVG/policy checks.
 - Task 3 start: add pairing/Library/project/mode/guide-framing regressions before implementation.
 - Ruling: align durable raster intake with the existing reconstruction limit of24 million pixels instead of tightening it to16 million; preserve supported user artwork. Source bytes remain bounded at64 MiB. A regression checks existing16–24 MP inputs.
+
+- Task 3 RED: Linux job118005526404 reproduced lost AI kind/original, missing Library pairing, missing project metadata, absent Drawing only and unrecorded portrait-guide framing. The additional compatibility test correctly rejected16–24 MP input under the temporary16 MP cap.
+- Ruling: ask destructive-placement confirmation before preparation, and re-confirm only if edits occur during preparation. This preserves the existing cancellation-before-builder contract while preventing stale save decisions from discarding later edits.

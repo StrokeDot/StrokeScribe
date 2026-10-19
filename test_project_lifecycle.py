@@ -139,14 +139,14 @@ class WindowLifecycleTests(unittest.TestCase):
         old = self.w.drawing
         self.w.duration.setValue(self.w.duration.value() + .5)
         with patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Cancel):
-            self.w.use_library_item('images', SimpleNamespace(path=source, name='Other SVG'))
+            self.w.use_library_item('images', SimpleNamespace(path=source, name='Other SVG'),placement='replace')
         self.assertIs(self.w.drawing, old)
 
     def test_cancelled_ai_replacement_never_starts_image_builder(self):
         self.w.duration.setValue(self.w.duration.value() + .5)
         with patch.object(QMessageBox, 'question', return_value=QMessageBox.StandardButton.Cancel), \
              patch.object(self.w, 'build_image') as started:
-            self.w.use_ai_result('image', 'not-started.png')
+            self.w.use_ai_result('image', 'not-started.png',placement='replace')
         started.assert_not_called()
 
     def test_cancelled_restart_does_not_launch_new_app(self):

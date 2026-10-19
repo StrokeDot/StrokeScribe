@@ -118,17 +118,32 @@ def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False,style
         raise ValueError('Choose the Standard or Artist animation.')
     source=original
     guide_score=None
+    guide_fit=None
     if line_guide is not None:
         from ai_lineart import guide_image
         guide=line_guide if isinstance(line_guide,Image.Image) else Image.open(line_guide)
-        # The line drawing was made from the whole image file: bring it to the
-        # file's size and crop it exactly like the artwork was cropped.
         guide=guide.convert('RGBA')
-        flat=Image.new('RGBA',guide.size,(255,255,255,255)); flat.alpha_composite(guide)
-        guide=flat.resize(full_size,Image.LANCZOS).crop(box)
-        if box2:
-            guide=guide.crop(box2)
-        source,guide_score=guide_image(original,guide)
+        flat=Image.new('RGBA',guide.size,(255,255,255,255));flat.alpha_composite(guide)
+        # AI tools can return a different canvas aspect ratio. Try bounded,
+        # aspect-preserving center crop and padding; never stretch the guide.
+        ratio=flat.width/flat.height
+        target_ratio=full_size[0]/full_size[1]
+        modes=('fit',) if abs(ratio-target_ratio)<.001 else ('cover','contain')
+        candidates=[]
+        for fit_mode in modes:
+            if fit_mode=='cover':
+                framed=ImageOps.fit(flat,full_size,Image.Resampling.LANCZOS)
+            elif fit_mode=='contain':
+                small=ImageOps.contain(flat,full_size,Image.Resampling.LANCZOS)
+                framed=Image.new('RGBA',full_size,'white')
+                framed.alpha_composite(small,((full_size[0]-small.width)//2,(full_size[1]-small.height)//2))
+            else:
+                framed=flat.resize(full_size,Image.Resampling.LANCZOS)
+            framed=framed.crop(box)
+            if box2:framed=framed.crop(box2)
+            aligned,score=guide_image(original,framed)
+            candidates.append((score,fit_mode,aligned))
+        guide_score,guide_fit,source=max(candidates,key=lambda x:x[0])
     if guide_score is not None:
         drawing=guide_drawing(source,detail)
     elif animation=='artist':
@@ -142,6 +157,8 @@ def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False,style
                 f' (lined up with the image, match {guide_score:.0%}).' if guide_score>0 else
                 ' (could not be lined up automatically; check that the lines match the colours).')]
         drawing.line_guide_score=guide_score
+    drawing.source_frame=dict(source_size=list(full_size),crop=list(box),clean_crop=list(box2) if box2 else None,
+                              guide_fit=guide_fit,guide_score=guide_score)
     drawing.line_style=style
     drawing.animation_style=animation
     drawing.image_regions=regions

@@ -4,7 +4,7 @@ import base64,hashlib,io,os,tempfile
 from pathlib import Path
 from PIL import Image
 MAX_SOURCE_BYTES=64*1024*1024
-MAX_PIXELS=16_000_000
+MAX_PIXELS=24_000_000
 EXTENSIONS={'.png','.jpg','.jpeg','.webp','.bmp'}
 
 def _image_bytes(raw):
@@ -13,7 +13,7 @@ def _image_bytes(raw):
     try:
         with Image.open(io.BytesIO(raw)) as im:
             if im.width<1 or im.height<1 or im.width*im.height>MAX_PIXELS:
-                raise ValueError('Artwork exceeds the 16 million pixel limit.')
+                raise ValueError('Artwork exceeds the 24 million pixel limit.')
             if im.format not in ('PNG','JPEG','WEBP','BMP'):
                 raise ValueError('Unsupported artwork image format.')
             im.verify()

@@ -64,6 +64,19 @@ class Item:
     original: str = ''
     tip: tuple | None = None  # hands: pen tip (x, y) fractions
     path: Path = field(default=None, repr=False)
+    artwork_file: Path | None = field(default=None,repr=False)
+
+    @property
+    def artwork(self):
+        if self.artwork_file is None:
+            return None
+        try:
+            if self.artwork_file.is_symlink() or self.artwork_file.stat().st_size>190_000_000:
+                raise ValueError('Unsafe or oversized Library artwork record.')
+            from artwork_assets import validate_assets
+            return validate_assets(json.loads(self.artwork_file.read_text(encoding='utf-8')))
+        except FileNotFoundError:
+            return None
 
 
 class Library:
@@ -110,6 +123,10 @@ class Library:
             tip = info.get('tip')
             item = Item(category, file, info.get('name', Path(file).stem), float(info.get('added', 0)),
                         info.get('original', ''), tuple(tip) if tip else None, folder / file)
+            import re
+            record=info.get('artwork')
+            if isinstance(record,str) and re.fullmatch(r'[a-f0-9]{64}\.json',record):
+                item.artwork_file=folder/'.artwork'/record
             if search.lower() in item.name.lower() or search.lower() in item.file.lower():
                 items.append(item)
         return sorted(items, key=lambda i: i.added, reverse=True)
@@ -143,6 +160,36 @@ class Library:
             index[target.name]['tip'] = [float(tip[0]), float(tip[1])]
         self._write(category, index)
         return next(i for i in self.items(category) if i.file == target.name)
+
+    def set_artwork(self,item,metadata):
+        """Store paired sources separately, keeping ordinary Library listing small."""
+        import hashlib
+        from artwork_assets import validate_assets
+        metadata=validate_assets(metadata)
+        encoded=json.dumps(metadata,separators=(',',':'),sort_keys=True)
+        filename=hashlib.sha256(encoded.encode('utf-8')).hexdigest()+'.json'
+        folder=self.folder(item.category)/'.artwork';folder.mkdir(exist_ok=True)
+        target=folder/filename
+        if target.is_symlink():
+            raise ValueError('Unsafe Library artwork record.')
+        temporary=folder/(filename+'.saving')
+        if temporary.is_symlink():
+            raise ValueError('Unsafe Library artwork staging entry.')
+        temporary.write_text(encoded,encoding='utf-8');temporary.replace(target)
+        index=self._read(item.category)
+        if item.file not in index:
+            raise ValueError('Artwork item is not in this Library.')
+        index[item.file]['artwork']=filename
+        self._write(item.category,index)
+        item.artwork_file=target
+        return item
+
+    def artwork_for(self,path):
+        path=Path(path)
+        if path.resolve().parent!=self.folder('images').resolve():
+            return None
+        item=next((i for i in self.items('images') if i.file==path.name),None)
+        return item.artwork if item else None
 
     def set_tip(self, item, tip):
         index = self._read(item.category)

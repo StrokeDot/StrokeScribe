@@ -739,7 +739,7 @@ class Window(ArtworkWorkflow,QMainWindow):
             for key in self.sound_files: self.sound_files[key]=settings.get(key)
             self.update_sound_buttons()
             self.canvas.set_background(self.preview_background.currentIndex())
-            self.preserve_colors.setEnabled(self.image_animation.currentIndex()!=1)
+            self.preserve_colors.setEnabled(self.image_animation.currentIndex()==0)
             if 'overlays' in snapshot:
                 import json
                 self.overlays=json.loads(snapshot['overlays'])
@@ -1229,6 +1229,9 @@ class Window(ArtworkWorkflow,QMainWindow):
         if self.paint_hand_path and Path(self.paint_hand_path).is_file():
             import base64
             state['paint_hand_png']=base64.b64encode(Path(self.paint_hand_path).read_bytes()).decode('ascii')
+        metadata=getattr(self.drawing,'artwork_assets',None)
+        if metadata:
+            state['artwork']=metadata
         if self.overlays:
             import copy
             state['overlays']=copy.deepcopy(self.overlays)
@@ -1424,6 +1427,12 @@ class Window(ArtworkWorkflow,QMainWindow):
         self.overlays=copy.deepcopy(data.get('overlays') or [])
         self.selected_overlay=None
         drawing=drawing_from_dict(data['drawing'])
+        metadata=data.get('artwork') or getattr(drawing,'artwork_assets',None)
+        managed=None
+        if metadata:
+            from artwork_assets import validate_assets,materialize_assets
+            drawing.artwork_assets=validate_assets(metadata)
+            managed=materialize_assets(drawing.artwork_assets)
         settings=data.get('settings',{})
         # Settings first (without a refresh storm), then the drawing.
         for name in self.PROJECT_SETTINGS:
@@ -1468,12 +1477,13 @@ class Window(ArtworkWorkflow,QMainWindow):
             regions=segment_regions(pil_image(image),'high' if detail=='max' else detail)
             drawing.image_regions=regions
             self.image_result=Reconstruction(drawing,image,regions,'line_art',detail,info.get('filename','image'))
-            self.image_path=info.get('path') or None
-            self.image_guide=info.get('guide') or None
+            self.image_path=managed[0] if managed else info.get('path') or None
+            self.image_guide=managed[1] if managed else info.get('guide') or None
             self.source_type.blockSignals(True); self.source_type.setCurrentIndex(1); self.source_type.blockSignals(False)
             self.image_controls.show(); self.import_button.setText('Import image…')
             self.color_note.setText(self.image_result.filename+' • original colors')
         else:
+            self.image_result=None;self.image_path=None;self.image_guide=None
             self.source_type.blockSignals(True); self.source_type.setCurrentIndex(0); self.source_type.blockSignals(False)
             self.image_controls.hide(); self.import_button.setText('Import SVG…')
             # The colour picture as saved; cleaned like a newly loaded PNG (an older
@@ -1692,58 +1702,51 @@ class Window(ArtworkWorkflow,QMainWindow):
         menu.exec(where)
 
     def new_element(self,how,same_spot=False,path=None,text=None,item=None):
-        """Add an element with its own artwork. The file (or text) is chosen first: if the
-        choice is cancelled, nothing is added. path / text / item skip the question (tests)."""
-        if not self.drawing or (self.builder and self.builder.isRunning()): return False
-        if how=='file' and path is None:
-            path,_=QFileDialog.getOpenFileName(self,'New element: choose a picture or SVG','',
-                                               'Pictures and SVG (*.svg *.png *.jpg *.jpeg *.webp *.bmp)')
-            if not path: return False
-        if how=='text' and text is None:
-            from PySide6.QtWidgets import QInputDialog
-            text,ok=QInputDialog.getMultiLineText(self,'New element: text',
-                                                  'The text to write by hand (the font is chosen on the left):',
-                                                  '')
-            if not ok or not text.strip(): return False
-        if how=='ai' and path is None:
-            # The picture is made first; the element is added only when it is used.
-            from create_image_dialog import CreateImageDialog
-            import ai_engine
-            if self.ai_engine is None:
-                self.ai_engine=ai_engine.Engine()
-            made=[]
-            CreateImageDialog(self,None,lambda kind,p,original=None: made.append((kind,p,original)),
-                              self.ai_engine).exec()
-            made=[m for m in made if m[0]!='sound']
-            if not made: return False
-            kind,path,original=made[-1]
-        if how=='library' and item is None:
-            from library_dialog import LibraryDialog
-            chosen=[]
-            LibraryDialog(self,'images',lambda category,it: chosen.append(it)).exec()
-            if not chosen: return False
-            item=chosen[-1]
-        (self.add_picture if same_spot else self.add_scene)()
-        scene=self.scenes[self.scene_index]
+        """Acquire first, then send the complete result through Add placement."""
+        from PySide6.QtWidgets import QInputDialog
+        if self._artwork_busy(): return False
         if how=='file':
-            scene['name']=Path(path).stem[:30]
-            self.import_artwork(path)
-        elif how=='text':
-            scene['name']=text.strip().splitlines()[0][:30]
-            self.text.setPlainText(text)
-            self.letter()
-        elif how=='library':
-            scene['name']=str(getattr(item,'name','') or 'Picture')[:30]
-            self.use_library_item('images',item,as_element=True)
-        elif how=='ai':
-            scene['name']=Path(path).stem[:30]
-            self.use_ai_result('image',path,None,as_element=True)
-        # One timeline: with two or more elements, show the whole video.
+            if path is None:
+                path,_=QFileDialog.getOpenFileName(self,'New element: choose artwork','',
+                                'Pictures and SVG (*.svg *.png *.jpg *.jpeg *.webp *.bmp)')
+            if not path: return False
+            return self.request_artwork(path,kind='svg' if str(path).lower().endswith('.svg') else 'image',
+                                        placement='add',same_spot=same_spot)
+        if how=='library':
+            if item is None:
+                from library_dialog import LibraryDialog
+                chosen=[]
+                LibraryDialog(self,'images',lambda category,it:chosen.append(it)).exec()
+                if not chosen:return False
+                item=chosen[-1]
+            return self.use_library_item('images',item,as_element=True,same_spot=same_spot)
+        if how=='ai':
+            if path is None:
+                from create_image_dialog import CreateImageDialog
+                import ai_engine
+                if self.ai_engine is None:self.ai_engine=ai_engine.Engine()
+                made=[]
+                CreateImageDialog(self,None,lambda kind,p,original=None:made.append((kind,p,original)),
+                                  self.ai_engine).exec()
+                made=[m for m in made if m[0]!='sound']
+                if not made:return False
+                kind,path,original=made[-1]
+            else:kind,original='image',None
+            return self.use_ai_result(kind,path,original,as_element=True,same_spot=same_spot)
+        if how=='text':
+            if text is None:
+                text,ok=QInputDialog.getMultiLineText(self,'New element: text','Text to write by hand:','')
+                if not ok or not text.strip():return False
+            if self.drawing:(self.add_picture if same_spot else self.add_scene)()
+            self.scenes[self.scene_index]['name']=text.strip().splitlines()[0][:30]
+            self.text.setPlainText(text);self.letter()
+        elif how=='copy' and self.drawing:
+            (self.add_picture if same_spot else self.add_scene)()
+        else:return False
         if len(self.scenes)>1 and self.preview_scope.currentIndex()==0:
             self.preview_scope.setCurrentIndex(1)
-        self.store_scene(); self.fill_scenes()
+        self.store_scene();self.fill_scenes()
         return True
-
 
     def page_members(self,k=None):
         """The elements drawn on the same page as element k (joined by 'Same page')."""
@@ -2281,7 +2284,7 @@ class Window(ArtworkWorkflow,QMainWindow):
         dialog=CreateImageDialog(self,current,self.use_ai_result,self.ai_engine,task=task)
         dialog.exec()
 
-    def use_ai_result(self,kind,path,original=None,as_element=False):
+    def use_ai_result(self,kind,path,original=None,as_element=False,placement=None,same_spot=False):
         """Line art: trace it over `original`; image: import it as the image source;
         sound: use it as the pencil/brush/eraser sound (original = which one)."""
         if kind=='sound':
@@ -2296,13 +2299,8 @@ class Window(ArtworkWorkflow,QMainWindow):
                                        'sound_eraser_file':'eraser'}.get(original,'pencil')
                                 +' sound in use (saved in the Library → Audio). Press Play to hear it.')
             return
-        if not as_element and not self.confirm_leave_project('replace this artwork'):
-            return
-        self.source_type.setCurrentIndex(1)
-        if kind=='lineart' and original:
-            self.build_image(original,line_guide=path)
-        else:
-            self.build_image(path)
+        return self.request_artwork(path,kind=kind,original=original,
+                                    placement='add' if as_element else placement,same_spot=same_spot)
 
     def use_own_line_drawing(self):
         """Trace a line drawing you already have (black lines on white) over the image."""
@@ -2314,7 +2312,19 @@ class Window(ArtworkWorkflow,QMainWindow):
             self.build_image(self.image_path,line_guide=name)
 
     def rebuild_image(self):
-        if self.image_path: self.build_image(self.image_path)
+        metadata=getattr(self.drawing,'artwork_assets',None)
+        if metadata:
+            from artwork_assets import materialize_assets
+            self.image_path,self.image_guide=materialize_assets(metadata)
+        if self.image_path and Path(self.image_path).is_file():
+            if self.image_guide and not Path(self.image_guide).is_file():
+                QMessageBox.information(self,'Drawing guide unavailable',
+                    'The saved drawing and colors still work. Reattach the original guide before rebuilding.')
+                return
+            self.build_image(self.image_path)
+        else:
+            QMessageBox.information(self,'Source unavailable',
+                'The embedded drawing and colors still work. Reattach the source image to rebuild.')
 
     def image_stage(self,message,percent,indeterminate):
         self.analysis_stage=message
@@ -2349,6 +2359,9 @@ class Window(ArtworkWorkflow,QMainWindow):
                                   paint_method=self.image_paint_method(),
                                   line_guide=line_guide if intake is not None else self.image_guide)
         self.builder._artwork_request=intake
+        if intake is None:
+            from artwork_assets import capture_assets
+            self.builder._source_assets=capture_assets(path,self.image_guide)
         self.builder.ready.connect(self.image_ready)
         self.builder.failed.connect(self.image_failed)
         self.builder.stage.connect(self.image_stage)
@@ -2397,6 +2410,10 @@ class Window(ArtworkWorkflow,QMainWindow):
         if ctx is not None:
             self._accept_artwork_result(result,ctx)
             return
+        if getattr(self.builder,'_source_assets',None):
+            result.drawing.artwork_assets=self.builder._source_assets
+            if hasattr(result.drawing,'source_frame'):
+                result.drawing.artwork_assets['frame']=result.drawing.source_frame
         self.image_result=result
         self.update_project_title(result.filename)
         self.set_drawing(result.drawing)
@@ -2655,7 +2672,7 @@ class Window(ArtworkWorkflow,QMainWindow):
         from library_dialog import LibraryDialog
         LibraryDialog(self,category,self.use_library_item).exec()
 
-    def use_library_item(self,category,item,as_element=False):
+    def use_library_item(self,category,item,as_element=False,placement=None,same_spot=False):
         if category=='audio':
             self.set_audio(str(item.path)); return
         if category=='hands':
@@ -2665,19 +2682,9 @@ class Window(ArtworkWorkflow,QMainWindow):
             self.set_hand(image,item.name,str(item.path),item.tip)
             return
         path=str(item.path)
-        if not as_element and not self.confirm_leave_project('replace this artwork'):
-            return
-        if path.lower().endswith('.svg'):
-            self.source_type.setCurrentIndex(0)
-            try:
-                drawing=import_svg(path)
-            except Exception as exc:
-                QMessageBox.warning(self,'Cannot import',str(exc)); return
-            self.update_project_title(item.name)
-            self.set_drawing(drawing)
-        else:
-            self.source_type.setCurrentIndex(1)
-            self.build_image(path)
+        return self.request_artwork(path,kind='svg' if path.lower().endswith('.svg') else 'image',
+                                    placement='add' if as_element else placement,name=item.name,
+                                    same_spot=same_spot,assets=getattr(item,'artwork',None))
 
     def use_builtin_tool(self,name):
         """Built-in hand, pencil or marker, with its tip and a fitting size."""
