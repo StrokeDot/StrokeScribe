@@ -1117,6 +1117,10 @@ class Window(QMainWindow):
         brush_item=self.reveal_mode.model().item(0)
         if brush_item is not None:
             brush_item.setEnabled(not image_source)
+        # A disabled item still appears in the popup and looks broken.
+        # Hide the SVG-only mode from image-source choices, but keep its
+        # stable index for older projects and existing SVG animations.
+        self.reveal_mode.view().setRowHidden(0, image_source)
         if image_source and self.reveal_mode.currentIndex()==0:
             self.reveal_mode.setCurrentIndex(1)
         self.paint_form.setRowVisible(self.image_paint_hint,image_source)

@@ -62,6 +62,9 @@ def load_settings():
     data.setdefault('root', str(default_root()))
     data.setdefault('accepted_licenses', [])
     data.setdefault('variant_override', {})
+    # Keep ComfyUI warm for consecutive generations in the same window,
+    # then release its RAM/VRAM on exit by default.
+    data.setdefault('release_ai_memory_on_close', True)
     return data
 
 

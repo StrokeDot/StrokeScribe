@@ -154,11 +154,15 @@ class StudioTests(unittest.TestCase):
         # Images choose Adaptive or Zigzag; plain Brush painting is SVG-only.
         self.assertTrue(w.reveal_mode.isVisible())
         self.assertFalse(w.reveal_mode.model().item(0).isEnabled())
+        self.assertTrue(w.reveal_mode.view().isRowHidden(0),
+                        'SVG-only brush mode must not appear as a disabled image option')
         self.assertTrue(w.reveal_mode.model().item(2).isEnabled())
         self.assertTrue(w.image_duration.isVisible())
         w.source_type.setCurrentIndex(0)
         self.assertTrue(w.reveal_mode.isVisible())
         self.assertTrue(w.reveal_mode.model().item(0).isEnabled())
+        self.assertFalse(w.reveal_mode.view().isRowHidden(0),
+                         'SVG brush painting remains available for SVG sources')
         self.assertFalse(w.image_duration.isVisible())
 
     def test_timeline_keyboard_and_export_busy_guard(self):
