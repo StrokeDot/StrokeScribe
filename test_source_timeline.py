@@ -67,6 +67,27 @@ class DrawingSourceTests(WorkflowFixture):
         self.w.request_artwork(str(guide),kind='lineart',original=str(original),placement='add');self.wait_import()
         self.assertTrue(callable(getattr(self.w,'replace_drawing_source',None)),'Drawing source replacement missing')
         return original,guide
+    def test_drawing_replacement_keeps_shared_bounds_and_final_paint_placement(self):
+        self.setup_image()
+        from test_artwork_rendering import frame,render_options,rgba
+        import numpy as np
+        old_bounds=self.w.drawing.bounds;o=render_options(self.w)
+        before=rgba(frame(self.w.drawing,o,1))
+        self.w.replace_drawing_source(str(self.svg))
+        self.assertEqual(self.w.drawing.bounds,old_bounds)
+        np.testing.assert_array_equal(rgba(frame(self.w.drawing,render_options(self.w),1)),before)
+    def test_initial_svg_can_reconstruct_retained_native_source(self):
+        self.w.request_artwork(str(self.svg),kind='svg',placement='add')
+        self.assertTrue(self.w.replace_drawing_source(None,reconstruct=True))
+    def test_svg_element_raster_guide_can_reconstruct_after_external_deletion(self):
+        original,guide=pair(self.tmp.name)
+        self.w.request_artwork(str(self.svg),kind='svg',placement='add')
+        self.w.replace_drawing_source(str(guide));self.wait_import()
+        state=self.w.scene_state();original.unlink();guide.unlink()
+        self.w.apply_scene_state(state)
+        self.assertFalse(self.w.is_image_artwork())
+        self.assertTrue(self.w.replace_drawing_source(None,reconstruct=True));self.wait_import()
+        self.assertFalse(self.w.is_image_artwork())
     def test_svg_drawing_replacement_keeps_original_pixels_settings_and_undo(self):
         self.setup_image()
         pixels=self.w.image_result.image.copy();old=tuple(self.w.drawing.strokes);path=self.w.image_path
