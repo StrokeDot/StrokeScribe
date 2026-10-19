@@ -132,7 +132,9 @@ class SourceEditing:
                 if not metadata:
                     raise ValueError('Choose an SVG or line-art image to reconstruct this drawing.')
             else:
-                metadata=capture_assets(source or path,path if source else None)
+                metadata=capture_assets(source or path,path)
+                if not old and getattr(self.drawing,'artwork_assets',None):
+                    metadata['original']=copy.deepcopy(self.drawing.artwork_assets['original'])
             managed,guide=materialize_assets(metadata)
             ctx=dict(source_edit=True,generation=getattr(self,'_artwork_generation',0),
                      target=self.scenes[self.scene_index],drawing=self.drawing,

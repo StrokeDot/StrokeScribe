@@ -3,7 +3,7 @@ import copy
 from pathlib import Path
 from unittest.mock import patch
 from PIL import Image
-from PySide6.QtCore import Qt,QPoint,QPointF
+from PySide6.QtCore import Qt,QPoint,QPointF,QTimer
 from PySide6.QtWidgets import QSlider,QApplication
 from PySide6.QtTest import QTest,QSignalSpy
 from studio_workspace import StageTimeline
@@ -50,14 +50,14 @@ class SourceTimelineTests(WorkflowFixture):
         self.assertTrue(hasattr(t,'stage_source_edit'),'Stage source signal missing')
         spy=QSignalSpy(t.stage_source_edit)
         t.set_scenes(None,0);t.update_state(4,0,0,0)
-        with patch('source_editor.SourceEditor.exec',return_value=0):
-            QTest.keyClick(t,Qt.Key.Key_P,Qt.KeyboardModifier.ControlModifier|Qt.KeyboardModifier.ShiftModifier)
+        QTimer.singleShot(0,lambda: APP.activeModalWidget().reject())
+        QTest.keyClick(t,Qt.Key.Key_P,Qt.KeyboardModifier.ControlModifier|Qt.KeyboardModifier.ShiftModifier)
         self.assertEqual(spy.count(),1);self.assertEqual(spy.at(0),['paint',0])
     def test_cancel_editor_keeps_project_and_history(self):
         self.assertTrue(callable(getattr(self.w,'edit_stage_source',None)),'Source editor missing')
         before=self.w.project_state();history=self.w.history.current
-        with patch('source_editor.SourceEditor.exec',return_value=0):
-            self.w.edit_stage_source('draw',0)
+        QTimer.singleShot(0,lambda: APP.activeModalWidget().reject())
+        self.w.edit_stage_source('draw',0)
         self.assertEqual(self.w.project_state(),before);self.assertIs(self.w.history.current,history)
 
 class DrawingSourceTests(WorkflowFixture):
@@ -102,12 +102,16 @@ class DrawingSourceTests(WorkflowFixture):
     def test_raster_drawing_replacement_and_reopen_preserves_pair(self):
         original,guide=self.setup_image();before=self.w.image_result.image.copy()
         self.assertTrue(self.w.replace_drawing_source(str(guide)));self.wait_import()
-        self.assertEqual(self.w.image_result.image,before)
+        from test_artwork_rendering import rgba
+        import numpy as np
+        np.testing.assert_array_equal(rgba(self.w.image_result.image),rgba(before))
         self.assertEqual(self.w.drawing.artwork_assets['original']['extension'],'.png')
         from projects import save,load
         path=save(Path(self.tmp.name)/'drawing-source',self.w.project_state())
         original.unlink();guide.unlink();self.w.apply_project(load(path))
-        self.assertEqual(self.w.image_result.image,before);self.assertTrue(Path(self.w.image_guide).is_file())
+        from test_artwork_rendering import rgba
+        import numpy as np
+        np.testing.assert_array_equal(rgba(self.w.image_result.image),rgba(before));self.assertTrue(Path(self.w.image_guide).is_file())
     def test_cancel_async_drawing_reconstruction_is_atomic(self):
         original,guide=self.setup_image();before=self.w.project_state()
         self.w.replace_drawing_source(str(guide))
