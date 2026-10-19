@@ -18,6 +18,17 @@ def pair(root):
     return original,guide
 
 class PairingTests(WorkflowFixture):
+    def test_new_text_after_filled_svg_keeps_previous_art_and_has_no_stale_paint(self):
+        self.svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect x="10" y="10" width="80" height="80" fill="black"/></svg>')
+        self.w.request_artwork(str(self.svg),kind='svg',placement='add')
+        previous=self.w.scene_index
+        self.assertIsNotNone(self.w.options()['final_image'])
+        self.assertTrue(self.w.new_element('text',text='Hi'))
+        self.assertIsNone(self.w.options()['final_image'],'Text must not paint the preceding SVG image')
+        self.assertFalse(self.w.use_color.isChecked())
+        self.assertIsNone(self.w.image_result)
+        self.assertIn('svg_source',self.w.scenes[previous]['state']['drawing']['attributes'])
+
     def test_invalid_library_pair_is_reported_without_mutating_artwork(self):
         class BrokenItem:
             name='broken pair'
