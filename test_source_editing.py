@@ -94,6 +94,13 @@ class PaintSourceTests(WorkflowFixture):
             self.w.clean_color.setChecked(True);self.w.clean_color.setChecked(False)
             self.assertIn(name,self.w.color_note.text())
             self.assertGreater(self.w.final_image.pixelColor(50,40).blue(),220)
+    def test_replacing_existing_svg_paint_retains_explicit_drawing_only(self):
+        self.w.request_artwork(str(self.svg),kind='svg',placement='add')
+        self.w.replace_paint_source(str(self.blue()))
+        self.w.use_color.setChecked(False);self.w.commit_history()
+        self.w.replace_paint_source(str(self.blue('second.png')))
+        self.assertFalse(self.w.use_color.isChecked())
+        self.assertIsNone(self.w.options()['final_image'])
     def test_svg_matching_color_replacement_retains_native_vectors(self):
         self.api_source()
         self.svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="80"><rect x="10" y="10" width="80" height="60" fill="black"/></svg>')
