@@ -87,6 +87,19 @@ class DrawingSourceTests(WorkflowFixture):
         path=save(Path(self.tmp.name)/'drawing-source',self.w.project_state())
         original.unlink();guide.unlink();self.w.apply_project(load(path))
         self.assertEqual(self.w.image_result.image,before);self.assertTrue(Path(self.w.image_guide).is_file())
+    def test_cancel_async_drawing_reconstruction_is_atomic(self):
+        original,guide=self.setup_image();before=self.w.project_state()
+        self.w.replace_drawing_source(str(guide))
+        self.w.cancel_artwork_import();self.wait_import()
+        self.assertEqual(self.w.project_state(),before)
+    def test_native_svg_guide_survives_reopen_and_can_rerun(self):
+        self.setup_image();self.w.replace_drawing_source(str(self.svg))
+        before=self.w.image_result.image.copy()
+        self.w.apply_scene_state(self.w.scene_state())
+        self.assertEqual(self.w.drawing.drawing_source_kind,'svg')
+        self.assertTrue(self.w.replace_drawing_source(None,reconstruct=True))
+        self.assertEqual(self.w.image_result.image,before)
+        self.assertTrue(self.w.is_image_artwork())
     def test_invalid_drawing_and_cancel_keep_source(self):
         self.setup_image();before=self.w.project_state()
         self.assertFalse(self.w.replace_drawing_source(None))
