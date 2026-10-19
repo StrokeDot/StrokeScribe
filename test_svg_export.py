@@ -114,6 +114,62 @@ class RoundTripTests(unittest.TestCase):
             self.assertLess(math.dist(original[-1], back.points[-1]), 1.)
             self.assertAlmostEqual(back.length, length(original), delta=length(original) * .1 + 2)
 
+    def test_long_straight_svg_edges_need_only_endpoints(self):
+        from engine import import_svg
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'straight.svg'
+            path.write_text('<svg xmlns="http://www.w3.org/2000/svg">'
+                            '<path stroke="black" fill="none" '
+                            'd="M 0 0 L 100000 0 L 100000 100000"/></svg>')
+            drawing = import_svg(path)
+        self.assertEqual(drawing.strokes[0].points,
+                         [(0., 0.), (100000., 0.), (100000., 100000.)])
+        self.assertAlmostEqual(drawing.strokes[0].length, 200000.)
+
+    def test_dense_curved_svg_imports_without_point_overflow(self):
+        from engine import import_svg
+        # Would use >500,000 samples with the old fixed 0.4-unit step.
+        d = 'M 0 0 ' + ' '.join(
+            f'C {x+30} 70 {x+70} -70 {x+100} 0'
+            for x in (100 * i for i in range(1800)))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'complex-original.svg'
+            path.write_text('<svg xmlns="http://www.w3.org/2000/svg">'
+                            '<path stroke="black" fill="none" d="' + d + '"/></svg>')
+            drawing = import_svg(path)
+        self.assertEqual(len(drawing.strokes), 1)
+        pts = drawing.strokes[0].points
+        self.assertLess(len(pts), 90000)
+        self.assertGreater(len(pts), 10000)
+        self.assertEqual(pts[0], (0., 0.))
+        self.assertEqual(pts[-1], (180000., 0.))
+
+    def test_adaptive_curve_tracks_bezier_geometry_and_preserves_fill_warning(self):
+        from engine import import_svg
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'filled-curve.svg'
+            path.write_text('<svg xmlns="http://www.w3.org/2000/svg">'
+                            '<path style="fill:#b0b0b0" '
+                            'd="M 0 0 C 100 220 200 -180 300 40"/></svg>')
+            drawing = import_svg(path)
+        self.assertEqual(len(drawing.strokes), 1)
+        poly = drawing.strokes[0].points
+        self.assertTrue(any('Filled shapes are drawn as outlines' in w
+                            for w in drawing.warnings))
+        def segment_distance(p, a, b):
+            dx, dy = b[0]-a[0], b[1]-a[1]
+            denom = dx*dx+dy*dy
+            if denom == 0:
+                return math.dist(p, a)
+            t = max(0, min(1, ((p[0]-a[0])*dx+(p[1]-a[1])*dy)/denom))
+            return math.dist(p, (a[0]+t*dx, a[1]+t*dy))
+        for i in range(101):
+            t = i/100
+            a=(1-t)**3; b=3*(1-t)**2*t; c=3*(1-t)*t*t; d=t**3
+            real = (100*b+200*c+300*d, 220*b-180*c+40*d)
+            self.assertLess(min(segment_distance(real, x, y)
+                                for x, y in zip(poly, poly[1:])), 1.0)
+
     def test_app_has_style_choice_and_svg_export(self):
         os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
         from PySide6.QtWidgets import QApplication

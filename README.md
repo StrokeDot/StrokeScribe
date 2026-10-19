@@ -9,6 +9,13 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Adaptive SVG vector import (v0.5.3-experimental.63)
+
+- Complex original SVGs import with curvature-aware vector sampling; long straight lines use their exact endpoints. The existing 500,000-point safety limit remains in effect but unnecessary over-sampling no longer consumes it.
+- Stroke order, SVG source coordinates, animation and export continue as vector-based workflows—no forced PNG conversion.
+- **Known limit:** Filled SVG shapes are still drawn as outlines and do not reproduce their filled colors or advanced effects. This is an import/performance fix, not a new filled-vector animation feature.
+- Save work before updating with File → Update StrokeScribe. Existing project, model and library files are not rewritten by the SVG sampler.
+
 ## Functional model updates (v0.5.3-experimental.61)
 
 - Create Image → Check for updates now reads installed image-model weights from the configured AI folder and compares their SHA-256 to trusted publisher metadata.

@@ -6,7 +6,7 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QImage, QPainter, QPainterPath, QPen, QColor
-from svgelements import SVG, Shape, Path as SVGPath, Move
+from svgelements import SVG, Shape, Path as SVGPath, Move, Line
 
 @dataclass
 class Stroke:
@@ -37,6 +37,49 @@ class Drawing:
     bounds: tuple[float, float, float, float]
     warnings: list[str]
 
+def _sample_svg_segment(seg, *, tolerance=0.35, max_chord=10.0, budget=500_000):
+    """Adaptively flatten curves instead of sampling every 0.4 SVG units.
+
+    Lines need only endpoints because the animation interpolates movement.
+    Curves are subdivided based on deviation from their chord; the point
+    budget and recursion depth still bound hostile or pathological inputs.
+    """
+    def point(t):
+        p = seg.point(t)
+        xy = (float(p.x), float(p.y))
+        if not all(math.isfinite(v) for v in xy):
+            raise ValueError('Non-finite SVG coordinates.')
+        return xy
+
+    def chord_distance(point, a, b):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length = math.hypot(dx, dy)
+        if length < 1e-9:
+            return math.dist(point, a)
+        return abs(dx * (a[1] - point[1]) - dy * (a[0] - point[0])) / length
+
+    a, b = point(0.0), point(1.0)
+    if isinstance(seg, Line) or type(seg).__name__ == 'Close':
+        return [a, b]
+    points = [a]
+    stack = [(0.0, 1.0, a, b, 0)]
+    while stack:
+        lo, hi, first, last, depth = stack.pop()
+        mid = (lo + hi) / 2
+        middle = point(mid)
+        flat = (math.dist(first, last) <= max_chord and
+                all(chord_distance(point(t), first, last) <= tolerance
+                    for t in ((3*lo+hi)/4, mid, (lo+3*hi)/4)))
+        if flat or depth >= 16:
+            points.append(last)
+            if len(points) > budget:
+                raise ValueError('Drawing is too complex (500,000 sampled points maximum).')
+        else:
+            stack.append((mid, hi, middle, last, depth+1))
+            stack.append((lo, mid, first, middle, depth+1))
+    return points
+
+
 def import_svg(filename):
     raw = Path(filename).read_text(encoding='utf-8-sig')
     if len(raw) > 5_000_000: raise ValueError('SVG is too large for this prototype (5 MB limit).')
@@ -51,6 +94,7 @@ def import_svg(filename):
             warnings.add('Clipping, masks and filters are ignored.')
     svg = SVG.parse(filename, reify=True)
     strokes = []
+    total_points = 0
     for el in svg.elements():
         if not isinstance(el, Shape): continue
         if el.values.get('visibility') == 'hidden' or el.values.get('display') == 'none': continue
@@ -66,16 +110,16 @@ def import_svg(filename):
             points=[]
             for seg in sub:
                 if isinstance(seg, Move): continue
-                # Dense curve sampling, then arc-length timing along the resulting geometry.
-                n = max(1, min(20000, math.ceil(seg.length(error=1e-5)/0.4)))
-                for j in range(n+1):
-                    pt=seg.point(j/n)
-                    xy=(float(pt.x),float(pt.y))
-                    if not all(math.isfinite(v) for v in xy): raise ValueError('Non-finite SVG coordinates.')
-                    if not points or math.dist(points[-1],xy)>1e-9: points.append(xy)
+                # Keep exact straight edges; subdivide curved edges only
+                # where the artwork would visibly differ from the chord.
+                for xy in _sample_svg_segment(seg, budget=500_000-total_points-len(points)):
+                    if not points or math.dist(points[-1],xy)>1e-9:
+                        points.append(xy)
+                        if total_points + len(points) > 500_000:
+                            raise ValueError('Drawing is too complex (500,000 sampled points maximum).')
             if len(points)>1:
                 strokes.append(Stroke(f'{el.id or "shape"} / {sub_index+1}',points,color,float(el.stroke_width or 3)))
-            if sum(len(s.points) for s in strokes)>500000: raise ValueError('Drawing is too complex (500,000 sampled points maximum).')
+                total_points += len(points)
     if not strokes: raise ValueError('No drawable vector strokes found. Convert text or images to SVG paths first.')
     allpts=[pt for s in strokes for pt in s.points]
     xs,ys=zip(*allpts)
