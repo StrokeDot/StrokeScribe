@@ -9,6 +9,17 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Responsive Studio panels (v0.5.3-experimental.70)
+
+This update brings the tested Source / Program / Inspector layout improvements to experimental.69 installations without changing their animation, AI generation, painting, export, project data, or update dependencies.
+
+- **Resizable Source and Inspector:** Drag the existing dividers between panels. Sidebars have bounded widths, and Program uses the remaining space.
+- **Collapse / expand each sidebar:** Use the two controls in the Program header; collapsing one sidebar expands the preview while the other sidebar stays independent.
+- **Remember the layout:** Source/Inspector widths and visibility are saved locally between application launches without changing project files.
+- **Inspector readability:** Long labels wrap above narrow controls, dropdowns and other inputs shrink to fit, and crowded Position and Sound rows no longer require horizontal overflow.
+- **Independent vertical scrolling:** Source and Inspector tabs scroll their own content, keeping the Program preview and timeline outside those scroll areas.
+- Tested with targeted desktop layout regressions at 1040, 1490, 1920 and 2560-pixel window widths on Linux and Windows, plus existing regression suites. The final visual appearance at your Windows display scaling still requires an on-device check.
+
 ## AI resource awareness and diagnostics update (v0.5.3-experimental.69)
 
 This release makes the AI resource and diagnostics improvements available as a newer update to installed experimental.68 copies. It preserves .68's drawing, painting, live blend preview, projects, models and export behavior.
