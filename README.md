@@ -11,12 +11,18 @@ A small local desktop tool for short SVG drawing overlays. Built from original a
 
 ## Adaptive vertical flicks and live blend preview (v0.5.3-experimental.68)
 
-This is a **development candidate**, not an in-app update or a published installer. The installed experimental.67 remains unchanged until a new candidate passes validation and is explicitly distributed.
+Experimental.68 combines the drawing/painting fixes below with AI resource awareness and diagnostics. It is available through the experimental update branch. The Windows installer is published only after the release pipeline passes its Linux/Windows checks and installation smoke test.
 
 - **Adaptive — Short up/down strokes** now follows the original Adaptive Hand Painting region-by-region route, with rapid short vertical brush flicks along that route instead of top-to-bottom painting bands. Original Adaptive Hand Painting and other styles remain available.
 - **Blend mode** now repaints the monitor as soon as you change the selector, instead of waiting for unrelated settings changes.
 - Blend modes require an actual colored background or earlier artwork to show an effect. A transparent destination cannot turn white source pixels transparent. Changing modes is not equivalent to removing white paper from a PNG.
 - Added tests for vertical flicks, region coverage and live Normal-vs-Multiply monitor painting. Automated tests do **not** replace checking brush appearance on your real artwork.
+
+
+- **AI resource awareness:** background available RAM and NVIDIA dedicated VRAM checks, configurable advisory limits, and Generate anyway / Cancel controls. Unknown GPU measurements stay unavailable; other applications are never closed.
+- **AI activity:** distinct startup, input preparation, model preparation, actual sampling, saving and completion/failure states. Loading percentages are not sampling progress. Elapsed time and inactivity notices distinguish a live engine from a confirmed exit.
+- **Engine diagnostics:** captured ComfyUI output, bounded asynchronous local logs, process IDs/start/exit information, Open log file and redacted Copy diagnostics. Real Qwen/FLUX GPU responsiveness still needs testing with installed models.
+- **Updating:** .66/.67 source installations use the existing update flow. Older installs with different Python requirements must use the verified full Windows installer; the updater's dependency safeguard remains intact. Existing .68 copies already contain these features and are not offered the same version number again.
 
 ## Artwork workflow review candidate (v0.5.3-experimental.64)
 
