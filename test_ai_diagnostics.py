@@ -76,6 +76,11 @@ class DiagnosticTests(unittest.TestCase):
             for index in range(2000):log.emit(str(index))
             self.assertLess(time.monotonic()-start,.5)
             gate.set();self.assertTrue(log.flush(3))
+    def test_json_quoted_credentials_and_url_userinfo_are_redacted(self):
+        text='{"api_key": "secret-json", "token": "other-json"} https://user:pass@host.test/?access_token=query-secret'
+        clean=sanitize(text)
+        for secret in ('secret-json','other-json','user:pass','query-secret'):
+            self.assertNotIn(secret,clean)
     def test_copy_redacts_local_roots_tokens_and_credentials(self):
         text='C:/Users/Alejandro/AI/model.safetensors token=abc123 Authorization: Bearer verysecret hf_12345678901234567890'
         clean=sanitize(text,roots=['C:/Users/Alejandro'])
@@ -84,3 +89,25 @@ class DiagnosticTests(unittest.TestCase):
         self.assertIn('model.safetensors',clean)
 
 if __name__=='__main__':unittest.main()
+
+
+class EngineHTTPTests(unittest.TestCase):
+    def test_slow_history_does_not_become_false_crash(self):
+        import os,types,ai_engine
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{'STROKESCRIBE_CONFIG_DIR':folder}):
+            engine=ai_engine.Engine()
+            engine.proc=types.SimpleNamespace(pid=42,poll=lambda:None)
+            output=Path(folder)/'result.png';output.write_bytes(b'result')
+            engine.paths.output=Path(folder)
+            done={'p':{'outputs':{'4':{'images':[{'filename':'result.png'}]}}}}
+            with patch('ai_activity.EventStream',side_effect=OSError('No WebSocket')),patch.object(engine,'_post',return_value={'prompt_id':'p'}),patch.object(engine,'_get',side_effect=[TimeoutError('slow model load'),done]):
+                self.assertEqual(engine.run({},timeout=3),output)
+            self.assertTrue(engine.flush_diagnostics(2))
+    def test_exit_status_is_recorded(self):
+        import os,types,ai_engine
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{'STROKESCRIBE_CONFIG_DIR':folder}):
+            engine=ai_engine.Engine()
+            engine.proc=types.SimpleNamespace(pid=4242,poll=lambda:7)
+            self.assertFalse(engine.running());self.assertTrue(engine.flush_diagnostics(2))
+            text=ai_engine.engine_log_path().read_text()
+            self.assertIn('4242',text);self.assertIn('status 7',text)
