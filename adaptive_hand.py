@@ -137,7 +137,7 @@ def _reveal_faint_with_neighbours(arrival, labels, faint, gw, gh):
             arrival[cell] = float(borrowed[cell])
 
 
-def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
+def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55, short_vertical=False):
     from color_reveal import artwork_rect, last_stroke_canvas_endpoint
     source=pil_image(image)
     iw,ih=source.size
@@ -238,10 +238,12 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
                 cell=yy*gw+xx
                 if labels[cell]==rid and (xx+.5-x)**2+(yy+.5-y)**2<=radius**2:
                     arrival[cell]=min(arrival[cell],when)
-    def move(point,rid,painting,radius=.72):
+    def move(point,rid,painting,radius=.72,quick=False):
         nonlocal cursor,clock
         distance=math.dist(cursor,point)
-        duration=max(.05,distance) if painting else max(.5,min(12.,distance*.2))
+        # The optional vertical brush flicks should look quick, not like a
+        # second slow traversal of the image. Ordinary adaptive timing is unchanged.
+        duration=(max(.04,distance*.12) if quick else max(.05,distance)) if painting else max(.5,min(12.,distance*.2))
         seg=Segment(cursor,point,radius,rid,painting,clock,clock+duration)
         segments.append(seg)
         if painting:
@@ -253,6 +255,34 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
         clock+=duration; cursor=point
     def radius(cell):
         return min(maximum,max(.72,(clearance[cell]-.5)*.7))
+    def paint_vertical_flick(cell,rid):
+        """A brisk up/down stroke on the ORIGINAL adaptive region route.
+
+        Clip the hand path to this region before moving; brush stamps are also
+        region-clipped by stamp(). Never turn the plan into top-down bands.
+        """
+        x,y=center(cell)
+        brush_radius=radius(cell)
+        reach=max(1.2,min(maximum*.60,brush_radius*.90))
+        def tip(sign):
+            furthest=None
+            steps=max(2,math.ceil(reach/.5))
+            for i in range(1,steps+1):
+                point=(x,y+sign*reach*i/steps)
+                at=cell_at(point)
+                if at is None or labels[at]!=rid:
+                    break
+                furthest=point
+            return furthest
+        above,below=tip(-1),tip(1)
+        if above is None or below is None or y-above[1]<.7 or below[1]-y<.7:
+            return
+        # A real three-part brush motion, not a stationary tap or opacity trick.
+        r=max(.72,brush_radius*.7)
+        move(above,rid,True,r,quick=True)
+        move(below,rid,True,r,quick=True)
+        move((x,y),rid,True,r,quick=True)
+
     def paint_to(cell,rid):
         start=cell_at(cursor)
         if start is None or labels[start]!=rid:
@@ -323,8 +353,11 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
                 ids=[col*gw+row if vertical else row*gw+col for col in run]
                 paint_to(ids[0],rid)
                 prev=ids[0]
-                for cell in ids[1:]:
+                flick_stride=max(2,round(maximum*.6))
+                for index,cell in enumerate(ids[1:],1):
                     move(center(cell),rid,True,min(radius(prev),radius(cell)))
+                    if short_vertical and index%flick_stride==0:
+                        paint_vertical_flick(cell,rid)
                     prev=cell
         # Coverage repair is planned, timed physical painting, not a final fill.
         missing={cell for cell in cells if not math.isfinite(arrival[cell])}
@@ -375,11 +408,13 @@ def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
     key=_plan_key(drawing,image,brush_width,stroke_spacing)
     if key not in _CACHE:
         method=getattr(drawing,'paint_method','adaptive')
-        if method in ('rows','columns','short_zigzag'):
+        if method in ('rows','columns'):
             from zigzag_paint import build_band_plan
             _CACHE[key]=build_band_plan(drawing,image,brush_width,stroke_spacing,
-                                        across=method=='columns',
-                                        short_vertical=method=='short_zigzag')
+                                        across=method=='columns')
+        elif method=='short_zigzag':
+            _CACHE[key]=build_plan(drawing,image,brush_width,stroke_spacing,
+                                   short_vertical=True)
         elif method=='zigzag':
             from zigzag_paint import build_zigzag_plan
             _CACHE[key]=build_zigzag_plan(drawing,image,brush_width,stroke_spacing)
