@@ -1047,17 +1047,28 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         item=self.order.item(index)
         if add:
             item.setSelected(not item.isSelected())
+        elif item.isSelected() and len(self.selected_rows())==1:
+            # Clicking the same highlighted line toggles it off.
+            self.order.clearSelection()
+            self.status.setText('Line selection cleared.')
+            return
         else:
             self.order.clearSelection(); item.setSelected(True)
+        if not item.isSelected():
+            return  # Ctrl+click deselected it; do not reselect.
         self.order.setCurrentRow(index,QItemSelectionModel.SelectionFlag.NoUpdate)
-        self.order.scrollToItem(item)
-        self.show_line_tools()
+        if self.lines_toggle.isChecked():
+            self.order.scrollToItem(item)
+            self.show_line_tools()
         self.status.setText(f'Selected: {self.drawing.strokes[index].name}  •  Delete, Reverse, pace and pause '
                             'are under LINES & ORDER on the left; drag in the list to reorder.')
 
     def show_line_tools(self):
         """Scroll the Source panel so the line list and its buttons are visible."""
         from PySide6.QtWidgets import QScrollArea
+        # Selecting on the canvas must not open a hidden advanced panel.
+        if not self.lines_toggle.isChecked():
+            return
         parent=self.order.parentWidget()
         while parent is not None and not isinstance(parent,QScrollArea):
             parent=parent.parentWidget()
