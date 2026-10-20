@@ -29,7 +29,8 @@ jobs:
           python-version: ${{ matrix.python }}
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
-      - run: pip install --only-binary=:all: -r requirements.txt
+      - run: |
+          pip install --only-binary=:all: -r requirements.txt
       - name: Resource, diagnostics and lifecycle regressions
         run: python -X faulthandler -c "import applog,runpy,logging,sys,pathlib; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); sys.argv=['tools/run_tests.py','--limit','120']+[p.stem for p in sorted(pathlib.Path('.').glob('test_ai_resource*.py'))]+[p.stem for p in sorted(pathlib.Path('.').glob('test_ai_diagnostic*.py'))]+['test_source_ai_lifecycle','test_owned_process','test_ai','test_generator_polish','test_image_generator_updates']; runpy.run_path('tools/run_tests.py',run_name='__main__')"
       - name: Candidate source ZIP
