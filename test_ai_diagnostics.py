@@ -40,6 +40,20 @@ class ActivityTests(unittest.TestCase):
         self.assertNotIn('crash',text.lower())
 
 class EngineProgressTests(unittest.TestCase):
+    def test_newline_free_output_uses_bounded_reads_and_keeps_draining(self):
+        import io,types,ai_engine,os
+        class Bounded(io.StringIO):
+            def __init__(self,text):super().__init__(text);self.sizes=[]
+            def readline(self,size=-1):
+                self.sizes.append(size)
+                if size<0 or size>4096:raise AssertionError('Unbounded engine output read')
+                return super().readline(size)
+            def __iter__(self):raise AssertionError('Unbounded engine output iteration')
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{'STROKESCRIBE_CONFIG_DIR':folder}):
+            engine=ai_engine.Engine();stream=Bounded('X'*100000+'\\nnormal later message\\n')
+            proc=types.SimpleNamespace(stdout=stream,pid=123,poll=lambda:None);engine.proc=proc
+            engine._read_output(proc);self.assertIn('normal later message',engine.log_lines)
+            self.assertTrue(stream.sizes);engine.flush_diagnostics(3)
     def test_stdout_loader_percent_is_not_sampler_evidence(self):
         import io,types,ai_engine,os
         with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{'STROKESCRIBE_CONFIG_DIR':folder}):
@@ -76,6 +90,14 @@ class DiagnosticTests(unittest.TestCase):
             for index in range(2000):log.emit(str(index))
             self.assertLess(time.monotonic()-start,.5)
             gate.set();self.assertTrue(log.flush(3))
+    def test_json_escaped_windows_user_folder_is_redacted(self):
+        text=json.dumps({'error':r'C:\\Users\\Alejandro\\AI\\models'})
+        self.assertNotIn('Alejandro',sanitize(text))
+    def test_disk_failure_keeps_ui_forwarding_alive(self):
+        log=DiagnosticLog(self.path);received=[]
+        with patch.object(log,'_write',side_effect=OSError('read only')):
+            log.emit('engine error',received.append);self.assertTrue(log.flush(2))
+        self.assertEqual(received,['engine error'])
     def test_json_quoted_credentials_and_url_userinfo_are_redacted(self):
         text='{"api_key": "secret-json", "token": "other-json"} https://user:pass@host.test/?access_token=query-secret'
         clean=sanitize(text)
