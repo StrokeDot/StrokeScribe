@@ -87,3 +87,13 @@ websocket-client dependency only observes the local ComfyUI server.
    memory-release preference. Unrelated apps must remain running.
 4. Copy diagnostics, review redaction, and reopen an existing .65 project to check
    drawing/painting and normal transparent export.
+
+## Installer compatibility
+
+Accurate local progress observation adds websocket-client 1.9.2. Older .65 and
+earlier installs therefore require the verified full Windows installer when this
+candidate is approved. Their existing source-only updater correctly refuses a
+package with changed Python dependencies; this safeguard is preserved and tested
+without touching a real installation. No update has been published. The remote
+installer job provisions the dependency in its bundled runtime. Source users must
+install the candidate requirements in their environment.

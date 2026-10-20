@@ -50,10 +50,15 @@ class EngineProgressTests(unittest.TestCase):
                 return super().readline(size)
             def __iter__(self):raise AssertionError('Unbounded engine output iteration')
         with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{'STROKESCRIBE_CONFIG_DIR':folder}):
-            engine=ai_engine.Engine();stream=Bounded('X'*100000+'\\nnormal later message\\n')
+            engine=ai_engine.Engine();stream=Bounded('X'*100000+'\nnormal later message\n')
             proc=types.SimpleNamespace(stdout=stream,pid=123,poll=lambda:None);engine.proc=proc
-            engine._read_output(proc);self.assertIn('normal later message',engine.log_lines)
-            self.assertTrue(stream.sizes);engine.flush_diagnostics(3)
+            try:
+                engine._read_output(proc)
+            finally:
+                engine.flush_diagnostics(3)
+            self.assertTrue(any(line == 'normal later message' for line in engine.log_lines),
+                            'Reader failed to continue after a long newline-free message')
+            self.assertTrue(stream.sizes)
     def test_stdout_loader_percent_is_not_sampler_evidence(self):
         import io,types,ai_engine,os
         with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{'STROKESCRIBE_CONFIG_DIR':folder}):

@@ -16,6 +16,7 @@ import zipfile
 ROOT=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(ROOT))
 BASELINES=(
+    ('31783a4310e81181c4b528f343b9c281a2c1ac35','0.5.3-experimental.65'),
     ('a80d9bae0a8ea23a7065a3859ba371e5e8b26a0d','0.5.3-experimental.61'),
     ('cd4ff3d298f9653239de45e447b84fa4c9249d80','0.5.3-experimental.58'),
     ('c23fd37f9a37468192b49d5fdd2fb40d008c84f9','0.5.3-experimental.59'),
@@ -55,6 +56,29 @@ def main():
                 raise AssertionError('Wrong baseline installed')
             if not updater.is_newer(APP_VERSION,old_version):
                 raise AssertionError('Candidate will not be offered as a newer update')
+            requirements_changed=source('HEAD','requirements.txt')!=source(ref,'requirements.txt')
+            if requirements_changed:
+                # A source-only updater must refuse changed dependencies before
+                # touching an existing install. Full installers provision them.
+                before={p:p.read_bytes() for p in installed.rglob('*') if p.is_file()}
+                try:
+                    updater.apply_zip(package,installed)
+                except Exception as exc:
+                    if 'full Windows installer' not in str(exc):
+                        raise
+                else:
+                    raise AssertionError('Unsafe dependency-changing ZIP was accepted')
+                for path,data in before.items():
+                    if path.read_bytes()!=data:
+                        raise AssertionError('Refused update changed an installed file')
+                for path,data in sentinels.items():
+                    if path.read_bytes()!=data:
+                        raise AssertionError('Refused update changed preserved user data')
+                # Exercise the source transaction separately in this disposable
+                # fixture, after simulating provisioned dependencies. The runner
+                # itself already installed the exact candidate requirements.
+                (installed/'requirements.txt').write_bytes(source('HEAD','requirements.txt'))
+                print('Dependency-change guard: passed; full installer required for',old_version)
             result=updater.apply_zip(package,installed)
             if result['version']!=APP_VERSION or result['requirements_changed']:
                 raise AssertionError('Update version/dependencies differ from the expected candidate')
@@ -103,14 +127,17 @@ print('Updated updater restored:',updater.current_version())
             if updater.current_version(installed)!=old_version:
                 raise AssertionError('Rollback did not restore the installed baseline')
             for name in ('version.py','requirements.txt','updater.py','create_image_dialog.py'):
-                if (installed/name).read_bytes()!=source(ref,name):
+                if (installed/name).read_bytes()!=source('HEAD' if name=='requirements.txt' and requirements_changed else ref,name):
                     raise AssertionError('Rollback did not restore original file: '+name)
             for path,data in sentinels.items():
                 if path.read_bytes()!=data:
                     raise AssertionError('Rollback changed preserved user/runtime data')
             print(json.dumps(dict(baseline=old_version,candidate=APP_VERSION,
                                   update='passed',dialog='passed',rollback='passed',
-                                  dependencies_changed=False,user_data_preserved=True)))
+                                  dependencies_changed=requirements_changed,
+                                  dependency_guard='passed' if requirements_changed else 'not needed',
+                                  source_probe='dependencies provisioned in disposable fixture',
+                                  user_data_preserved=True)))
     print('Installed app update compatibility: PASSED')
 
 if __name__=='__main__':
