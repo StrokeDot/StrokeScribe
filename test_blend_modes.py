@@ -66,6 +66,46 @@ class BlendTests(unittest.TestCase):
         image=world.view((0,0,1),64,48,upto=2)
         self.assertEqual(image.pixelColor(0,0),QColor(70,130,190))
 
+    def test_changing_blend_mode_updates_live_monitor(self):
+        from app import Window
+        w=Window()
+        try:
+            w.show()
+            APP.processEvents()
+            w.preview_background.setCurrentText('Dark')
+            w.blend_mode.setCurrentText('Multiply')
+            APP.processEvents()
+            self.assertEqual(w.canvas.blend_mode,'Multiply')
+            w.blend_mode.setCurrentText('Screen')
+            APP.processEvents()
+            self.assertEqual(w.canvas.blend_mode,'Screen')
+        finally:
+            w.close()
+            APP.processEvents()
+
+    def test_monitor_composites_against_contrasting_background(self):
+        from app import Canvas
+        w=Canvas()
+        try:
+            w.resize(620,400)
+            w.frame=solid((255,255,255),(160,90))
+            w.set_background(2)  # Dark
+            w.show()
+            APP.processEvents()
+            w.blend_mode='Normal'
+            w.update()
+            APP.processEvents()
+            normal=w.grab().toImage()
+            w.blend_mode='Multiply'
+            w.update()
+            APP.processEvents()
+            multiplied=w.grab().toImage()
+            center=(w.width()//2,w.height()//2)
+            self.assertNotEqual(normal.pixelColor(*center),multiplied.pixelColor(*center))
+        finally:
+            w.close()
+            APP.processEvents()
+
     def test_ui_setting_maps_to_export_and_project_reload(self):
         from app import Window
         w=Window()
