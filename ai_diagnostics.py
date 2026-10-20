@@ -61,11 +61,14 @@ def sanitize(text,roots=()):
     text=str(text)
     candidates=list(roots)+[str(Path.home())]
     for root in sorted({str(p) for p in candidates if p},key=len,reverse=True):
-        for value in {root,root.replace('\\','/'),root.replace('/','\\')}:
+        variants={root,root.replace('\\','/'),root.replace('/','\\')}
+        variants|={value.replace('\\','\\\\') for value in list(variants)}
+        for value in sorted(variants,key=len,reverse=True):
             text=re.sub(re.escape(value),'[local folder]',text,flags=re.I)
-    text=re.sub(r'(?i)[A-Z]:[\\/]Users[\\/][^\\/\s]+','[user folder]',text)
-    text=re.sub(r'(?i)(authorization\s*[:=]\s*)(?:Bearer\s+)?[^\s,;]+',r'\1[redacted]',text)
-    text=re.sub(r'(?i)((?:api[_-]?key|token|password|secret)\s*[:=]\s*)[^\s,;]+',r'\1[redacted]',text)
+    text=re.sub(r"""(?i)[A-Z]:[\\/]+Users[\\/]+[^\\/\s"']+""",'[user folder]',text)
+    text=re.sub(r'(?i)(https?://)[^/@\s:]+:[^/@\s]+@',r'\1[redacted]@',text)
+    credentials=r"""(?i)(["']?(?:authorization|api[_-]?key|access[_-]?token|token|password|secret)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|(?:Bearer\s+)?[^\s,;&]+)"""
+    text=re.sub(credentials,r'\1[redacted]',text)
     text=re.sub(r'\bhf_[A-Za-z0-9]{12,}\b','[redacted token]',text)
     return text
 

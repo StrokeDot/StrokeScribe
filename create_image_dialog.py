@@ -510,7 +510,7 @@ class CreateImageDialog(QDialog):
         self.memory = {}
         self.running_task = None
         self.work = dict(percent=-1, text='', started=0.)
-        self.work_timer = QTimer(self); self.work_timer.setInterval(50); self.work_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self.work_timer = QTimer(self); self.work_timer.setInterval(16); self.work_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.work_timer.timeout.connect(self.paint_working)
         self.reveal_timer = QTimer(self); self.reveal_timer.setInterval(16); self.reveal_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.reveal_timer.timeout.connect(self.reveal_step)
@@ -887,6 +887,7 @@ class CreateImageDialog(QDialog):
         self.install_button.setVisible(not engine_ok)
         self.install_button.setEnabled(not busy)
         self.manage_models_button.setEnabled(not busy)
+        self.resources.settings_button.setEnabled(not busy)
         self.download_button.setVisible(not have)
         self.download_button.setText(f'Download model ({ai_models.gb(size)})')
         self.download_button.setToolTip(f'{model.name} — {variant.label}: model, text encoder and '

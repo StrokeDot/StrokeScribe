@@ -54,13 +54,17 @@ def main():
                     "images": ["1", 0], "filename_prefix": "StrokeScribe-lifecycle-probe"}},
             }
             outputs = []
-            for _ in range(2):
+            for index in range(2):
+                workflow["1"]["inputs"]["color"]=16777215-index
                 engine.start(timeout=30)
                 outputs.append(str(engine.run(workflow, timeout=120)))
                 if (engine.proc.pid, psutil.Process(engine.proc.pid).create_time()) != identity:
                     raise AssertionError("Repeated generation restarted the server.")
             if not all(Path(path).is_file() for path in outputs):
                 raise AssertionError("Real ComfyUI did not save both procedural images.")
+            if len(set(outputs))!=2:raise AssertionError("Both requests must execute and save separate images.")
+            evidence["event_observation_supported"]=bool(engine.activity and engine.activity.observed)
+            if not evidence["event_observation_supported"]:raise AssertionError("Real ComfyUI execution events were not observed.")
             evidence["outputs"] = outputs
             evidence["same_owned_root_for_two_jobs"] = True
             evidence["rss_after_two_jobs"] = [{"pid": p.pid, "rss": p.memory_info().rss}
@@ -73,7 +77,7 @@ def main():
             evidence["stop_seconds"] = round(time.monotonic() - began, 3)
             if alive:
                 raise AssertionError("Owned ComfyUI processes remain: " + str([p.pid for p in alive]))
-            target = Path("samples/source-editing/comfy-lifecycle.json")
+            target = Path("samples/ai-resources/comfy-lifecycle.json")
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(json.dumps(evidence, indent=2))
             print(json.dumps(evidence, indent=2), flush=True)

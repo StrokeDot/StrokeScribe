@@ -743,9 +743,11 @@ class Engine:
 
     def _read_output(self, proc):
         # Output drains independently of diagnostic disk writes and UI callbacks.
-        for line in proc.stdout:
+        while True:
+            line=proc.stdout.readline(4096)
+            if not line:break
             if self.proc is not proc:continue
-            line=line.rstrip()[:4096]
+            line=line.rstrip()
             self.log_lines=(self.log_lines+[line])[-200:]
             marker=re.search(r'STROKESCRIBE_ENGINE_PID=(\d+)',line)
             if marker:self.engine_pid=int(marker.group(1))

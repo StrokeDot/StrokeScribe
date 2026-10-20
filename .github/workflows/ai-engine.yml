@@ -9,7 +9,6 @@ permissions:
   contents: read
 jobs:
   model-files:
-    # Intermediate iteration only; full checks restored before delivery.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,7 +19,6 @@ jobs:
       - name: Every model file exists with the registered size
         run: python tools/ci_ai_check.py urls
   workflows-on-real-comfyui:
-    # Intermediate iteration only; full checks restored before delivery.
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -41,6 +39,14 @@ jobs:
           PY
           pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
           pip install -r /tmp/engine/ComfyUI/requirements.txt
-          pip install 'gguf>=0.13.0' sentencepiece protobuf numpy pillow opencv-python-headless
+          pip install 'gguf>=0.13.0' sentencepiece protobuf numpy pillow opencv-python-headless psutil websocket-client==1.9.2
       - name: ComfyUI accepts every StrokeScribe workflow
         run: python tools/ci_ai_check.py workflows /tmp/engine/ComfyUI /tmp/engine/data
+      - name: Real CPU ComfyUI event and warm-lifecycle verification (no model inference)
+        run: python tools/verify_comfy_lifecycle.py /tmp/engine/ComfyUI /tmp/engine/data
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: AI-real-ComfyUI-diagnostics
+          if-no-files-found: ignore
+          path: samples/ai-resources/

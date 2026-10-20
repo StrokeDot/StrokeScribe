@@ -32,7 +32,8 @@ class ResourceTests(unittest.TestCase):
         with patch('ai_resources.subprocess.run',return_value=subprocess.CompletedProcess([],0,'unavailable\n','')):
             self.assertIsNone(resources.gpu_available_gb())
 
-from test_source_ai_lifecycle import AILifecycleTests,APP
+import test_source_ai_lifecycle as lifecycle_fixture
+APP=lifecycle_fixture.APP
 from create_image_dialog import AIWorker
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -47,8 +48,8 @@ def pumped(predicate,seconds=8):
     return predicate()
 
 class ResourceDialogTests(unittest.TestCase):
-    setUp=AILifecycleTests.setUp
-    tearDown=AILifecycleTests.tearDown
+    setUp=lifecycle_fixture.AILifecycleTests.setUp
+    tearDown=lifecycle_fixture.AILifecycleTests.tearDown
     def worker(self):
         self.assertTrue(hasattr(self.dialog,'resources'),'Nonblocking resource panel missing')
         return AIWorker('generate',engine=self.engine,workflow={},image_path=None,
