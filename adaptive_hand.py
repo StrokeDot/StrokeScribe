@@ -375,9 +375,11 @@ def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
     key=_plan_key(drawing,image,brush_width,stroke_spacing)
     if key not in _CACHE:
         method=getattr(drawing,'paint_method','adaptive')
-        if method in ('rows','columns'):
+        if method in ('rows','columns','short_zigzag'):
             from zigzag_paint import build_band_plan
-            _CACHE[key]=build_band_plan(drawing,image,brush_width,stroke_spacing,across=method=='columns')
+            _CACHE[key]=build_band_plan(drawing,image,brush_width,stroke_spacing,
+                                        across=method=='columns',
+                                        short_vertical=method=='short_zigzag')
         elif method=='zigzag':
             from zigzag_paint import build_zigzag_plan
             _CACHE[key]=build_zigzag_plan(drawing,image,brush_width,stroke_spacing)

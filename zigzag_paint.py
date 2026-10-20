@@ -380,7 +380,7 @@ def build_zigzag_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
 # wide brush, back and forth across everything in it, one band after the other.
 # The brush is clipped to the picture, so the background is never painted.
 
-def _band_strokes(support, radius, across):
+def _band_strokes(support, radius, across, short_vertical=False):
     """[(points, ...)] brush passes in (x, y) cells. across=False: horizontal bands
     from the top down; True: vertical bands from the left to the right."""
     grid = support.T if across else support               # rows of `grid` are the bands
@@ -411,15 +411,27 @@ def _band_strokes(support, radius, across):
             for a, b in runs:
                 step = 1 if b >= a else -1
                 a2, b2 = a - step * radius * .3, b + step * (radius * .3 + 1)
-                # A gentle wave inside the band, like a hand sweeping a brush.
                 length = abs(b2 - a2)
-                count = max(2, int(length / max(1., radius * .9)) + 1)
-                points = []
-                for i in range(count):
-                    f = i / (count - 1)
-                    u = a2 + (b2 - a2) * f
-                    wave = math.sin(f * math.pi * max(1., length / (radius * 3.))) * pitch * .1
-                    points.append((u + .5, v + wave + .5))
+                if short_vertical:
+                    # Dense diagonal strokes that alternately rise and fall
+                    # across a shallow band. Unlike the sweeping Zigzag mode,
+                    # this motion stays roughly vertical in each short stroke.
+                    count = max(3, int(length / max(.8, radius * .52)) + 1)
+                    reach = min(radius * .72, pitch * .42)
+                    points = [
+                        (a2 + (b2 - a2) * i / (count - 1) + .5,
+                         v + (.5 + (reach if i % 2 else -reach)))
+                        for i in range(count)
+                    ]
+                else:
+                    # Original long, gently waving band brush route.
+                    count = max(2, int(length / max(1., radius * .9)) + 1)
+                    points = []
+                    for i in range(count):
+                        f = i / (count - 1)
+                        u = a2 + (b2 - a2) * f
+                        wave = math.sin(f * math.pi * max(1., length / (radius * 3.))) * pitch * .1
+                        points.append((u + .5, v + wave + .5))
                 passes.append([(q, p) for p, q in points] if across else points)
             if runs:
                 forward = not forward
@@ -427,7 +439,8 @@ def _band_strokes(support, radius, across):
     return passes
 
 
-def build_band_plan(drawing, image, brush_width=.14, stroke_spacing=.55, across=False):
+def build_band_plan(drawing, image, brush_width=.14, stroke_spacing=.55, across=False,
+                    short_vertical=False):
     """Top to bottom (across=False) or Left to right (across=True) band painting,
     in Adaptive's PaintPlan form (same preview, export, hand and guide removal)."""
     from adaptive_hand import (GRID_LIMIT, VISIBLE_ALPHA, PaintPlan, Segment,
@@ -459,7 +472,7 @@ def build_band_plan(drawing, image, brush_width=.14, stroke_spacing=.55, across=
     planner.component_count = 1
     # Band height from the brush size; Stroke spacing makes the bands a little denser or looser.
     radius = max(1.2, planner.max_radius * (.55 + .5 * planner.spacing))
-    for points in _band_strokes(visible, radius, across):
+    for points in _band_strokes(visible, radius, across, short_vertical=short_vertical):
         planner.hop(points[0], 1, radius)
         if planner.cursor != points[0]:
             planner.move(points[0], 1, False)
