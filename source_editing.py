@@ -37,7 +37,12 @@ class SourceEditing:
         if image and self.image_result:
             self.color_note.setText(self.image_result.filename+' • original colors')
         elif self.color_path:
-            self.color_note.setText(getattr(self.drawing,'paint_source_name','Matching colors')+' • matching colors')
+            # Preserve the pre-existing background-cleanup status when the
+            # Inspector updates its replaceable painting-source label.
+            status='background cleaned' if self.clean_color.isChecked() else 'background unchanged'
+            self.color_note.setText(
+                getattr(self.drawing,'paint_source_name','Matching colors')
+                +' • matching colors • '+status)
         elif getattr(self.drawing,'svg_has_fill',False):
             self.color_note.setText('Original SVG appearance • native fills')
         else:self.color_note.setText('No matching color image loaded')

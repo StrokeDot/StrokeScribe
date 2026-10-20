@@ -96,7 +96,11 @@ class WindowTests(unittest.TestCase):
             self.assertEqual(w.final_image.pixelColor(2, 2).alpha(), 0)      # corner outside the oval
             self.assertIn('cleaned', w.color_note.text())
             w.clean_color.setChecked(False)                     # reloads as it is
+            self.assertIn('background unchanged', w.color_note.text())
             self.assertEqual((w.final_image.width(), w.final_image.height()), (W, H))
+            w.clean_color.setChecked(True)
+            self.assertIn('cleaned', w.color_note.text())
+            self.assertLess(w.final_image.width(), W - 50)
         names = [w.inspector_tabs.tabText(i) for i in range(w.inspector_tabs.count())]
         self.assertEqual(names, ['Animation', 'Hand', 'Sound', 'Export'])
         sound_page = w.inspector_tabs.widget(2)
