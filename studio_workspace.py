@@ -1286,6 +1286,17 @@ def build_workspace(w, Canvas, BRAND_ICON):
     animation_l.addWidget(w.use_color)
     w.color_note=caption('No original PNG loaded')
     animation_l.addWidget(w.color_note)
+    w.blend_mode=QComboBox()
+    from blend_modes import MODES as _BLEND_MODES
+    w.blend_mode.addItems(_BLEND_MODES)
+    w.blend_mode.setToolTip(
+        'Composites this artwork over a visible background/earlier element. '
+        'Multiply makes white paper disappear visually over that background. '
+        'An alpha/transparent export still needs background cleanup if you '
+        'want to remove white pixels permanently.')
+    blend_form=form_layout()
+    blend_form.addRow('Blend mode',w.blend_mode)
+    animation_l.addLayout(blend_form)
     a2=form_layout();animation_l.addLayout(a2)
     w.reveal_mode=QComboBox()
     w.reveal_mode.addItems(['Brush painting','Adaptive Hand Painting','Zigzag sweep',
