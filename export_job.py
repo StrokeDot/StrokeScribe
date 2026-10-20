@@ -10,7 +10,8 @@ from pathlib import Path
 
 REVEAL_BY_TEXT = {'Brush painting': 'brush', 'Adaptive Hand Painting': 'adaptive',
                   'Zigzag sweep': 'zigzag', 'Top to bottom (rows)': 'rows',
-                  'Left to right (columns)': 'columns'}
+                  'Left to right (columns)': 'columns',
+                  'Adaptive — Short up/down strokes': 'short_zigzag'}
 MP4_BACKGROUNDS = ('white', 'dark', 'black')
 CAMERA_BY_TEXT = {'Off': 'off', 'Gentle zoom': 'gentle', 'Close-up zoom': 'close'}
 
@@ -40,7 +41,8 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
         hand_scale=float(s.get('handsize', .75)), anchor=(float(s.get('ax', .08)), float(s.get('ay', .13))),
         final_image=color_image if s.get('use_color', False) else None,
         fade_duration=float(s.get('color_fade', .4)), hold_duration=float(s.get('color_hold', .6)),
-        reveal_mode=reveal, brush_width=float(s.get('brush_width', .14)),
+        reveal_mode=reveal, blend_mode=s.get('blend_mode','Normal'),
+        brush_width=float(s.get('brush_width', .14)),
         stroke_spacing=float(s.get('stroke_spacing', .55)),
         artwork_scale=float(s.get('artwork_size', 100)) / 100.,
         offset=(float(s.get('picture_x', 0)) / 100., float(s.get('picture_y', 0)) / 100.),
@@ -79,7 +81,7 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
         options.update(final_image=image_source if not drawing_only and image_source is not None
                        and (s.get('preserve_colors', True) or paint_only) else None,
                        fade_duration=float(s.get('image_duration', 8)),
-                       reveal_mode=reveal if reveal in ('adaptive', 'zigzag', 'rows', 'columns') else 'adaptive',
+                       reveal_mode=reveal if reveal in ('adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag') else 'adaptive',
                        duration=0. if paint_only else options['duration'])
     return options
 

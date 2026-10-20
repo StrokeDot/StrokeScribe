@@ -520,3 +520,11 @@ The official v0.5.2 and AI image redraw algorithms are unchanged. New tests veri
 ## v0.5.3-experimental.9 — Balanced AI processing
 
 Image Source → AI Redraw now offers **Fast**, **Balanced** (selected by default), and **Quality** AI processing profiles, independent of the Low/Medium/High contour Detail control. Balanced retains the existing 640px/8-part vision settings while using local-region OpenCV GrabCut instead of full-frame segmentation per object and keeping the local Ollama model warm for five minutes. A cached scene plan is reused when only Detail changes, and the cache now distinguishes processing profiles. [AI_PERFORMANCE.md](AI_PERFORMANCE.md) describes all settings, limitations and the CPU-only benchmark. Existing SVG, lettering, image import and output modes are unchanged. Official Prototype v0.5.2 remains available.
+
+## Pre-UI-overhaul features (experimental.67 integration candidate — not published)
+
+- **Line editing:** Clicking the highlighted line in the canvas again clears its selection. The detailed **Lines & order** list stays collapsed until opened; existing reverse, delete, move, pace and pause tools remain available.
+- **Adaptive — Short up/down strokes:** New optional vertical zigzag brush path using the existing timed region-reveal pipeline. The original Adaptive Hand Painting, Zigzag sweep, row/column and SVG modes are preserved.
+- **Blend modes:** Optional per-element Normal (default), Multiply, Darken, Color Burn, Screen, Lighten, Color Dodge and Overlay for compositing against actual background/previous artwork. Multiply can visually blend white paper into a background; it is **not** equivalent to true alpha transparency of white pixels.
+- **Integration:** Combines the independently tested line/paint PR #24 and blend PR #25 atop experimental.66 AI resource diagnostics PR #23. Do not publish this candidate until its combined Windows/Linux suites pass and a user approves release.
+
