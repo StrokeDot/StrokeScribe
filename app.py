@@ -50,7 +50,7 @@ def timecode(seconds):
 class Canvas(QWidget):
     """Program monitor: the frame on its preview background, plus a loading card."""
     def __init__(self):
-        super().__init__(); self.frame=None; self.background=0; self.custom_colour=None; self.setMinimumSize(550,330)
+        super().__init__(); self.frame=None; self.background=0; self.custom_colour=None; self.blend_mode='Normal'; self.setMinimumSize(550,330)
         self.busy_text=None; self.busy_percent=None; self.busy_detail=''
         self._spin=0
         self._spinner=QTimer(self); self._spinner.setInterval(40)
@@ -169,7 +169,10 @@ class Canvas(QWidget):
                 p.drawPixmap(x,y,self._checker(size.width(),size.height(),c['checker_a'],c['checker_b']))
             # Scaled while painting (no copy of the frame every time).
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            from blend_modes import composition_mode
+            p.setCompositionMode(composition_mode(self.blend_mode))
             p.drawImage(QRectF(x,y,size.width(),size.height()),self.frame)
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
             box=self.box_provider() if self.box_provider is not None else None
             if box:
                 from PySide6.QtGui import QPen
@@ -1185,7 +1188,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.refresh()
 
     # ------------------------------------------------------------ projects
-    PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','color_fade',
+    PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
                       'use_color','preserve_colors','showhand','left_handed','entrance','pause_after','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
@@ -2252,7 +2255,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             drawing,options,_,camera=self.preview_scene(k,width,height)
             frame=compose_frame(drawing,f,options,camera)
             if options.get('layers')=='hand': return frame,k,lengths,joins
-            return stack(self.scene_base(k,width,height,f,camera),frame),k,lengths,joins
+            return stack(self.scene_base(k,width,height,f,camera),frame,
+                         options.get('blend_mode','Normal')),k,lengths,joins
         world=self.preview_world(width,height)
         if self.preview_scene(k,width,height)[1].get('layers')=='hand':
             from PySide6.QtGui import QImage
@@ -3028,6 +3032,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.status.setText('Preview could not be updated: '+str(exc)[:220])
             return
         self.canvas.frame=frame
+        # When the page is already composed in scenes.stack/World.view,
+        # blending again here would double-apply the effect.
+        self.canvas.blend_mode=('Normal' if view['all'] or view.get('page') else
+                                self.blend_mode.currentText())
         if view['all']: self.canvas.highlight=[]
         self.canvas.update()
         self.stage_timeline.progress=max(0.,min(1.,self.position)); self.stage_timeline.update()
@@ -3120,7 +3128,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         frame=compose_frame(self.drawing,fraction,options,camera)
         if view['page']:
             from scenes import stack
-            return stack(self.scene_base(self.scene_index,width,height,fraction,camera),frame)
+            return stack(self.scene_base(self.scene_index,width,height,fraction,camera),
+                         frame,options.get('blend_mode','Normal'))
         return frame
 
     def frame_index(self,fraction):
