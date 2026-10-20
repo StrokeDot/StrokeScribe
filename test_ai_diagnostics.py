@@ -39,6 +39,17 @@ class ActivityTests(unittest.TestCase):
         self.assertIn('running',text.lower());self.assertIn('no progress',text.lower())
         self.assertNotIn('crash',text.lower())
 
+class EngineProgressTests(unittest.TestCase):
+    def test_stdout_loader_percent_is_not_sampler_evidence(self):
+        import io,types,ai_engine,os
+        with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{'STROKESCRIBE_CONFIG_DIR':folder}):
+            engine=ai_engine.Engine()
+            proc=types.SimpleNamespace(stdout=io.StringIO('Loading checkpoint shards: 100%|done\n'),pid=123,poll=lambda:None)
+            engine.proc=proc
+            engine._read_output(proc)
+            self.assertIsNone(engine.percent)
+            if hasattr(engine,'flush_diagnostics'):engine.flush_diagnostics(1)
+
 class DiagnosticTests(unittest.TestCase):
     def setUp(self):
         self.assertIsNotNone(LOGGING,'Bounded diagnostic logger missing')
