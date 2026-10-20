@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QFormLayout, QPushButton, QLabel, QComboBox, QCheckBox,
     QSpinBox, QListWidget, QPlainTextEdit, QSlider, QTabWidget,
     QProgressBar, QSizePolicy, QAbstractSpinBox, QAbstractScrollArea,
+    QGridLayout, QToolButton,
 )
 from version import APP_VERSION, DISPLAY_NAME
 
@@ -40,6 +41,11 @@ def scroll_view(content):
     scroll.setWidgetResizable(True)
     scroll.setFrameShape(QFrame.Shape.NoFrame)
     scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+    scroll.setMinimumWidth(0)
+    scroll.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+    content.setMinimumWidth(0)
+    content.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
     scroll.setWidget(content)
     return scroll
 
@@ -748,17 +754,28 @@ def fit_to_width(content, stacked=False):
     for button in content.findChildren(QPushButton):
         # Expanding fills the column; the explicit minimum lets it shrink
         # below its text width rather than push the panel wider.
-        policy=button.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        policy=button.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
         button.setSizePolicy(policy);button.setMinimumWidth(60)
+        if not button.toolTip(): button.setToolTip(button.text())
     for box in content.findChildren(QComboBox):
         box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        box.setMinimumContentsLength(6)
-        policy=box.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+        box.setMinimumContentsLength(4)
+        policy=box.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
         box.setSizePolicy(policy)
+        if not box.toolTip(): box.setToolTip(box.currentText())
     for box in content.findChildren(QAbstractSpinBox):
         box.setMinimumWidth(84)
         policy=box.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
         box.setSizePolicy(policy)
+    for check in content.findChildren(QCheckBox):
+        policy=check.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        check.setSizePolicy(policy)
+        check.setMinimumWidth(0)
+        if not check.toolTip(): check.setToolTip(check.text())
+    for note in content.findChildren(QLabel):
+        if note.text() and len(note.text()) > 24:
+            note.setWordWrap(True)
+            if not note.toolTip(): note.setToolTip(note.text())
     for edit in content.findChildren(QPlainTextEdit):
         policy=edit.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
         edit.setSizePolicy(policy)
@@ -966,7 +983,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
 
     # Source and stroke order (left).
     asset_panel,asset_outer,_=panel('assetPanel','Source','Artwork & paths')
-    asset_panel.setMinimumWidth(235)
+    asset_panel.setMinimumWidth(225)
+    asset_panel.setMaximumWidth(460)
     asset=QWidget();asset.setObjectName('panelBody')
     asset_l=QVBoxLayout(asset);asset_l.setContentsMargins(12,10,12,12)
     asset_l.setSpacing(9)
@@ -1155,8 +1173,16 @@ def build_workspace(w, Canvas, BRAND_ICON):
     split.addWidget(asset_panel)
 
     # Large, dedicated visual monitor (center).
-    monitor,monitor_outer,top=panel('monitorPanel','Program','Preview monitor')
+    monitor,monitor_outer,top=panel('monitorPanel','Program')
     monitor.setMinimumWidth(390)
+    w.source_sidebar_button=QToolButton()
+    w.source_sidebar_button.setObjectName('subtle')
+    w.source_sidebar_button.setFixedWidth(30)
+    top.insertWidget(0,w.source_sidebar_button)
+    w.inspector_sidebar_button=QToolButton()
+    w.inspector_sidebar_button.setObjectName('subtle')
+    w.inspector_sidebar_button.setFixedWidth(30)
+    top.addWidget(w.inspector_sidebar_button)
     body=QWidget();body.setObjectName('panelBody')
     monitor_l=QVBoxLayout(body);monitor_l.setContentsMargins(10,10,10,8)
     monitor_l.setSpacing(8)
@@ -1218,8 +1244,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # Inspector settings grouped by task (right).
     inspector,inspector_l,_=panel('inspectorPanel','Inspector')
     inspector.setMinimumWidth(270)
+    inspector.setMaximumWidth(480)
     tabs=QTabWidget()
     tabs.setDocumentMode(True)
+    tabs.setMinimumWidth(0)
+    tabs.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Expanding)
+    tabs.tabBar().setElideMode(Qt.TextElideMode.ElideRight)
+    tabs.tabBar().setUsesScrollButtons(True)
     w.inspector_tabs=tabs
     inspector_l.addWidget(tabs,1)
 
@@ -1244,8 +1275,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.picture_center=QPushButton('Center'); w.picture_center.setObjectName('subtle')
     w.picture_center.setToolTip('Put the picture back in the middle.')
     w.picture_center.clicked.connect(lambda checked=False: (w.picture_x.setValue(0), w.picture_y.setValue(0)))
-    position=QHBoxLayout(); position.setSpacing(6)
-    position.addWidget(w.picture_x,1); position.addWidget(w.picture_y,1); position.addWidget(w.picture_center)
+    position=QVBoxLayout();position.setSpacing(5)
+    xy=QHBoxLayout();xy.setSpacing(6)
+    xy.addWidget(w.picture_x,1);xy.addWidget(w.picture_y,1)
+    position.addLayout(xy)
+    position.addWidget(w.picture_center)
     a.addRow('Position X / Y',position)
     w.pen_ease=QComboBox()
     w.pen_ease.addItems(['Constant speed','Natural (ease in and out)'])
@@ -1551,18 +1585,20 @@ def build_workspace(w, Canvas, BRAND_ICON):
     sound_l.addWidget(w.sound_preview)
     sound_l.addWidget(caption('Included in MP4, WebM and MOV. PNG exports also get soundtrack.wav.'))
     sound_l.addWidget(label('VOICEOVER / MUSIC'))
-    audio_row=QHBoxLayout()
+    audio_row=QGridLayout()
+    audio_row.setHorizontalSpacing(6)
+    audio_row.setVerticalSpacing(5)
     w.load_audio_button=QPushButton('Load audio…')
     w.load_audio_button.setToolTip('Add a voiceover or music track (MP3, WAV, M4A, OGG, FLAC…).')
     w.load_audio_button.clicked.connect(lambda checked=False: w.load_audio())
-    audio_row.addWidget(w.load_audio_button)
+    audio_row.addWidget(w.load_audio_button,0,0)
     audio_library=QPushButton('Library…')
     audio_library.clicked.connect(lambda checked=False: w.open_library('audio'))
-    audio_row.addWidget(audio_library)
+    audio_row.addWidget(audio_library,0,1)
     w.remove_audio_button=QPushButton('Remove')
     w.remove_audio_button.setEnabled(False)
     w.remove_audio_button.clicked.connect(lambda checked=False: w.remove_audio())
-    audio_row.addWidget(w.remove_audio_button)
+    audio_row.addWidget(w.remove_audio_button,1,0,1,2)
     sound_l.addLayout(audio_row)
     w.audio_note=caption('No audio track')
     sound_l.addWidget(w.audio_note)
@@ -1585,6 +1621,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     split.setStretchFactor(1,1)
     split.setStretchFactor(2,0)
     split.setSizes([290,850,330])
+    from workspace_layout import SidebarController
+    w.sidebar_layout=SidebarController(w,split,asset_panel,inspector,
+                                       w.source_sidebar_button,w.inspector_sidebar_button)
 
     # Time-based workflow remains visible whichever Inspector tab is open.
     timeline,timeline_outer,timeline_head=panel('timelinePanel','Timeline','Click or drag to scrub')
@@ -1752,7 +1791,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.setAccessibleName('Animation timeline: click to scrub; double-click Draw or Paint to edit source; Ctrl+Shift+D or P edits selected source')
     fit_to_width(asset,stacked=True)       # labels above fields in the narrow column
     for content in (animation,hand,output,sound):
-        fit_to_width(content)
+        fit_to_width(content,stacked=True)  # inspector labels wrap instead of clipping controls
     from PySide6.QtGui import QShortcut, QKeySequence
     w.save_shortcut=QShortcut(QKeySequence(QKeySequence.StandardKey.Save),w)
     w.save_shortcut.activated.connect(lambda: w.save_project())
