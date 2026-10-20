@@ -133,6 +133,47 @@ def formats_from_settings(s):
                 sound_volume=(int(s.get('sound_volume', 80)) / 100) if s.get('sound_on', True) else None)
 
 
+
+def bake_background_blend(folder, blend_mode='Normal', background=None):
+    """Bake a selected background into single-scene frames when blending needs it.
+
+    Qt's preview blends artwork against the selected background, but FFmpeg's
+    regular overlay only does SourceOver. Match the preview before encoding,
+    and only when a real destination was selected. Transparent exports remain
+    untouched: blend modes cannot create alpha from opaque white pixels.
+    """
+    if blend_mode == 'Normal' or not background or background == 'transparent':
+        return
+    from PySide6.QtGui import QImage
+    from backgrounds import picture_png
+    from scenes import stack
+    folder = Path(folder)
+    frames = sorted(folder.glob('frame_*.png'))
+    if not frames:
+        return
+    first = QImage(str(frames[0]))
+    if first.isNull():
+        raise OSError('Could not read generated frame for blend compositing.')
+    backdrop_path = folder / 'background.png'
+    picture_png(background, first.width(), first.height(), backdrop_path)
+    backdrop = QImage(str(backdrop_path)).convertToFormat(
+        QImage.Format.Format_ARGB32_Premultiplied)
+    if backdrop.isNull():
+        raise OSError('Could not load selected background for blend compositing.')
+    for frame in frames:
+        artwork = QImage(str(frame))
+        if artwork.isNull() or artwork.size() != backdrop.size():
+            raise OSError('Generated frame size is invalid for blend compositing.')
+        mixed = stack(backdrop, artwork, blend_mode)
+        temp = frame.with_name(frame.stem + '.blend.tmp.png')
+        try:
+            if not mixed.save(str(temp), 'PNG'):
+                raise OSError('Could not write blended frame.')
+            temp.replace(frame)
+        finally:
+            temp.unlink(missing_ok=True)
+
+
 def run_export(drawing, folder, options, mov=False, webm=False, webm_quality=28, keep_png=True,
                mp4=False, mp4_background='white', sound_volume=None, progress=lambda i, n: None,
                interrupted=lambda: False, background=None):
@@ -146,6 +187,7 @@ def run_export(drawing, folder, options, mov=False, webm=False, webm_quality=28,
         progress(i, n)
         return not interrupted()
     export_frames(drawing, folder, callback=tick, **options)
+    bake_background_blend(folder, options.get('blend_mode','Normal'), background)
     audio = None
     if voice and not Path(voice['path']).is_file():
         raise FileNotFoundError('The voiceover/music file was not found: ' + str(voice['path']))

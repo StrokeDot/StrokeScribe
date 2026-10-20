@@ -54,6 +54,40 @@ class BlendTests(unittest.TestCase):
         result=stack(clear,white,'Multiply')
         self.assertEqual(result.pixelColor(0,0).alpha(),255)
 
+    def test_single_scene_export_matches_preview_on_solid_background(self):
+        import tempfile
+        from pathlib import Path
+        from export_job import bake_background_blend
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'frame_000000.png'
+            sheet=solid((255,255,255))
+            sheet.setPixelColor(15,10,QColor(0,0,0))
+            self.assertTrue(sheet.save(str(path),'PNG'))
+            # Canvas preview draws this same sheet with Multiply over Dark.
+            expected=stack(solid((36,45,59)),sheet,'Multiply')
+            bake_background_blend(tmp,'Multiply','dark')
+            exported=QImage(str(path))
+            self.assertEqual(exported.pixelColor(0,0),expected.pixelColor(0,0))
+            self.assertEqual(exported.pixelColor(15,10),expected.pixelColor(15,10))
+            self.assertEqual(exported.pixelColor(0,0).alpha(),255)
+
+    def test_transparent_destination_preserves_alpha_and_unbaked_frames(self):
+        import tempfile
+        from pathlib import Path
+        from export_job import bake_background_blend
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'frame_000000.png'
+            sheet=solid((255,255,255))
+            sheet.setPixelColor(0,0,QColor(0,0,0,0))
+            self.assertTrue(sheet.save(str(path),'PNG'))
+            original=path.read_bytes()
+            bake_background_blend(tmp,'Multiply',None)
+            self.assertEqual(path.read_bytes(),original)
+            bake_background_blend(tmp,'Multiply','transparent')
+            self.assertEqual(path.read_bytes(),original)
+            bake_background_blend(tmp,'Normal','dark')
+            self.assertEqual(path.read_bytes(),original)
+
     def test_board_finished_art_uses_per_element_blend(self):
         from board import World
         white=solid((255,255,255))
