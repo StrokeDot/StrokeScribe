@@ -9,6 +9,16 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## AI resource awareness and diagnostics update (v0.5.3-experimental.69)
+
+This release makes the AI resource and diagnostics improvements available as a newer update to installed experimental.68 copies. It preserves .68's drawing, painting, live blend preview, projects, models and export behavior.
+
+- Before generation, available RAM and optional NVIDIA dedicated VRAM measurements inform an adjustable advisory warning. Choose Generate anyway or Cancel; unknown readings stay unknown and other apps are never closed.
+- Generation stages distinguish startup, input preparation, model preparation, actual sampling, saving and completion/failure. Elapsed/inactivity notices never treat a long model load as a confirmed crash.
+- Engine log includes captured ComfyUI output, process/start/exit diagnostics, bounded asynchronous persistent logs, Open log file and redacted Copy diagnostics.
+- File → Update StrokeScribe can offer .69 to .68 installations. Save your project before updating. Installations with older, different Python requirements must use the verified full Windows installer.
+- Real Qwen/FLUX GPU inference, memory-pressure responsiveness and image-quality comparison remain manual acceptance checks on a model-equipped PC.
+
 ## Adaptive vertical flicks and live blend preview (v0.5.3-experimental.68)
 
 Experimental.68 combines the drawing/painting fixes below with AI resource awareness and diagnostics. It is available through the experimental update branch. The Windows installer is published only after the release pipeline passes its Linux/Windows checks and installation smoke test.
