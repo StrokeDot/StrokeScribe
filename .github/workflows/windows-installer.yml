@@ -148,7 +148,7 @@ jobs:
           $p = Start-Process "$dir\runtime\python.exe" -ArgumentList "`"$dir\startup.py`"" -WorkingDirectory $dir -PassThru -Wait
           Get-Content "$dir\startup.log"
           if (!(Select-String -Path "$dir\startup.log" -Pattern "Ready:" -Quiet)) { Write-Error "did not start"; exit 1 }
-          & "$dir\runtime\python.exe" -c "import sys; sys.path.insert(0, r'$dir'); import updater; print('updater sees', updater.current_version(r'$dir'))"
+          & "$dir\runtime\python.exe" -c "import sys; sys.path.insert(0, r'$dir'); import updater, websocket, ai_resources, ai_activity, ai_diagnostics; print('updater sees', updater.current_version(r'$dir'))"
           Start-Process "$dir\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
           Start-Sleep -Seconds 3
           if (Test-Path "$dir\runtime") { Write-Error "uninstall left files"; exit 1 }

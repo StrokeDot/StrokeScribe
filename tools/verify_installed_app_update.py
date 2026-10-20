@@ -27,6 +27,7 @@ def source(ref,path):
 
 def main():
     from version import APP_VERSION
+    import updater as candidate_updater
     with tempfile.TemporaryDirectory(prefix='strokescribe-update-probe-') as tmp:
         area=Path(tmp)
         package=area/'candidate.zip'
@@ -62,7 +63,7 @@ def main():
                 # touching an existing install. Full installers provision them.
                 before={p:p.read_bytes() for p in installed.rglob('*') if p.is_file()}
                 try:
-                    updater.apply_zip(package,installed)
+                    candidate_updater.apply_zip(package,installed)
                 except Exception as exc:
                     if 'full Windows installer' not in str(exc):
                         raise
