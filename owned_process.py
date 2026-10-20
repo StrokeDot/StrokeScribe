@@ -102,6 +102,7 @@ _WINDOWS_LAUNCHER = (
     "import subprocess,sys; "
     "token=sys.stdin.buffer.read(1); "
     "child=subprocess.Popen(sys.argv[1:],stdin=subprocess.DEVNULL,creationflags=subprocess.CREATE_NO_WINDOW) if token==b'1' else None; "
+    "print(\'STROKESCRIBE_ENGINE_PID=\'+str(child.pid),flush=True) if child is not None else None; "
     "sys.exit(child.wait() if child is not None else 125)"
 )
 

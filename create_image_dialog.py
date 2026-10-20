@@ -87,15 +87,22 @@ class AIWorker(QThread):
     log = Signal(str)
     done = Signal(object)
     failed = Signal(str)
+    resource_status = Signal(object)
+    resource_warning = Signal(str)
 
     def __init__(self, job, **kw):
         super().__init__()
         self.job = job
         self.kw = kw
         self._cancel = False
+        import threading
+        self._resource_gate=threading.Event()
 
     def cancel(self):
         self._cancel = True
+
+    def allow_resources(self):
+        self._resource_gate.set()
 
     def cancelled(self):
         return self._cancel
@@ -134,62 +141,79 @@ class AIWorker(QThread):
         ai_engine.download_model(paths, files, report, self.cancelled)
         self.done.emit('downloaded')
 
-    def _generate(self, engine, workflow, image_path):
-        # Engine output normally arrives on its own Python reader thread.
-        # Qt Signal.emit safely forwards those lines to the dialog's log panel.
-        # Restore the callback after this job so a warmed engine cannot emit
-        # into an already destroyed AIWorker on a later generation.
-        previous_log = engine.log
+    def _generate(self, engine, workflow, image_path, resource_check=None):
+        from ai_resources import probe,warning_for,limits
+        from ai_activity import Activity
+        cfg=limits((resource_check or {}).get('limits'))
+        if resource_check is not None:
+            self.progress.emit(-1,'Checking available memory…')
+            metrics=probe()
+            if self.cancelled():raise ai_engine.Cancelled('Generation cancelled.')
+            self.resource_status.emit(metrics)
+            warning=warning_for(metrics,cfg) if resource_check.get('warn',True) else ''
+            if warning:
+                self.resource_warning.emit(warning)
+                while not self._resource_gate.wait(.1):
+                    if self.cancelled():raise ai_engine.Cancelled('Generation cancelled before engine startup.')
+                if self.cancelled():raise ai_engine.Cancelled('Generation cancelled.')
+        previous_log=engine.log
         def forward_engine_line(line):
-            try:
-                previous_log(line)
-            finally:
-                self.log.emit(line)
-        engine.log = forward_engine_line
-        self.log.emit('AI diagnostics file: ' + str(ai_engine.engine_log_path()))
+            try:previous_log(line)
+            finally:self.log.emit(line)
+        engine.log=forward_engine_line
+        self.log.emit('AI diagnostics file: '+str(ai_engine.engine_log_path()))
+        started=time.monotonic()
+        def record(text):
+            method=getattr(engine,'record',None)
+            if callable(method):method(text)
+        def stage(percent,text):
+            self.progress.emit(percent,text)
+            record(f'{text} ({time.monotonic()-started:.1f}s elapsed)')
         try:
-            self.progress.emit(-1, 'Starting the local AI engine…')
-            self.log.emit('Connecting to the local AI engine. The first start may be slow.')
+            stage(-1,'Starting the local AI engine…')
             engine.start(cancelled=self.cancelled)
-            self.log.emit('AI engine ready; launcher PID ' + str(engine.proc.pid)
-                          + ' (Windows may list the child process separately).')
+            self.log.emit('AI engine ready; launcher PID '+str(engine.proc.pid)+' (Windows may list the child process separately).')
             if image_path:
-                self.progress.emit(-1, 'Preparing input image…')
-                name = engine.put_input(image_path)
+                stage(-1,'Preparing input image…')
+                name=engine.put_input(image_path)
                 for node in workflow.values():
-                    if node['class_type'] == 'LoadImage':
-                        node['inputs']['image'] = name
-            self.progress.emit(-1, 'Loading model / preparing generation…')
-            self.log.emit('Submitting workflow to ComfyUI; sampling has not started yet.')
-            engine.percent = None
+                    if node['class_type']=='LoadImage':node['inputs']['image']=name
+            if self.cancelled():raise ai_engine.Cancelled('Generation cancelled.')
+            stage(-1,'Loading model / preparing generation…')
+            engine.percent=None
             import threading
-            result = {}
-
+            result={}
             def job():
-                try:
-                    result['path'] = engine.run(workflow, cancelled=self.cancelled)
-                except Exception as exc:
-                    result['error'] = exc
-            thread = threading.Thread(target=job, daemon=True)
-            thread.start()
-            last_progress = None
-            last_wait = time.monotonic()
-            started = last_wait
+                try:result['path']=engine.run(workflow,cancelled=self.cancelled)
+                except Exception as exc:result['error']=exc
+            thread=threading.Thread(target=job,daemon=True);thread.start()
+            last_state=None;last_notice=time.monotonic()
             while thread.is_alive():
-                thread.join(.5)
-                percent = engine.percent
-                if percent is not None and percent != last_progress:
-                    self.progress.emit(percent, f'Sampling… {percent}%')
-                    last_progress = percent
-                elif percent is None and time.monotonic() - last_wait >= 8:
-                    minutes = int((time.monotonic() - started) // 60)
-                    self.progress.emit(-1, f'Waiting for model/sampler… {minutes}m elapsed')
-                    last_wait = time.monotonic()
-            if 'error' in result:
-                raise result['error']
+                thread.join(.2)
+                activity=getattr(engine,'activity',None)
+                if isinstance(activity,Activity):
+                    text=activity.label(alive=engine.running(),stall_seconds=cfg['stall_seconds'])
+                    idle=time.monotonic()-activity.updated>=cfg['stall_seconds']
+                    percent=activity.percent if activity.stage=='sampling' and not idle else None
+                else:
+                    percent=engine.percent
+                    text=f'Generating image — sampling {percent}%' if percent is not None else 'Loading model / preparing generation — exact stage unavailable…'
+                current=(percent,text)
+                if current!=last_state and (last_state is None or percent is not None or time.monotonic()-last_notice>=1):
+                    self.progress.emit(-1 if percent is None else percent,text)
+                    if percent is None and time.monotonic()-last_notice>=8:
+                        record(f'{text} ({time.monotonic()-started:.1f}s elapsed)');last_notice=time.monotonic()
+                    last_state=current
+            if 'error' in result:raise result['error']
+            stage(100,'Completed')
             self.done.emit(str(result['path']))
+        except Exception as exc:
+            stage(-1,'Cancelled' if isinstance(exc,ai_engine.Cancelled) else 'Failed — see Engine log')
+            record(str(exc)[:3000]);raise
         finally:
-            engine.log = previous_log
+            flush=getattr(engine,'flush_diagnostics',None)
+            if callable(flush):flush(.1)
+            engine.log=previous_log
 
 
 class PlaceholderIcon(QLabel):
@@ -308,6 +332,13 @@ class CreateImageDialog(QDialog):
         self.install_button.clicked.connect(self.install_engine)
         engine_row.addWidget(self.install_button)
         root.addLayout(engine_row)
+        from ai_resource_ui import ResourcePanel
+        self._resource_warning_shown=False
+        self.resources=ResourcePanel(self.settings.get('resource_warning'),self)
+        self.resources.proceed_requested.connect(self.proceed_with_resources)
+        self.resources.cancel_requested.connect(self.cancel)
+        self.resources.limits_changed.connect(self.resource_limits_changed)
+        root.addWidget(self.resources)
         self.release_ai_memory = QCheckBox('Release AI memory when I close Create Image')
         self.release_ai_memory.setChecked(bool(self.settings['release_ai_memory_on_close']))
         self.release_ai_memory.setToolTip(
@@ -465,15 +496,21 @@ class CreateImageDialog(QDialog):
         bottom.addWidget(self.generate_button)
         root.addLayout(bottom)
         self.log_view = QPlainTextEdit(); self.log_view.setReadOnly(True); self.log_view.setMaximumHeight(140)
+        self.log_view.setMaximumBlockCount(1200)
         self.log_view.setVisible(False)
         self.log_button.toggled.connect(self.log_view.setVisible)
         root.addWidget(self.log_view)
+        self.log_actions=QWidget();log_actions=QHBoxLayout(self.log_actions);log_actions.setContentsMargins(0,0,0,0)
+        self.open_log_button=QPushButton('Open log file');self.open_log_button.clicked.connect(self.open_engine_log)
+        self.copy_log_button=QPushButton('Copy diagnostics');self.copy_log_button.clicked.connect(self.copy_diagnostics)
+        log_actions.addWidget(self.open_log_button);log_actions.addWidget(self.copy_log_button);log_actions.addStretch()
+        self.log_actions.hide();self.log_button.toggled.connect(self.log_actions.setVisible);root.addWidget(self.log_actions)
 
         # Each tab keeps its own prompt and its last result (switching tabs loses nothing).
         self.memory = {}
         self.running_task = None
         self.work = dict(percent=-1, text='', started=0.)
-        self.work_timer = QTimer(self); self.work_timer.setInterval(16); self.work_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self.work_timer = QTimer(self); self.work_timer.setInterval(50); self.work_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.work_timer.timeout.connect(self.paint_working)
         self.reveal_timer = QTimer(self); self.reveal_timer.setInterval(16); self.reveal_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.reveal_timer.timeout.connect(self.reveal_step)
@@ -920,6 +957,35 @@ class CreateImageDialog(QDialog):
             self.image_path = name
             self.refresh()
 
+    def resource_limits_changed(self,settings):
+        from ai_resources import limits
+        self.settings['resource_warning']=limits(settings)
+        ai_engine.save_settings(self.settings)
+        self._resource_warning_shown=False
+
+    def show_resource_warning(self,message):
+        self._resource_warning_shown=True
+        self.resources.warn(message)
+        self.status.setText('Low available memory. Generate anyway or cancel.')
+
+    def proceed_with_resources(self):
+        if self.worker is not None and hasattr(self.worker,'allow_resources'):
+            self.resources.clear_warning();self.worker.allow_resources()
+
+    def open_engine_log(self):
+        path=ai_engine.engine_log_path()
+        if path.is_file():QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        else:self.status.setText('No engine log has been recorded yet.')
+
+    def copy_diagnostics(self):
+        from ai_diagnostics import diagnostic_excerpt
+        from PySide6.QtWidgets import QApplication
+        from version import APP_VERSION
+        text='StrokeScribe '+APP_VERSION+' — engine diagnostics (local folders and common credentials redacted)\n'
+        text+=diagnostic_excerpt(ai_engine.engine_log_path(),roots=[str(self.paths.root),str(ai_engine._settings_path().parent)])
+        QApplication.clipboard().setText(text)
+        self.status.setText('Diagnostics copied with local folders and common credentials redacted. Review before sharing.')
+
     def _start(self, worker, on_done):
         if self._workers_busy():
             self.status.setText('Please wait for the current AI operation to finish.')
@@ -929,6 +995,8 @@ class CreateImageDialog(QDialog):
         self.worker = worker
         worker.progress.connect(self.on_progress)
         worker.log.connect(self.log_view.appendPlainText)
+        worker.resource_status.connect(self.resources.show_metrics)
+        worker.resource_warning.connect(self.show_resource_warning)
         worker.done.connect(on_done)
         worker.failed.connect(self.on_failed)
         worker.finished.connect(lambda current=worker: self.on_worker_finished(current))
@@ -981,13 +1049,15 @@ class CreateImageDialog(QDialog):
         workflow = build(model, variant, self.prompt.toPlainText().strip(), self.seed.value(),
                          image_name='input.png' if image else None, width=width, height=height,
                          ram_gb=self.hw.ram_gb, seconds=self.sound_seconds.value())
+        self.resources.clear_warning()
         self.result_path = None; self.kept_path = None
         self.running_task = self.task
         self.memory[self.task] = dict(self.memory.get(self.task, {}), result_path=None, kept_path=None,
                                       prompt=self.prompt.toPlainText(), source=image)
         self.work.update(percent=-1, text='Starting…', started=time.monotonic())
         self.reveal_timer.stop(); self.work_timer.start(); self.paint_working()
-        self._start(AIWorker('generate', engine=self.engine, workflow=workflow, image_path=image),
+        self._start(AIWorker('generate', engine=self.engine, workflow=workflow, image_path=image,
+                    resource_check=dict(warn=not self._resource_warning_shown,limits=self.settings.get('resource_warning',{}))),
                     self.on_result)
 
     def cancel(self):
@@ -1010,6 +1080,7 @@ class CreateImageDialog(QDialog):
         self.status.setText(text)
 
     def on_failed(self, message):
+        self.resources.clear_warning()
         self.work_timer.stop()
         self.progress_motion.stop()
         if self.running_task == self.task:
@@ -1160,7 +1231,7 @@ class CreateImageDialog(QDialog):
         # The words.
         percent = self.work.get('percent', -1)
         elapsed = int(now - self.work.get('started', now))
-        line = f'Creating… {percent}%' if percent >= 0 else (self.work.get('text') or 'Working…')
+        line = self.work.get('text') or ('Generating image…' if percent >= 0 else 'Working…')
         font = QFont(self.font()); font.setPointSizeF(11.5); font.setBold(True)
         painter.setFont(font); painter.setPen(QColor('white'))
         painter.drawText(QRectF(10, centre.y() + r * 1.5, W - 20, 26), Qt.AlignmentFlag.AlignCenter, line[:80])

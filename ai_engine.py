@@ -67,6 +67,8 @@ def load_settings():
     data.setdefault('root', str(default_root()))
     data.setdefault('accepted_licenses', [])
     data.setdefault('variant_override', {})
+    from ai_resources import limits
+    data['resource_warning']=limits(data.get('resource_warning'))
     data.setdefault('release_ai_memory_on_close', True)
     return data
 
@@ -665,10 +667,29 @@ class Engine:
         self.percent = None
         self.log_lines = []
         self.log = log or (lambda line: None)
+        self._diagnostics=None
+        self.activity=None
+        self.engine_pid=None
+        self.started_at=None
+        self._exit_reported=False
 
     # -- server
+    def record(self,text):
+        from ai_diagnostics import DiagnosticLog
+        if self._diagnostics is None:self._diagnostics=DiagnosticLog(engine_log_path())
+        self._diagnostics.emit(text,self.log)
+
+    def flush_diagnostics(self,timeout=.2):
+        return self._diagnostics.flush(timeout) if self._diagnostics else True
+
     def running(self):
-        return self.proc is not None and self.proc.poll() is None
+        if self.proc is None:return False
+        status=self.proc.poll()
+        if status is not None and not self._exit_reported:
+            self._exit_reported=True
+            elapsed=time.monotonic()-(self.started_at or time.monotonic())
+            self.record(f'Owned AI process PID {self.proc.pid} exited with status {status}; uptime {elapsed:.1f}s.')
+        return status is None
 
     def start(self, timeout=240, cancelled=lambda: False):
         # One owner at a time; cancellation can reenter stop() on this thread.
@@ -677,6 +698,7 @@ class Engine:
 
     def _start_locked(self, timeout, cancelled):
         if self.running():
+            self.record(f'Reusing warm AI engine PID {self.engine_pid or self.proc.pid}.')
             return
         if self._owned_process is not None:
             self.stop()  # An exited root may still own children and an output reader.
@@ -694,6 +716,9 @@ class Engine:
                              creationflags=NO_WINDOW)
         self._owned_process = owner
         proc = self.proc = owner.proc
+        self.started_at=time.monotonic();self._exit_reported=False
+        self.engine_pid=proc.pid if os.name!='nt' else None
+        self.record(f'Starting local AI engine; owned process PID {proc.pid}, started {time.strftime("%Y-%m-%d %H:%M:%S")}.')
         import threading
         self._reader = threading.Thread(target=self._read_output, args=(proc,), daemon=True)
         self._reader.start()
@@ -706,40 +731,29 @@ class Engine:
                     raise RuntimeError('The AI engine stopped while starting:\n' + '\n'.join(self.log_lines[-15:]))
                 try:
                     self._get('/system_stats')
+                    self.record(f'AI engine ready after {time.monotonic()-started:.1f}s; PID {self.engine_pid or proc.pid}.')
                     return
                 except Exception:
                     time.sleep(.2)
             raise RuntimeError('The AI engine did not start in time.')
-        except BaseException:
+        except BaseException as exc:
+            self.record('AI engine startup failed or cancelled: '+str(exc)[:2000])
             self.stop()
             raise
 
     def _read_output(self, proc):
-        # The reader belongs to this exact launch, never to a replacement self.proc.
+        # Output drains independently of diagnostic disk writes and UI callbacks.
         for line in proc.stdout:
-            line = line.rstrip()
-            if self.proc is not proc:
-                continue
-            self.log_lines = (self.log_lines + [line])[-200:]
-            match = self.PROGRESS.search(line)
-            if match:
-                self.percent = int(match.group(1))
-            # Persist ComfyUI stdout even when Create Image is closed or a Qt
-            # signal subscriber is absent. Open/close per write so Windows tests
-            # can clean their temporary config folder without locked log files.
-            try:
-                logfile = engine_log_path()
-                logfile.parent.mkdir(parents=True, exist_ok=True)
-                if logfile.exists() and logfile.stat().st_size > 4 * 1024 * 1024:
-                    logfile.replace(logfile.with_name('ai-engine.log.1'))
-                with logfile.open('a', encoding='utf-8') as output:
-                    output.write(time.strftime('%Y-%m-%d %H:%M:%S') + '  ' + line + '\n')
-            except OSError:
-                pass  # Logging must never stop process-output draining.
-            try:
-                self.log(line)
-            except Exception:
-                pass  # A closed UI must not break the engine reader.
+            if self.proc is not proc:continue
+            line=line.rstrip()[:4096]
+            self.log_lines=(self.log_lines+[line])[-200:]
+            marker=re.search(r'STROKESCRIBE_ENGINE_PID=(\d+)',line)
+            if marker:self.engine_pid=int(marker.group(1))
+            # Loader/download tqdm percentages do not prove sampler activity.
+            self.record(line)
+        if self.proc is proc:
+            self.record(f'AI output stream ended for owned PID {proc.pid}.')
+            self.running()
 
     def stop(self):
         with self._lifecycle_lock:
@@ -747,7 +761,10 @@ class Engine:
             if owner is None:
                 return
             # Keep ownership intact on any failure so another stop can retry.
+            self.record(f'Stopping owned AI process tree; PID {owner.proc.pid}.')
             owner.stop()
+            self.record(f'Owned AI process PID {owner.proc.pid} stopped; exit status {owner.proc.returncode}.')
+            self._exit_reported=True
             reader = self._reader
             if reader is not None:
                 reader.join(timeout=3)
@@ -760,6 +777,7 @@ class Engine:
             self.proc = None
             self.port = None
             self.percent = None
+            self.flush_diagnostics(.2)
 
     # -- HTTP
     def _url(self, path):
@@ -793,38 +811,68 @@ class Engine:
         return name
 
     def run(self, workflow, timeout=3600, cancelled=lambda: False):
-        """Queue a workflow and return the path of the first saved image (or sound)."""
-        # 0% means sampling has actually begun. Before the first sampler
-        # event the model may be loading/offloading for several minutes.
-        self.percent = None
-        reply = self._post('/prompt', {'prompt': workflow, 'client_id': 'strokescribe'})
-        if reply.get('node_errors'):
-            raise RuntimeError('The AI engine rejected the workflow: ' + json.dumps(reply['node_errors'])[:600])
-        prompt_id = reply['prompt_id']
-        started = time.time()
-        while time.time() - started < timeout:
-            if cancelled():
-                try:
-                    self._post('/interrupt', {})
-                finally:
-                    raise Cancelled('Image generation cancelled.')
-            if not self.running():
-                raise RuntimeError('The AI engine stopped:\n' + '\n'.join(self.log_lines[-15:]))
-            history = self._get('/history/' + prompt_id)
-            entry = history.get(prompt_id)
-            if entry:
-                status = entry.get('status', {})
-                if status.get('status_str') == 'error':
-                    messages = [m for m in status.get('messages', []) if m and m[0] == 'execution_error']
-                    detail = messages[0][1].get('exception_message', '') if messages else ''
-                    raise RuntimeError('The AI engine failed: ' + (detail or 'see the engine log')[:600])
-                for output in entry.get('outputs', {}).values():
-                    for image in output.get('images', []) + output.get('audio', []):
-                        return self.paths.output / image.get('subfolder', '') / image['filename']
-                if status.get('completed'):
-                    raise RuntimeError('The AI engine finished without an image.')
-            time.sleep(.7)
-        raise RuntimeError('Image generation took too long.')
+        """Submit unchanged workflow; observe our prompt without affecting inference."""
+        from ai_activity import Activity,EventStream
+        self.percent=None;self.activity=None
+        client_id=uuid.uuid4().hex
+        stream=None
+        try:
+            try:stream=EventStream(self.port,client_id)
+            except Exception as exc:
+                self.record('Detailed stage monitoring unavailable; progress remains indeterminate. '+type(exc).__name__)
+            if cancelled():raise Cancelled('Image generation cancelled.')
+            reply=self._post('/prompt',{'prompt':workflow,'client_id':client_id})
+            if reply.get('node_errors'):
+                raise RuntimeError('The AI engine rejected the workflow: '+json.dumps(reply['node_errors'])[:600])
+            prompt_id=reply['prompt_id']
+            self.activity=Activity(prompt_id,workflow)
+            started=time.monotonic();last_state=None;last_poll_notice=0.
+            self.record('Workflow submitted; loading/preparing, sampling not yet reported.')
+            while time.monotonic()-started<timeout:
+                if cancelled():
+                    try:self._post('/interrupt',{})
+                    finally:raise Cancelled('Image generation cancelled.')
+                if not self.running():
+                    raise RuntimeError('The AI engine stopped; see exit status and Engine log.\n'+'\n'.join(self.log_lines[-15:]))
+                if stream is not None:
+                    stream.drain(self.activity)
+                    if stream.failed:
+                        self.record('Stage connection ended; continuing with history monitoring and unknown progress.')
+                        stream.close();stream=None
+                        self.activity.percent=None;self.activity.stage='preparing';self.activity.observed=False
+                self.percent=self.activity.percent
+                state=(self.activity.stage,self.percent)
+                if state!=last_state:
+                    self.record(f'{self.activity.label()} ({time.monotonic()-started:.1f}s elapsed)')
+                    last_state=state
+                try:history=self._get('/history/'+prompt_id)
+                except (urllib.error.URLError,TimeoutError,OSError) as exc:
+                    if isinstance(exc,urllib.error.HTTPError) and exc.code<500:raise
+                    if time.monotonic()-last_poll_notice>=30:
+                        self.record('History response delayed while engine process remains alive; retrying. '+type(exc).__name__)
+                        last_poll_notice=time.monotonic()
+                    time.sleep(.2);continue
+                entry=history.get(prompt_id)
+                if entry:
+                    status=entry.get('status',{})
+                    if status.get('status_str')=='error':
+                        messages=[m for m in status.get('messages',[]) if m and m[0]=='execution_error']
+                        detail=messages[0][1].get('exception_message','') if messages else ''
+                        raise RuntimeError('The AI engine failed: '+(detail or 'see the engine log')[:600])
+                    for output in entry.get('outputs',{}).values():
+                        for image in output.get('images',[])+output.get('audio',[]):
+                            result=self.paths.output/image.get('subfolder','')/image['filename']
+                            self.record(f'Completed; result saved ({time.monotonic()-started:.1f}s elapsed).')
+                            return result
+                    if status.get('completed'):raise RuntimeError('The AI engine finished without an image.')
+                time.sleep(.2)
+            raise RuntimeError('Generation exceeded the time limit; this does not confirm an engine crash.')
+        except Exception as exc:
+            self.record('Generation ended: '+str(exc)[:3000])
+            raise
+        finally:
+            if stream is not None:stream.close()
+            self.flush_diagnostics(.1)
 
 
 def new_seed():

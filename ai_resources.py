@@ -63,5 +63,5 @@ def warning_for(metrics,settings=None):
         if isinstance(value,(int,float)) and math.isfinite(value) and 0<=value<threshold:
             low.append(f'{label}: {value:.1f} GB available (warning below {threshold:g} GB)')
     if not low:return ''
-    return ('Low available memory — '+ '; '.join(low)+'. Consider saving work and closing memory-heavy applications. '
+    return ('Low available memory — '+ '; '.join(low)+'. Consider saving work, then close memory-heavy applications. '
             'You can generate anyway. These are advisory limits, not a prediction of model requirements.')
