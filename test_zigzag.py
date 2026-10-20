@@ -19,6 +19,36 @@ def headset(size=160):
     return m.astype(bool)
 
 
+class ShortStrokeTests(unittest.TestCase):
+    def test_short_vertical_strokes_alternate_and_stay_compact(self):
+        from zigzag_paint import _band_strokes
+        canvas=np.zeros((48,160),bool)
+        canvas[8:40,8:150]=True
+        paths=_band_strokes(canvas,4.5,False,short_vertical=True)
+        self.assertTrue(paths)
+        longest=max(paths,key=len)
+        self.assertGreater(len(longest),15)
+        flips=sum(1 for a,b in zip(longest,longest[1:])
+                  if abs(a[1]-b[1])>1.)
+        self.assertGreater(flips,len(longest)*.8)
+        self.assertLess(max(abs(a[0]-b[0]) for a,b in zip(longest,longest[1:])),4.5)
+
+    def test_short_stroke_paint_plan_covers_all_visible_pixels(self):
+        from zigzag_paint import _Planner,_band_strokes
+        mask=np.zeros((44,90),bool)
+        mask[8:36,10:80]=True
+        mask[18:26,34:40]=False
+        plan=_Planner(mask,np.zeros_like(mask),(4.,4.),.14,.55)
+        plan.components=mask.astype(np.int32)
+        plan.component_count=1
+        radius=max(1.2,plan.max_radius*(.55+.5*plan.spacing))
+        for points in _band_strokes(mask,radius,False,short_vertical=True):
+            plan.hop(points[0],1,radius)
+            for p in points[1:]:plan.move(p,1,True,radius)
+        self.assertTrue(any(s[4] for s in plan.segments))
+        self.assertFalse(np.isfinite(plan.arrival[~mask]).any())
+
+
 class ZigzagPlanTests(unittest.TestCase):
     def plan(self, mask, origin=(80., 10.)):
         faint = np.zeros_like(mask)
