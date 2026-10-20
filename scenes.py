@@ -101,8 +101,8 @@ def finished_art(drawing, options, background=True):
     return compose_frame(drawing, 1., opts)
 
 
-def stack(base, top):
-    """`top` over `base` (either may be None)."""
+def stack(base, top, blend_mode='Normal'):
+    """`top` over `base`, using the selected per-element blend mode."""
     if base is None:
         return top
     if top is None:
@@ -112,6 +112,8 @@ def stack(base, top):
     if out is base:
         out = base.copy()
     p = QPainter(out)
+    from blend_modes import composition_mode
+    p.setCompositionMode(composition_mode(blend_mode))
     p.drawImage(0, 0, top)
     p.end()
     return out
@@ -278,7 +280,8 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                     else:
                         view = board.sub_view(all_frames[k], *camera.at(i / max(1, len(frames) - 1)), aspect)
                         under = world.view(view, width, height, upto=k)
-                    if not stack(under, QImage(str(frame))).save(str(frame), 'PNG', 80):
+                    if not stack(under, QImage(str(frame)),
+                                 options.get('blend_mode','Normal')).save(str(frame), 'PNG', 80):
                         raise OSError('Unable to save PNG frame.')
             start = index
             for frame in frames:
