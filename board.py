@@ -239,11 +239,14 @@ class World:
             x, y, w, h = self.place(self.frames[j], view, out_w, out_h)
             if w < 2 or x > out_w or y > out_h or x + w < 0 or y + h < 0:
                 continue
+            from blend_modes import composition_mode
+            p.setCompositionMode(composition_mode(self.items[j]['options'].get('blend_mode','Normal')))
             p.drawImage(QRectF(x, y, w, h), self.finished(j, w))
+            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
         p.end()
         return out
 
-    def put(self, under, image, frame, view):
+    def put(self, under, image, frame, view, blend_mode='Normal'):
         """`image` (a frame of one scene, the frame's own picture) placed into a view picture."""
         from PySide6.QtCore import QRectF
         from PySide6.QtGui import QPainter
@@ -251,6 +254,8 @@ class World:
         x, y, w, h = self.place(frame, view, out.width(), out.height())
         p = QPainter(out)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        from blend_modes import composition_mode
+        p.setCompositionMode(composition_mode(blend_mode))
         p.drawImage(QRectF(x, y, w, h), image)
         p.end()
         return out
