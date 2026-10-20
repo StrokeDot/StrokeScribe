@@ -38,7 +38,7 @@ def format_seconds(seconds):
     return f'{hours}:{minutes:02d}:{secs:02d}' if hours else f'{minutes}:{secs:02d}'
 # Paint mode menu order (studio_workspace). Stroke-guided and Clean contour
 # painting were retired from the menu; their code remains for old renders.
-REVEAL_MODES = ('brush', 'adaptive', 'zigzag', 'rows', 'columns')
+REVEAL_MODES = ('brush', 'adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag')
 
 def timecode(seconds):
     """00:04.25 style time for the monitor."""
@@ -556,7 +556,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             return
         mode=options.get('reveal_mode')
         image_source=getattr(self.drawing,'source_kind',None)=='image'
-        if mode in ('adaptive','zigzag','rows','columns'):
+        if mode in ('adaptive','zigzag','rows','columns','short_zigzag'):
             self.drawing.paint_method=mode
         elif not image_source:
             return
@@ -1950,7 +1950,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if options.get('camera_zoom',1.)>1.0001:
                 from frame_render import camera_for
                 camera=camera_for(drawing,options,options['camera_zoom'],rate=20.)
-            if options.get('final_image') is not None and options.get('reveal_mode') in ('adaptive','zigzag','rows','columns'):
+            if options.get('final_image') is not None and options.get('reveal_mode') in ('adaptive','zigzag','rows','columns','short_zigzag'):
                 from adaptive_hand import plan_ready, plan_for
                 drawing.paint_method=options['reveal_mode']
                 if not plan_ready(drawing,options['final_image'],options['brush_width'],options['stroke_spacing']):
@@ -2857,7 +2857,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def image_paint_method(self):
         mode=REVEAL_MODES[self.reveal_mode.currentIndex()]
-        return mode if mode in ('adaptive','zigzag','rows','columns') else 'adaptive'
+        return mode if mode in ('adaptive','zigzag','rows','columns','short_zigzag') else 'adaptive'
 
     def settings_state(self):
         from projects import widget_value

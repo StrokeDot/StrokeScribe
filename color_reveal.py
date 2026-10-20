@@ -243,7 +243,7 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
     """Show SVG drawing, then fade, brush, adaptive or zigzag painting."""
     if final_image is None or final_image.isNull():
         return render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)
-    if reveal_mode in ('adaptive','zigzag','rows','columns'):
+    if reveal_mode in ('adaptive','zigzag','rows','columns','short_zigzag'):
         # Zigzag sweep is a different brush ROUTE; the timed plan format,
         # renderer, hand and guide retirement are shared with Adaptive.
         drawing.paint_method=reveal_mode

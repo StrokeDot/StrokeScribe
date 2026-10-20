@@ -1289,7 +1289,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     a2=form_layout();animation_l.addLayout(a2)
     w.reveal_mode=QComboBox()
     w.reveal_mode.addItems(['Brush painting','Adaptive Hand Painting','Zigzag sweep',
-                            'Top to bottom (rows)','Left to right (columns)'])
+                            'Top to bottom (rows)','Left to right (columns)',
+                            'Adaptive — Short up/down strokes'])
     w.reveal_mode.setItemData(3,'Like a painter: the colours are brushed in band by band from the top '
                               'down, sweeping left and right across the whole picture.',Qt.ItemDataRole.ToolTipRole)
     w.reveal_mode.setItemData(4,'The colours are brushed in band by band from the left to the right, '
@@ -1297,6 +1298,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.reveal_mode.setCurrentIndex(1)
     w.reveal_mode.setItemData(2,'The hand follows one route along the object, scribbling colour '
                               'back and forth across it (wider on broad parts).',Qt.ItemDataRole.ToolTipRole)
+    w.reveal_mode.setItemData(5,'Short alternating vertical brush strokes fill each band of the '
+                              'picture, preserving source colors and brush coverage. '
+                              'The original Adaptive and Zigzag modes stay available.',
+                              Qt.ItemDataRole.ToolTipRole)
     a2.addRow('Paint mode',w.reveal_mode)
     w.image_paint_hint=caption('Image sources paint with Adaptive Hand Painting or Zigzag sweep. Original PNG colors are preserved.')
     a2.addRow(w.image_paint_hint)
