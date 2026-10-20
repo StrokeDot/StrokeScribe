@@ -135,32 +135,61 @@ class AIWorker(QThread):
         self.done.emit('downloaded')
 
     def _generate(self, engine, workflow, image_path):
-        self.progress.emit(-1, 'Starting the AI engine (the first time takes a minute)…')
-        engine.start(cancelled=self.cancelled)
-        if image_path:
-            name = engine.put_input(image_path)
-            for node in workflow.values():
-                if node['class_type'] == 'LoadImage':
-                    node['inputs']['image'] = name
-        self.progress.emit(-1, 'Loading the model…')
-        engine.percent = None
-        import threading
-        result = {}
-
-        def job():
+        # Engine output normally arrives on its own Python reader thread.
+        # Qt Signal.emit safely forwards those lines to the dialog's log panel.
+        # Restore the callback after this job so a warmed engine cannot emit
+        # into an already destroyed AIWorker on a later generation.
+        previous_log = engine.log
+        def forward_engine_line(line):
             try:
-                result['path'] = engine.run(workflow, cancelled=self.cancelled)
-            except Exception as exc:
-                result['error'] = exc
-        thread = threading.Thread(target=job, daemon=True)
-        thread.start()
-        while thread.is_alive():
-            thread.join(.5)
-            if engine.percent is not None:
-                self.progress.emit(engine.percent, f'Creating… {engine.percent}%')
-        if 'error' in result:
-            raise result['error']
-        self.done.emit(str(result['path']))
+                previous_log(line)
+            finally:
+                self.log.emit(line)
+        engine.log = forward_engine_line
+        self.log.emit('AI diagnostics file: ' + str(ai_engine.engine_log_path()))
+        try:
+            self.progress.emit(-1, 'Starting the local AI engine…')
+            self.log.emit('Connecting to the local AI engine. The first start may be slow.')
+            engine.start(cancelled=self.cancelled)
+            self.log.emit('AI engine ready; launcher PID ' + str(engine.proc.pid)
+                          + ' (Windows may list the child process separately).')
+            if image_path:
+                self.progress.emit(-1, 'Preparing input image…')
+                name = engine.put_input(image_path)
+                for node in workflow.values():
+                    if node['class_type'] == 'LoadImage':
+                        node['inputs']['image'] = name
+            self.progress.emit(-1, 'Loading model / preparing generation…')
+            self.log.emit('Submitting workflow to ComfyUI; sampling has not started yet.')
+            engine.percent = None
+            import threading
+            result = {}
+
+            def job():
+                try:
+                    result['path'] = engine.run(workflow, cancelled=self.cancelled)
+                except Exception as exc:
+                    result['error'] = exc
+            thread = threading.Thread(target=job, daemon=True)
+            thread.start()
+            last_progress = None
+            last_wait = time.monotonic()
+            started = last_wait
+            while thread.is_alive():
+                thread.join(.5)
+                percent = engine.percent
+                if percent is not None and percent != last_progress:
+                    self.progress.emit(percent, f'Sampling… {percent}%')
+                    last_progress = percent
+                elif percent is None and time.monotonic() - last_wait >= 8:
+                    minutes = int((time.monotonic() - started) // 60)
+                    self.progress.emit(-1, f'Waiting for model/sampler… {minutes}m elapsed')
+                    last_wait = time.monotonic()
+            if 'error' in result:
+                raise result['error']
+            self.done.emit(str(result['path']))
+        finally:
+            engine.log = previous_log
 
 
 class PlaceholderIcon(QLabel):

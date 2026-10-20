@@ -73,6 +73,32 @@ class AILifecycleTests(unittest.TestCase):
         self.engine.start(timeout=10)
         return self.fixture.workers()
 
+    def test_generation_logs_are_visible_and_saved_to_a_local_file(self):
+        messages = []
+        stages = []
+        worker = AIWorker("generate")
+        worker.log.connect(messages.append)
+        worker.progress.connect(lambda percent, label: stages.append((percent, label)))
+        original_callback = self.engine.log
+        worker._generate(self.engine, {}, None)
+        APP.processEvents()
+        self.assertIs(self.engine.log, original_callback)
+        self.assertTrue(any("diagnostics file" in line for line in messages))
+        self.assertTrue(any("engine ready" in line.lower() for line in messages))
+        self.assertTrue(any("fixture engine ready" in line for line in messages))
+        self.assertTrue(any("Loading model" in label and percent == -1
+                            for percent, label in stages))
+        log_path = ai_engine.engine_log_path()
+        self.assertTrue(log_path.is_file())
+        self.assertIn("fixture engine ready", log_path.read_text(encoding="utf-8"))
+
+    def test_workflow_stays_indeterminate_until_real_sampler_progress(self):
+        self.start_engine()
+        self.engine.percent = 90  # A previous image must not leak into this run.
+        result = self.engine.run({}, timeout=10)
+        self.assertTrue(Path(result).exists())
+        self.assertIsNone(self.engine.percent)
+
     def test_two_real_generations_keep_one_engine_warm_until_dialog_exit(self):
         self.start_engine()
         first = self.engine._get("/system_stats")["pid"]

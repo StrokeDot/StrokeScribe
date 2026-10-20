@@ -69,6 +69,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         data = json.dumps(body).encode()
         self.send_response(200); self.send_header("Content-Length", str(len(data)))
         self.end_headers(); self.wfile.write(data)
+print("fixture engine ready", flush=True)
 http.server.HTTPServer(("127.0.0.1", port), Handler).serve_forever()
 '''
 

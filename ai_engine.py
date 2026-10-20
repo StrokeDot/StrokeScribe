@@ -48,6 +48,11 @@ def _settings_path():
     return config_path().parent / 'ai_engine.json'
 
 
+def engine_log_path():
+    """Persistent local ComfyUI output; separate from StrokeScribe's app log."""
+    return _settings_path().parent / 'logs' / 'ai-engine.log'
+
+
 def default_root():
     if sys.platform == 'win32' and os.environ.get('LOCALAPPDATA'):
         return Path(os.environ['LOCALAPPDATA']) / 'StrokeScribe' / 'ai-engine'
@@ -719,7 +724,22 @@ class Engine:
             match = self.PROGRESS.search(line)
             if match:
                 self.percent = int(match.group(1))
-            self.log(line)
+            # Persist ComfyUI stdout even when Create Image is closed or a Qt
+            # signal subscriber is absent. Open/close per write so Windows tests
+            # can clean their temporary config folder without locked log files.
+            try:
+                logfile = engine_log_path()
+                logfile.parent.mkdir(parents=True, exist_ok=True)
+                if logfile.exists() and logfile.stat().st_size > 4 * 1024 * 1024:
+                    logfile.replace(logfile.with_name('ai-engine.log.1'))
+                with logfile.open('a', encoding='utf-8') as output:
+                    output.write(time.strftime('%Y-%m-%d %H:%M:%S') + '  ' + line + '\n')
+            except OSError:
+                pass  # Logging must never stop process-output draining.
+            try:
+                self.log(line)
+            except Exception:
+                pass  # A closed UI must not break the engine reader.
 
     def stop(self):
         with self._lifecycle_lock:
@@ -774,7 +794,9 @@ class Engine:
 
     def run(self, workflow, timeout=3600, cancelled=lambda: False):
         """Queue a workflow and return the path of the first saved image (or sound)."""
-        self.percent = 0
+        # 0% means sampling has actually begun. Before the first sampler
+        # event the model may be loading/offloading for several minutes.
+        self.percent = None
         reply = self._post('/prompt', {'prompt': workflow, 'client_id': 'strokescribe'})
         if reply.get('node_errors'):
             raise RuntimeError('The AI engine rejected the workflow: ' + json.dumps(reply['node_errors'])[:600])
