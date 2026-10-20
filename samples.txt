@@ -1,0 +1,4 @@
+pencil-1: Pencil, seed 11, 6.7 s after trimming, loudness 0.071, brightness 8879 Hz, made in 12 s on the CPU
+pencil-2: Pencil, seed 222, 6.3 s after trimming, loudness 0.063, brightness 8875 Hz, made in 12 s on the CPU
+brush: Brush, seed 33, 5.7 s after trimming, loudness 0.045, brightness 7525 Hz, made in 12 s on the CPU
+eraser: Eraser, seed 44, 6.5 s after trimming, loudness 0.058, brightness 7605 Hz, made in 12 s on the CPU
