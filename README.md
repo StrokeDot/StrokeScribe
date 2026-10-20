@@ -9,6 +9,15 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Adaptive vertical flicks and live blend preview (v0.5.3-experimental.68)
+
+This is a **development candidate**, not an in-app update or a published installer. The installed experimental.67 remains unchanged until a new candidate passes validation and is explicitly distributed.
+
+- **Adaptive — Short up/down strokes** now follows the original Adaptive Hand Painting region-by-region route, with rapid short vertical brush flicks along that route instead of top-to-bottom painting bands. Original Adaptive Hand Painting and other styles remain available.
+- **Blend mode** now repaints the monitor as soon as you change the selector, instead of waiting for unrelated settings changes.
+- Blend modes require an actual colored background or earlier artwork to show an effect. A transparent destination cannot turn white source pixels transparent. Changing modes is not equivalent to removing white paper from a PNG.
+- Added tests for vertical flicks, region coverage and live Normal-vs-Multiply monitor painting. Automated tests do **not** replace checking brush appearance on your real artwork.
+
 ## Artwork workflow review candidate (v0.5.3-experimental.64)
 
 This branch contains a review candidate, **not an approved application update**. The official downloads and installed-app update channel are unchanged.

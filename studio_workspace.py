@@ -1297,6 +1297,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     blend_form=form_layout()
     blend_form.addRow('Blend mode',w.blend_mode)
     animation_l.addLayout(blend_form)
+    animation_l.addWidget(caption('Blend modes need a visible backdrop or earlier artwork. '
+                                  'Transparent alone cannot show blending; use a contrasting '
+                                  'Background to preview it. Multiply is not alpha removal.'))
     a2=form_layout();animation_l.addLayout(a2)
     w.reveal_mode=QComboBox()
     w.reveal_mode.addItems(['Brush painting','Adaptive Hand Painting','Zigzag sweep',
@@ -1309,9 +1312,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.reveal_mode.setCurrentIndex(1)
     w.reveal_mode.setItemData(2,'The hand follows one route along the object, scribbling colour '
                               'back and forth across it (wider on broad parts).',Qt.ItemDataRole.ToolTipRole)
-    w.reveal_mode.setItemData(5,'Short alternating vertical brush strokes fill each band of the '
-                              'picture, preserving source colors and brush coverage. '
-                              'The original Adaptive and Zigzag modes stay available.',
+    w.reveal_mode.setItemData(5,'Uses the original Adaptive region-by-region route with rapid '
+                              'short up/down brush flicks along that route. Does not use '
+                              'top-to-bottom painting bands.',
                               Qt.ItemDataRole.ToolTipRole)
     a2.addRow('Paint mode',w.reveal_mode)
     w.image_paint_hint=caption('Image sources paint with Adaptive Hand Painting or Zigzag sweep. Original PNG colors are preserved.')
@@ -1723,6 +1726,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.color_fade.valueChanged.connect(w.refresh)
     w.color_hold.valueChanged.connect(w.refresh)
     w.reveal_mode.currentIndexChanged.connect(w.refresh)
+    w.blend_mode.currentIndexChanged.connect(w.refresh)  # Preview changes immediately.
     w.brush_width.valueChanged.connect(w.schedule_brush_refresh)
     w.show_paint_hand.toggled.connect(w.refresh)
     w.sound_on.toggled.connect(lambda checked: (w.update_transport_icons(), w.sync_preview_sound()))

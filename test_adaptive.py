@@ -54,6 +54,37 @@ class AdaptiveTests(unittest.TestCase):
         diff=max(abs(a-b) for a,b in zip(want.tobytes(),got.tobytes()))
         self.assertLessEqual(diff,3,'Final frame must equal the Lanczos-resized PNG')
 
+    def test_short_vertical_flicks_follow_original_adaptive_regions(self):
+        # A flick is a short REAL vertical brush stroke on the same per-region
+        # path; it must not use the one-region top-to-bottom band planner.
+        d,image=fixture(112)
+        d.paint_method='adaptive'
+        original=plan_for(d,image,.12,.55)
+        d.paint_method='short_zigzag'
+        short=plan_for(d,image,.12,.55)
+        self.assertEqual(short.labels,original.labels)
+        self.assertEqual(short.region_count,original.region_count)
+        self.assertGreater(short.region_count,1)
+        self.assertGreater(len(short.segments),len(original.segments))
+        flicks=[s for s in short.segments if s.painting
+                and abs(s.b[1]-s.a[1])>1.5
+                and abs(s.b[0]-s.a[0])<.1
+                and (s.end-s.start)<max(.05,abs(s.b[1]-s.a[1])*.2)]
+        self.assertGreater(len(flicks),2,'must produce quick vertical brush moves')
+        self.assertTrue(all(not rid or math.isfinite(short.arrival[i])
+                            for i,rid in enumerate(short.labels)))
+        self.assertTrue(any(not s.painting for s in short.segments))
+        self.assertEqual(short.mask(1).tobytes(),original.mask(1).tobytes())
+
+    def test_short_vertical_paint_is_selected_by_the_renderer(self):
+        d,image=fixture(80)
+        d.paint_method='short_zigzag'
+        short=plan_for(d,image)
+        d.paint_method='adaptive'
+        adaptive=plan_for(d,image)
+        self.assertNotEqual(len(short.segments),len(adaptive.segments))
+        self.assertEqual(short.region_count,adaptive.region_count)
+
     def test_regions_infill_and_coverage(self):
         for size in (24,112):
             d,image=fixture(size)
