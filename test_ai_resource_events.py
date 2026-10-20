@@ -9,7 +9,7 @@ from create_image_dialog import AIWorker
 import ai_engine
 
 class ProtocolTests(unittest.TestCase):
-    def run_protocol(self,sampler,disconnect=False):
+    def run_protocol(self,sampler,disconnect=False,cancel_at=None):
         workflow={'1':{'class_type':'UNETLoader','inputs':{'unet_name':'fixture.safetensors'}},
             '2':{'class_type':sampler,'inputs':{'seed':123,'steps':8,'cfg':1.}},
             '4':{'class_type':'SaveImage','inputs':{'images':['2',0]}}}
@@ -30,6 +30,7 @@ class ProtocolTests(unittest.TestCase):
                 if self.path.startswith('/ws'):
                     key=self.headers['Sec-WebSocket-Key']
                     accept=base64.b64encode(hashlib.sha1((key+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').encode()).digest()).decode()
+                    self.server.ws=self.connection;self.server.ws_path=self.path
                     self.send_response(101);self.send_header('Upgrade','websocket');self.send_header('Connection','Upgrade')
                     self.send_header('Sec-WebSocket-Accept',accept);self.end_headers();self.wfile.flush()
                     self.server.ws=self.connection
@@ -54,7 +55,7 @@ class ProtocolTests(unittest.TestCase):
                     self.send_event('executing',node='1')
                     self.send_event('progress',node='1',value=100,max=100)
                     self.reply({'prompt_id':'fixture-prompt'})
-                else:self.reply({})
+                else:self.server.interrupted=True;self.reply({})
         with tempfile.TemporaryDirectory() as folder,patch.dict(os.environ,{'STROKESCRIBE_CONFIG_DIR':folder}):
             server=ThreadingHTTPServer(('127.0.0.1',0),Handler);server.daemon_threads=True;server.polls=0
             thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
@@ -63,12 +64,21 @@ class ProtocolTests(unittest.TestCase):
             from PIL import Image
             Image.new('RGBA',(2,2),(50,100,150,255)).save(Path(folder)/'result.png')
             events=[];results=[]
-            worker=AIWorker('generate');worker.progress.connect(lambda percent,text:events.append((percent,text)))
+            worker=AIWorker('generate')
+            if cancel_at is not None:worker.cancelled=lambda:server.polls>=cancel_at
+            worker.progress.connect(lambda percent,text:events.append((percent,text)))
             worker.done.connect(results.append)
             try:
                 with patch.object(engine,'start'):
-                    worker._generate(engine,workflow,None)
+                    if cancel_at is not None:
+                        with self.assertRaises(ai_engine.Cancelled):worker._generate(engine,workflow,None)
+                    else:worker._generate(engine,workflow,None)
                 APP.processEvents()
+                if cancel_at is not None:
+                    self.assertTrue(server.interrupted)
+                    self.assertEqual(events[-1],(-1,'Cancelled'))
+                    self.assertEqual(results,[])
+                    return
                 self.assertEqual(server.submitted['prompt'],original)
                 self.assertIn(server.submitted['client_id'],server.ws_path)
                 self.assertEqual(results,[str(Path(folder)/'result.png')])
@@ -88,3 +98,7 @@ class ProtocolTests(unittest.TestCase):
         self.run_protocol('SamplerCustomAdvanced')
     def test_disconnected_stage_stream_keeps_http_generation_working(self):
         self.run_protocol('KSampler',disconnect=True)
+    def test_cancellation_while_loading(self):
+        self.run_protocol('KSampler',cancel_at=1)
+    def test_cancellation_after_sampling_progress(self):
+        self.run_protocol('KSampler',cancel_at=3)

@@ -81,6 +81,28 @@ class ResourceDialogTests(unittest.TestCase):
             self.assertTrue(pumped(lambda:not worker.isRunning()))
             self.assertTrue(worker.wait(1000));APP.processEvents()
             self.assertIsNone(self.engine.proc)
+    def test_cancelling_warning_keeps_existing_warm_engine_until_normal_close(self):
+        self.engine.start(timeout=10);pid=self.engine.proc.pid
+        worker=self.worker();warnings=[];worker.resource_warning.connect(warnings.append)
+        with patch('ai_resources.probe',return_value=dict(ram_gb=1.,gpu_gb=None)),patch.object(self.engine,'_post',side_effect=AssertionError('No workflow may be submitted before consent')):
+            self.dialog._start(worker,lambda path:None)
+            self.assertTrue(pumped(lambda:bool(warnings)));self.dialog.resources.cancel.click()
+            self.assertTrue(pumped(lambda:not worker.isRunning()));worker.wait(1000);APP.processEvents()
+            self.assertTrue(self.engine.running());self.assertEqual(self.engine.proc.pid,pid)
+        self.dialog.close();self.assertIsNone(self.engine.proc)
+    def test_diagnostic_buttons_copy_redacted_text_and_open_local_log(self):
+        self.worker()
+        import ai_engine
+        self.engine.record('error token=secret999 C:/Users/Alejandro/AI/model.safetensors')
+        self.assertTrue(self.engine.flush_diagnostics(2))
+        self.dialog.copy_diagnostics()
+        text=QApplication.clipboard().text()
+        self.assertIn('model.safetensors',text)
+        self.assertNotIn('secret999',text);self.assertNotIn('Alejandro',text)
+        with patch('create_image_dialog.QDesktopServices.openUrl',return_value=True) as opened:
+            self.dialog.open_engine_log();self.assertTrue(opened.called)
+            self.assertTrue(opened.call_args.args[0].isLocalFile())
+        self.assertLessEqual(self.dialog.log_view.maximumBlockCount(),1200)
     def test_limits_persist_without_modifying_model_parameters(self):
         self.worker()
         import ai_engine

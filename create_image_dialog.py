@@ -181,6 +181,7 @@ class AIWorker(QThread):
             if self.cancelled():raise ai_engine.Cancelled('Generation cancelled.')
             stage(-1,'Loading model / preparing generation…')
             engine.percent=None
+            if hasattr(engine,'activity'):engine.activity=None
             import threading
             result={}
             def job():

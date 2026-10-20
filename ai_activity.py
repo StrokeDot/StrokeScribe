@@ -31,7 +31,7 @@ class Activity:
         idle=time.monotonic()-self.updated
         if alive and idle>=stall_seconds:
             return f'Engine still running — no progress reported for {int(idle)}s ({int(elapsed)}s elapsed). It may be loading or offloading.'
-        if self.stage=='sampling':return f'Generating image — sampling {self.percent}%'
+        if self.stage=='sampling' and self.percent is not None:return f'Generating image — sampling {self.percent}%'
         if self.stage=='saving':return 'Saving result…'
         if not self.observed:return 'Loading model / preparing generation — exact stage unavailable…'
         return 'Loading model / preparing generation…'
