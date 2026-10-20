@@ -108,10 +108,37 @@ class StudioTests(unittest.TestCase):
         items=[self.window.reveal_mode.itemText(i)
                for i in range(self.window.reveal_mode.count())]
         self.assertEqual(items,['Brush painting','Adaptive Hand Painting','Zigzag sweep',
-                               'Top to bottom (rows)','Left to right (columns)'])
+                               'Top to bottom (rows)','Left to right (columns)',
+                               'Adaptive — Short up/down strokes'])
         from app import REVEAL_MODES
-        self.assertEqual(REVEAL_MODES,('brush','adaptive','zigzag','rows','columns'))
+        self.assertEqual(REVEAL_MODES,('brush','adaptive','zigzag','rows','columns','short_zigzag'))
         self.assertEqual(self.window.reveal_mode.currentText(),'Adaptive Hand Painting')
+
+    def test_line_list_starts_collapsed_and_canvas_click_toggles_highlight(self):
+        from unittest.mock import patch
+        w=self.window
+        self.assertFalse(w.lines_toggle.isChecked())
+        self.assertFalse(w.lines_group.isVisible())
+        self.assertGreater(w.order.count(), 0)
+        with patch.object(w,'line_at',return_value=0):
+            w.click_preview(100,100)
+            self.assertEqual(w.selected_rows(), [0])
+            self.assertFalse(w.lines_toggle.isChecked())  # selecting never expands the panel
+            w.click_preview(100,100)
+            self.assertEqual(w.selected_rows(), [])
+            w.click_preview(100,100)
+            self.assertEqual(w.selected_rows(), [0])
+            w.click_preview(100,100,add=True)  # Ctrl+click also toggles
+            self.assertEqual(w.selected_rows(), [])
+        w.lines_toggle.setChecked(True)
+        APP.processEvents()
+        self.assertTrue(w.lines_group.isVisible())
+        w.order.item(0).setSelected(True)
+        w.order.setFocus()
+        QTest.keyClick(w.order,Qt.Key.Key_Escape)
+        self.assertEqual(w.selected_rows(),[])
+        w.lines_toggle.setChecked(False)
+        self.assertFalse(w.lines_group.isVisible())
 
     def test_image_and_export_controls_preserved(self):
         w=self.window

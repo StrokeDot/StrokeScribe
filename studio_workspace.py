@@ -790,6 +790,14 @@ class LineList(QListWidget):
         super().dropEvent(event)
         self.dropped.emit()
 
+    def keyPressEvent(self,event):
+        # Escape dismisses selection without deleting or changing any line.
+        if event.key()==Qt.Key.Key_Escape and self.selectedItems():
+            self.clearSelection()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
 
 # Inspector tabs, in order.
 TABS = {'animation': 0, 'hand': 1, 'sound': 2, 'export': 3}
@@ -1085,8 +1093,17 @@ def build_workspace(w, Canvas, BRAND_ICON):
     asset_l.addWidget(browse_fonts)
     w.font_note=caption('Built-in pen works offline. Google Fonts are downloaded only when requested; license files are saved too.')
     asset_l.addWidget(w.font_note)
-    asset_l.addWidget(label('LINES & ORDER'))
-    asset_l.addWidget(caption('Click a line on the preview (Ctrl+click for more) or in the list. '
+    w.lines_toggle=QPushButton('▸ Lines & order')
+    w.lines_toggle.setObjectName('subtle')
+    w.lines_toggle.setCheckable(True)
+    w.lines_toggle.setChecked(False)
+    w.lines_toggle.setToolTip('Optional detailed line-by-line editing. Click to expand.')
+    asset_l.addWidget(w.lines_toggle)
+    w.lines_group=QWidget()
+    lines_l=QVBoxLayout(w.lines_group)
+    lines_l.setContentsMargins(0,0,0,0); lines_l.setSpacing(8)
+    lines_l.addWidget(label('LINES & ORDER'))
+    lines_l.addWidget(caption('Click a line on the preview (Ctrl+click for more) or in the list. '
                               'Drag in the list to change the drawing order.'))
     w.order=LineList()
     w.order.dropped.connect(lambda: w.order_dragged())
@@ -1095,13 +1112,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.order.setDragDropMode(QListWidget.DragDropMode.InternalMove)
     w.order.setDefaultDropAction(Qt.DropAction.MoveAction)
     w.order.itemSelectionChanged.connect(lambda: w.lines_selected())
-    asset_l.addWidget(w.order,1)
+    lines_l.addWidget(w.order,1)
     reorder=QHBoxLayout()
     for text,direction in [('Move up',-1),('Move down',1)]:
         button=QPushButton(text)
         button.clicked.connect(lambda checked=False,d=direction:w.move(d))
         reorder.addWidget(button)
-    asset_l.addLayout(reorder)
+    lines_l.addLayout(reorder)
     edit_row=QHBoxLayout()
     w.reverse_button=QPushButton('Reverse')
     w.reverse_button.setToolTip('Draw the selected line(s) from the other end.')
@@ -1111,7 +1128,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.delete_button.setToolTip('Remove the selected line(s) from the animation (Delete key). Undo brings them back.')
     w.delete_button.clicked.connect(lambda checked=False: w.delete_lines())
     edit_row.addWidget(w.delete_button)
-    asset_l.addLayout(edit_row)
+    lines_l.addLayout(edit_row)
     lt=form_layout()
     from stroke_timing import PACES
     w.line_pace=QComboBox()
@@ -1124,9 +1141,14 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.line_pause.setToolTip('The pen rests at the end of the line before going on.')
     w.line_pause.valueChanged.connect(lambda value: w.set_line_pause())
     lt.addRow('Pause after (s)',w.line_pause)
-    asset_l.addLayout(lt)
+    lines_l.addLayout(lt)
     for widget in (w.reverse_button,w.delete_button,w.line_pace,w.line_pause):
         widget.setEnabled(False)
+    w.lines_group.setVisible(False)
+    w.lines_toggle.toggled.connect(
+        lambda opened: (w.lines_group.setVisible(opened),
+                        w.lines_toggle.setText('▾ Lines & order' if opened else '▸ Lines & order')))
+    asset_l.addWidget(w.lines_group)
     w.note=caption('Ready.')
     asset_l.addWidget(w.note)
     asset_outer.addWidget(scroll_view(asset),1)
@@ -1267,7 +1289,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     a2=form_layout();animation_l.addLayout(a2)
     w.reveal_mode=QComboBox()
     w.reveal_mode.addItems(['Brush painting','Adaptive Hand Painting','Zigzag sweep',
-                            'Top to bottom (rows)','Left to right (columns)'])
+                            'Top to bottom (rows)','Left to right (columns)',
+                            'Adaptive — Short up/down strokes'])
     w.reveal_mode.setItemData(3,'Like a painter: the colours are brushed in band by band from the top '
                               'down, sweeping left and right across the whole picture.',Qt.ItemDataRole.ToolTipRole)
     w.reveal_mode.setItemData(4,'The colours are brushed in band by band from the left to the right, '
@@ -1275,6 +1298,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.reveal_mode.setCurrentIndex(1)
     w.reveal_mode.setItemData(2,'The hand follows one route along the object, scribbling colour '
                               'back and forth across it (wider on broad parts).',Qt.ItemDataRole.ToolTipRole)
+    w.reveal_mode.setItemData(5,'Short alternating vertical brush strokes fill each band of the '
+                              'picture, preserving source colors and brush coverage. '
+                              'The original Adaptive and Zigzag modes stay available.',
+                              Qt.ItemDataRole.ToolTipRole)
     a2.addRow('Paint mode',w.reveal_mode)
     w.image_paint_hint=caption('Image sources paint with Adaptive Hand Painting or Zigzag sweep. Original PNG colors are preserved.')
     a2.addRow(w.image_paint_hint)
