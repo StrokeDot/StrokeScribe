@@ -1,7 +1,7 @@
 """Bounded, current-user local delivery for installed shell-open requests."""
-import hashlib,json
+import hashlib,json,tempfile
 from pathlib import Path
-from PySide6.QtCore import QObject,Signal
+from PySide6.QtCore import QObject,Signal,QLockFile
 from PySide6.QtNetwork import QLocalServer,QLocalSocket
 
 MAX_REQUEST=32768
@@ -15,10 +15,15 @@ class ProjectBroker(QObject):
     def __init__(self,name,parent=None):
         super().__init__(parent)
         self.name=name;self.server=QLocalServer(self);self.owner=False;self.buffers={}
+        lockname=hashlib.sha256(name.encode()).hexdigest()+'.lock'
+        self.lock=QLockFile(str(Path(tempfile.gettempdir())/lockname));self.lock.setStaleLockTime(0)
         self.server.setSocketOptions(QLocalServer.SocketOption.UserAccessOption)
         self.server.newConnection.connect(self._accept)
     def claim(self):
+        if self.owner:return True
+        if not self.lock.tryLock(0):return False
         self.owner=self.server.listen(self.name)
+        if not self.owner:self.lock.unlock()
         return self.owner
     @staticmethod
     def forward(name,path):
@@ -63,4 +68,4 @@ class ProjectBroker(QObject):
         for socket in list(self.buffers):socket.abort()
         self.buffers.clear()
         if self.owner:
-            self.server.close();self.owner=False
+            self.server.close();self.owner=False;self.lock.unlock()

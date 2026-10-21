@@ -1348,6 +1348,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import autosave
         info=autosave.pending()
         if not info: return False
+        self._shell_recovery_offered=True
         when=datetime.fromtimestamp(float(info.get('time') or 0)).strftime('%H:%M, %d %b')
         name=info.get('title') or 'your project'
         answer=QMessageBox.question(self,'Restore your work?',

@@ -97,6 +97,8 @@ def main():
         stage('Starting StrokeScribe...')
         from app import Window
         stage('Creating the Windows interface...')
+        import autosave
+        needs_recovery=bool(autosave.pending())
         window=Window();window.setWindowIcon(app.windowIcon())
         window.showNormal();window.raise_();window.activateWindow()
         def open_pending():
@@ -107,7 +109,7 @@ def main():
             dispatching[0]=True
             try:
                 if path:
-                    if open_startup_path(window,path,initial=first):stage('Opened file: '+str(path))
+                    if open_startup_path(window,path,initial=needs_recovery and not getattr(window,'_shell_recovery_offered',False)):stage('Opened file: '+str(path))
                     else:stage('File open cancelled or failed: '+str(path))
                 window.showNormal();window.raise_();window.activateWindow()
             finally:dispatching[0]=False
