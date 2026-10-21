@@ -21,6 +21,19 @@ from app import Window
 APP = QApplication.instance() or QApplication([])
 
 
+def widest_children(scroll, count=6):
+    """Diagnostic for a failure: the visible controls that need the most width."""
+    from PySide6.QtWidgets import QWidget
+    rows=[]
+    for child in scroll.widget().findChildren(QWidget):
+        if child.isVisible() and child.parentWidget() is not None:
+            need=max(child.minimumWidth(), child.minimumSizeHint().width())
+            rows.append((need, type(child).__name__, child.objectName(),
+                         (getattr(child,'text',lambda:'')() or '')[:40]))
+    rows.sort(reverse=True)
+    return 'widest: '+'; '.join(f'{n}px {t} {o!r} {x!r}' for n,t,o,x in rows[:count])
+
+
 class SourceModeConsistencyTests(unittest.TestCase):
     def setUp(self):
         os.environ.setdefault("STROKESCRIBE_TEST_AUTODISCARD", "1")
@@ -85,7 +98,8 @@ class SourceModeConsistencyTests(unittest.TestCase):
                     self.assert_inside_source_viewport(getattr(w,name),name)
                 # No phantom horizontal canvas bigger than the scroll viewport.
                 self.assertLessEqual(self.scroll.widget().width(),
-                                     self.scroll.viewport().width()+2)
+                                     self.scroll.viewport().width()+2,
+                                     widest_children(self.scroll))
 
     def test_image_mode_labels_and_fields_are_near_and_clickable(self):
         w=self.window
