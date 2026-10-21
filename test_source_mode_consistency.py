@@ -1,5 +1,8 @@
 """Source mode consistency: Image source must never clip behind the sidebar.
 
+Since experimental.76 lettering controls live in the left Handwriting panel and
+every import / image setting lives in the right Source page; both are checked.
+
 The .71 regression tests checked QComboBox width but not whether the *right*
 end was inside the Source scroll viewport. Image settings used a nested form
 that could be wider than the scroll viewport, hiding the arrow and controls.
@@ -26,15 +29,22 @@ class SourceModeConsistencyTests(unittest.TestCase):
         self.window.show()
         APP.processEvents()
         APP.processEvents()
-        self.scroll=self.window.workspace_splitter.widget(0).findChild(QScrollArea)
-        self.assertIsNotNone(self.scroll)
+        from studio_workspace import TABS
+        self.handwriting=self.window.workspace_splitter.widget(0).findChild(QScrollArea)
+        self.window.show_right_panel('source')
+        APP.processEvents()
+        self.source=self.window.inspector_tabs.widget(TABS['source'])
+        self.assertIsInstance(self.source,QScrollArea)
+        self.assertIsNotNone(self.handwriting)
+        self.scroll=self.source
 
     def tearDown(self):
         self.window.playing=False
         self.window.close()
         APP.processEvents()
 
-    def assert_inside_source_viewport(self, widget, name):
+    def assert_inside_source_viewport(self, widget, name, scroll=None):
+        self.scroll=scroll or self.source
         self.assertFalse(widget.isHidden(), name+" unexpectedly hidden")
         self.scroll.ensureWidgetVisible(widget, 0, 0)
         APP.processEvents()
@@ -53,18 +63,22 @@ class SourceModeConsistencyTests(unittest.TestCase):
             w.resize(window_width,window_height)
             APP.processEvents()
             for sidebar_width in (225,280,350,450):
-                w.workspace_splitter.moveSplitter(sidebar_width,1)
+                split=w.workspace_splitter
+                split.moveSplitter(sidebar_width,1)
+                split.moveSplitter(split.width()-max(270,sidebar_width),2)
                 APP.processEvents()
-                self.assertGreater(self.scroll.viewport().width(), 140)
+                self.assertGreater(self.handwriting.viewport().width(), 140)
+                self.assertGreater(self.source.viewport().width(), 140)
                 w.source_type.setCurrentIndex(0)
                 APP.processEvents()
-                self.assert_inside_source_viewport(w.source_type,"Source mode")
+                self.assert_inside_source_viewport(w.import_button,"Import SVG")
+                self.assert_inside_source_viewport(w.import_image_button,"Import image")
                 for name in ("font_select","font_size","font_color_button"):
-                    self.assert_inside_source_viewport(getattr(w,name), name)
+                    self.assert_inside_source_viewport(getattr(w,name), name, self.handwriting)
                 w.source_type.setCurrentIndex(1)
                 APP.processEvents()
                 self.assertIsInstance(w.image_source_form,QVBoxLayout)
-                for name in ("source_type","image_animation_style","image_style",
+                for name in ("import_button","image_animation_style","image_style",
                              "image_detail","clean_faint","preserve_colors",
                              "rebuild_button","ai_lineart_button","own_lines_button",
                              "export_svg_button"):

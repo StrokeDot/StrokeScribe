@@ -53,7 +53,10 @@ def _toggle(menu, text, box):
 def _go(w, tab):
     """Show an Inspector tab by name (studio_workspace.TABS)."""
     from studio_workspace import TABS
-    w.inspector_tabs.setCurrentIndex(TABS[tab])
+    if hasattr(w, 'show_right_panel'):
+        w.show_right_panel(tab)           # also reopens a collapsed right panel
+    else:
+        w.inspector_tabs.setCurrentIndex(TABS[tab])
 
 
 def build_menus(w):
@@ -129,6 +132,9 @@ def build_menus(w):
     _combo_menu(view, 'Preview background', w.preview_background)
     _combo_menu(view, 'Preview', w.preview_scope)
     view.addSeparator()
+    view.addAction('Handwriting panel', lambda: w.show_handwriting_panel()
+                   if hasattr(w, 'show_handwriting_panel') else None)
+    view.addAction('Source panel', lambda: _go(w, 'source'))
     view.addAction('Animation settings', lambda: _go(w, 'animation'))
     view.addAction('Hand settings', lambda: _go(w, 'hand'))
     view.addAction('Sound settings', lambda: _go(w, 'sound'))

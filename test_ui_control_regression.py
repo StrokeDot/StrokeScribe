@@ -31,6 +31,15 @@ class VisibleControlRegression(unittest.TestCase):
         APP.processEvents()
 
     def _ensure_visible(self, combo):
+        # Source, Animation, Hand, Sound and Export share the right panel and
+        # show one page at a time (experimental.76): open the control's page.
+        tabs = self.w.inspector_tabs
+        for i in range(tabs.count()):
+            if tabs.widget(i).isAncestorOf(combo):
+                if tabs.currentIndex() != i:
+                    tabs.setCurrentIndex(i)
+                    APP.processEvents()
+                break
         parent = combo.parentWidget()
         while parent is not None and not isinstance(parent, QScrollArea):
             parent = parent.parentWidget()
@@ -56,7 +65,7 @@ class VisibleControlRegression(unittest.TestCase):
         w = self.w
         w.source_type.setCurrentIndex(1)
         APP.processEvents()
-        for name in ("source_type", "image_animation_style", "image_style",
+        for name in ("image_animation_style", "image_style",
                      "image_detail", "font_select"):
             self._assert_control(name)
         for name in ("reveal_mode", "pen_ease",
@@ -79,7 +88,9 @@ class VisibleControlRegression(unittest.TestCase):
         w = self.w
         w.source_type.setCurrentIndex(1)
         APP.processEvents()
-        source = w.workspace_splitter.widget(0).findChildren(QComboBox)
+        from studio_workspace import TABS
+        source = (w.workspace_splitter.widget(0).findChildren(QComboBox) +
+                  w.inspector_tabs.widget(TABS['source']).findChildren(QComboBox))
         self.assertGreaterEqual(len(source), 5)
         for combo in source:
             if not combo.isVisible():
@@ -110,7 +121,9 @@ class VisibleControlRegression(unittest.TestCase):
         w.image_style.setCurrentText("Detailed (all lines)")
         w.image_detail.setCurrentText("Max")
         state = w.settings_state()
-        self.assertTrue(w.blend_mode.isHidden())  # Element Editor owns the UI
+        # The sample is an imported SVG: blend mode shows in Source → Appearance
+        # (the Element Editor edits the same field).
+        self.assertFalse(w.blend_mode.isHidden())
         self.assertEqual(state["blend_mode"], "Multiply")
         self.assertEqual(state["reveal_mode"], "Adaptive Hand Painting")
         self.assertEqual(state["pen_ease"], "Natural (ease in and out)")

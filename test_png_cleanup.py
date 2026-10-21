@@ -102,7 +102,7 @@ class WindowTests(unittest.TestCase):
             self.assertIn('cleaned', w.color_note.text())
             self.assertLess(w.final_image.width(), W - 50)
         names = [w.inspector_tabs.tabText(i) for i in range(w.inspector_tabs.count())]
-        self.assertEqual(names, ['Animation', 'Hand', 'Sound', 'Export'])
+        self.assertEqual(names, ['Animation', 'Hand', 'Sound', 'Export', 'Source'])
         sound_page = w.inspector_tabs.widget(2)
         self.assertTrue(sound_page.isAncestorOf(w.sound_on))
         self.assertTrue(sound_page.isAncestorOf(w.load_audio_button))

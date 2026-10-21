@@ -117,7 +117,7 @@ class WorkspaceLayoutTests(unittest.TestCase):
         source = w.workspace_splitter.widget(0).findChildren(QScrollArea)
         inspector = w.inspector_tabs.findChildren(QScrollArea)
         self.assertEqual(len(source), 1)
-        self.assertEqual(len(inspector), 4)
+        self.assertEqual(len(inspector), 5)          # Animation, Hand, Sound, Export, Source
         self.assertTrue(all(area.horizontalScrollBarPolicy() ==
                             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
                             for area in source + inspector))
@@ -130,7 +130,9 @@ class WorkspaceLayoutTests(unittest.TestCase):
             min(80, source[0].verticalScrollBar().maximum()))
         APP.processEvents()
         self.assertEqual(active.verticalScrollBar().value(), 0)
-        self.assertTrue(w.inspector_tabs.tabBar().isVisible())
+        # The icon rail replaced the tab strip (experimental.76).
+        self.assertFalse(w.inspector_tabs.tabBar().isVisible())
+        self.assertTrue(w.right_rail.isVisible())
 
     def test_narrow_inspector_controls_remain_inside_viewport(self):
         from PySide6.QtWidgets import QFormLayout
@@ -143,12 +145,46 @@ class WorkspaceLayoutTests(unittest.TestCase):
             self.assertIsInstance(area, QScrollArea)
             self.assertGreater(area.viewport().width(), 185)
             for form in area.widget().findChildren(QFormLayout):
+                from studio_workspace import TABS
                 expected=(QFormLayout.RowWrapPolicy.DontWrapRows if index==0
+                          else QFormLayout.RowWrapPolicy.WrapAllRows if index==TABS['source']
                           else QFormLayout.RowWrapPolicy.WrapLongRows)
                 self.assertEqual(form.rowWrapPolicy(),expected)
         # The source and inspector must remain navigable at the minimum size.
         self.assertTrue(w.export.isEnabled())
         self.assertTrue(w.source_type.isEnabled())
+
+
+    def test_rails_open_pages_and_collapse_both_sides(self):
+        from studio_workspace import TABS
+        w = self.make_window(1490, 890)
+        split = w.workspace_splitter
+        w.rail_buttons['source'].click()
+        APP.processEvents()
+        self.assertEqual(w.inspector_tabs.currentIndex(), TABS['source'])
+        self.assertTrue(w.rail_buttons['source'].isChecked())
+        self.assertFalse(w.rail_buttons['animation'].isChecked())
+        self.assertTrue(w.import_button.isVisible())
+        # Clicking the open page's icon again collapses the right panel only.
+        w.rail_buttons['source'].click()
+        APP.processEvents()
+        self.assertTrue(split.widget(2).isHidden())
+        self.assertFalse(split.widget(0).isHidden())
+        self.assertTrue(w.right_rail.isVisible())
+        w.rail_buttons['export'].click()
+        APP.processEvents()
+        self.assertFalse(split.widget(2).isHidden())
+        self.assertEqual(w.inspector_tabs.currentIndex(), TABS['export'])
+        # Left rail: Text shows / hides the Handwriting panel.
+        self.assertTrue(w.rail_text.isChecked())
+        w.rail_text.click()
+        APP.processEvents()
+        self.assertTrue(split.widget(0).isHidden())
+        self.assertFalse(w.source_sidebar_button.isChecked())
+        w.show_handwriting_panel()
+        APP.processEvents()
+        self.assertFalse(split.widget(0).isHidden())
+        self.assertTrue(w.rail_text.isChecked())
 
 
 if __name__ == '__main__':
