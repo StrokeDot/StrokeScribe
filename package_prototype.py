@@ -19,7 +19,9 @@ FOLDER_NAME = PACKAGE_NAME.removesuffix(".zip")
 SOURCE_EXTENSIONS = {".py", ".cmd", ".md", ".txt"}
 SOURCE_FILES = (
     [p for p in ROOT.iterdir() if p.is_file() and p.suffix.lower() in SOURCE_EXTENSIONS]
-    + [ROOT / "LICENSE"]
+    + [ROOT / "LICENSE", ROOT / "tools" / "build_windows_host.py",
+       ROOT / "tools" / "build_windows_installer.py", ROOT / "installer" / "StrokeScribe.iss"]
+    + [p for p in (ROOT / "windows").glob("*") if p.suffix in {".cpp", ".manifest"}]
     + [p for folder in ("assets", "samples") for p in (ROOT / folder).rglob("*")
        if p.is_file() and p.suffix.lower() in {".png", ".svg", ".wav", ".ico"}]
     + [p for p in (ROOT / "models").glob("*")

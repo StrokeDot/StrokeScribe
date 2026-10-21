@@ -59,6 +59,8 @@ def main():
         '-r', ROOT / 'requirements.txt')
     run(python, '-c', 'import PySide6.QtWidgets, PySide6.QtMultimedia, numpy, cv2, onnxruntime, PIL, '
                       'svgelements; print("packages OK")')
+    from build_windows_host import build
+    build(STAGE)
     for cache in runtime.rglob('__pycache__'):
         shutil.rmtree(cache, ignore_errors=True)
     size = sum(p.stat().st_size for p in STAGE.rglob('*') if p.is_file())

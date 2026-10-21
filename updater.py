@@ -688,6 +688,12 @@ def console_python():
 
 def restart(app_dir=APP_DIR):
     """Start the updated StrokeScribe (the caller then closes this one)."""
+    native=Path(app_dir)/'StrokeScribe.exe'
+    if sys.platform=='win32' and os.environ.get('STROKESCRIBE_NATIVE_HOST')=='1' and native.is_file():
+        # The old process must release the local server before singleton election.
+        subprocess.Popen([str(native),'--restart-wait',str(os.getpid())],
+                         cwd=str(app_dir),creationflags=NO_WINDOW)
+        return
     windowless = Path(sys.executable).name.lower() == 'pythonw.exe'     # installed version
     flags = 0 if windowless else getattr(subprocess, 'CREATE_NEW_CONSOLE', 0)
     subprocess.Popen([sys.executable, '-u', str(Path(app_dir) / 'startup.py')], cwd=str(app_dir),
