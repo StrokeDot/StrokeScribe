@@ -76,6 +76,22 @@ class AppearancePixelTests(unittest.TestCase):
         cleaned=clean_paper(blue,80,40)
         self.assertEqual(pixel(blue),pixel(cleaned))
 
+    def test_unrelated_overlays_have_full_opacity_above_artwork(self):
+        from unittest.mock import patch
+        under=solid(35,60,90)
+        art=solid(250,250,250)
+        hand=QImage(100,100,QImage.Format.Format_ARGB32_Premultiplied);hand.fill(0)
+        overlay=QImage(100,100,QImage.Format.Format_ARGB32_Premultiplied);overlay.fill(0)
+        overlay.setPixelColor(9,9,QColor(242,54,104))
+        def fake(_drawing,_fraction,opts,_camera=None):
+            return hand if opts.get('layers')=='hand' else art
+        with patch('frame_render.compose_frame',side_effect=fake), \
+             patch('frame_render.independent_overlays',return_value=overlay):
+            out=composite_element(under,object(),.5,
+                {'blend_mode':'Multiply','artwork_opacity':10,'overlays':['fake']})
+        self.assertEqual(pixel(out,9,9),(242,54,104,255))
+        self.assertNotEqual(pixel(out),(250,250,250,255))
+
     def test_scene_helper_renders_hand_separately_from_artwork(self):
         from unittest.mock import patch
         background=solid(20,30,40)
@@ -152,6 +168,7 @@ class AppearanceProjectTests(unittest.TestCase):
             self.assertEqual(dlg.appearance_mode.count(),w.blend_mode.count())
             dlg.appearance_mode.setCurrentText('Darken')
             dlg.opacity.setValue(67)
+            self.assertEqual(dlg.opacity_value.text(),'67%')
             dlg.clean_paper.setChecked(True)
             self.assertEqual(w.blend_mode.currentText(),'Darken')
             self.assertEqual(w.artwork_opacity.value(),67)
