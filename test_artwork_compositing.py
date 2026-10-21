@@ -76,6 +76,46 @@ class AppearanceCompositingTests(unittest.TestCase):
         self.assertLess(soft.pixelColor(0,0).alpha(),255)
         self.assertEqual(source.pixelColor(0,0).alpha(),255)
 
+    def test_single_export_composer_keeps_hand_full_color(self):
+        from frame_render import compose_frame
+        art=img((255,255,255))
+        pen=QImage(*art.size(),QImage.Format.Format_ARGB32_Premultiplied)
+        pen.fill(0);pen.setPixelColor(12,12,QColor(225,45,25))
+        def fake_raw(drawing,fraction,options,camera_path=None):
+            return pen if options.get('layers')=='hand' else art
+        with patch('frame_render._compose_raw_frame',side_effect=fake_raw):
+            result=compose_frame(object(),.4,dict(layers='all',
+                artwork_opacity=25,blend_mode='Screen'))
+        self.assertEqual(result.pixelColor(12,12),QColor(225,45,25))
+        faded=result.pixelColor(2,2)
+        self.assertTrue(50<=faded.alpha()<=70, faded)
+
+    def test_board_applies_each_saved_element_opacity_separately(self):
+        from board import World
+        white=img((255,255,255))
+        red=img((255,0,0))
+        items=[dict(frame=(0,0,1),options=dict(blend_mode='Normal',
+                    artwork_opacity=100),key=('first',)),
+               dict(frame=(0,0,1),options=dict(blend_mode='Normal',
+                    artwork_opacity=20),key=('second',))]
+        world=World(items,24/28)
+        world.finished=lambda idx,width: white if idx==0 else red
+        world.place=lambda *args:(0,0,28,24)
+        actual=world.view((0,0,1),28,24,upto=2).pixelColor(12,12)
+        self.assertGreater(actual.green(),195)
+        self.assertLess(actual.red(),256)
+
+    def test_per_scene_settings_independent_and_backward_compatible(self):
+        from export_job import options_from_settings
+        s1=dict(res='1920 × 1080',blend_mode='Multiply',artwork_opacity=60)
+        s2=dict(res='1920 × 1080',blend_mode='Normal',artwork_opacity=100)
+        s3=dict(res='1920 × 1080',blend_mode='Darken',artwork_opacity=85)
+        results=[options_from_settings(s,None) for s in (s1,s2,s3)]
+        self.assertEqual([r['blend_mode'] for r in results],
+                         ['Multiply','Normal','Darken'])
+        self.assertEqual([r['artwork_opacity'] for r in results],[60,100,85])
+        self.assertEqual(s1['artwork_opacity'],60)
+
     def test_element_editor_mirrors_settings_and_undoes_on_cancel(self):
         from app import Window
         from element_dialog import ElementDialog
