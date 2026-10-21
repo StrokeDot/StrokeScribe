@@ -195,7 +195,8 @@ class AppearanceExportTests(unittest.TestCase):
                 export_frames(w.drawing,target,**options)
                 frame=QImage(str(sorted(target.glob('frame_*.png'))[-1]))
                 self.assertFalse(frame.isNull())
-                arr=np.frombuffer(frame.convertToFormat(QImage.Format.Format_RGBA8888).constBits(),np.uint8).reshape(72,-1)[:,:128*4].reshape(72,128,4)
+                converted=frame.convertToFormat(QImage.Format.Format_RGBA8888)
+                arr=np.frombuffer(converted.constBits(),np.uint8).reshape(72,converted.bytesPerLine())[:,:128*4].reshape(72,128,4)
                 self.assertGreater(int(arr[:,:,3].max()),30)
                 self.assertLessEqual(int(arr[:,:,3].max()),100)
         finally:
