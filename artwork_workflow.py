@@ -39,7 +39,7 @@ class ArtworkWorkflow:
         self.handwriting_placement_heading.setVisible(lettering)
         self.source_transform_heading.setVisible(imported)
         # The element card.
-        self.source_card.setVisible(kind is not None)
+        self.source_card.setVisible(True)
         if lettering:
             heading,detail=source_card(LETTERING,text=self.text.toPlainText())
         elif kind==IMAGE and getattr(self,'image_result',None) is not None:
@@ -47,12 +47,15 @@ class ArtworkWorkflow:
         elif imported:
             heading,detail=source_card(kind,title=getattr(self,'project_title',''))
         else:
-            heading,detail='',''
+            heading,detail='No image loaded','Import an SVG or PNG image to use as the drawing source.'
         self.source_card_title.setText(heading)
         self.source_card_detail.setText(detail)
         self.edit_handwriting_button.setVisible(lettering)
-        self.source_card_thumb.setVisible(imported)
+        self.source_card_thumb.setVisible(not lettering)
         self.source_card_thumb.clear()
+        if not imported and not lettering:
+            from ui_icons import pixmap as icon_pixmap
+            self.source_card_thumb.setPixmap(icon_pixmap('image','#A9A6B8',64))
         if imported:
             # The scene strip's own thumbnail; no extra rendering here.
             thumb=None
@@ -60,14 +63,18 @@ class ArtworkWorkflow:
                 thumb=self.scenes[self.scene_index].get('thumb')
             if thumb is not None and not thumb.isNull():
                 from PySide6.QtGui import QPixmap
+                from PySide6.QtCore import QSize
+                box=QSize(max(120,self.source_card_thumb.width()),self.source_card_thumb.height())
                 self.source_card_thumb.setPixmap(QPixmap.fromImage(thumb).scaled(
-                    self.source_card_thumb.size(),Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation))
+                    box,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
+            else:
+                from ui_icons import pixmap as icon_pixmap
+                self.source_card_thumb.setPixmap(icon_pixmap('image','#A9A6B8',64))
         # Appearance: blend and opacity for imported artwork; paper cleanup
         # only affects images. (The Element Editor keeps all of them.)
         form=self.appearance_form
         self.source_appearance_heading.setVisible(imported)
-        for field in (self.blend_mode,self.artwork_opacity):
+        for field in (self.blend_mode,self.artwork_opacity,self.opacity_slider):
             form.setRowVisible(field,imported)
         for field in (self.paper_cleanup,self.paper_tolerance,self.paper_softness):
             form.setRowVisible(field,kind==IMAGE)
@@ -78,6 +85,10 @@ class ArtworkWorkflow:
         self.color_note.setVisible(imported)
         self.clean_color.setVisible(kind==SVG)
         self.use_color.setVisible(kind==SVG)
+        self.source_settings_toggle.setVisible(imported)
+        self.source_settings.setVisible(imported and self.source_settings_toggle.isChecked())
+        if hasattr(self,'update_ink_swatch'):
+            self.update_ink_swatch()
         # Image to drawing follows the existing image controls.
         self.image_drawing_heading.setVisible(not self.image_controls.isHidden())
 

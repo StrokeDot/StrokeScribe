@@ -3,14 +3,33 @@
 The existing Qt splitter stays in charge of panel geometry. This module only
 controls the sidebars and their widths; it never touches drawing or timeline
 state, project settings, or rendering.
+
+Panels start closed (only the icon rails show, so the canvas is big). Clicking
+a rail icon slides its panel open toward the canvas, pushing the canvas over;
+the panel's close button or the same icon slides it shut again.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QSettings, QTimer
+import os
+
+from PySide6.QtCore import QEasingCurve, QObject, QSettings, QTimer, QVariantAnimation
 
 MIN_SOURCE, MAX_SOURCE = 225, 460
 MIN_INSPECTOR, MAX_INSPECTOR = 270, 480
 DEFAULT_SOURCE, DEFAULT_INSPECTOR = 290, 330
+LAYOUT_VERSION = 2            # 2: panels closed until a rail icon is clicked
+SLIDE_MS = 200
+
+
+def headless(platform=None):
+    """The offscreen test harness: no animation, panels open (controls measurable)."""
+    platform = os.environ.get('QT_QPA_PLATFORM', '') if platform is None else platform
+    return platform == 'offscreen'
+
+
+def default_open(platform=None):
+    """Panels are closed by default for people; the headless harness keeps them open."""
+    return headless(platform)
 
 
 def _width(value, default, minimum, maximum):
@@ -46,10 +65,18 @@ class SidebarController(QObject):
             'inspector': _width(self.settings.value('workspace/inspector_width', DEFAULT_INSPECTOR),
                                 DEFAULT_INSPECTOR, MIN_INSPECTOR, MAX_INSPECTOR),
         }
+        if not headless() and int(self.settings.value('workspace/layout_version', 1) or 1) < LAYOUT_VERSION:
+            # First start with the rail layout: begin with both panels closed.
+            for side in self.panels:
+                self.settings.setValue('workspace/' + side + '_open', False)
+            self.settings.setValue('workspace/layout_version', LAYOUT_VERSION)
         self.expanded = {
-            side: self.settings.value('workspace/' + side + '_open', True, type=bool)
+            side: self.settings.value('workspace/' + side + '_open', default_open(), type=bool)
             for side in self.panels
         }
+        self.animate = not headless()
+        self._slide = None
+        self._minimums = {side: panel.minimumWidth() for side, panel in self.panels.items()}
         self._adjusting = True
         for side, button in self.buttons.items():
             button.setCheckable(True)
@@ -85,14 +112,67 @@ class SidebarController(QObject):
             except Exception:
                 pass
 
-    def _resize(self):
+    def _target(self):
         left = self.widths['source'] if self.expanded['source'] else 0
         right = self.widths['inspector'] if self.expanded['inspector'] else 0
         available = max(0, self.splitter.width())
         # Keep the middle pane as the expanding remainder. Qt enforces the
         # minimum widths if a restored window is narrower than before.
         center = max(390, available - left - right - self.splitter.handleWidth() * 2)
-        self.splitter.setSizes([left, center, right])
+        return [left, center, right]
+
+    def _resize(self):
+        self.splitter.setSizes(self._target())
+
+    def _finish_slide(self):
+        """Jump to the end of a running slide (a new click wins over the old one)."""
+        slide, self._slide = self._slide, None
+        if slide is not None:
+            slide.stop()
+            slide.finished.emit()
+
+    def _slide_to(self, side, expanded):
+        """Animate the splitter from its current sizes to the new layout."""
+        panel = self.panels[side]
+        start = self.splitter.sizes()
+        if expanded:
+            panel.setMinimumWidth(0)           # let it grow from nothing
+            panel.setVisible(True)
+            start = list(start)
+            start[0 if side == 'source' else 2] = 0
+            self.splitter.setSizes(start)
+        else:
+            panel.setMinimumWidth(0)           # let it shrink to nothing
+        end = self._target()
+        slide = QVariantAnimation(self)
+        slide.setDuration(SLIDE_MS)
+        slide.setStartValue(0.0)
+        slide.setEndValue(1.0)
+        slide.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        def step(t):
+            t = float(t)
+            self._adjusting = True
+            try:
+                self.splitter.setSizes([round(a + (b - a) * t) for a, b in zip(start, end)])
+            finally:
+                self._adjusting = False
+
+        def done():
+            if self._slide is slide:
+                self._slide = None
+            self._adjusting = True
+            try:
+                panel.setVisible(self.expanded[side])
+                panel.setMinimumWidth(self._minimums[side])
+                self._resize()
+            finally:
+                self._adjusting = False
+
+        slide.valueChanged.connect(step)
+        slide.finished.connect(done)
+        self._slide = slide
+        slide.start()
 
     def set_expanded(self, side, expanded):
         if side not in self.panels:
@@ -101,16 +181,21 @@ class SidebarController(QObject):
         if self.expanded[side] == expanded:
             self._update_buttons()
             return
+        self._finish_slide()
         if not self._adjusting:
             self._capture_widths()
         self.expanded[side] = expanded
-        self._adjusting = True
-        try:
-            self.panels[side].setVisible(expanded)
-            self._resize()
+        if self.animate and self.splitter.isVisible():
             self._update_buttons()
-        finally:
-            self._adjusting = False
+            self._slide_to(side, expanded)
+        else:
+            self._adjusting = True
+            try:
+                self.panels[side].setVisible(expanded)
+                self._resize()
+                self._update_buttons()
+            finally:
+                self._adjusting = False
         self.settings.setValue('workspace/' + side + '_open', expanded)
 
     def _capture_widths(self):
