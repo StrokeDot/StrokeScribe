@@ -42,6 +42,7 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
         final_image=color_image if s.get('use_color', False) else None,
         fade_duration=float(s.get('color_fade', .4)), hold_duration=float(s.get('color_hold', .6)),
         reveal_mode=reveal, blend_mode=s.get('blend_mode','Normal'),
+        artwork_opacity=max(0.,min(100.,float(s.get('artwork_opacity',100)))),
         brush_width=float(s.get('brush_width', .14)),
         stroke_spacing=float(s.get('stroke_spacing', .55)),
         artwork_scale=float(s.get('artwork_size', 100)) / 100.,
@@ -83,6 +84,10 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
                        fade_duration=float(s.get('image_duration', 8)),
                        reveal_mode=reveal if reveal in ('adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag') else 'adaptive',
                        duration=0. if paint_only else options['duration'])
+    if s.get('paper_cleanup',False) and options.get('final_image') is not None:
+        from paper_cleanup import prepare_image
+        options['final_image']=prepare_image(options['final_image'],True,
+            s.get('paper_tolerance',24),s.get('paper_softness',12))
     return options
 
 
