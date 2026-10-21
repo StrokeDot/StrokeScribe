@@ -62,6 +62,9 @@ class BlendTests(unittest.TestCase):
                dict(frame=(0,0,1),options={'blend_mode':'Multiply'},key=('two',))]
         world=World(items,48/64)
         world.finished=lambda idx,width: gray if idx==0 else white
+        # This fixture tests artwork blend only; independent overlays are
+        # tested separately with real drawing data in test_element_appearance.
+        world.finished_extras=lambda idx,width: None
         world.place=lambda *args:(0,0,64,48)
         image=world.view((0,0,1),64,48,upto=2)
         self.assertEqual(image.pixelColor(0,0),QColor(70,130,190))

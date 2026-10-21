@@ -105,7 +105,8 @@ class WindowTests(unittest.TestCase):
         w.scene_list.setCurrentRow(0)
         d = ElementDialog(w, 0)
         # Change how it comes in, its pause, how it goes out and the move: the window follows.
-        how = d.pairs[0][0]
+        # Appearance controls now precede the entrance controls in the editor.
+        how = next(m for m, t in d.pairs if t is w.entrance)
         how.setCurrentText('Pop in')
         self.assertEqual(w.entrance.currentText(), 'Pop in')
         pause = next(m for m, t in d.pairs if t is w.pause_after)
