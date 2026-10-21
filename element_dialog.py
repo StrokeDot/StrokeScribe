@@ -88,7 +88,19 @@ class ElementDialog(QDialog):
         right.addWidget(_section('APPEARANCE & BLENDING'))
         appearance=QFormLayout();appearance.setSpacing(7);right.addLayout(appearance)
         self.appearance_mode=add(appearance,'Blend mode',self._combo(w.blend_mode),w.blend_mode)
-        self.opacity=add(appearance,'Opacity',self._number(w.artwork_opacity),w.artwork_opacity)
+        opacity_row=QWidget()
+        opacity_line=QHBoxLayout(opacity_row)
+        opacity_line.setContentsMargins(0,0,0,0)
+        self.opacity=QSlider(Qt.Orientation.Horizontal)
+        self.opacity.setRange(0,100)
+        self.opacity.setValue(round(w.artwork_opacity.value()))
+        self.opacity_value=QLabel(str(self.opacity.value())+'%')
+        self.opacity_value.setMinimumWidth(44)
+        self.opacity.valueChanged.connect(lambda value: self.opacity_value.setText(str(value)+'%'))
+        opacity_line.addWidget(self.opacity,1)
+        opacity_line.addWidget(self.opacity_value)
+        appearance.addRow('Opacity',opacity_row)
+        self.pairs.append((self.opacity,w.artwork_opacity))
         self.clean_paper=add(appearance,'',self._check(w.paper_cleanup,
                             'Clean white / paper background'),w.paper_cleanup)
         self.paper_tolerance=add(appearance,'Tolerance',self._number(w.paper_tolerance),w.paper_tolerance)
@@ -183,7 +195,7 @@ class ElementDialog(QDialog):
     def _connect(self, mine, theirs):
         if isinstance(mine, QComboBox):
             mine.currentIndexChanged.connect(lambda i, t=theirs: self.change(lambda: t.setCurrentIndex(i)))
-        elif isinstance(mine, QDoubleSpinBox):
+        elif isinstance(mine, (QDoubleSpinBox,QSlider)):
             mine.valueChanged.connect(lambda v, t=theirs: self.change(lambda: t.setValue(v)))
         else:
             mine.toggled.connect(lambda on, t=theirs: self.change(lambda: t.setChecked(on)))
