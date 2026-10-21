@@ -9,7 +9,7 @@ from __future__ import annotations
 
 RENDER_KEYS = {'width', 'height', 'duration', 'fade_duration', 'hold_duration', 'final_image', 'thickness',
                'hand', 'hand_scale', 'anchor', 'reveal_mode', 'brush_width', 'painting_hand',
-               'stroke_spacing', 'artwork_scale'}
+               'stroke_spacing', 'artwork_scale', 'paper_cleanup','paper_tolerance','paper_softness'}
 
 
 # What a frame shows (Export tab -> Export): everything, only the moving hand
