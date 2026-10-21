@@ -5,7 +5,7 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 PROGID='StrokeDot.StrokeScribe.Project'
 EXT=r'Software\Classes\.strokescribe'
-CLASSES=r'Software\Classes\'
+CLASSES='Software'+chr(92)+'Classes'+chr(92)
 NO_WINDOW=getattr(subprocess,'CREATE_NO_WINDOW',0)
 
 def read(key,name=''):
@@ -30,7 +30,7 @@ def log_text(target):
     except (OSError,UnicodeError):return ''
 
 def powershell(text,env=None):
-    raw=subprocess.check_output(['powershell.exe','-NoProfile','-NonInteractive','-Command',text],
+    raw=subprocess.check_output(['powershell.exe','-NoProfile','-NonInteractive','-Command','[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; '+text],
             env=env,creationflags=NO_WINDOW)
     return json.loads(raw.decode('utf-8-sig'))
 
@@ -103,8 +103,9 @@ window.close()
         run_env=dict(os.environ,QT_QPA_PLATFORM='offscreen',STROKESCRIBE_CONFIG_DIR=str(config),
                      STROKESCRIBE_STARTUP_TEST='1',STROKESCRIBE_STARTUP_TEST_MS='10000')
         subprocess.run([str(python),str(seed),str(target),str(project1),str(project2)],env=run_env,check=True)
-        from PIL import Image
-        sizes=Image.open(target/'assets'/'strokescribe.ico').ico.sizes()
+        sizes={tuple(value) for value in json.loads(subprocess.check_output(
+            [str(python),'-c','import json,sys; from PIL import Image; print(json.dumps(sorted(Image.open(sys.argv[1]).ico.sizes())))',
+             str(target/'assets'/'strokescribe.ico')],text=True))}
         assert {(16,16),(32,32),(48,48),(256,256)}<=sizes,sizes
         evidence['official_ico_sizes']=sorted(sizes)
         icon_types=[shell_icon(path) for path in (project1,project2)]

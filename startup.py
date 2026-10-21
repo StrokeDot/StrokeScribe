@@ -88,7 +88,9 @@ def main():
             log_dir.mkdir(parents=True,exist_ok=True)
         log=(log_dir/'startup.log').open('w',encoding='utf-8')
         def stage(message):
-            if sys.stdout is not None:print(message,flush=True)
+            if sys.stdout is not None:
+                try:print(message,flush=True)
+                except (OSError,UnicodeError):pass
             log.write(message+'\n');log.flush()
         faulthandler.enable(file=log)
         faulthandler.dump_traceback_later(20,file=log)
