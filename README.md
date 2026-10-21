@@ -9,6 +9,10 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Image, Hand and Sound aligned like Animation (v0.5.3-experimental.81)
+
+- **Image, Hand and Sound** use the Animation panel's layout: every label on the left in one column, every field beside it. Image: Scale, Position X, Position Y, Blend mode, Opacity and the line-art choices (Animation, Drawing style, Detail) are label-left rows. Sound: Pencil / Brush / Eraser rows with *Add sound…* and a small remove button, then Volume.
+
 ## Visible Natural pen, no clipped panels (v0.5.3-experimental.80)
 
 - **Pen movement → Natural** is now clearly visible on every drawing: the whole drawing starts slowly, speeds up and settles at the end (on top of the gentle start and end of each line). Before, it eased only inside each line, which is invisible on line art made of thousands of tiny strokes. *Constant speed* is unchanged.

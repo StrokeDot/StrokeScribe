@@ -36,6 +36,10 @@ class ArtworkWorkflow:
                 slot.removeWidget(self.placement_box)
             target.addWidget(self.placement_box)
         self.placement_box.setVisible(kind is not None)
+        # Text panel stacks its fields (label above); Image lines them up beside.
+        from PySide6.QtWidgets import QFormLayout
+        self.placement_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows if lettering
+                                             else QFormLayout.RowWrapPolicy.DontWrapRows)
         self.handwriting_placement_heading.setVisible(lettering)
         self.source_transform_heading.setVisible(imported)
         # The element card.
@@ -74,7 +78,7 @@ class ArtworkWorkflow:
         # only affects images. (The Element Editor keeps all of them.)
         form=self.appearance_form
         self.source_appearance_heading.setVisible(imported)
-        for field in (self.blend_mode,self.artwork_opacity,self.opacity_slider):
+        for field in (self.blend_mode,self.opacity_row):
             form.setRowVisible(field,imported)
         for field in (self.paper_cleanup,self.paper_tolerance,self.paper_softness):
             form.setRowVisible(field,kind==IMAGE)

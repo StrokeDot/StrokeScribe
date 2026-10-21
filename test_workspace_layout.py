@@ -149,8 +149,9 @@ class WorkspaceLayoutTests(unittest.TestCase):
             self.assertGreater(area.viewport().width(), 185)
             for form in area.widget().findChildren(QFormLayout):
                 from studio_workspace import TABS
-                expected=(QFormLayout.RowWrapPolicy.DontWrapRows if index==0
-                          else QFormLayout.RowWrapPolicy.WrapAllRows if index==TABS['source']
+                # Animation, Hand and Image share one label column (DontWrapRows).
+                aligned=(TABS['animation'],TABS['hand'],TABS['source'])
+                expected=(QFormLayout.RowWrapPolicy.DontWrapRows if index in aligned
                           else QFormLayout.RowWrapPolicy.WrapLongRows)
                 self.assertEqual(form.rowWrapPolicy(),expected)
         # The source and inspector must remain navigable at the minimum size.

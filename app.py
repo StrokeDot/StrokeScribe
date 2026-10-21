@@ -2819,7 +2819,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def update_sound_buttons(self):
         for key,(button,text) in self.sound_file_buttons.items():
             path=self.sound_files.get(key)
-            button.setText(f'{text}: {Path(path).stem[:14]}' if path else f'{text}: add sound…')
+            button.setText(Path(path).stem if path else 'Add sound…')      # the row label names it
+            remove=getattr(self,'sound_remove_buttons',{}).get(key)
+            if remove is not None:
+                remove.setVisible(bool(path))
             button.setToolTip(f'{text} sound: {Path(path).name}. Click to choose another.' if path
                               else f'No {text.lower()} sound yet. Click to choose a recording (MP3, WAV, M4A…).')
 

@@ -29,7 +29,7 @@ def linked_slider(spin, low, high, scale=1):
     slider = QSlider(Qt.Orientation.Horizontal)
     slider.setRange(round(low * scale), round(high * scale))
     slider.setValue(round(spin.value() * scale))
-    slider.setMinimumWidth(40)
+    slider.setMinimumWidth(30)
     slider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
     def from_slider(value):
@@ -85,6 +85,34 @@ def tidy_side_page(content):
         check.setMinimumWidth(0)
         if not check.toolTip():
             check.setToolTip(check.text())
+
+
+def align_forms(content, label_width):
+    """One label column for a whole panel page, like the Animation panel.
+
+    Every form row has its label on the left at the same fixed width (long
+    labels wrap onto two lines) and its field filling the rest, so labels and
+    fields line up from the top of the page to the bottom.
+    """
+    for form in content.findChildren(QFormLayout):
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        form.setHorizontalSpacing(8)
+        form.setVerticalSpacing(6)
+        for index in range(form.rowCount()):
+            item = form.itemAt(index, QFormLayout.ItemRole.LabelRole)
+            heading = item.widget() if item else None
+            if isinstance(heading, QLabel):
+                heading.setWordWrap(True)
+                heading.setFixedWidth(label_width)
+            field = form.itemAt(index, QFormLayout.ItemRole.FieldRole)
+            control = field.widget() if field else None
+            if control is not None and not isinstance(control, (QLabel, QCheckBox)):
+                # Fields fill the row like the Animation panel's (the form only
+                # grows Expanding fields).
+                policy = control.sizePolicy()
+                policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+                control.setSizePolicy(policy)
 
 
 def scroll_view(content):
@@ -1341,18 +1369,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     image_form.setSpacing(8)
     w.image_source_form=image_form
 
+    # Label-left rows like the Animation panel (one shared label column).
+    w.image_fields=form_layout()
+
     def image_choice(title, control):
-        group=QWidget()
-        group.setMinimumWidth(0)
-        group.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred)
-        column=QVBoxLayout(group)
-        column.setContentsMargins(0,0,0,0)
-        column.setSpacing(4)
-        heading=label(title,'note')
-        heading.setWordWrap(True)
-        column.addWidget(heading)
-        column.addWidget(control)
-        image_form.addWidget(group)
+        if image_form.indexOf(w.image_fields) < 0:
+            image_form.addLayout(w.image_fields)
+        w.image_fields.addRow(title,control)
 
     image_form.addWidget(caption('Line art: clean, artist-style pen strokes from any image, '
                                  'drawn by a small built-in line model. Original colors are painted afterwards.'))
@@ -1685,12 +1708,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.placement_box=QWidget()
     w.placement_box.setMinimumWidth(0)
     placement_l=QVBoxLayout(w.placement_box);placement_l.setContentsMargins(0,0,0,0);placement_l.setSpacing(5)
-    placement_l.addWidget(label('Scale','note'))
-    scale_row=QHBoxLayout();scale_row.setSpacing(8)
+    w.placement_form=form_layout();placement_l.addLayout(w.placement_form)
+    scale_box=QWidget();scale_box.setMinimumWidth(0)
+    scale_row=QHBoxLayout(scale_box);scale_row.setContentsMargins(0,0,0,0);scale_row.setSpacing(8)
     scale_row.addWidget(w.artwork_size)
     w.scale_slider=linked_slider(w.artwork_size,25,200)
     scale_row.addWidget(w.scale_slider,1)
-    placement_l.addLayout(scale_row)
+    w.placement_form.addRow('Scale',scale_box)
     # Position on the page: drag the picture on the preview, or type it here.
     w.picture_x=w.number(-100,100,0,1); w.picture_x.setSuffix('%')
     w.picture_y=w.number(-100,100,0,1); w.picture_y.setSuffix('%')
@@ -1704,13 +1728,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # horizontal pair shared a form row with the 'Position X / Y' label, its
     # combined minimum width could force the entire Inspector form outside the
     # scroll viewport after image-only fields appeared.
-    position=QVBoxLayout();position.setSpacing(5)
-    position.addWidget(label('Position X / Y','note'))
-    xy=QHBoxLayout();xy.setSpacing(6)
-    xy.addWidget(w.picture_x,1);xy.addWidget(w.picture_y,1)
-    position.addLayout(xy)
-    position.addWidget(w.picture_center)
-    placement_l.addLayout(position)
+    # One row each, so both fields keep a usable width in the narrowest panel.
+    w.placement_form.addRow('Position X',w.picture_x)
+    w.placement_form.addRow('Position Y',w.picture_y)
+    w.placement_form.addRow('',w.picture_center)
     w.source_transform_slot.addWidget(w.placement_box)    # moved by kind on select
     w.pen_ease=QComboBox()
     w.pen_ease.addItems(['Constant speed','Natural (ease in and out)'])
@@ -1767,9 +1788,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     blend_form.addRow('Blend mode',w.blend_mode)
     w.artwork_opacity=w.number(0,100,100,1)
     w.artwork_opacity.setSuffix('%')
-    blend_form.addRow('Opacity',w.artwork_opacity)
     w.opacity_slider=linked_slider(w.artwork_opacity,0,100)
-    blend_form.addRow(w.opacity_slider)
+    opacity_box=QWidget();opacity_box.setMinimumWidth(0)
+    opacity_row=QHBoxLayout(opacity_box);opacity_row.setContentsMargins(0,0,0,0);opacity_row.setSpacing(8)
+    opacity_row.addWidget(w.artwork_opacity);opacity_row.addWidget(w.opacity_slider,1)
+    blend_form.addRow('Opacity',opacity_box)
+    w.opacity_row=opacity_box
     w.paper_cleanup=QCheckBox('Clean white / paper background')
     blend_form.addRow(w.paper_cleanup)
     w.paper_tolerance=w.number(0,80,22,1)
@@ -2020,21 +2044,28 @@ def build_workspace(w, Canvas, BRAND_ICON):
     create_sound.clicked.connect(lambda checked=False: w.open_create_image('sound'))
     sound_l.addWidget(create_sound)
     w.sound_file_buttons={}
+    from ui_icons import icon as _icon
+    sound_files=form_layout();sound_l.addLayout(sound_files)
+    w.sound_remove_buttons={}
     for key,text in (('sound_pencil_file','Pencil'),('sound_brush_file','Brush'),('sound_eraser_file','Eraser')):
-        row=QHBoxLayout()
-        button=QPushButton(f'{text} sound…')
+        box=QWidget();box.setMinimumWidth(0)
+        row=QHBoxLayout(box);row.setContentsMargins(0,0,0,0);row.setSpacing(6)
+        button=QPushButton('Add sound…')
         button.setToolTip(f'Choose a recording (MP3, WAV, M4A…) for the {text.lower()}.')
         button.clicked.connect(lambda checked=False,k=key: w.choose_sound_file(k))
         row.addWidget(button,1)
-        reset=QPushButton('Remove')
-        reset.setToolTip(f'No {text.lower()} sound.')
+        reset=QToolButton();reset.setObjectName('panelClose')
+        reset.setIcon(_icon('close','#A9A6B8'));reset.setFixedWidth(30)
+        reset.setToolTip(f'Remove the {text.lower()} sound.')
         reset.clicked.connect(lambda checked=False,k=key: w.set_sound_file(k,None))
         row.addWidget(reset)
-        sound_l.addLayout(row)
+        reset.hide()                         # shown once a sound is chosen
+        sound_files.addRow(text,box)
         w.sound_file_buttons[key]=(button,text)
+        w.sound_remove_buttons[key]=reset
     w.sound_volume=QSpinBox();w.sound_volume.setRange(0,100);w.sound_volume.setValue(80)
     w.sound_volume.setSuffix('%')
-    e4=form_layout();e4.addRow('Sound volume',w.sound_volume)
+    e4=form_layout();e4.addRow('Volume',w.sound_volume)
     sound_l.addLayout(e4)
     w.sound_preview=QCheckBox('Hear the sound when playing the preview')
     w.sound_preview.setChecked(True)
@@ -2296,7 +2327,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
         getattr(w,name).setAccessibleName(name.replace('_',' '))
     w.stage_timeline.setAccessibleName('Animation timeline: click to scrub; double-click Draw or Paint to edit source; Ctrl+Shift+D or P edits selected source')
     fit_to_width(asset,stacked=True)       # labels above fields in the narrow column
-    fit_to_width(source_page,stacked=True)
+    fit_to_width(source_page,stacked=False)
     for content in (animation,hand,output,sound,music,camera_page,ai_page):
         fit_to_width(content,stacked=False)
         for form in content.findChildren(QFormLayout):
@@ -2304,6 +2335,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # After fit_to_width (which sets checkbox policies): nothing may widen a page.
     for content in (asset,source_page,animation,hand,output,sound,music,camera_page,ai_page):
         tidy_side_page(content)
+    # Image, Hand and Sound line up like Animation: one label column per page.
+    align_forms(source_page,88)
+    align_forms(hand,96)
+    align_forms(sound,64)
     # QFormLayout.WrapLongRows can change the geometry of ALL animation
     # controls when image-specific rows are shown/hidden. In particular it
     # may grow the scroll content beyond its viewport and clip the right-hand
@@ -2325,9 +2360,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # (269px for a 262px viewport on Qt/Linux). Keep explicit 84px minima so
     # the text and increment/decrement arrows remain functional. This must
     # come after fit_to_width(), which normally resets spinbox size policies.
+    # Position X and Y have their own rows now (experimental.81): they fill the
+    # row like every other field, keeping the explicit 84px minimum.
     for field in (w.picture_x,w.picture_y):
         policy=field.sizePolicy()
-        policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
         field.setSizePolicy(policy)
         field.setMinimumWidth(84)
     # In a QScrollArea with widgetResizable=True, a Preferred-size panel

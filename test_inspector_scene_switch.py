@@ -101,11 +101,12 @@ class InspectorSceneSwitchGeometryTests(unittest.TestCase):
                                  "pause_after","pen_ease","entrance",
                                  "reveal_mode"):
                         self.assert_inside_inspector(getattr(w,name), name)
+                    # Position X and Y are rows of their own (experimental.81).
                     self.area=self.area_of(w.picture_x)
-                    x=w.picture_x.mapTo(self.area.viewport(),QPoint(0,0)).x()
-                    y=w.picture_y.mapTo(self.area.viewport(),QPoint(0,0)).x()
-                    self.assertLess(x+w.picture_x.width(),y,
-                                    "X/Y position boxes overlap")
+                    from PySide6.QtCore import QRect
+                    rx=QRect(w.picture_x.mapTo(self.area.viewport(),QPoint(0,0)),w.picture_x.size())
+                    ry=QRect(w.picture_y.mapTo(self.area.viewport(),QPoint(0,0)),w.picture_y.size())
+                    self.assertFalse(rx.intersects(ry),"X/Y position boxes overlap")
                     self.assertTrue(w.canvas.isVisible())
                     self.assertTrue(w.stage_timeline.isVisible())
 
