@@ -1,17 +1,8 @@
 name: Windows installer (tested, manually approved)
+# Release path only: validates the full suite on Linux and Windows for the
+# exact commit, builds the installer, and publishes when approved. Pull
+# requests are covered by Quick checks and the Full test suite instead.
 on:
-  pull_request:
-    paths:
-      - 'app.py'
-      - 'updater.py'
-      - 'update_dialog.py'
-      - 'startup.py'
-      - 'version.py'
-      - 'requirements.txt'
-      - 'installer/**'
-      - 'tools/**'
-      - 'test_*.py'
-      - '.github/workflows/windows-installer.yml'
   workflow_dispatch:
     inputs:
       publish:
@@ -43,7 +34,7 @@ jobs:
       - name: Verify syntax
         run: python -m compileall -q .
       - name: Full Linux regression suite
-        run: python -X faulthandler -c "import applog,runpy,logging,sys; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_prototype test_adaptive test_image_source test_webm test_studio test_workspace_layout test_ui_control_regression test_source_mode_consistency test_inspector_scene_switch test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_live_model_updates test_image_generator_updates test_generator_polish test_artwork_assets test_artwork_workflow test_artwork_pairing test_artwork_svg test_artwork_rendering test_blend_modes test_artwork_compositing test_pre_ui_combined test_ai_resources test_ai_diagnostics test_ai_resource_events test_release_policy
+        run: python -X faulthandler -c "import applog,runpy,logging,sys; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_prototype test_adaptive test_image_source test_webm test_studio test_workspace_layout test_ui_control_regression test_source_mode_consistency test_inspector_scene_switch test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_live_model_updates test_image_generator_updates test_generator_polish test_artwork_assets test_artwork_workflow test_artwork_pairing test_artwork_svg test_artwork_rendering test_blend_modes test_artwork_compositing test_pre_ui_combined test_select_tests test_ai_resources test_ai_diagnostics test_ai_resource_events test_release_policy
       - name: Record exact validated commit
         id: proof
         shell: bash
@@ -107,7 +98,7 @@ jobs:
       - name: Verify syntax
         run: python -m compileall -q .
       - name: Full Windows regression suite
-        run: python -X faulthandler -c "import applog,runpy,logging,sys; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_prototype test_adaptive test_image_source test_webm test_studio test_workspace_layout test_ui_control_regression test_source_mode_consistency test_inspector_scene_switch test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_live_model_updates test_image_generator_updates test_generator_polish test_artwork_assets test_artwork_workflow test_artwork_pairing test_artwork_svg test_artwork_rendering test_blend_modes test_artwork_compositing test_pre_ui_combined test_ai_resources test_ai_diagnostics test_ai_resource_events test_release_policy
+        run: python -X faulthandler -c "import applog,runpy,logging,sys; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_prototype test_adaptive test_image_source test_webm test_studio test_workspace_layout test_ui_control_regression test_source_mode_consistency test_inspector_scene_switch test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_live_model_updates test_image_generator_updates test_generator_polish test_artwork_assets test_artwork_workflow test_artwork_pairing test_artwork_svg test_artwork_rendering test_blend_modes test_artwork_compositing test_pre_ui_combined test_select_tests test_ai_resources test_ai_diagnostics test_ai_resource_events test_release_policy
       - name: Record exact validated commit
         id: proof
         shell: bash

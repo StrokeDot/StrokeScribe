@@ -2,14 +2,20 @@ name: Source editing and AI lifecycle review
 on:
   pull_request:
     paths:
-      - '*.py'
+      - 'source_*.py'
+      - 'owned_process.py'
+      - 'artwork_*.py'
+      - 'ai_lineart.py'
+      - 'lineart.py'
+      - 'test_source*.py'
+      - 'test_owned*.py'
       - '.github/workflows/source-editing.yml'
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
   group: source-editing-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   focused:
     runs-on: ${{ matrix.os }}

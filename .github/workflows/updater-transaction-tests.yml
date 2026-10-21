@@ -1,6 +1,17 @@
 name: Updater transaction checks
 on:
   pull_request:
+    paths:
+      - 'updater.py'
+      - 'update_dialog.py'
+      - 'archive_safety.py'
+      - 'startup.py'
+      - 'version.py'
+      - 'tools/release_policy.py'
+      - 'test_update*.py'
+      - 'test_archive_safety.py'
+      - 'requirements.txt'
+      - '.github/workflows/updater-transaction-tests.yml'
   workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

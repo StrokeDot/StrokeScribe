@@ -2,7 +2,16 @@ name: Artwork workflow review
 on:
   pull_request:
     paths:
-      - '*.py'
+      - 'artwork_*.py'
+      - 'svg_*.py'
+      - 'blend_modes.py'
+      - 'paper_cleanup.py'
+      - 'png_cleanup.py'
+      - 'source_render.py'
+      - 'projects.py'
+      - 'test_artwork*.py'
+      - 'test_svg_export.py'
+      - 'test_blend_modes.py'
       - '.github/workflows/artwork-workflow.yml'
   workflow_dispatch:
 permissions:
