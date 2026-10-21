@@ -13,7 +13,7 @@ import time
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap, QImage, QPainter, QColor
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QHBoxLayout,
-                               QLabel, QLineEdit, QPushButton, QSlider, QVBoxLayout, QWidget)
+                               QLabel, QLineEdit, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget)
 
 PREVIEW_W, PREVIEW_H = 560, 315
 
@@ -92,6 +92,35 @@ class ElementDialog(QDialog):
         add(f2, 'Paint time (s)', self._number(paint), paint)
         add(f2, 'Colour hold (s)', self._number(w.color_hold), w.color_hold)
 
+        right.addWidget(_section('APPEARANCE & BLENDING'))
+        appearance=QFormLayout(); appearance.setSpacing(7); right.addLayout(appearance)
+        add(appearance,'Blend mode',self._combo(w.blend_mode),w.blend_mode)
+        self.opacity=QSlider(Qt.Orientation.Horizontal)
+        self.opacity.setRange(0,100)
+        self.opacity.setValue(round(w.artwork_opacity.value()))
+        self.opacity_value=QLabel(f'{self.opacity.value()}%')
+        self.opacity_value.setMinimumWidth(42)
+        self.opacity.valueChanged.connect(lambda value:self.opacity_value.setText(f'{value}%'))
+        opacity_row=QWidget()
+        opacity_l=QHBoxLayout(opacity_row)
+        opacity_l.setContentsMargins(0,0,0,0); opacity_l.setSpacing(8)
+        opacity_l.addWidget(self.opacity,1);opacity_l.addWidget(self.opacity_value)
+        appearance.addRow('Opacity',opacity_row)
+        self.pairs.append((self.opacity,w.artwork_opacity))
+        self.paper_checkbox=add(appearance,'',
+            self._check(w.paper_cleanup,'Clean white / paper background'),
+            w.paper_cleanup)
+        self.paper_tol=add(appearance,'Tolerance',self._number(w.paper_tolerance),w.paper_tolerance)
+        self.paper_soft=add(appearance,'Edge softness',self._number(w.paper_softness),w.paper_softness)
+        self.paper_checkbox.setToolTip(
+            'Remove only near-white pixels connected to the outside paper edge. '
+            'Original pixels and painted stroke routes stay unchanged.')
+        self.paper_tol.setToolTip('Maximum color departure from white: 0–80.')
+        self.paper_soft.setToolTip('Fade near-white paper edges gradually, without erasing enclosed white areas.')
+        self.paper_checkbox.setEnabled(image)
+        self.paper_tol.setEnabled(image)
+        self.paper_soft.setEnabled(image)
+
         right.addWidget(_section('STAYS'))
         f3 = QFormLayout(); f3.setSpacing(7); right.addLayout(f3)
         add(f3, 'Pause (s)', self._number(w.pause_after), w.pause_after)
@@ -125,8 +154,16 @@ class ElementDialog(QDialog):
         done = QPushButton('Set'); done.setObjectName('primary'); done.clicked.connect(self.accept)
         buttons.addWidget(done)
         right.addLayout(buttons)
-        holder = QWidget(); holder.setLayout(right); holder.setMinimumWidth(330)
-        root.addWidget(holder, 1)
+        holder = QWidget(); holder.setLayout(right); holder.setMinimumWidth(0)
+        # Appearance introduces additional fields: scroll rather than clip the
+        # Hand/Set/Cancel controls on 600px-high and scaled Windows desktops.
+        settings_scroll=QScrollArea()
+        settings_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        settings_scroll.setWidgetResizable(True)
+        settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        settings_scroll.setMinimumWidth(330)
+        settings_scroll.setWidget(holder)
+        root.addWidget(settings_scroll,1)
 
         for mine, theirs in self.pairs:
             self._connect(mine, theirs)
@@ -159,7 +196,7 @@ class ElementDialog(QDialog):
     def _connect(self, mine, theirs):
         if isinstance(mine, QComboBox):
             mine.currentIndexChanged.connect(lambda i, t=theirs: self.change(lambda: t.setCurrentIndex(i)))
-        elif isinstance(mine, QDoubleSpinBox):
+        elif isinstance(mine, (QDoubleSpinBox, QSlider)):
             mine.valueChanged.connect(lambda v, t=theirs: self.change(lambda: t.setValue(v)))
         else:
             mine.toggled.connect(lambda on, t=theirs: self.change(lambda: t.setChecked(on)))
@@ -172,7 +209,12 @@ class ElementDialog(QDialog):
 
     def sync_enabled(self):
         for mine, theirs in self.pairs:
-            mine.setEnabled(theirs.isEnabled())
+            if mine in (self.paper_checkbox,self.paper_tol,self.paper_soft):
+                mine.setEnabled(self.w.is_image_artwork())
+            else:
+                # Hidden Inspector widgets are still active and persisted;
+                # only their Element Editor mirrors are visible.
+                mine.setEnabled(theirs.isEnabled())
 
     def rename(self, text):
         self.w.scenes[self.k]['name'] = text.strip() or None
@@ -223,7 +265,38 @@ class ElementDialog(QDialog):
                     painter.drawImage(0, 0, texture_qimage(name, PREVIEW_W, PREVIEW_H))
         scaled = frame.scaled(PREVIEW_W, PREVIEW_H, Qt.AspectRatioMode.KeepAspectRatio,
                               Qt.TransformationMode.SmoothTransformation)
-        painter.drawImage((PREVIEW_W - scaled.width()) // 2, (PREVIEW_H - scaled.height()) // 2, scaled)
+        x,y=(PREVIEW_W-scaled.width())//2,(PREVIEW_H-scaled.height())//2
+        view=getattr(w,'_view',None) or {}
+        settings=view.get('options') or {}
+        mode=settings.get('blend_mode','Normal')
+        opacity=settings.get('artwork_opacity',100)
+        if (not view.get('all') and not view.get('page')
+                and settings.get('layers','all')=='all'
+                and (mode!='Normal' or opacity!=100)):
+            # The Element Editor has its OWN background painter. Re-compose
+            # artwork against that background first, then draw the original
+            # hand with SourceOver. Drawing the already-combined frame here
+            # would either hide Multiply or blend the hand by accident.
+            from artwork_compositor import bounded_opacity
+            from blend_modes import composition_mode
+            from frame_render import compose_frame
+            opts=dict(settings,width=PREVIEW_W,
+                      height=round(PREVIEW_W*view.get('ratio',PREVIEW_H/PREVIEW_W)))
+            camera=w.preview_camera(opts)
+            artwork=compose_frame(w.drawing,self.position,dict(opts,layers='art',ghost=0),camera)
+            hand=compose_frame(w.drawing,self.position,
+                               dict(opts,layers='hand',ghost=0,background=False),camera)
+            rect=scaled.rect().translated(x,y)
+            painter.setCompositionMode(composition_mode(mode))
+            painter.setOpacity(bounded_opacity(opacity))
+            painter.drawImage(rect,artwork)
+            painter.setOpacity(1.)
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            painter.drawImage(rect,hand)
+        else:
+            # Multi-element views are already blended over their earlier
+            # artwork within the scene compositor: never apply a second pass.
+            painter.drawImage(x,y,scaled)
         painter.end()
         self.preview.setPixmap(QPixmap.fromImage(card))
 

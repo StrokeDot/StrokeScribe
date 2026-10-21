@@ -9,7 +9,7 @@ from __future__ import annotations
 
 RENDER_KEYS = {'width', 'height', 'duration', 'fade_duration', 'hold_duration', 'final_image', 'thickness',
                'hand', 'hand_scale', 'anchor', 'reveal_mode', 'brush_width', 'painting_hand',
-               'stroke_spacing', 'artwork_scale'}
+               'stroke_spacing', 'artwork_scale', 'paper_cleanup','paper_tolerance','paper_softness'}
 
 
 # What a frame shows (Export tab -> Export): everything, only the moving hand
@@ -233,8 +233,8 @@ def _entering(drawing, fraction, opts, kind):
     return frame
 
 
-def compose_frame(drawing, fraction, options, camera_path=None):
-    """options: render_color_timeline keywords plus artwork_scale, duration and erase."""
+def _compose_raw_frame(drawing, fraction, options, camera_path=None):
+    """Raw animation frames; does not apply element opacity to the moving hand."""
     from engine import apply_lettering_background
     opts, erase, base_fraction, progress = split_erase(drawing, fraction, options)
     items = opts.get('overlays') if opts.get('layers', 'all') != 'hand' else None
@@ -286,6 +286,15 @@ def compose_frame(drawing, fraction, options, camera_path=None):
     if opts.get('layers', 'all') == 'hand' or opts.get('background') is False:
         return frame                  # stays transparent (hand only, or a picture added to a page)
     return apply_lettering_background(frame, drawing)
+
+
+def compose_frame(drawing, fraction, options, camera_path=None):
+    """Apply artwork opacity before the independent hand for all render callers."""
+    if (options.get('layers','all')=='all' and
+            options.get('artwork_opacity',100)!=100):
+        from artwork_compositor import composite_element
+        return composite_element(None,drawing,fraction,options,camera_path)
+    return _compose_raw_frame(drawing,fraction,options,camera_path)
 
 
 def _camera_view(frame, zoom, cx, cy):

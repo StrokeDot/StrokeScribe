@@ -78,7 +78,7 @@ class InspectorSceneSwitchGeometryTests(unittest.TestCase):
                     for name in ("duration","speed","thickness",
                                  "artwork_size","picture_x","picture_y",
                                  "pause_after","pen_ease","entrance",
-                                 "blend_mode","reveal_mode"):
+                                 "reveal_mode"):
                         self.assert_inside_inspector(getattr(w,name), name)
                     x=w.picture_x.mapTo(self.area.viewport(),QPoint(0,0)).x()
                     y=w.picture_y.mapTo(self.area.viewport(),QPoint(0,0)).x()

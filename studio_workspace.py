@@ -1359,12 +1359,23 @@ def build_workspace(w, Canvas, BRAND_ICON):
         'Multiply makes white paper disappear visually over that background. '
         'An alpha/transparent export still needs background cleanup if you '
         'want to remove white pixels permanently.')
+    # These remain genuine QWidgets to preserve legacy project settings,
+    # but all appearance adjustments live together in the Element Editor.
     blend_form=form_layout()
     blend_form.addRow('Blend mode',w.blend_mode)
+    w.artwork_opacity=w.number(0,100,100,1)
+    w.artwork_opacity.setSuffix('%')
+    blend_form.addRow('Opacity',w.artwork_opacity)
+    w.paper_cleanup=QCheckBox('Clean white / paper background')
+    blend_form.addRow(w.paper_cleanup)
+    w.paper_tolerance=w.number(0,80,22,1)
+    blend_form.addRow('Paper tolerance',w.paper_tolerance)
+    w.paper_softness=w.number(0,50,8,1)
+    blend_form.addRow('Edge softness',w.paper_softness)
     animation_l.addLayout(blend_form)
-    animation_l.addWidget(caption('Blend modes need a visible backdrop or earlier artwork. '
-                                  'Transparent alone cannot show blending; use a contrasting '
-                                  'Background to preview it. Multiply is not alpha removal.'))
+    for field in (w.blend_mode,w.artwork_opacity,w.paper_cleanup,
+                  w.paper_tolerance,w.paper_softness):
+        blend_form.setRowVisible(field,False)
     a2=form_layout();animation_l.addLayout(a2)
     w.reveal_mode=QComboBox()
     w.reveal_mode.addItems(['Brush painting','Adaptive Hand Painting','Zigzag sweep',
@@ -1796,7 +1807,14 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.color_fade.valueChanged.connect(w.refresh)
     w.color_hold.valueChanged.connect(w.refresh)
     w.reveal_mode.currentIndexChanged.connect(w.refresh)
-    w.blend_mode.currentIndexChanged.connect(w.refresh)  # Preview changes immediately.
+    for field in (w.blend_mode,w.artwork_opacity,w.paper_cleanup,
+                  w.paper_tolerance,w.paper_softness):
+        if isinstance(field,QComboBox):
+            field.currentIndexChanged.connect(w.refresh)
+        elif isinstance(field,QCheckBox):
+            field.toggled.connect(w.refresh)
+        else:
+            field.valueChanged.connect(w.refresh)
     w.brush_width.valueChanged.connect(w.schedule_brush_refresh)
     w.show_paint_hand.toggled.connect(w.refresh)
     w.sound_on.toggled.connect(lambda checked: (w.update_transport_icons(), w.sync_preview_sound()))

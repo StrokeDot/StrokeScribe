@@ -51,6 +51,7 @@ class Canvas(QWidget):
     """Program monitor: the frame on its preview background, plus a loading card."""
     def __init__(self):
         super().__init__(); self.frame=None; self.background=0; self.custom_colour=None; self.blend_mode='Normal'; self.setMinimumSize(550,330)
+        self.art_frame=None; self.hand_frame=None; self.artwork_opacity=100
         self.busy_text=None; self.busy_percent=None; self.busy_detail=''
         self._spin=0
         self._spinner=QTimer(self); self._spinner.setInterval(40)
@@ -167,12 +168,22 @@ class Canvas(QWidget):
                 p.fillRect(x,y,size.width(),size.height(),QColor('#ffffff' if self.background==1 else c['preview_dark']))
             else:
                 p.drawPixmap(x,y,self._checker(size.width(),size.height(),c['checker_a'],c['checker_b']))
-            # Scaled while painting (no copy of the frame every time).
+            # Artwork and hand are separate: blending must never touch the
+            # moving pencil, including during partially painted frames.
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             from blend_modes import composition_mode
-            p.setCompositionMode(composition_mode(self.blend_mode))
-            p.drawImage(QRectF(x,y,size.width(),size.height()),self.frame)
-            p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            rect=QRectF(x,y,size.width(),size.height())
+            if self.art_frame is not None:
+                from artwork_compositor import bounded_opacity
+                p.setCompositionMode(composition_mode(self.blend_mode))
+                p.setOpacity(bounded_opacity(self.artwork_opacity))
+                p.drawImage(rect,self.art_frame)
+                p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+                p.setOpacity(1.)
+                if self.hand_frame is not None:
+                    p.drawImage(rect,self.hand_frame)
+            else:
+                p.drawImage(rect,self.frame)
             box=self.box_provider() if self.box_provider is not None else None
             if box:
                 from PySide6.QtGui import QPen
@@ -735,6 +746,16 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         try:
             self.restore_source_snapshot(snapshot.get('source'))
             settings=snapshot['settings']
+            # Older snapshots lack appearance controls. Revert to their
+            # historical full-opacity, no-cleanup defaults when switching.
+            for name,default in (('artwork_opacity',100),('paper_cleanup',False),
+                                 ('paper_tolerance',22),('paper_softness',8)):
+                if name not in settings:
+                    widget=getattr(self,name,None)
+                    if widget is not None:
+                        widget.blockSignals(True)
+                        set_widget_value(widget,default)
+                        widget.blockSignals(False)
             for name in self.PROJECT_SETTINGS:
                 widget=getattr(self,name,None)
                 if widget is None or name not in settings: continue
@@ -1199,7 +1220,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.refresh()
 
     # ------------------------------------------------------------ projects
-    PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','color_fade',
+    PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
                       'use_color','preserve_colors','showhand','left_handed','entrance','pause_after','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
@@ -1344,9 +1365,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def offer_recovery(self):
         """After a crash: offer the work that was autosaved."""
+        if getattr(self, "_shell_recovery_offered", False): return False
         import autosave
         info=autosave.pending()
         if not info: return False
+        self._shell_recovery_offered=True
         when=datetime.fromtimestamp(float(info.get('time') or 0)).strftime('%H:%M, %d %b')
         name=info.get('title') or 'your project'
         answer=QMessageBox.question(self,'Restore your work?',
@@ -1442,6 +1465,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             drawing.artwork_assets=validate_assets(metadata)
             managed=materialize_assets(drawing.artwork_assets)
         settings=data.get('settings',{})
+        # Reset optional appearance fields while switching scenes so a legacy
+        # image cannot inherit cleanup or opacity from the preceding element.
+        settings=dict({'artwork_opacity':100,'paper_cleanup':False,
+                       'paper_tolerance':22,'paper_softness':8},**settings)
         # Settings first (without a refresh storm), then the drawing.
         for name in self.PROJECT_SETTINGS:
             widget=getattr(self,name,None)
@@ -2264,10 +2291,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         where,k,f=board.locate(lengths,joins,(self.position if fraction is None else fraction)*total)
         if where=='scene':
             drawing,options,_,camera=self.preview_scene(k,width,height)
-            frame=compose_frame(drawing,f,options,camera)
-            if options.get('layers')=='hand': return frame,k,lengths,joins
-            return stack(self.scene_base(k,width,height,f,camera),frame,
-                         options.get('blend_mode','Normal')),k,lengths,joins
+            from artwork_compositor import composite_element
+            under=self.scene_base(k,width,height,f,camera)
+            return composite_element(under,drawing,f,options,camera),k,lengths,joins
         world=self.preview_world(width,height)
         if self.preview_scene(k,width,height)[1].get('layers')=='hand':
             from PySide6.QtGui import QImage
@@ -3043,10 +3069,23 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.status.setText('Preview could not be updated: '+str(exc)[:220])
             return
         self.canvas.frame=frame
-        # When the page is already composed in scenes.stack/World.view,
-        # blending again here would double-apply the effect.
-        self.canvas.blend_mode=('Normal' if view['all'] or view.get('page') else
-                                self.blend_mode.currentText())
+        self.canvas.art_frame=None; self.canvas.hand_frame=None
+        self.canvas.blend_mode='Normal'
+        self.canvas.artwork_opacity=100
+        if not view['all'] and not view.get('page'):
+            opts=view['options']
+            mode=opts.get('blend_mode','Normal')
+            opacity=opts.get('artwork_opacity',100)
+            if mode!='Normal' or opacity!=100:
+                from frame_render import compose_frame
+                preview_opts=dict(opts,width=frame.width(),height=frame.height())
+                camera=self.preview_camera(preview_opts)
+                self.canvas.art_frame=compose_frame(self.drawing,self.position,
+                            dict(preview_opts,layers='art',ghost=0),camera)
+                self.canvas.hand_frame=compose_frame(self.drawing,self.position,
+                            dict(preview_opts,layers='hand',ghost=0,background=False),camera)
+                self.canvas.blend_mode=mode
+                self.canvas.artwork_opacity=opacity
         if view['all']: self.canvas.highlight=[]
         self.canvas.update()
         self.stage_timeline.progress=max(0.,min(1.,self.position)); self.stage_timeline.update()
@@ -3136,12 +3175,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from frame_render import compose_frame
         options=dict(view['options'],width=width,height=height)
         camera=self.preview_camera(options)
-        frame=compose_frame(self.drawing,fraction,options,camera)
         if view['page']:
+            from artwork_compositor import composite_element
+            under=self.scene_base(self.scene_index,width,height,fraction,camera)
+            if options.get('blend_mode','Normal')!='Normal' or options.get('artwork_opacity',100)!=100:
+                return composite_element(under,self.drawing,fraction,options,camera)
             from scenes import stack
-            return stack(self.scene_base(self.scene_index,width,height,fraction,camera),
-                         frame,options.get('blend_mode','Normal'))
-        return frame
+            return stack(under,compose_frame(self.drawing,fraction,options,camera))
+        return compose_frame(self.drawing,fraction,options,camera)
 
     def frame_index(self,fraction):
         count=max(1,round(self._view['length']*self.PREVIEW_FPS))
