@@ -22,8 +22,8 @@ static int error_box(const wchar_t* text) {
 // Decide primary/secondary before Python imports or update recovery. The mutex
 // is scoped to this installation and Windows user, and never inherited by workers.
 struct InstanceGuard {
-    HANDLE handle=nullptr;
-    ~InstanceGuard() { if (handle) CloseHandle(handle); }
+    HANDLE handle=nullptr;bool owner=false;
+    ~InstanceGuard() { if (owner) ReleaseMutex(handle);if (handle) CloseHandle(handle); }
     bool acquire(const std::filesystem::path& root,bool& secondary) {
         HANDLE token=nullptr;DWORD bytes=0;
         if (!OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY,&token)) return false;
@@ -44,9 +44,12 @@ struct InstanceGuard {
         if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(acl.c_str(),SDDL_REVISION_1,&descriptor,nullptr)) return false;
         SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES),descriptor,FALSE};
         handle=CreateMutexW(&security,FALSE,name.c_str());
-        DWORD error=GetLastError();LocalFree(descriptor);
-        secondary=handle && error==ERROR_ALREADY_EXISTS;
-        return handle!=nullptr;
+        LocalFree(descriptor);
+        if (!handle) return false;
+        DWORD acquired=WaitForSingleObject(handle,0);
+        owner=acquired==WAIT_OBJECT_0 || acquired==WAIT_ABANDONED;
+        secondary=!owner;
+        return owner || acquired==WAIT_TIMEOUT;
     }
 };
 

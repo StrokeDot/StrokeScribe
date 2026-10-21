@@ -10,10 +10,19 @@ def main():
     from PySide6.QtCore import QTimer
     from shell_integration import ProjectBroker,server_name
     app=QApplication(sys.argv)
+    mode=sys.argv[1] if len(sys.argv)>1 else 'replacement'
+    if mode=='secondary-hold':
+        import time
+        assert os.environ.get('STROKESCRIBE_SECONDARY_LAUNCH')=='1'
+        (OUT/'native-secondary-ready').write_text(str(os.getpid()))
+        deadline=time.monotonic()+20
+        while not (OUT/'native-restarted.json').exists() and time.monotonic()<deadline:time.sleep(.02)
+        assert (OUT/'native-restarted.json').exists(),'Restart failed while secondary retained a native handle'
+        return 0
+    assert os.environ.get('STROKESCRIBE_SECONDARY_LAUNCH')=='0'
     broker=ProjectBroker(server_name(ROOT),app)
     assert broker.claim(),'Replacement failed to acquire project broker'
     app.aboutToQuit.connect(broker.close)
-    mode=sys.argv[1] if len(sys.argv)>1 else 'replacement'
     if mode=='workers':
         assert Path(sys.executable)==ROOT/'runtime'/'pythonw.exe',sys.executable
         from engine import import_svg,export_frames
@@ -39,7 +48,11 @@ def main():
             'alpha_extrema':[lo,hi],'ai_subprocess':'real imports; no GPU model inference'}))
         broker.close();return 0
     if mode=='restart':
-        import updater
+        import updater,subprocess,time
+        secondary=subprocess.Popen([str(ROOT/'StrokeScribe.exe'),'secondary-hold'],cwd=str(ROOT))
+        deadline=time.monotonic()+10
+        while not (OUT/'native-secondary-ready').exists() and time.monotonic()<deadline:time.sleep(.02)
+        assert (OUT/'native-secondary-ready').exists()
         def restart():
             updater.restart(ROOT)
             # The replacement is required to wait for this process and mutex.
