@@ -95,7 +95,18 @@ class ElementDialog(QDialog):
         right.addWidget(_section('APPEARANCE & BLENDING'))
         appearance=QFormLayout(); appearance.setSpacing(7); right.addLayout(appearance)
         add(appearance,'Blend mode',self._combo(w.blend_mode),w.blend_mode)
-        add(appearance,'Opacity',self._number(w.artwork_opacity),w.artwork_opacity)
+        self.opacity=QSlider(Qt.Orientation.Horizontal)
+        self.opacity.setRange(0,100)
+        self.opacity.setValue(round(w.artwork_opacity.value()))
+        self.opacity_value=QLabel(f'{self.opacity.value()}%')
+        self.opacity_value.setMinimumWidth(42)
+        self.opacity.valueChanged.connect(lambda value:self.opacity_value.setText(f'{value}%'))
+        opacity_row=QWidget()
+        opacity_l=QHBoxLayout(opacity_row)
+        opacity_l.setContentsMargins(0,0,0,0); opacity_l.setSpacing(8)
+        opacity_l.addWidget(self.opacity,1);opacity_l.addWidget(self.opacity_value)
+        appearance.addRow('Opacity',opacity_row)
+        self.pairs.append((self.opacity,w.artwork_opacity))
         self.paper_checkbox=add(appearance,'',
             self._check(w.paper_cleanup,'Clean white / paper background'),
             w.paper_cleanup)
@@ -185,7 +196,7 @@ class ElementDialog(QDialog):
     def _connect(self, mine, theirs):
         if isinstance(mine, QComboBox):
             mine.currentIndexChanged.connect(lambda i, t=theirs: self.change(lambda: t.setCurrentIndex(i)))
-        elif isinstance(mine, QDoubleSpinBox):
+        elif isinstance(mine, (QDoubleSpinBox, QSlider)):
             mine.valueChanged.connect(lambda v, t=theirs: self.change(lambda: t.setValue(v)))
         else:
             mine.toggled.connect(lambda on, t=theirs: self.change(lambda: t.setChecked(on)))
