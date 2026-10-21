@@ -47,6 +47,18 @@ class UpdaterTests(unittest.TestCase):
             z.writestr(top + '.venv/Lib/site.py', 'NOT mine')
         return path
 
+    def test_installed_restart_waits_for_native_primary_to_release_broker(self):
+        native=self.app/'StrokeScribe.exe';native.write_bytes(b'test executable sentinel')
+        with mock.patch.object(updater.sys,'platform','win32'),mock.patch.dict(os.environ,STROKESCRIBE_NATIVE_HOST='1'),mock.patch.object(updater.subprocess,'Popen') as popen:
+            updater.restart(self.app)
+        self.assertEqual(popen.call_args.args[0],[str(native),'--restart-wait',str(os.getpid())])
+
+    def test_development_restart_keeps_python_entry_point(self):
+        (self.app/'StrokeScribe.exe').write_bytes(b'candidate may coexist with source')
+        with mock.patch.object(updater.sys,'platform','win32'),mock.patch.dict(os.environ,STROKESCRIBE_NATIVE_HOST='0'),mock.patch.object(updater.subprocess,'Popen') as popen:
+            updater.restart(self.app)
+        self.assertEqual(popen.call_args.args[0],[updater.sys.executable,'-u',str(self.app/'startup.py')])
+
     def test_versions(self):
         self.assertEqual(updater.parse_version('0.5.3-experimental.38'), (0, 5, 3, 38))
         self.assertTrue(updater.is_newer('0.5.3-experimental.39', '0.5.3-experimental.38'))

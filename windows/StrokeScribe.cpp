@@ -95,11 +95,11 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int) {
     std::vector<wchar_t*> argv;for (auto& value:values) argv.push_back(value.data());
     PyConfig config;PyConfig_InitPythonConfig(&config);
     config.isolated=1;config.parse_argv=0;config.module_search_paths_set=1;
-    PyStatus status=PyConfig_SetString(&config.program_name,program.c_str());
+    PyStatus status=PyConfig_SetString(&config,&config.program_name,program.c_str());
     auto check=[&](PyStatus next){if (!PyStatus_Exception(status)) status=next;};
-    check(PyConfig_SetString(&config.executable,program.c_str()));
-    check(PyConfig_SetString(&config.home,runtime.c_str()));
-    check(PyConfig_SetString(&config.run_filename,script.c_str()));
+    check(PyConfig_SetString(&config,&config.executable,program.c_str()));
+    check(PyConfig_SetString(&config,&config.home,runtime.c_str()));
+    check(PyConfig_SetString(&config,&config.run_filename,script.c_str()));
     check(PyConfig_SetArgv(&config,int(argv.size()),argv.data()));
     for (const auto& path:{root,runtime/L"python312.zip",runtime/L"DLLs",runtime/L"Lib",runtime/L"Lib"/L"site-packages"})
         check(PyWideStringList_Append(&config.module_search_paths,path.c_str()));

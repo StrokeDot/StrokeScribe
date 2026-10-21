@@ -134,6 +134,27 @@ window.close()
         wait_for(lambda:'Opened file: '+str(project1) in log_text(target) and 'Ready:' in log_text(target))
         time.sleep(12)
         evidence['shell_open_cold']=True
+        # Exercise multiprocessing/AI subprocesses and real native restart in
+        # the installed host. Only this disposable installation is instrumented;
+        # the shipped startup.py and application engine remain unchanged.
+        original_startup=(target/'startup.py').read_bytes()
+        try:
+            (target/'startup.py').write_bytes((ROOT/'tools'/'native_identity_probe.py').read_bytes())
+            child=subprocess.Popen([str(exe),'workers'],cwd=str(target),env=run_env)
+            assert child.wait(timeout=60)==0,(target/'test-output'/'native-probe-error.txt').read_text(encoding='utf-8') if (target/'test-output'/'native-probe-error.txt').exists() else 'Worker probe failed'
+            child=None
+            evidence['native_workers']=json.loads((target/'test-output'/'native-workers.json').read_text())
+            child=subprocess.Popen([str(exe),'restart'],cwd=str(target),env=run_env)
+            old_pid=child.pid
+            assert child.wait(timeout=15)==0
+            child=None
+            wait_for(lambda:(target/'test-output'/'native-restarted.json').exists(),timeout=15)
+            restarted=json.loads((target/'test-output'/'native-restarted.json').read_text())
+            assert restarted['pid']!=old_pid and restarted['broker_claimed']
+            evidence['native_restart']=restarted
+            time.sleep(1)
+        finally:
+            (target/'startup.py').write_bytes(original_startup)
         # Repair/upgrade does not change an unrelated default chosen afterwards.
         write(EXT,'StrokeScribe.Integration.Other')
         install();assert read(EXT)=='StrokeScribe.Integration.Other'

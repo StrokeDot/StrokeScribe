@@ -62,6 +62,16 @@ class ShellOpenTests(unittest.TestCase):
         import autosave
         self.assertIsNotNone(autosave.pending())
         self.assertFalse(self.w.offer_recovery())
+    def test_failed_recovery_blocks_later_shell_opens_without_deleting_copy(self):
+        path=self.project();self.w.duration.setValue(self.w.duration.value()+1)
+        self.assertTrue(self.w.autosave_tick())
+        self.w._keep_autosave=True;self.w._shell_recovery_offered=True
+        import autosave
+        pending=autosave.pending();old=self.w.drawing
+        with patch.object(QMessageBox,'warning'):
+            self.assertFalse(self.route(path))
+        self.assertIs(self.w.drawing,old);self.assertEqual(autosave.pending(),pending)
+
     def test_svg_argument_still_loads_vector_drawing(self):
         self.assertTrue(self.route(Path(__file__).parent/'samples'/'drawing.svg'))
         self.assertGreater(len(self.w.drawing.strokes),0)
