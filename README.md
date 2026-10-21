@@ -9,6 +9,18 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Dual-sidebar layout: Handwriting left, Source right (v0.5.3-experimental.76)
+
+UI-only rearrangement of existing controls; the rendering engine and export output are unchanged.
+
+- **Top bar:** the project selector and the resolution/FPS label are gone. Open, Save, Import and Batch export stay in the **File** menu; resolution and frame rate stay in **Export**. The project name remains in the window title.
+- **Left — Handwriting** (icon rail: *Text*): text, lettering style/font, letter detail, ink colour, Animate lettering, font downloads/imports, and *Placement* (size and position) when a lettering element is selected. No artwork imports here.
+- **Right rail — Source, Animation, Hand, Sound, Export**, one page at a time; clicking the open page's icon collapses the panel. Both sides still collapse independently and remember their width.
+- **Source:** *Import SVG…* and *Import image…* (the only place for artwork imports), the selected element's card, *Transform* (size, position), *Appearance* (blend mode, opacity; paper cleanup for images), matching colours / original image, and Image to drawing (line art).
+- **Element kind** (`lettering`, `svg`, `image`) is saved with each element and derived for older projects. Lettering is never shown as an imported image or given a file name; its card links back to the Handwriting panel. Blend mode for lettering stays in the Element Editor.
+- **Animation:** Pen movement, Camera follow and the other drawing settings stay here; *Lines & order* moved here from the left panel.
+- Checked by the Linux and Windows test suites; the real Windows look (display scaling, rail icons) still needs visual confirmation.
+
 ## Per-element appearance and paper cleanup (v0.5.3-experimental.75)
 
 **In-app update for existing Experimental.73 installations:** Use File → Update StrokeScribe → Check for updates, then Update. This is a source-only update on the existing experimental update channel, not a Windows installer. Python requirements are unchanged. Save your project first; the transactional updater retains a rollback copy.

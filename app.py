@@ -672,9 +672,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def show_quick_help(self):
         QMessageBox.information(self,'StrokeScribe Studio — Quick help',
-            '1. Use the project menu or Source panel to import SVG or image artwork.\\n'
-            '2. For text, choose a font and Animate lettering.\\n'
-            '3. Select Animation, Hand, or Export in the right inspector.\\n'
+            '1. Use the Source panel (right) or the File menu to import SVG or image artwork.\\n'
+            '2. For text, open the Handwriting panel (left), choose a font and Animate lettering.\\n'
+            '3. Use the right rail for Source, Animation, Hand, Sound and Export.\\n'
             '4. Use the timeline to preview and the Export Animation button to render.\\n'
             'Undo and Redo apply to stroke-order changes.')
 
@@ -1178,6 +1178,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.keep_png.setEnabled(self.webm.isChecked() or self.mov.isChecked() or self.mp4.isChecked())
         self.mp4_background.setEnabled(self.mp4.isChecked())
         self.update_transport_icons()
+        self.update_element_panels()
 
     def show_version_info(self):
         build_file = Path(__file__).resolve().parent / 'BUILD_INFO.txt'
@@ -1209,6 +1210,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.slider.setValue(round(self.position*1000))
         self.update_project_title(self.project_title)
         self.refresh()
+        self.update_element_panels()
         self.reset_history()
         if getattr(self,'scenes',None) and not getattr(self,'_entering_scene',False):
             self.scenes[self.scene_index]['thumb']=None      # new artwork: new thumbnail
@@ -1216,7 +1218,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def change_source(self,index):
         # This chooses an intake type, never replaces the current element.
         self.image_controls.setVisible(bool(index))
-        self.import_button.setText('Import image…' if index else 'Import SVG…')
+        self.update_element_panels()
         self.refresh()
 
     # ------------------------------------------------------------ projects
@@ -1241,6 +1243,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from tools_kit import hand_to_project
         image_source=self.is_image_artwork()
         state={'title':self.project_title,'source':'image' if image_source else 'svg',
+               'element_kind':self.element_kind(),
                'drawing':drawing_to_dict(self.drawing),
                'settings':self.settings_state(),
                'hand':hand_to_project(getattr(self,'hand_builtin',False),self.hand),
@@ -1514,12 +1517,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.image_path=managed[0] if managed else info.get('path') or None
             self.image_guide=managed[1] if managed else info.get('guide') or None
             self.source_type.blockSignals(True); self.source_type.setCurrentIndex(1); self.source_type.blockSignals(False)
-            self.image_controls.show(); self.import_button.setText('Import image…')
+            self.image_controls.show()
             self.color_note.setText(self.image_result.filename+' • original colors')
         else:
             self.image_result=None;self.image_path=None;self.image_guide=None
             self.source_type.blockSignals(True); self.source_type.setCurrentIndex(0); self.source_type.blockSignals(False)
-            self.image_controls.hide(); self.import_button.setText('Import SVG…')
+            self.image_controls.hide()
             # The colour picture as saved; cleaned like a newly loaded PNG (an older
             # project may have kept a painted checkerboard or faint leftovers).
             self.color_path='from-project' if data.get('svg_color_override') else None
@@ -1629,6 +1632,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.scene_list.addItem(item)
         self.scene_list.setCurrentRow(self.scene_index)
         self.scene_list.blockSignals(False)
+        self.update_element_panels()          # the Source card shows the fresh thumbnail
         many=len(self.scenes)>1
         last=self.scene_index==len(self.scenes)-1
         self.scene_delete.setEnabled(many)
@@ -2410,6 +2414,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.progress.setRange(0,100); self.progress.setValue(0)
         self.source_type.setEnabled(False)
         self.import_button.setEnabled(False)
+        self.import_image_button.setEnabled(False)
         self.rebuild_button.setEnabled(False)
         self.export.setEnabled(False)
         self.quick_export.setEnabled(False)
@@ -2468,6 +2473,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.clear_busy()
         self.source_type.setEnabled(True)
         self.import_button.setEnabled(True)
+        self.import_image_button.setEnabled(True)
         self.rebuild_button.setEnabled(True)
         self.export.setEnabled(self.drawing is not None and not (self.worker and self.worker.isRunning()))
         self.quick_export.setEnabled(self.drawing is not None and not (self.worker and self.worker.isRunning()))

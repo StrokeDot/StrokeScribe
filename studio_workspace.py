@@ -804,6 +804,84 @@ def panel(object_name, title, hint=None):
     return frame,outer,header_l
 
 
+def build_rails(w, tabs, inspector):
+    """Icon rails beside the two side panels (outside the splitter).
+
+    Left rail: Text — shows or hides the Handwriting panel.
+    Right rail: Source, Animation, Hand, Sound, Export — opens that page in the
+    right panel; clicking the open page's icon again collapses the panel.
+    Both panels still collapse independently and remember their state.
+    """
+    from PySide6.QtWidgets import QToolButton
+    layout = w.sidebar_layout
+
+    def rail_frame():
+        frame = QFrame(); frame.setObjectName('iconRail')
+        frame.setFixedWidth(56)
+        column = QVBoxLayout(frame); column.setContentsMargins(3, 8, 3, 8); column.setSpacing(6)
+        return frame, column
+
+    def rail_button(glyph, text):
+        button = QToolButton(); button.setObjectName('railButton')
+        button.setText(glyph + '\n' + text)
+        button.setCheckable(True)
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        button.setAccessibleName(text)
+        return button
+
+    left, left_l = rail_frame()
+    w.rail_text = rail_button('Aa', 'Text')
+    w.rail_text.setToolTip('Handwriting: text and lettering')
+    w.rail_text.clicked.connect(lambda checked: layout.set_expanded('source', checked))
+    left_l.addWidget(w.rail_text)
+    left_l.addStretch(1)
+
+    right, right_l = rail_frame()
+    w.rail_buttons = {}
+    for key, glyph, text in RAIL:
+        button = rail_button(glyph, text)
+        button.setToolTip(text + ' panel')
+        button.clicked.connect(lambda checked=False, k=key: w.show_right_panel(k, toggle=True))
+        right_l.addWidget(button)
+        w.rail_buttons[key] = button
+    right_l.addStretch(1)
+
+    w.workspace_row_layout.insertWidget(0, left)
+    w.workspace_row_layout.addWidget(right)
+    w.left_rail, w.right_rail = left, right
+
+    def show_right_panel(key, toggle=False):
+        index = TABS[key]
+        if toggle and layout.expanded['inspector'] and tabs.currentIndex() == index:
+            layout.set_expanded('inspector', False)
+        else:
+            tabs.setCurrentIndex(index)
+            layout.set_expanded('inspector', True)
+        sync()
+
+    def show_handwriting_panel():
+        layout.set_expanded('source', True)
+        sync()
+        w.text.setFocus()
+
+    def sync(*_):
+        inspector.title_label.setText(tabs.tabText(tabs.currentIndex()))
+        w.rail_text.blockSignals(True)
+        w.rail_text.setChecked(bool(layout.expanded['source']))
+        w.rail_text.blockSignals(False)
+        for key, button in w.rail_buttons.items():
+            button.blockSignals(True)
+            button.setChecked(bool(layout.expanded['inspector']) and tabs.currentIndex() == TABS[key])
+            button.blockSignals(False)
+
+    w.show_right_panel = show_right_panel
+    w.show_handwriting_panel = show_handwriting_panel
+    w.sync_rails = sync
+    tabs.currentChanged.connect(sync)
+    layout.listeners.append(sync)
+    sync()
+
+
 class LineList(QListWidget):
     """Line list that reports when lines were dragged to a new place."""
     dropped=Signal()
@@ -821,7 +899,11 @@ class LineList(QListWidget):
 
 
 # Inspector tabs, in order.
-TABS = {'animation': 0, 'hand': 1, 'sound': 2, 'export': 3}
+TABS = {'animation': 0, 'hand': 1, 'sound': 2, 'export': 3, 'source': 4}
+# The right rail shows Source first; the tab widget keeps it last so the
+# long-standing indexes of the other panels never change.
+RAIL = (('source', '▣', 'Source'), ('animation', '▶', 'Animation'), ('hand', '✋', 'Hand'),
+        ('sound', '♪', 'Sound'), ('export', '⇪', 'Export'))
 
 
 class WheelGuard(QObject):
@@ -904,6 +986,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     bar_l.addWidget(w.project_menu)
     w.output_summary=label('1920 × 1080  •  30 fps','micro')
     bar_l.addWidget(w.output_summary)
+    # Not shown in the top bar: every project action is in the File menu, and
+    # resolution / frame rate are set in Export. The widgets stay (hidden) so
+    # existing code that keeps them up to date continues to work.
+    w.project_menu.hide()
+    w.output_summary.hide()
     w.undo_button=QPushButton('↶')
     w.undo_button.setToolTip('Undo (Ctrl+Z): settings and line changes')
     w.undo_button.setObjectName('subtle')
@@ -982,23 +1069,74 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.vertical_splitter=QSplitter(Qt.Orientation.Vertical)
     w.vertical_splitter.setObjectName('timelineSplit')
     w.vertical_splitter.setChildrenCollapsible(False)
-    w.vertical_splitter.addWidget(split)
+    # Icon rails sit outside the splitter, so they stay visible when either
+    # side panel is collapsed (they are how a closed panel is reopened).
+    w.workspace_row=QWidget()
+    w.workspace_row_layout=QHBoxLayout(w.workspace_row)
+    w.workspace_row_layout.setContentsMargins(0,0,0,0)
+    w.workspace_row_layout.setSpacing(2)
+    w.workspace_row_layout.addWidget(split,1)
+    w.vertical_splitter.addWidget(w.workspace_row)
     outer.addWidget(w.vertical_splitter,1)
 
-    # Source and stroke order (left).
-    asset_panel,asset_outer,_=panel('assetPanel','Source','Artwork & paths')
+    # Handwriting (left): text and lettering only. Imports live in Source (right).
+    asset_panel,asset_outer,_=panel('assetPanel','Handwriting','Text & lettering')
+    w.handwriting_panel=asset_panel
     asset_panel.setMinimumWidth(225)
     asset_panel.setMaximumWidth(460)
     asset=QWidget();asset.setObjectName('panelBody')
     asset_l=QVBoxLayout(asset);asset_l.setContentsMargins(12,10,12,12)
     asset_l.setSpacing(9)
-    asset_l.addWidget(caption('Import artwork or generate single-line lettering.'))
+
+    # Source (right rail): every SVG / PNG / image import, the selected
+    # element's card, its transform and appearance, and image-to-drawing.
+    source_page=QWidget();source_page.setObjectName('panelBody')
+    w.source_page=source_page
+    src_l=QVBoxLayout(source_page);src_l.setContentsMargins(9,12,9,8)
+    src_l.setSpacing(9)
+    src_l.addWidget(caption('Import an SVG drawing or a picture (PNG, JPG, WebP, BMP).'))
+    # The mode combo is internal state now: the two buttons below choose the
+    # kind of import, and the selected element decides which settings show.
     w.source_type=QComboBox(); w.source_type.addItems(['SVG source','Image source'])
-    asset_l.addWidget(w.source_type)
+    w.source_type.setVisible(False)
+    src_l.addWidget(w.source_type)
     w.import_button=QPushButton('Import SVG…')
     w.import_button.setObjectName('primary')
-    w.import_button.clicked.connect(w.load)
-    asset_l.addWidget(w.import_button)
+    w.import_button.setToolTip('Import an SVG drawing. You can add it to the project or replace the selected element.')
+    w.import_button.clicked.connect(lambda checked=False: w.open_svg_source())
+    src_l.addWidget(w.import_button)
+    w.import_image_button=QPushButton('Import image…')
+    w.import_image_button.setToolTip('Import a PNG, JPG, WebP or BMP picture; StrokeScribe turns it into line art and paints its colours.')
+    w.import_image_button.clicked.connect(lambda checked=False: w.open_image_source())
+    src_l.addWidget(w.import_image_button)
+    # The selected element, as it really is: an imported file (thumbnail and
+    # its real name) or native handwriting (no thumbnail, no file name).
+    w.source_card=QFrame();w.source_card.setObjectName('monitorWell')
+    w.source_card.setMinimumWidth(0)
+    w.source_card.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
+    card_l=QHBoxLayout(w.source_card);card_l.setContentsMargins(6,6,6,6);card_l.setSpacing(8)
+    w.source_card_thumb=QLabel();w.source_card_thumb.setFixedSize(72,48)
+    w.source_card_thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    card_l.addWidget(w.source_card_thumb)
+    card_text=QVBoxLayout();card_text.setSpacing(2)
+    w.source_card_title=label('','panelTitle')
+    w.source_card_detail=caption('')
+    for text in (w.source_card_title,w.source_card_detail):
+        text.setWordWrap(True);text.setMinimumWidth(0)
+        text.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
+    card_text.addWidget(w.source_card_title)
+    card_text.addWidget(w.source_card_detail)
+    w.edit_handwriting_button=QPushButton('Edit in Handwriting panel')
+    w.edit_handwriting_button.setObjectName('subtle')
+    w.edit_handwriting_button.clicked.connect(lambda checked=False: w.show_handwriting_panel())
+    card_text.addWidget(w.edit_handwriting_button)
+    card_l.addLayout(card_text,1)
+    src_l.addWidget(w.source_card)
+    # Transform (imported artwork) — filled with the shared placement group.
+    w.source_transform_heading=label('TRANSFORM')
+    src_l.addWidget(w.source_transform_heading)
+    w.source_transform_slot=QVBoxLayout();w.source_transform_slot.setSpacing(6)
+    src_l.addLayout(w.source_transform_slot)
     # Image settings use the same compact vertical field rhythm as lettering.
     # Unlike a wrapped QFormLayout, these groups cannot impose a wide label
     # column on the Source viewport when its splitter is dragged narrower.
@@ -1068,7 +1206,22 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.export_svg_button.clicked.connect(lambda checked=False: w.export_svg())
     image_form.addWidget(w.export_svg_button)
     w.image_controls.hide()
-    asset_l.addWidget(w.image_controls)
+    # Appearance and matching-colour fields are built with the Animation
+    # controls further down; their places in Source are reserved here.
+    w.source_appearance_heading=label('APPEARANCE')
+    src_l.addWidget(w.source_appearance_heading)
+    w.source_appearance_slot=QVBoxLayout();w.source_appearance_slot.setSpacing(6)
+    src_l.addLayout(w.source_appearance_slot)
+    w.source_colors_heading=label('MATCHING COLORS')
+    src_l.addWidget(w.source_colors_heading)
+    w.source_colors_slot=QVBoxLayout();w.source_colors_slot.setSpacing(6)
+    src_l.addLayout(w.source_colors_slot)
+    w.image_drawing_heading=label('IMAGE TO DRAWING')
+    src_l.addWidget(w.image_drawing_heading)
+    src_l.addWidget(w.image_controls)
+    w.source_note_slot=QVBoxLayout()
+    src_l.addLayout(w.source_note_slot)
+    src_l.addStretch(1)
     asset_l.addWidget(label('TEXT / HANDWRITING'))
     w.text=QPlainTextEdit('Hello world!')
     w.text.setMaximumHeight(74)
@@ -1121,6 +1274,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     asset_l.addWidget(w.generate_text)
     w.download_font=QPushButton('Download selected font')
     w.download_font.clicked.connect(w.install_selected_font)
+    asset_l.addWidget(label('FONTS'))
     asset_l.addWidget(w.download_font)
     from font_library import STARTER_FONTS as _ALL_FONTS
     w.download_starters=QPushButton(f'Download all {len(_ALL_FONTS)} fonts')
@@ -1137,12 +1291,21 @@ def build_workspace(w, Canvas, BRAND_ICON):
     asset_l.addWidget(browse_fonts)
     w.font_note=caption('Built-in pen works offline. Google Fonts are downloaded only when requested; license files are saved too.')
     asset_l.addWidget(w.font_note)
+    # Placement (lettering only) — filled with the shared placement group.
+    w.handwriting_placement_heading=label('PLACEMENT')
+    asset_l.addWidget(w.handwriting_placement_heading)
+    w.handwriting_placement_slot=QVBoxLayout();w.handwriting_placement_slot.setSpacing(6)
+    asset_l.addLayout(w.handwriting_placement_slot)
+    asset_l.addStretch(1)
+    # Lines & order works for every kind of element, so it lives in Animation.
+    w.lines_box=QWidget()
+    lines_box_l=QVBoxLayout(w.lines_box);lines_box_l.setContentsMargins(0,0,0,0);lines_box_l.setSpacing(8)
     w.lines_toggle=QPushButton('▸ Lines & order')
     w.lines_toggle.setObjectName('subtle')
     w.lines_toggle.setCheckable(True)
     w.lines_toggle.setChecked(False)
     w.lines_toggle.setToolTip('Optional detailed line-by-line editing. Click to expand.')
-    asset_l.addWidget(w.lines_toggle)
+    lines_box_l.addWidget(w.lines_toggle)
     w.lines_group=QWidget()
     lines_l=QVBoxLayout(w.lines_group)
     lines_l.setContentsMargins(0,0,0,0); lines_l.setSpacing(8)
@@ -1192,9 +1355,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.lines_toggle.toggled.connect(
         lambda opened: (w.lines_group.setVisible(opened),
                         w.lines_toggle.setText('▾ Lines & order' if opened else '▸ Lines & order')))
-    asset_l.addWidget(w.lines_group)
+    lines_box_l.addWidget(w.lines_group)
     w.note=caption('Ready.')
-    asset_l.addWidget(w.note)
+    w.source_note_slot.addWidget(w.note)
     asset_outer.addWidget(scroll_view(asset),1)
     split.addWidget(asset_panel)
 
@@ -1291,7 +1454,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.artwork_size=w.number(25,200,100,5)
     w.artwork_size.setSuffix('%')
     w.artwork_size.setToolTip('Scale only the artwork, not the hand. The hand size stays controlled by Hand Size. Above 100% may crop the artwork.')
-    a.addRow('Artwork size',w.artwork_size)
+    # Size and position are one setting with two homes: Handwriting → Placement
+    # for lettering, Source → Transform for imported artwork (moved on select).
+    w.placement_box=QWidget()
+    w.placement_box.setMinimumWidth(0)
+    placement_l=QVBoxLayout(w.placement_box);placement_l.setContentsMargins(0,0,0,0);placement_l.setSpacing(5)
+    placement_l.addWidget(label('Size','note'))
+    placement_l.addWidget(w.artwork_size)
     # Position on the page: drag the picture on the preview, or type it here.
     w.picture_x=w.number(-100,100,0,1); w.picture_x.setSuffix('%')
     w.picture_y=w.number(-100,100,0,1); w.picture_y.setSuffix('%')
@@ -1311,7 +1480,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     xy.addWidget(w.picture_x,1);xy.addWidget(w.picture_y,1)
     position.addLayout(xy)
     position.addWidget(w.picture_center)
-    a.addRow(position)
+    placement_l.addLayout(position)
+    w.source_transform_slot.addWidget(w.placement_box)    # moved by kind on select
     w.pen_ease=QComboBox()
     w.pen_ease.addItems(['Constant speed','Natural (ease in and out)'])
     w.pen_ease.setToolTip('Natural: every line starts and ends a little slower, like a real hand.')
@@ -1338,19 +1508,22 @@ def build_workspace(w, Canvas, BRAND_ICON):
     animation_l.addWidget(label('COLOR & PAINTING'))
     w.load_color_button=QPushButton('Load matching colored PNG…')
     w.load_color_button.clicked.connect(w.load_color)
-    animation_l.addWidget(w.load_color_button)
+    w.source_colors_slot.addWidget(w.load_color_button)
     w.clean_color=QCheckBox('Clean the PNG\'s background')
     w.clean_color.setChecked(True)
     w.clean_color.setToolTip('Makes the transparency complete: a painted checkerboard ("fake transparency") '
                              'or a plain sheet behind the artwork, and faint leftovers, become transparent. '
                              'Parts inside the artwork are kept.')
     w.clean_color.toggled.connect(lambda checked: w.reload_color())
-    animation_l.addWidget(w.clean_color)
-    w.use_color=QCheckBox('Reveal original artwork after drawing')
+    w.source_colors_slot.addWidget(w.clean_color)
+    # Short label: it sits under the MATCHING COLORS heading in the narrow
+    # Source column (the long wording needed 251 px with Linux fonts).
+    w.use_color=QCheckBox('Reveal colors after drawing')
+    w.use_color.setToolTip('Reveal the original artwork (the matching colored PNG) after the lines are drawn.')
     w.use_color.setEnabled(False)
-    animation_l.addWidget(w.use_color)
+    w.source_colors_slot.addWidget(w.use_color)
     w.color_note=caption('No original PNG loaded')
-    animation_l.addWidget(w.color_note)
+    w.source_colors_slot.addWidget(w.color_note)
     w.blend_mode=QComboBox()
     from blend_modes import MODES as _BLEND_MODES
     w.blend_mode.addItems(_BLEND_MODES)
@@ -1359,8 +1532,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
         'Multiply makes white paper disappear visually over that background. '
         'An alpha/transparent export still needs background cleanup if you '
         'want to remove white pixels permanently.')
-    # These remain genuine QWidgets to preserve legacy project settings,
-    # but all appearance adjustments live together in the Element Editor.
+    # Shown in Source → Appearance for imported artwork; the Element Editor
+    # keeps editing the same fields (lettering included), as before.
     blend_form=form_layout()
     blend_form.addRow('Blend mode',w.blend_mode)
     w.artwork_opacity=w.number(0,100,100,1)
@@ -1372,10 +1545,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     blend_form.addRow('Paper tolerance',w.paper_tolerance)
     w.paper_softness=w.number(0,50,8,1)
     blend_form.addRow('Edge softness',w.paper_softness)
-    animation_l.addLayout(blend_form)
-    for field in (w.blend_mode,w.artwork_opacity,w.paper_cleanup,
-                  w.paper_tolerance,w.paper_softness):
-        blend_form.setRowVisible(field,False)
+    w.source_appearance_slot.addLayout(blend_form)
+    w.appearance_form=blend_form
     a2=form_layout();animation_l.addLayout(a2)
     w.reveal_mode=QComboBox()
     w.reveal_mode.addItems(['Brush painting','Adaptive Hand Painting','Zigzag sweep',
@@ -1428,6 +1599,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.eraser=QComboBox();w.eraser.addItems(['Built-in eraser','Pen hand'])
     w.eraser.setToolTip('What is shown rubbing: the built-in eraser, or the same hand as for drawing.')
     a3.addRow('Eraser shown',w.eraser)
+    animation_l.addWidget(w.lines_box)
     animation_l.addStretch(1)
     tabs.addTab(scroll_view(animation),'Animation')
 
@@ -1658,6 +1830,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     sound_l.addWidget(w.fit_audio_button)
     sound_l.addStretch(1)
     tabs.insertTab(TABS['sound'],scroll_view(sound),'Sound')      # before Export
+    tabs.insertTab(TABS['source'],scroll_view(source_page),'Source')
+    # The rail replaces the tab strip; the panel title names the open page.
+    tabs.tabBar().hide()
+    inspector.title_label.setText(tabs.tabText(tabs.currentIndex()))
     split.addWidget(inspector)
     split.setStretchFactor(0,0)
     split.setStretchFactor(1,1)
@@ -1665,7 +1841,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     split.setSizes([290,850,330])
     from workspace_layout import SidebarController
     w.sidebar_layout=SidebarController(w,split,asset_panel,inspector,
-                                       w.source_sidebar_button,w.inspector_sidebar_button)
+                                       w.source_sidebar_button,w.inspector_sidebar_button,
+                                       names={'source':'Handwriting','inspector':'right'})
+    build_rails(w,tabs,inspector)
 
     # Time-based workflow remains visible whichever Inspector tab is open.
     timeline,timeline_outer,timeline_head=panel('timelinePanel','Timeline','Click or drag to scrub')
@@ -1830,6 +2008,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.preserve_colors.toggled.connect(w.refresh)
     w.image_duration.valueChanged.connect(w.refresh)
     w.source_type.currentIndexChanged.connect(w.change_source)
+    w.text.textChanged.connect(lambda: w.update_element_panels())
     w.fps.valueChanged.connect(w.sync_workspace)
     w.webm.toggled.connect(w.sync_workspace)
     w.mov.toggled.connect(w.sync_workspace)
@@ -1839,6 +2018,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
         getattr(w,name).setAccessibleName(name.replace('_',' '))
     w.stage_timeline.setAccessibleName('Animation timeline: click to scrub; double-click Draw or Paint to edit source; Ctrl+Shift+D or P edits selected source')
     fit_to_width(asset,stacked=True)       # labels above fields in the narrow column
+    fit_to_width(source_page,stacked=True)
     for content in (animation,hand,output,sound):
         fit_to_width(content,stacked=False)
         for form in content.findChildren(QFormLayout):

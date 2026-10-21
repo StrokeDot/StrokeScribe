@@ -45,7 +45,23 @@ class InspectorSceneSwitchGeometryTests(unittest.TestCase):
         APP.processEvents()
         APP.processEvents()
 
+    def area_of(self, widget):
+        """The right-panel page holding a control, opened (one page at a time).
+
+        Since experimental.76, Size and Position sit in Source → Transform for
+        imported artwork (the sample is an SVG) instead of the Animation page.
+        """
+        tabs=self.w.inspector_tabs
+        for i in range(tabs.count()):
+            if tabs.widget(i).isAncestorOf(widget):
+                if tabs.currentIndex()!=i:
+                    tabs.setCurrentIndex(i)
+                    APP.processEvents()
+                return tabs.widget(i)
+        return self.area
+
     def assert_inside_inspector(self, widget, name):
+        self.area=self.area_of(widget)
         self.area.ensureWidgetVisible(widget, 0, 0)
         APP.processEvents()
         self.assertTrue(widget.isVisible(), name+" is not visible")
@@ -72,14 +88,19 @@ class InspectorSceneSwitchGeometryTests(unittest.TestCase):
                     self.switch_element_type(image)
                     # This is where Experimental.72 could still paint controls
                     # outside the right edge of the visible Inspector.
-                    self.assertLessEqual(self.area.widget().width(),
-                                         self.area.viewport().width()+2,
-                                         "Inspector contents wider than viewport")
+                    for page in (0,4):          # Animation and Source
+                        area=w.inspector_tabs.widget(page)
+                        w.inspector_tabs.setCurrentIndex(page)
+                        APP.processEvents()
+                        self.assertLessEqual(area.widget().width(),
+                                             area.viewport().width()+2,
+                                             "Inspector contents wider than viewport")
                     for name in ("duration","speed","thickness",
                                  "artwork_size","picture_x","picture_y",
                                  "pause_after","pen_ease","entrance",
                                  "reveal_mode"):
                         self.assert_inside_inspector(getattr(w,name), name)
+                    self.area=self.area_of(w.picture_x)
                     x=w.picture_x.mapTo(self.area.viewport(),QPoint(0,0)).x()
                     y=w.picture_y.mapTo(self.area.viewport(),QPoint(0,0)).x()
                     self.assertLess(x+w.picture_x.width(),y,
@@ -109,6 +130,7 @@ class InspectorSceneSwitchGeometryTests(unittest.TestCase):
         # The drawing form must not rewrap when image-specific rows change.
         for image in (False,True,False):
             self.switch_element_type(image)
+            self.area=self.area_of(w.duration)
             forms=self.area.widget().findChildren(QFormLayout)
             self.assertGreater(len(forms),2)
             for form in forms:
@@ -116,7 +138,9 @@ class InspectorSceneSwitchGeometryTests(unittest.TestCase):
                                  QFormLayout.RowWrapPolicy.DontWrapRows)
             self.assertTrue(w.duration.isVisible())
             self.assertTrue(w.speed.isVisible())
+            self.area_of(w.picture_center)
             self.assertTrue(w.picture_center.isVisible())
+            self.area=self.area_of(w.duration)
             self.assert_inside_inspector(w.duration,"Draw time")
             self.assert_inside_inspector(w.speed,"Playback speed")
 

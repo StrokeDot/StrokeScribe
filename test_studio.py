@@ -30,9 +30,17 @@ class StudioTests(unittest.TestCase):
         w=self.window
         self.assertIn('Studio',w.windowTitle())
         self.assertIn('Prototype',w.windowTitle())
-        self.assertEqual(w.inspector_tabs.count(),4)
-        self.assertEqual([w.inspector_tabs.tabText(i) for i in range(4)],
-                         ['Animation','Hand','Sound','Export'])
+        # Source joined the right panel as the last page (the rail shows it first),
+        # so the long-standing indexes of the other pages are unchanged.
+        self.assertEqual(w.inspector_tabs.count(),5)
+        self.assertEqual([w.inspector_tabs.tabText(i) for i in range(5)],
+                         ['Animation','Hand','Sound','Export','Source'])
+        self.assertFalse(w.inspector_tabs.tabBar().isVisible())
+        self.assertEqual(list(w.rail_buttons),['source','animation','hand','sound','export'])
+        self.assertTrue(w.left_rail.isVisible() and w.right_rail.isVisible())
+        # No project selector or resolution/FPS in the top bar any more.
+        self.assertFalse(w.project_menu.isVisible())
+        self.assertFalse(w.output_summary.isVisible())
         split=w.findChild(QSplitter,'workspaceSplit')
         self.assertIsNotNone(split)
         self.assertEqual(split.count(),3)
@@ -153,7 +161,10 @@ class StudioTests(unittest.TestCase):
         w.source_type.setCurrentIndex(1)
         APP.processEvents()
         self.assertIs(w.drawing,actual)
-        self.assertEqual(w.import_button.text(),'Import image…')
+        w.show_right_panel('source')
+        APP.processEvents()
+        self.assertEqual(w.import_button.text(),'Import SVG…')       # two fixed buttons now
+        self.assertEqual(w.import_image_button.text(),'Import image…')
         self.assertTrue(w.image_controls.isVisible())
         self.assertTrue(w.export.isEnabled())  # the current SVG is still available
         w.source_type.setCurrentIndex(0)

@@ -28,11 +28,17 @@ class SidebarController(QObject):
     in the Program header remains available to reopen either sidebar.
     """
 
-    def __init__(self, owner, splitter, source, inspector, source_button, inspector_button):
+    def __init__(self, owner, splitter, source, inspector, source_button, inspector_button, names=None):
         super().__init__(owner)
         self.splitter = splitter
         self.panels = {'source': source, 'inspector': inspector}
         self.buttons = {'source': source_button, 'inspector': inspector_button}
+        # Display names for tooltips; the 'source'/'inspector' keys stay the
+        # same so saved widths and open/closed states carry over.
+        self.names = {'source': 'Source', 'inspector': 'Inspector'}
+        self.names.update(names or {})
+        # Called after every show/hide (e.g. to keep the icon rails in step).
+        self.listeners = []
         self.settings = QSettings('StrokeScribe', 'Studio')
         self.widths = {
             'source': _width(self.settings.value('workspace/source_width', DEFAULT_SOURCE),
@@ -69,10 +75,15 @@ class SidebarController(QObject):
             button.setChecked(shown)
             button.setText(('◀' if shown else '▶') if side == 'source' else
                            ('▶' if shown else '◀'))
-            description = ('Hide ' if shown else 'Show ') + side.title() + ' panel'
+            description = ('Hide ' if shown else 'Show ') + self.names[side] + ' panel'
             button.setToolTip(description)
             button.setAccessibleName(description)
             button.blockSignals(False)
+        for listener in list(getattr(self, 'listeners', ())):
+            try:
+                listener()
+            except Exception:
+                pass
 
     def _resize(self):
         left = self.widths['source'] if self.expanded['source'] else 0

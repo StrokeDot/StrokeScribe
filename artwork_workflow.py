@@ -10,6 +10,77 @@ class ArtworkWorkflow:
     def is_image_artwork(self):
         return getattr(self.drawing,'source_kind',None)=='image'
 
+    def element_kind(self):
+        """'lettering', 'svg' or 'image' for the element being edited (UI state only)."""
+        from element_kinds import kind_of_drawing
+        return kind_of_drawing(self.drawing)
+
+    def update_element_panels(self):
+        """Show what belongs to the selected element's kind in Source and Handwriting.
+
+        Lettering: Placement (size, position) in Handwriting; Source shows a
+        handwriting card with no thumbnail and no file name. Imported SVG /
+        image: thumbnail, its real name, Transform and Appearance in Source.
+        Only visibility and placement of existing controls change here.
+        """
+        if not hasattr(self,'source_card') or not hasattr(self,'placement_box'):
+            return
+        from element_kinds import IMAGE,LETTERING,SVG,source_card
+        kind=self.element_kind() if self.drawing is not None else None
+        lettering=kind==LETTERING
+        imported=kind in (SVG,IMAGE)
+        # One size/position group, two homes; never shown twice.
+        target=self.handwriting_placement_slot if lettering else self.source_transform_slot
+        if target.indexOf(self.placement_box)<0:
+            for slot in (self.handwriting_placement_slot,self.source_transform_slot):
+                slot.removeWidget(self.placement_box)
+            target.addWidget(self.placement_box)
+        self.placement_box.setVisible(kind is not None)
+        self.handwriting_placement_heading.setVisible(lettering)
+        self.source_transform_heading.setVisible(imported)
+        # The element card.
+        self.source_card.setVisible(kind is not None)
+        if lettering:
+            heading,detail=source_card(LETTERING,text=self.text.toPlainText())
+        elif kind==IMAGE and getattr(self,'image_result',None) is not None:
+            heading,detail=source_card(IMAGE,filename=self.image_result.filename)
+        elif imported:
+            heading,detail=source_card(kind,title=getattr(self,'project_title',''))
+        else:
+            heading,detail='',''
+        self.source_card_title.setText(heading)
+        self.source_card_detail.setText(detail)
+        self.edit_handwriting_button.setVisible(lettering)
+        self.source_card_thumb.setVisible(imported)
+        self.source_card_thumb.clear()
+        if imported:
+            # The scene strip's own thumbnail; no extra rendering here.
+            thumb=None
+            if 0<=getattr(self,'scene_index',-1)<len(getattr(self,'scenes',[])):
+                thumb=self.scenes[self.scene_index].get('thumb')
+            if thumb is not None and not thumb.isNull():
+                from PySide6.QtGui import QPixmap
+                self.source_card_thumb.setPixmap(QPixmap.fromImage(thumb).scaled(
+                    self.source_card_thumb.size(),Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation))
+        # Appearance: blend and opacity for imported artwork; paper cleanup
+        # only affects images. (The Element Editor keeps all of them.)
+        form=self.appearance_form
+        self.source_appearance_heading.setVisible(imported)
+        for field in (self.blend_mode,self.artwork_opacity):
+            form.setRowVisible(field,imported)
+        for field in (self.paper_cleanup,self.paper_tolerance,self.paper_softness):
+            form.setRowVisible(field,kind==IMAGE)
+        # Matching colors (SVG) / Change original image (image).
+        self.source_colors_heading.setVisible(imported)
+        self.source_colors_heading.setText('MATCHING COLORS' if kind==SVG else 'ORIGINAL IMAGE')
+        self.load_color_button.setVisible(imported)
+        self.color_note.setVisible(imported)
+        self.clean_color.setVisible(kind==SVG)
+        self.use_color.setVisible(kind==SVG)
+        # Image to drawing follows the existing image controls.
+        self.image_drawing_heading.setVisible(not self.image_controls.isHidden())
+
     def _artwork_busy(self):
         return bool((self.builder and self.builder.isRunning()) or
                     (self.worker and self.worker.isRunning()) or getattr(self,'_pending_artwork',None))
@@ -155,7 +226,6 @@ class ArtworkWorkflow:
             self.source_type.setCurrentIndex(1 if result is not None else 0)
             self.source_type.blockSignals(False)
             self.image_controls.setVisible(result is not None)
-            self.import_button.setText('Import image…' if result is not None else 'Import SVG…')
             self.use_color.blockSignals(True);self.use_color.setChecked(False);self.use_color.blockSignals(False)
             if result is not None:
                 self.image_animation.blockSignals(True);self.image_animation.setCurrentIndex(0);self.image_animation.blockSignals(False)
