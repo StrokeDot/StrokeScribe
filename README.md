@@ -9,6 +9,17 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Per-element appearance and paper cleanup (v0.5.3-experimental.75)
+
+**In-app update for existing Experimental.73 installations:** Use File → Update StrokeScribe → Check for updates, then Update. This is a source-only update on the existing experimental update channel, not a Windows installer. Python requirements are unchanged. Save your project first; the transactional updater retains a rollback copy.
+
+- **Element Editor → Appearance & Blending:** per-element Blend Mode, opacity (0–100%), optional Clean white/paper background, adjustable tolerance and edge softness.
+- Blend/opacity affect only that artwork element. When multiple elements overlap, the moving drawing/painting hand is rendered as a separate normal-opacity overlay instead of sharing Multiply/Screen and other artwork modes.
+- Opt-in border-connected near-white cleanup operates on a derived display image, not the original source, and does not change stroke paths or paint timing. Enclosed white areas are preserved, but very pale details connected to the outer edge can be affected if tolerance is too high.
+- The Element Editor preview uses the chosen canvas backdrop for blend calculations; the main preview shows previously composed artwork. Older projects default to full opacity with cleanup OFF.
+- Linux/Windows appearance and rendering checks and project-save tests were run on the candidate code. Real Windows display scaling, user artwork, and external video-editor playback still need visual confirmation.
+- **Not included in this in-app source update:** the native Windows executable identity / file-association features from Experimental.74. Those require separate Windows-host deployment; this update deliberately leaves the existing executable and installation layout unchanged.
+
 ## Inspector control stability on element switches (v0.5.3-experimental.73)
 
 Targeted repair for Inspector animation controls that could move outside the visible right panel when switching between a handwriting and image element. The shared Inspector form recalculated its width based on source-dependent settings; the Position X/Y row also demanded space for two spinboxes beside its label.
