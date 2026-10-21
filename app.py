@@ -2763,6 +2763,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if image.isNull(): return
             self.hand=image; self.hand_builtin=name; self.hand_path=None
             self.hand_name.setText('Hand: '+tools_kit.LABELS[name])
+        if hasattr(self,'builtin_tool') and name in ('hand','pencil','marker'):
+            self.builtin_tool.blockSignals(True)
+            self.builtin_tool.setCurrentIndex(('hand','pencil','marker').index(name))
+            self.builtin_tool.blockSignals(False)
         _,tip,size=tools_kit.BUILTIN[name]
         for widget,value in ((self.ax,tip[0]),(self.ay,tip[1]),(self.handsize,size)):
             widget.blockSignals(True); widget.setValue(value); widget.blockSignals(False)
@@ -2773,7 +2777,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import tools_kit
         choice=self.paint_hand.currentText()
         library=choice==tools_kit.PAINT_LIBRARY
-        self.paint_hand_choose.setVisible(library)
+        if hasattr(self,'paint_hand_form'):
+            self.paint_hand_form.setRowVisible(self.paint_hand_choose,library)
+            self.paint_hand_form.setRowVisible(self.paint_hand_name,library)
+        else:
+            self.paint_hand_choose.setVisible(library)
         # "Same as drawing hand" paints with the drawing hand at its own size,
         # so a separate size only exists for a different painting hand.
         self.paint_hand_size.setEnabled(True)

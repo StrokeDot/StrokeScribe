@@ -9,6 +9,12 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Adaptive Hand Painting restored; Hand panel rows (v0.5.3-experimental.82)
+
+- **Adaptive Hand Painting is back to how it painted up to experimental.62.** In .63 SVG import switched to curvature-adaptive sampling (the Arthur headset went from 59,320 to 3,375 points), and Adaptive plans its brush route from those points, so the route changed. SVGs now use the original dense sampling again; only drawings that would exceed 500,000 points use the newer sampling. Verified frame by frame against .58.
+- **Hand panel:** everything in the label column — Size, Built-in (Hand / Pencil / Marker), Your own (My PNG… / Library…), Show while drawing, Pen tip X/Y, Pen tip (Find / Click to set…); Paints with, Size, Show while painting; Left-handed.
+- **Sound:** a red trash button removes a chosen sound.
+
 ## Image, Hand and Sound aligned like Animation (v0.5.3-experimental.81)
 
 - **Image, Hand and Sound** use the Animation panel's layout: every label on the left in one column, every field beside it. Image: Scale, Position X, Position Y, Blend mode, Opacity and the line-art choices (Animation, Drawing style, Detail) are label-left rows. Sound: Pencil / Brush / Eraser rows with *Add sound…* and a small remove button, then Volume.

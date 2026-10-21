@@ -107,7 +107,14 @@ def align_forms(content, label_width):
                 heading.setFixedWidth(label_width)
             field = form.itemAt(index, QFormLayout.ItemRole.FieldRole)
             control = field.widget() if field else None
-            if control is not None and not isinstance(control, (QLabel, QCheckBox)):
+            if isinstance(control, QCheckBox):
+                # A checkbox row: fill the field column, but never ask for its
+                # full label width (an explicit 1px minimum wins over the hint).
+                policy = control.sizePolicy()
+                policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+                control.setSizePolicy(policy)
+                control.setMinimumWidth(1)
+            elif control is not None and not isinstance(control, QLabel):
                 # Fields fill the row like the Animation panel's (the form only
                 # grows Expanding fields).
                 policy = control.sizePolicy()
@@ -1870,36 +1877,40 @@ def build_workspace(w, Canvas, BRAND_ICON):
         hand_l.addLayout(row)
         return row
     w.hand_pictures={}
-    # 1. The drawing hand.
+
+    def pair(*buttons):
+        """Buttons side by side in the field column of a form row."""
+        box=QWidget();box.setMinimumWidth(0)
+        row=QHBoxLayout(box);row.setContentsMargins(0,0,0,0);row.setSpacing(6)
+        for button in buttons:
+            row.addWidget(button,1)
+        return box
+
+    # 1. The drawing hand: one label column, like the Animation panel.
     hand_l.addWidget(label('1 · DRAWING HAND (the lines)'))
     picture('draw')
     w.hand_name=caption('Hand: none')
     hand_l.addWidget(w.hand_name)
-    # Size of the drawing hand, shown in % (the stored value stays Hand size).
-    draw_size=form_layout();hand_l.addLayout(draw_size)
+    h=form_layout();hand_l.addLayout(h)
     w.hand_size_pct=QSpinBox();w.hand_size_pct.setRange(2,80);w.hand_size_pct.setSuffix('%')
     w.hand_size_pct.setToolTip('Size of the drawing hand.')
-    draw_size.addRow('Size',w.hand_size_pct)
-    builtin_row=QHBoxLayout()
-    for text,name,tip in (('Built-in hand','hand','Hand holding a pen (default).'),
-                          ('Pencil','pencil','A pencil on its own, no hand.'),
-                          ('Marker','marker','A marker on its own, no hand.')):
-        button=QPushButton(text); button.setToolTip(tip)
-        button.clicked.connect(lambda checked=False,n=name: w.use_builtin_tool(n))
-        builtin_row.addWidget(button)
-    hand_l.addLayout(builtin_row)
-    own_row=QHBoxLayout()
-    load_hand=QPushButton('My own hand PNG…')
-    load_hand.setToolTip('A transparent PNG of a hand holding a pen.')
+    h.addRow('Size',w.hand_size_pct)
+    w.builtin_tool=QComboBox()
+    w.builtin_tool.addItems(['Hand with pen','Pencil','Marker'])
+    w.builtin_tool.setToolTip('The built-in hand holding a pen (default), or a pencil or marker on its own.')
+    w.builtin_tool.activated.connect(
+        lambda index: w.use_builtin_tool(('hand','pencil','marker')[index]))
+    h.addRow('Built-in',w.builtin_tool)
+    load_hand=QPushButton('My PNG…')
+    load_hand.setToolTip('Your own transparent PNG of a hand holding a pen.')
     load_hand.clicked.connect(w.loadhand)
-    own_row.addWidget(load_hand)
-    hands_library=QPushButton('Hands library…')
+    hands_library=QPushButton('Library…')
+    hands_library.setToolTip('Choose a hand from your Hands library.')
     hands_library.clicked.connect(lambda checked=False: w.open_library('hands'))
-    own_row.addWidget(hands_library)
-    hand_l.addLayout(own_row)
-    w.showhand=QCheckBox('Show it while drawing the lines')
-    w.showhand.setChecked(True);hand_l.addWidget(w.showhand)
-    h=form_layout();hand_l.addLayout(h)
+    h.addRow('Your own',pair(load_hand,hands_library))
+    w.showhand=QCheckBox('Show while drawing')
+    w.showhand.setToolTip('Show the hand while it draws the lines.')
+    w.showhand.setChecked(True);h.addRow('',w.showhand)
     w.handsize=w.number(.02,.8,.75,.01);h.addRow('Hand size',w.handsize)
     h.setRowVisible(w.handsize,False)        # edited through Size (%) above
     w.hand_size_pct.setValue(round(w.handsize.value()*100))
@@ -1910,18 +1921,14 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # Defaults calibrated for the built-in hand (assets/default_hand.png).
     w.ax=w.number(0,1,.08,.005);w.ax.setDecimals(3);h.addRow('Pen tip X',w.ax)
     w.ay=w.number(0,1,.13,.005);w.ay.setDecimals(3);h.addRow('Pen tip Y',w.ay)
-    hand_l.addWidget(caption('New hands get their pen tip found automatically. '
-                             'Adjust it here if lines do not start exactly at the pen.'))
-    tip_row=QHBoxLayout()
-    w.find_tip_button=QPushButton('Find pen tip')
-    w.find_tip_button.setToolTip('Look for the pen tip in the hand image automatically.')
+    w.find_tip_button=QPushButton('Find')
+    w.find_tip_button.setToolTip('Look for the pen tip in the hand image automatically. New hands get '
+                                 'their pen tip found by themselves; adjust it if lines do not start at the pen.')
     w.find_tip_button.clicked.connect(lambda checked=False: w.find_pen_tip())
-    tip_row.addWidget(w.find_tip_button)
     w.pick_tip_button=QPushButton('Click to set…')
     w.pick_tip_button.setToolTip('Show the hand and click exactly on the pen tip.')
     w.pick_tip_button.clicked.connect(lambda checked=False: w.pick_pen_tip())
-    tip_row.addWidget(w.pick_tip_button)
-    hand_l.addLayout(tip_row)
+    h.addRow('Pen tip',pair(w.find_tip_button,w.pick_tip_button))
     # 2. The painting hand.
     hand_l.addWidget(label('2 · PAINTING HAND (the colours)'))
     picture('paint')
@@ -1937,18 +1944,21 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.paint_hand_size.setSuffix('%')
     ph.addRow('Size',w.paint_hand_size)
     w.paint_hand_form=ph
-    w.paint_hand_choose=QPushButton('Choose painting hand…')
+    w.paint_hand_choose=QPushButton('Choose…')
+    w.paint_hand_choose.setToolTip('Choose the painting hand from your Hands library.')
     w.paint_hand_choose.clicked.connect(lambda checked=False: w.choose_paint_hand())
-    hand_l.addWidget(w.paint_hand_choose)
+    ph.addRow('',w.paint_hand_choose)
     w.paint_hand_name=caption('')
-    hand_l.addWidget(w.paint_hand_name)
-    w.show_paint_hand=QCheckBox('Show it while painting the colours')
-    w.show_paint_hand.setChecked(True);hand_l.addWidget(w.show_paint_hand)
+    ph.addRow('',w.paint_hand_name)
+    w.show_paint_hand=QCheckBox('Show while painting')
+    w.show_paint_hand.setToolTip('Show the hand while it paints the colours.')
+    w.show_paint_hand.setChecked(True);ph.addRow('',w.show_paint_hand)
     # 3. Left hand.
     hand_l.addWidget(label('3 · LEFT HAND'))
+    lh=form_layout();hand_l.addLayout(lh)
     w.left_handed=QCheckBox('Left-handed')
     w.left_handed.setToolTip('Mirrors the drawing hand, the painting brush and the eraser, for left-handers.')
-    hand_l.addWidget(w.left_handed)
+    lh.addRow(QLabel(''),w.left_handed)      # an empty label keeps the shared column
     hand_l.addStretch(1)
     tabs.addTab(scroll_view(hand),'Hand')
 
@@ -2055,7 +2065,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
         button.clicked.connect(lambda checked=False,k=key: w.choose_sound_file(k))
         row.addWidget(button,1)
         reset=QToolButton();reset.setObjectName('panelClose')
-        reset.setIcon(_icon('close','#A9A6B8'));reset.setFixedWidth(30)
+        reset.setIcon(_icon('trash','#E5484D'));reset.setFixedWidth(30)
         reset.setToolTip(f'Remove the {text.lower()} sound.')
         reset.clicked.connect(lambda checked=False,k=key: w.set_sound_file(k,None))
         row.addWidget(reset)
@@ -2337,7 +2347,14 @@ def build_workspace(w, Canvas, BRAND_ICON):
         tidy_side_page(content)
     # Image, Hand and Sound line up like Animation: one label column per page.
     align_forms(source_page,88)
-    align_forms(hand,96)
+    align_forms(hand,88)
+    # Buttons sharing a row may shrink (text clips) rather than widen the page.
+    for button in (w.find_tip_button,w.pick_tip_button):
+        button.setMinimumWidth(0)
+    for button in hand.findChildren(QPushButton):
+        if button.text() in ('My PNG…','Library…','Find','Click to set…'):
+            policy=button.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+            button.setSizePolicy(policy);button.setMinimumWidth(0)
     align_forms(sound,64)
     # QFormLayout.WrapLongRows can change the geometry of ALL animation
     # controls when image-specific rows are shown/hidden. In particular it

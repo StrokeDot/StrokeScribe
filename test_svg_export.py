@@ -122,9 +122,13 @@ class RoundTripTests(unittest.TestCase):
                             '<path stroke="black" fill="none" '
                             'd="M 0 0 L 100000 0 L 100000 100000"/></svg>')
             drawing = import_svg(path)
-        self.assertEqual(drawing.strokes[0].points,
-                         [(0., 0.), (100000., 0.), (100000., 100000.)])
-        self.assertAlmostEqual(drawing.strokes[0].length, 200000.)
+        # Within the point budget the original dense sampling is used (it keeps
+        # Adaptive Hand Painting identical to .58); the edges stay exact.
+        pts = drawing.strokes[0].points
+        self.assertEqual(pts[0], (0., 0.))
+        self.assertEqual(pts[-1], (100000., 100000.))
+        self.assertIn((100000., 0.), pts)
+        self.assertAlmostEqual(drawing.strokes[0].length, 200000., delta=1.)
 
     def test_dense_curved_svg_imports_without_point_overflow(self):
         from engine import import_svg
@@ -156,7 +160,8 @@ class RoundTripTests(unittest.TestCase):
                            '</svg>')
             drawing = import_svg(svg)
         self.assertEqual(len(drawing.strokes), 1)
-        self.assertEqual(drawing.strokes[0].points, [(0., 0.), (50., 40.)])
+        pts = drawing.strokes[0].points          # dense sampling within the point budget
+        self.assertEqual((pts[0], pts[-1]), ((0., 0.), (50., 40.)))
 
     def test_svg_rejects_custom_entity_declarations_and_internal_dtd(self):
         from engine import import_svg
