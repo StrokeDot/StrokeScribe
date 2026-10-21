@@ -111,7 +111,7 @@ class VisibleControlRegression(unittest.TestCase):
         w.image_detail.setCurrentText("Max")
         state = w.settings_state()
         self.assertEqual(state["blend_mode"], "Multiply")
-        self.assertEqual(state["reveal_mode"], w.reveal_mode.currentIndex())
+        self.assertEqual(state["reveal_mode"], "Adaptive Hand Painting")
         self.assertEqual(state["pen_ease"], "Natural (ease in and out)")
         self.assertEqual(state["image_style"], "Detailed (all lines)")
         self.assertEqual(state["image_detail"], "Max")
