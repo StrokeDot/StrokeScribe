@@ -1,0 +1,54 @@
+name: Compare Adaptive Hand Painting across versions
+# Renders the Arthur headset with Adaptive Hand Painting in several versions,
+# using the same coloured image, and publishes frames + pixel differences to
+# the adaptive-compare branch. Diagnostic only.
+on:
+  push:
+    branches: [ci/compare-adaptive]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
+      - run: pip install -r requirements.txt
+      - name: Render each version
+        shell: bash
+        run: |
+          set -e
+          T=tools/adaptive_compare
+          python $T/make_colors.py "$RUNNER_TEMP/colors.png"
+          declare -A V=( [58]=259ef17 [62]=0e48d9e [63]=deb8f28 [66]=cf51695 [67]=58356bb [75]=a4a002a [now]=HEAD )
+          mkdir -p "$RUNNER_TEMP/out"
+          for name in 58 62 63 66 67 75 now; do
+            git worktree add -f "$RUNNER_TEMP/v$name" "${V[$name]}" >/dev/null 2>&1
+            echo "== $name"
+            python -I $T/adaptive_frames.py "$RUNNER_TEMP/v$name" "$RUNNER_TEMP/colors.png" "$RUNNER_TEMP/out/$name" || echo "render failed for $name"
+          done
+          for name in 62 63 66 67 75 now; do
+            mkdir -p "$RUNNER_TEMP/out/vs58-$name"
+            python $T/compare.py "$RUNNER_TEMP/out/58" "$RUNNER_TEMP/out/$name" "$RUNNER_TEMP/out/vs58-$name" > "$RUNNER_TEMP/out/vs58-$name/summary.txt" || true
+          done
+          cp "$RUNNER_TEMP/colors.png" "$RUNNER_TEMP/out/"
+      - name: Publish (branch adaptive-compare)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd "$RUNNER_TEMP/out"
+          git init -q && git checkout -q -b adaptive-compare
+          git config user.name ci && git config user.email ci@example.invalid
+          git add -A && git commit -qm "Adaptive comparison for ${{ github.sha }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" adaptive-compare
