@@ -164,5 +164,43 @@ class AppearanceProjectTests(unittest.TestCase):
         self.assertEqual(w.blend_mode.currentText(),'Normal')
         self.assertEqual(w.artwork_opacity.value(),100)
 
+class AppearanceExportTests(unittest.TestCase):
+    def test_frame_renderer_never_fades_hand_when_artwork_opacity_is_zero(self):
+        from unittest.mock import patch
+        from frame_render import compose_frame
+        artwork=solid(180,180,180)
+        hand=solid(210,130,40)
+        def fake_core(_drawing,_fraction,opts,_camera=None):
+            return hand if opts.get('layers')=='hand' else artwork
+        with patch('frame_render._core',side_effect=fake_core):
+            result=compose_frame(object(),.4,dict(width=100,height=100,
+                duration=1.,artwork_opacity=0,background=False,overlays=[]))
+        self.assertEqual(pixel(result),(210,130,40,255))
+
+    def test_real_png_export_has_transparent_opacity_not_missing_parameter(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+        from app import Window
+        from engine import export_frames
+        w=Window()
+        try:
+            options=w.options()
+            options.update(width=128,height=72,fps=4,duration=.5,
+                hand=None,painting_hand=None,final_image=None,background=False,
+                camera_zoom=1.,workers=1,erase=None,artwork_opacity=35,
+                overlays=[],blend_mode='Normal')
+            options.pop('audio',None)
+            with TemporaryDirectory() as folder:
+                target=Path(folder)/'pngframes'
+                export_frames(w.drawing,target,**options)
+                frame=QImage(str(sorted(target.glob('frame_*.png'))[-1]))
+                self.assertFalse(frame.isNull())
+                arr=np.frombuffer(frame.convertToFormat(QImage.Format.Format_RGBA8888).constBits(),np.uint8).reshape(72,-1)[:,:128*4].reshape(72,128,4)
+                self.assertGreater(int(arr[:,:,3].max()),30)
+                self.assertLessEqual(int(arr[:,:,3].max()),100)
+        finally:
+            w.close()
+            APP.processEvents()
+
 if __name__=='__main__':
     unittest.main(verbosity=2)
