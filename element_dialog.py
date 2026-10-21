@@ -262,17 +262,20 @@ class ElementDialog(QDialog):
                   and (options.get('blend_mode','Normal')!='Normal' or
                        float(options.get('artwork_opacity',100))!=100))
         if affected:
-            from frame_render import compose_frame
+            from frame_render import compose_frame, independent_overlays
             from blend_modes import composition_mode
             options=dict(options,width=PREVIEW_W,height=PREVIEW_H,background=False)
             camera=w.preview_camera(options)
-            artwork=compose_frame(w.drawing,self.position,dict(options,layers='art',ghost=0),camera)
-            hand=compose_frame(w.drawing,self.position,dict(options,layers='hand',ghost=0),camera)
+            artwork=compose_frame(w.drawing,self.position,dict(options,layers='art',ghost=0,overlays=[]),camera)
+            hand=compose_frame(w.drawing,self.position,dict(options,layers='hand',ghost=0,overlays=[]),camera)
+            extras=independent_overlays(w.drawing,self.position,options,camera)
             painter.setCompositionMode(composition_mode(options.get('blend_mode','Normal')))
             painter.setOpacity(max(0.,min(1.,float(options.get('artwork_opacity',100))/100.)))
             painter.drawImage(0,0,artwork)
             painter.setOpacity(1.)
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            if extras is not None:
+                painter.drawImage(0,0,extras)
             painter.drawImage(0,0,hand)
         else:
             scaled=frame.scaled(PREVIEW_W, PREVIEW_H, Qt.AspectRatioMode.KeepAspectRatio,
