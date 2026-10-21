@@ -105,6 +105,14 @@ def align_forms(content, label_width):
             if isinstance(heading, QLabel):
                 heading.setWordWrap(True)
                 heading.setFixedWidth(label_width)
+            field = form.itemAt(index, QFormLayout.ItemRole.FieldRole)
+            control = field.widget() if field else None
+            if control is not None and not isinstance(control, (QLabel, QCheckBox)):
+                # Fields fill the row like the Animation panel's (the form only
+                # grows Expanding fields).
+                policy = control.sizePolicy()
+                policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+                control.setSizePolicy(policy)
 
 
 def scroll_view(content):
