@@ -3076,7 +3076,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 camera=self.preview_camera(opts)
                 from frame_render import independent_overlays
                 self.canvas.art_frame=compose_frame(self.drawing,self.position,
-                    dict(opts,layers='art',ghost=0,background=False,overlays=[]),camera)
+                    dict(opts,layers='art',ghost=0,background=False,overlays=[],artwork_opacity=100),camera)
                 self.canvas.hand_frame=compose_frame(self.drawing,self.position,
                     dict(opts,layers='hand',ghost=0,background=False,overlays=[]),camera)
                 self.canvas.overlay_frame=independent_overlays(self.drawing,self.position,opts,camera)
