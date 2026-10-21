@@ -742,6 +742,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         try:
             self.restore_source_snapshot(snapshot.get('source'))
             settings=snapshot['settings']
+            # Older undo snapshots have none of the optional appearance
+            # controls. Reset to legacy defaults instead of leaking values
+            # from a different image element.
+            settings=dict({'artwork_opacity':100,'paper_cleanup':False,
+                           'paper_tolerance':24,'paper_softness':12},**settings)
             for name in self.PROJECT_SETTINGS:
                 widget=getattr(self,name,None)
                 if widget is None or name not in settings: continue
@@ -1448,7 +1453,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             from artwork_assets import validate_assets,materialize_assets
             drawing.artwork_assets=validate_assets(metadata)
             managed=materialize_assets(drawing.artwork_assets)
-        settings=data.get('settings',{})
+        settings=dict({'artwork_opacity':100,'paper_cleanup':False,
+                       'paper_tolerance':24,'paper_softness':12},**(data.get('settings',{}) or {}))
         # Settings first (without a refresh storm), then the drawing.
         for name in self.PROJECT_SETTINGS:
             widget=getattr(self,name,None)
