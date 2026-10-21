@@ -106,9 +106,7 @@ class InspectorSceneSwitchGeometryTests(unittest.TestCase):
 
     def test_inspector_form_uses_stable_row_layout_on_image_switch(self):
         w=self.w
-        form=w.duration.parentWidget().layout()
-        # The drawing form must not wrap/unwarp when image-specific rows change.
-        self.assertIsInstance(form, QFormLayout) if isinstance(form,QFormLayout) else None
+        # The drawing form must not rewrap when image-specific rows change.
         for image in (False,True,False):
             self.switch_element_type(image)
             forms=self.area.widget().findChildren(QFormLayout)
