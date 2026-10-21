@@ -10,7 +10,7 @@ concurrency:
   group: quick-checks-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 permissions:
-  contents: read
+  contents: write        # publishes panel screenshots to the ui-shots branch
   pull-requests: write
 jobs:
   quick:
@@ -79,6 +79,20 @@ jobs:
             echo '```'
           } > quick-comment.md
           gh pr comment "$PR_NUMBER" --body-file quick-comment.md
+      - name: Panel screenshots (branch ui-shots)
+        if: always() && runner.os == 'Windows'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python tools/ui_shots.py ../ui-shots-out
+          cd ../ui-shots-out
+          echo "${{ github.event.pull_request.head.sha || github.sha }}" > commit.txt
+          git init -q && git checkout -q -b ui-shots
+          git config user.name ci && git config user.email ci@example.invalid
+          git add -A && git commit -qm "UI shots for ${{ github.event.pull_request.head.sha || github.sha }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" ui-shots
       - name: Stop if tests failed
         if: steps.tests.outcome == 'failure'
         shell: bash

@@ -309,5 +309,21 @@ class DualSidebarTests(unittest.TestCase):
         self.assertEqual(layout.expanded, {'source': False, 'inspector': False})
 
 
+    def test_long_file_names_and_labels_never_widen_a_panel(self):
+        w = self.w
+        long_name = 'ChatGPT_Image_Oct_20_2026_10_15_33_PM_with_a_very_long_unbroken_name.png'
+        w.show_right_panel('source')
+        w.color_note.setText(long_name + ' • original colors')
+        w.note.setText('Strokes traced from ' + long_name)
+        w.left_handed.setText('Left-handed (a very long label that cannot wrap at all, really long)')
+        for key in ('source', 'hand', 'animation'):
+            w.show_right_panel(key)
+            APP.processEvents()
+            area = w.inspector_tabs.currentWidget()
+            self.assertLessEqual(area.widget().width(), area.viewport().width() + 1, key)
+            margins = area.widget().layout().contentsMargins()
+            self.assertGreaterEqual(margins.right(), 16, key)       # room beside the scrollbar
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

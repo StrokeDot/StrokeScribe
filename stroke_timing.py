@@ -39,6 +39,18 @@ def ease(f):
     return .1 * f + .9 * f * f * f * (f * (f * 6 - 15) + 10)
 
 
+def natural_tempo(t):
+    """Natural: the whole drawing starts slowly, speeds up, and settles at the end.
+
+    Easing inside each line alone is invisible when a drawing is made of many
+    tiny strokes (line art from an image); this tempo is visible for any
+    drawing. Constant speed never uses it.
+    """
+    t = max(0., min(1., float(t)))
+    smooth = t * t * t * (t * (t * 6 - 15) + 10)
+    return .45 * t + .55 * smooth
+
+
 def custom(drawing):
     if getattr(drawing, 'pen_ease', 'off') == 'natural':
         return True
@@ -98,6 +110,8 @@ def ink_progress(drawing, t):
     if ink_total <= 0:
         return t
     natural = getattr(drawing, 'pen_ease', 'off') == 'natural'
+    if natural:
+        t = natural_tempo(t)
     for start, share, rest, before, length in _schedule(drawing):
         if t < start + share:
             f = (t - start) / share if share > 0 else 1.
