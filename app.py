@@ -391,6 +391,33 @@ from artwork_workflow import ArtworkWorkflow
 
 from source_editing import SourceEditing
 
+class ReadyFrames:
+    """The current preview's ready-made frames by frame number (a view of the
+    segment cache, kept for code and tests that index frames directly)."""
+    def __init__(self, window):
+        self.window = window
+
+    def _key(self, index):
+        segment, local, _, _, _ = self.window.segment_at(index)
+        return segment, local, self.window.PREVIEW_WIDTH
+
+    def get(self, index, default=None):
+        if getattr(self.window, '_view', None) is None:
+            return default
+        frame = self.window.segment_cache.get(*self._key(index))
+        return default if frame is None else frame
+
+    def __getitem__(self, index):
+        frame = self.get(index)
+        if frame is None:
+            raise KeyError(index)
+        return frame
+
+    def __contains__(self, index):
+        return getattr(self.window, '_view', None) is not None and \
+            self.window.segment_cache.has(*self._key(index))
+
+
 class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def __init__(self):
         super().__init__()
@@ -438,7 +465,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.scene_index=0
         self._scene_cache={}           # preview of other scenes: id(state) -> prepared scene
         self._camera_key=None; self._camera_path=None
-        self._frames=OrderedDict(); self._frame_bytes=0; self._view=None
+        from preview_cache import SegmentCache
+        self.segment_cache=SegmentCache()        # ready-made preview frames, per segment
+        self._frames=ReadyFrames(self); self._view=None
+        self._fp_tokens={}; self._fp_counter=0
+        self._prerender_all=False; self._prerender_next=0
         self.overlays=[]               # pictures and titles on top of this scene (overlays.py)
         self.selected_overlay=None
         # Rapid brush-width changes should not synchronously rebuild the entire
@@ -2286,29 +2317,33 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """Preview frame of the whole video at the playhead (or at `fraction`): the camera
         over the board, as in the export."""
         import board
-        from frame_render import compose_frame
-        from scenes import transition_frame, stack
         lengths,joins=self.scene_timeline(width,height)
         total=sum(lengths)+sum(joins)
         where,k,f=board.locate(lengths,joins,(self.position if fraction is None else fraction)*total)
+        return self.whole_frame_at(where,k,f,width,height),k,lengths,joins
+
+    def whole_frame_at(self,where,k,f,width,height):
+        """Whole video: element k at its own fraction f, or the move after element k."""
+        import board
+        from scenes import transition_frame
         if where=='scene':
             drawing,options,_,camera=self.preview_scene(k,width,height)
             from artwork_compositor import composite_element
             under=self.scene_base(k,width,height,f,camera)
-            return composite_element(under,drawing,f,options,camera),k,lengths,joins
+            return composite_element(under,drawing,f,options,camera)
         world=self.preview_world(width,height)
         if self.preview_scene(k,width,height)[1].get('layers')=='hand':
             from PySide6.QtGui import QImage
             blank=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); blank.fill(0)
-            return blank,k,lengths,joins
+            return blank
         kind=self.scenes[k]['transition']
         last=k==len(self.scenes)-1
         if kind in board.SCREEN_KINDS and not last:
             a=world.view(world.frames[k],width,height,upto=k+1)
             b=world.view(world.frames[k+1],width,height,upto=k+1)
-            return transition_frame(a,b,kind,f),k,lengths,joins
+            return transition_frame(a,b,kind,f)
         view=board.join_view(world.frames,k,kind,f,world.aspect,self.scenes[k]['transition_seconds'])
-        return world.view(view,width,height,upto=k+1),k,lengths,joins
+        return world.view(view,width,height,upto=k+1)
 
     def open_batch_export(self):
         from batch_export import BatchExportDialog
@@ -3068,17 +3103,104 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self.hand.cacheKey() if self.hand is not None else None,len(self.scenes),
                 repr(getattr(self,'overlays',[])) if not self.playing else None)
 
+    def schedule_refresh(self,*args):
+        """Redraw soon, at most every 40 ms (for controls that are dragged)."""
+        if not hasattr(self,'_soon_timer'):
+            self._soon_timer=QTimer(self); self._soon_timer.setSingleShot(True)
+            self._soon_timer.setInterval(40); self._soon_timer.timeout.connect(self.refresh)
+        if getattr(self,'_suspend_refresh',False): return
+        if not self._soon_timer.isActive(): self._soon_timer.start()
+
     def clear_frames(self):
-        """Forget the ready-made preview frames (something changed)."""
-        self._frames=OrderedDict(); self._frame_bytes=0
+        """Something changed: work out the view again. Ready-made frames stay in the
+        segment cache; only segments whose fingerprint changed are drawn again."""
         self._memo={}               # whole-video lengths and the edited element's options
+        self._prerender_next=0
         if hasattr(self,'prerender_timer'): self.prerender_timer.stop()
+
+    # ------------------------------------------------- segment fingerprints
+    def _token(self,obj):
+        """A number for this exact object while it is kept (ids are reused, tokens not)."""
+        if obj is None: return None
+        entry=self._fp_tokens.get(id(obj))
+        if entry is not None and entry[0] is obj: return entry[1]
+        if len(self._fp_tokens)>400:
+            alive={id(s['state']) for s in self.scenes if s.get('state') is not None}
+            alive|={id(self.drawing),id(getattr(self,'image_result',None))}
+            self._fp_tokens={k:v for k,v in self._fp_tokens.items() if k in alive}
+        self._fp_counter+=1
+        self._fp_tokens[id(obj)]=(obj,self._fp_counter)
+        return self._fp_counter
+
+    def edited_fingerprint(self):
+        """Everything that changes how the element being edited looks."""
+        memo=self.__dict__.setdefault('_memo',{})
+        if 'edited_fp' in memo: return memo['edited_fp']
+        d=self.drawing
+        strokes=tuple((len(s.points),s.points[0] if s.points else None,s.points[-1] if s.points else None,
+                       getattr(s,'pace',1.),getattr(s,'pause',0.),bool(getattr(s,'reversed',False)),
+                       getattr(s,'color',None),getattr(s,'width',None))
+                      for s in (getattr(d,'strokes',()) or ()))
+        fp=('edit',self.edited_key(),self._token(d),hash(strokes),
+            self.final_image.cacheKey() if getattr(self,'final_image',None) is not None else None,
+            self._token(getattr(self,'image_result',None)),
+            self.hand.cacheKey() if self.hand is not None else None,
+            repr(getattr(self,'overlays',[])),getattr(d,'pen_ease',None))
+        memo['edited_fp']=fp
+        return fp
+
+    def element_fingerprint(self,k):
+        if k==self.scene_index: return self.edited_fingerprint()
+        return ('stored',self._token(self.scenes[k]['state']),
+                self.hand.cacheKey() if self.hand is not None else None)
+
+    def segment_fingerprint(self,where,k):
+        """The fingerprint of one segment of the current view (see preview_cache)."""
+        view=self._view
+        size=(view.get('width'),view.get('height'))
+        board=repr([s.get('board') for s in self.scenes])
+        if not view['all']:
+            base=None
+            if view.get('page'):
+                base=(tuple(self.element_fingerprint(i) for i in range(self.scene_index)),board)
+            return ('one',self.scene_index,self.edited_fingerprint(),base,size)
+        if where=='scene':
+            base=None
+            if self.drawn_over(k):
+                base=(tuple(self.element_fingerprint(i) for i in range(k)),board)
+            return ('scene',k,self.element_fingerprint(k),base,size)
+        s=self.scenes[k]
+        return ('join',k,s['transition'],s['transition_seconds'],
+                tuple(self.element_fingerprint(i) for i in range(min(k+2,len(self.scenes)))),board,size)
+
+    def segment_at(self,index):
+        """(fingerprint, frame inside the segment, frames in the segment, where, k) for a
+        frame number of the current view."""
+        view=self._view
+        count=max(1,round(view['length']*self.PREVIEW_FPS))
+        if not view['all']:
+            return self.segment_fingerprint('one',self.scene_index),index,count,'one',self.scene_index
+        import board
+        seconds=max(0,min(count,index))/count*view['length']
+        where,k,f=board.locate(view['lengths'],view['joins'],seconds)
+        seconds_in=view['lengths'][k] if where=='scene' else view['joins'][k]
+        frames=max(1,round(seconds_in*self.PREVIEW_FPS))
+        local=max(0,min(frames,round(f*frames)))
+        return self.segment_fingerprint(where,k),local,frames,where,k
+
+    def render_segment(self,where,k,local,frames,width):
+        """One frame of one segment, at its own time (local / frames)."""
+        f=local/frames
+        if where=='one':
+            return self.render_view(f,width)
+        height=round(width*self._view['ratio'])
+        return self.whole_frame_at(where,k,f,width,height)
 
     def refresh(self,*args):
         """Show the frame at the playhead. Any change rebuilds the view; moving the
         playhead (scrub, play) only draws a frame, from the ready-made ones if it can."""
         playhead=getattr(self,'_playhead_only',False); self._playhead_only=False
-        if self._preparing:
+        if self._preparing or getattr(self,'_suspend_refresh',False):
             return
         if self.drawing and self.board_mode():
             self._view=None; self.clear_frames()
@@ -3145,7 +3267,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self.status.setText('Preview could not be updated: '+str(exc)[:220]); return False
             self.show_whole_timeline(segments,lengths,joins,options)
             total=sum(lengths)+sum(joins)
-            self._view=dict(all=True,length=total,ratio=ratio,token=self._view_token())
+            self._view=dict(all=True,length=total,ratio=ratio,token=self._view_token(),
+                            lengths=list(lengths),joins=list(joins),width=width,height=height)
             return True
         self.stage_timeline.set_scenes(None,current=self.scene_index)
         self.stage_timeline.set_overlays(self.overlays,self.selected_overlay)
@@ -3167,7 +3290,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         page=self.drawn_over(self.scene_index) and options.get('layers')!='hand'
         if page: options['background']=False
         self._view=dict(all=False,options=options,page=page,ratio=ratio,length=self.timeline_length(),
-                        token=self._view_token())
+                        token=self._view_token(),width=self.PREVIEW_WIDTH,
+                        height=round(self.PREVIEW_WIDTH*ratio))
         self.show_hand_pictures(options)
         return True
 
@@ -3221,31 +3345,32 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if not playing:
             return self.render_view(fraction,self.PREVIEW_WIDTH)
         index,count=self.frame_index(fraction)
-        cached=self._frames.get(index)
+        segment,local,frames,where,k=self.segment_at(index)
+        cached=self.segment_cache.get(segment,local,self.PREVIEW_WIDTH)
         if cached is not None:
-            self._frames.move_to_end(index)
             return cached
         cost=getattr(self,'_play_cost',0.)
         width=self.PREVIEW_WIDTH if cost<.03 else 768 if cost<.045 else 640
         began=time.perf_counter()
-        frame=self.render_view(index/count,width)
+        frame=self.render_segment(where,k,local,frames,width)
         spent=time.perf_counter()-began
         self._play_cost=spent if not cost else .7*cost+.3*spent*self.PREVIEW_WIDTH/width
-        if width==self.PREVIEW_WIDTH: self.keep_frame(index,frame)
+        if width==self.PREVIEW_WIDTH:
+            self.segment_cache.put(segment,local,width,frame)
         return frame
 
     def keep_frame(self,index,frame):
-        size=frame.sizeInBytes()
-        while self._frames and self._frame_bytes+size>self.FRAME_BUDGET:
-            _,old=self._frames.popitem(last=False); self._frame_bytes-=old.sizeInBytes()
-        self._frames[index]=frame; self._frame_bytes+=size
+        segment,local,_,_,_=self.segment_at(index)
+        self.segment_cache.put(segment,local,self.PREVIEW_WIDTH,frame,disk=self._prerender_all)
 
     def start_prerender(self):
         """When the preview is idle, make the next frames ready so Play is smooth."""
         if not hasattr(self,'prerender_timer'):
             self.prerender_timer=QTimer(self); self.prerender_timer.setSingleShot(True)
             self.prerender_timer.timeout.connect(self.prerender_step)
-        self.prerender_timer.start(450)
+        if not self._prerender_all:
+            self._prerender_next=0          # idle: start again from the playhead
+        self.prerender_timer.start(1 if self._prerender_all else 450)
 
     def prerender_step(self):
         view=getattr(self,'_view',None)
@@ -3256,21 +3381,68 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if QApplication.mouseButtons()!=Qt.MouseButton.NoButton:
             self.prerender_timer.start(200); return     # the user is dragging something
         index,count=self.frame_index(self.position)
-        frame_bytes=max(1,next(iter(self._frames.values())).sizeInBytes()) if self._frames else 0
-        if frame_bytes and self._frame_bytes+frame_bytes>self.FRAME_BUDGET: return
-        # From the playhead to the end, then from the start.
-        target=next((i for i in list(range(index,count+1))+list(range(0,index)) if i not in self._frames),None)
-        if target is None: return
+        if not self._prerender_all and self.segment_cache.memory_full(
+                self.PREVIEW_WIDTH*round(self.PREVIEW_WIDTH*view['ratio'])*4):
+            return                                       # idle pre-render stays in memory
+        # From the playhead to the end, then from the start (Pre-render: from the start).
+        total=count+1
+        target=None
+        while self._prerender_next<total:
+            step=self._prerender_next
+            i=step if self._prerender_all else (index+step)%total
+            segment,local,frames,where,k=self.segment_at(i)
+            if not self.segment_cache.has(segment,local,self.PREVIEW_WIDTH):
+                target=(i,segment,local,frames,where,k); break
+            self._prerender_next+=1
+        if target is None:
+            if self._prerender_all:
+                self._prerender_all=False
+                self.update_prerender_button(done=True)
+            return
+        i,segment,local,frames,where,k=target
         try:
-            self.keep_frame(target,self.render_view(target/count,self.PREVIEW_WIDTH))
+            frame=self.render_segment(where,k,local,frames,self.PREVIEW_WIDTH)
         except Exception:
             return
+        self.segment_cache.put(segment,local,self.PREVIEW_WIDTH,frame,disk=self._prerender_all)
+        if self._prerender_all:
+            self.update_prerender_button()
         self.prerender_timer.start(1)
 
     def ready_frames(self):
         """(frames ready, frames in the video) of the preview (for tests and the status)."""
         if getattr(self,'_view',None) is None: return 0,0
-        return len(self._frames),self.frame_index(1.)[1]+1
+        count=self.frame_index(1.)[1]
+        ready=0
+        for i in range(count+1):
+            segment,local,_,_,_=self.segment_at(i)
+            if self.segment_cache.has(segment,local,self.PREVIEW_WIDTH): ready+=1
+        return ready,count+1
+
+    def prerender_whole(self):
+        """Pre-render: make every frame of the current preview ready (kept on disk too).
+        Click again to stop. Only segments that changed are drawn again later."""
+        if self._prerender_all:
+            self._prerender_all=False
+            self.update_prerender_button()
+            return
+        if not self.drawing or self.board_mode(): return
+        self.playing=False
+        if getattr(self,'_view',None) is None and not self.build_view(): return
+        self._prerender_all=True; self._prerender_next=0
+        self.update_prerender_button()
+        self.start_prerender()
+
+    def update_prerender_button(self,done=False):
+        button=getattr(self,'prerender_button',None)
+        if button is None: return
+        if self._prerender_all:
+            total=self.frame_index(1.)[1]+1 if getattr(self,'_view',None) else 1
+            percent=min(99,round(100*self._prerender_next/max(1,total)))
+            button.setText(f'Stop pre-render ({percent}%)')
+        else:
+            button.setText('Pre-render')
+            if done: self.status.setText('Pre-render finished: the preview plays from ready-made frames.')
 
     def scrub(self,value):
         self.position=value/1000

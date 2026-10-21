@@ -169,6 +169,8 @@ class ElementDialog(QDialog):
             self._connect(mine, theirs)
         self.sync_enabled()
         self.timer = QTimer(self); self.timer.setInterval(33); self.timer.timeout.connect(self.tick)
+        self.preview_timer = QTimer(self); self.preview_timer.setSingleShot(True)
+        self.preview_timer.setInterval(60); self.preview_timer.timeout.connect(self.update_preview)
         self.seek(1.)                              # show the finished element first
 
     # ---------------------------------------------------------- controls that mirror the window
@@ -202,9 +204,26 @@ class ElementDialog(QDialog):
             mine.toggled.connect(lambda on, t=theirs: self.change(lambda: t.setChecked(on)))
 
     def change(self, action):
-        action()
+        """A control moved: the value goes to the window at once (cheap); the
+        preview is redrawn at most every 60 ms. Dragging Opacity used to redraw
+        the element five or six times per slider step, which felt stuck."""
+        w = self.w
+        w._suspend_refresh = True            # the window's own refresh waits
+        try:
+            action()
+        finally:
+            w._suspend_refresh = False
         self.sync_enabled()
-        self.w.refresh()
+        if not self.preview_timer.isActive():
+            self.preview_timer.start()
+
+    def update_preview(self):
+        w = self.w
+        try:
+            w.clear_frames(); w._view = None
+            w.build_view()
+        except Exception as exc:
+            import applog; applog.error('Element preview', exc)
         self.seek(self.position)
 
     def sync_enabled(self):
@@ -329,14 +348,14 @@ class ElementDialog(QDialog):
         w.slider.blockSignals(True); w.slider.setValue(round(w.position*1000)); w.slider.blockSignals(False)
 
     def accept(self):
-        self.timer.stop()
+        self.timer.stop(); self.preview_timer.stop()
         self.w.commit_history()
         self.give_back_view()
         self.w.fill_scenes(); self.back_to_scope(); self.w.refresh()
         super().accept()
 
     def reject(self):
-        self.timer.stop()
+        self.timer.stop(); self.preview_timer.stop()
         w = self.w
         w.restore(self.saved['snapshot'])
         scene = w.scenes[self.k]

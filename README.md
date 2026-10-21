@@ -9,6 +9,13 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Segment pre-render; smooth Opacity and Blend (v0.5.3-experimental.83)
+
+- **Only what you change is made again.** The preview keeps its ready-made frames per element (counted from the element's own start) and per camera move. Editing one element, or making it longer, no longer throws away the frames of the others. Before, any change discarded every ready frame of the whole video.
+- **No more re-planning while playing the whole video.** The brush planner kept only 3 painting plans, so a video with more painted elements re-planned them ("Preparing scene…") again and again; it now keeps 24.
+- **Pre-render** (timeline header, or View → Pre-render preview) makes every frame of the preview ready and keeps them on disk, so long videos play smoothly; click again to stop. Only changed parts need pre-rendering again.
+- **Element Editor:** dragging Opacity or changing Blend mode no longer redraws the element five or six times per step (it felt stuck); the preview updates at most every 60 ms. The Image panel's Opacity, Tolerance and Edge softness sliders are throttled the same way.
+
 ## Adaptive Hand Painting restored; Hand panel rows (v0.5.3-experimental.82)
 
 - **Adaptive Hand Painting is back to how it painted up to experimental.62.** In .63 SVG import switched to curvature-adaptive sampling (the Arthur headset went from 59,320 to 3,375 points), and Adaptive plans its brush route from those points, so the route changed. SVGs now use the original dense sampling again; only drawings that would exceed 500,000 points use the newer sampling. Verified frame by frame against .58.

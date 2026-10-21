@@ -15,6 +15,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPainter
 
 _CACHE = OrderedDict()
+PLAN_CACHE_SIZE = 24
 GRID_LIMIT = 224
 NEIGHBORS = ((1,0),(-1,0),(0,1),(0,-1))
 
@@ -420,7 +421,9 @@ def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
             _CACHE[key]=build_zigzag_plan(drawing,image,brush_width,stroke_spacing)
         else:
             _CACHE[key]=build_plan(drawing,image,brush_width,stroke_spacing)
-        if len(_CACHE)>3: _CACHE.popitem(last=False)
+        # Enough plans for a whole video's painted elements: with only 3, playing
+        # the whole video re-planned every element each time ("Preparing scene…").
+        if len(_CACHE)>PLAN_CACHE_SIZE: _CACHE.popitem(last=False)
     else:
         _CACHE.move_to_end(key)
     return _CACHE[key]
