@@ -1362,9 +1362,27 @@ def build_workspace(w, Canvas, BRAND_ICON):
     blend_form=form_layout()
     blend_form.addRow('Blend mode',w.blend_mode)
     animation_l.addLayout(blend_form)
-    animation_l.addWidget(caption('Blend modes need a visible backdrop or earlier artwork. '
-                                  'Transparent alone cannot show blending; use a contrasting '
-                                  'Background to preview it. Multiply is not alpha removal.'))
+    # Blend mode is still the project-backed per-scene control, but its editing
+    # surface has moved to Element Editor > Appearance & Blending. Keep the
+    # backing widget alive and its value migratable from older project files.
+    blend_form.setRowVisible(w.blend_mode,False)
+    w.appearance_backing=QWidget()
+    appearance_storage=QVBoxLayout(w.appearance_backing)
+    w.artwork_opacity=w.number(0,100,100,1)
+    w.artwork_opacity.setSuffix('%')
+    w.artwork_opacity.setToolTip('Opacity affects only this element\'s artwork, never the hand.')
+    w.paper_cleanup=QCheckBox('Clean white / paper background')
+    w.paper_cleanup.setToolTip('Optional edge-connected white or off-white paper removal on a rendering copy. Original stays saved.')
+    w.paper_tolerance=w.number(0,80,24,1)
+    w.paper_tolerance.setDecimals(0)
+    w.paper_tolerance.setToolTip('Higher values remove more variation in off-white paper. Be careful with very light details.')
+    w.paper_softness=w.number(0,40,12,1)
+    w.paper_softness.setDecimals(0)
+    w.paper_softness.setToolTip('Smooth antialiasing around the removed background (0 = sharp edge).')
+    for control in (w.artwork_opacity,w.paper_cleanup,w.paper_tolerance,w.paper_softness):
+        appearance_storage.addWidget(control)
+    w.appearance_backing.hide()
+    animation_l.addWidget(w.appearance_backing)
     a2=form_layout();animation_l.addLayout(a2)
     w.reveal_mode=QComboBox()
     w.reveal_mode.addItems(['Brush painting','Adaptive Hand Painting','Zigzag sweep',
@@ -1796,7 +1814,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.color_fade.valueChanged.connect(w.refresh)
     w.color_hold.valueChanged.connect(w.refresh)
     w.reveal_mode.currentIndexChanged.connect(w.refresh)
-    w.blend_mode.currentIndexChanged.connect(w.refresh)  # Preview changes immediately.
+    w.blend_mode.currentIndexChanged.connect(w.refresh)  # Per-element, edited in Element Editor.
+    w.artwork_opacity.valueChanged.connect(w.refresh)
+    w.paper_cleanup.toggled.connect(w.refresh)
+    w.paper_tolerance.valueChanged.connect(w.refresh)
+    w.paper_softness.valueChanged.connect(w.refresh)
     w.brush_width.valueChanged.connect(w.schedule_brush_refresh)
     w.show_paint_hand.toggled.connect(w.refresh)
     w.sound_on.toggled.connect(lambda checked: (w.update_transport_icons(), w.sync_preview_sound()))
