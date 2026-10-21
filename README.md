@@ -9,6 +9,12 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Visible Natural pen, no clipped panels (v0.5.3-experimental.80)
+
+- **Pen movement → Natural** is now clearly visible on every drawing: the whole drawing starts slowly, speeds up and settles at the end (on top of the gentle start and end of each line). Before, it eased only inside each line, which is invisible on line art made of thousands of tiny strokes. *Constant speed* is unchanged.
+- **Auto timing** removed from the Animation panel and the Effects menu.
+- **No more clipping at the scrollbar:** long file names, notes and checkbox labels can no longer push a panel wider than its column (this is what made the Image panel messy after *Apply image settings*); every panel keeps space on the right for the scrollbar.
+
 ## Panels start retracted; cleaner Hand panel (v0.5.3-experimental.79)
 
 - Both side panels are **closed every time StrokeScribe opens**; click a rail icon to open one.

@@ -13,9 +13,11 @@ def drawing_state(drawing,fraction):
     strokes=drawing.strokes
     ink=sum(s.length for s in strokes)
     if ink<=0: return DrawState(0.,False)
-    from stroke_timing import ease, pauses
+    from stroke_timing import ease, natural_tempo, pauses
     rests=pauses(drawing)
     natural=getattr(drawing,'pen_ease','off')=='natural'
+    if natural:
+        fraction=natural_tempo(fraction)
     phases=[]; previous=None
     for index,stroke in enumerate(strokes):
         if previous is not None:

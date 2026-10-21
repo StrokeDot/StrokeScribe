@@ -164,7 +164,6 @@ def build_menus(w):
     _combo_menu(fx, 'Export', w.export_layers)
     _combo_menu(fx, 'MP4 background', w.mp4_background)
     fx.addSeparator()
-    fx.addAction('Auto timing', lambda: w.auto_timing())
     fx.addAction('Create image with AI…', lambda: w.open_create_image())
 
     # ---------------------------------------------------------------- Help

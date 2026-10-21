@@ -411,7 +411,11 @@ def _pen_state(drawing,progress):
     No glyph pixels become visible during this event.
     """
     events,total=_stroke_schedule(drawing)
-    moment=min(1.,max(0.,float(progress)))*total
+    progress=min(1.,max(0.,float(progress)))
+    if _natural(drawing):
+        from stroke_timing import natural_tempo
+        progress=natural_tempo(progress)
+    moment=progress*total
     if moment>=total:
         event=events[-1]
         return event[5],False,None

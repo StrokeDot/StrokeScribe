@@ -59,6 +59,34 @@ def caption(text):
     return w
 
 
+def tidy_side_page(content):
+    """Keep a side-panel page inside its column.
+
+    Text notes and checkboxes cannot wrap a long unbroken word (a file name
+    such as ChatGPT_Image_Oct_20.png) or their own label, so their natural
+    width could push the whole page wider than the panel and under the
+    scrollbar. Here they take the column's width instead (notes wrap, long
+    words and labels are clipped), and every page keeps clear space on the
+    right for the scrollbar.
+    """
+    layout = content.layout()
+    if layout is not None:
+        layout.setContentsMargins(12, 12, 20, 12)
+    for note in content.findChildren(QLabel):
+        if note.wordWrap() and note.objectName() == 'note':
+            policy = note.sizePolicy()
+            policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+            note.setSizePolicy(policy)
+            note.setMinimumWidth(0)
+    for check in content.findChildren(QCheckBox):
+        policy = check.sizePolicy()
+        policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        check.setSizePolicy(policy)
+        check.setMinimumWidth(0)
+        if not check.toolTip():
+            check.setToolTip(check.text())
+
+
 def scroll_view(content):
     scroll=QScrollArea()
     scroll.setWidgetResizable(True)
@@ -1705,7 +1733,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.auto_timing_button.setToolTip('Pick draw, paint and hold times from how much there is to draw '
                                     'and paint (or from the voiceover length, if one is loaded).')
     w.auto_timing_button.clicked.connect(lambda checked=False: w.auto_timing())
-    a.addRow(w.auto_timing_button)
+    w.auto_timing_button.hide()          # removed from the panel (kept for File projects/tests)
     animation_l.addWidget(label('COLOR & PAINTING'))
     w.load_color_button=QPushButton('Load matching colored PNG…')
     w.load_color_button.clicked.connect(w.load_color)
@@ -2273,6 +2301,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
         fit_to_width(content,stacked=False)
         for form in content.findChildren(QFormLayout):
             form.setVerticalSpacing(5)
+    # After fit_to_width (which sets checkbox policies): nothing may widen a page.
+    for content in (asset,source_page,animation,hand,output,sound,music,camera_page,ai_page):
+        tidy_side_page(content)
     # QFormLayout.WrapLongRows can change the geometry of ALL animation
     # controls when image-specific rows are shown/hidden. In particular it
     # may grow the scroll content beyond its viewport and clip the right-hand

@@ -58,9 +58,24 @@ class TimingTests(unittest.TestCase):
     def test_natural_pen_eases_each_line(self):
         d = _Drawing(lines(1, 1), pen_ease='natural')
         self.assertLess(stroke_timing.ink_progress(d, .05), .05)          # gentle start
-        self.assertAlmostEqual(stroke_timing.ink_progress(d, .25), .25, places=6)
-        self.assertAlmostEqual(stroke_timing.ink_progress(d, .5), .5, places=6)
-        self.assertGreater(stroke_timing.ink_progress(d, .45), .45)       # gentle end
+        self.assertAlmostEqual(stroke_timing.ink_progress(d, .5), .5, places=6)   # symmetric
+        self.assertGreater(stroke_timing.ink_progress(d, .45), .45)       # gentle end of line 1
+        self.assertGreater(stroke_timing.ink_progress(d, .95), .95)       # settles at the end
+
+    def test_natural_is_visible_with_many_tiny_strokes(self):
+        # Line art from an image: thousands of tiny strokes. Easing inside each
+        # one is invisible, so Natural also shapes the whole drawing's tempo.
+        from image_drawing import drawing_state
+        strokes = [_Stroke([(i, 0), (i + .5, 0)]) for i in range(2000)]
+        plain = _Drawing(strokes, draw_seconds=4.)
+        natural = _Drawing(strokes, draw_seconds=4., pen_ease='natural')
+        for f in (.1, .2):
+            self.assertLess(stroke_timing.ink_progress(natural, f),
+                            stroke_timing.ink_progress(plain, f) - .03)
+            self.assertLess(drawing_state(natural, f).stroke_progress,
+                            drawing_state(plain, f).stroke_progress - .03)
+        self.assertEqual(stroke_timing.natural_tempo(0), 0)
+        self.assertEqual(stroke_timing.natural_tempo(1), 1)
 
     def test_natural_is_clearly_different(self):
         strokes = [_Stroke([(0, i * 10), (100 if i % 2 else 20, i * 10)]) for i in range(6)]
