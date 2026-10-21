@@ -278,7 +278,7 @@ class ElementDialog(QDialog):
             from blend_modes import composition_mode
             options=dict(options,width=PREVIEW_W,height=PREVIEW_H,background=False)
             camera=w.preview_camera(options)
-            artwork=compose_frame(w.drawing,self.position,dict(options,layers='art',ghost=0,overlays=[]),camera)
+            artwork=compose_frame(w.drawing,self.position,dict(options,layers='art',ghost=0,overlays=[],artwork_opacity=100),camera)
             hand=compose_frame(w.drawing,self.position,dict(options,layers='hand',ghost=0,overlays=[]),camera)
             extras=independent_overlays(w.drawing,self.position,options,camera)
             painter.setCompositionMode(composition_mode(options.get('blend_mode','Normal')))
