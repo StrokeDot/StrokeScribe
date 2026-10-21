@@ -13,7 +13,7 @@ import time
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap, QImage, QPainter, QColor
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QHBoxLayout,
-                               QLabel, QLineEdit, QPushButton, QSlider, QVBoxLayout, QWidget)
+                               QLabel, QLineEdit, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget)
 
 PREVIEW_W, PREVIEW_H = 560, 315
 
@@ -92,6 +92,24 @@ class ElementDialog(QDialog):
         add(f2, 'Paint time (s)', self._number(paint), paint)
         add(f2, 'Colour hold (s)', self._number(w.color_hold), w.color_hold)
 
+        right.addWidget(_section('APPEARANCE & BLENDING'))
+        appearance=QFormLayout(); appearance.setSpacing(7); right.addLayout(appearance)
+        add(appearance,'Blend mode',self._combo(w.blend_mode),w.blend_mode)
+        add(appearance,'Opacity',self._number(w.artwork_opacity),w.artwork_opacity)
+        self.paper_checkbox=add(appearance,'',
+            self._check(w.paper_cleanup,'Clean white / paper background'),
+            w.paper_cleanup)
+        self.paper_tol=add(appearance,'Tolerance',self._number(w.paper_tolerance),w.paper_tolerance)
+        self.paper_soft=add(appearance,'Edge softness',self._number(w.paper_softness),w.paper_softness)
+        self.paper_checkbox.setToolTip(
+            'Remove only near-white pixels connected to the outside paper edge. '
+            'Original pixels and painted stroke routes stay unchanged.')
+        self.paper_tol.setToolTip('Maximum color departure from white: 0–80.')
+        self.paper_soft.setToolTip('Fade near-white paper edges gradually, without erasing enclosed white areas.')
+        self.paper_checkbox.setEnabled(image)
+        self.paper_tol.setEnabled(image)
+        self.paper_soft.setEnabled(image)
+
         right.addWidget(_section('STAYS'))
         f3 = QFormLayout(); f3.setSpacing(7); right.addLayout(f3)
         add(f3, 'Pause (s)', self._number(w.pause_after), w.pause_after)
@@ -125,8 +143,16 @@ class ElementDialog(QDialog):
         done = QPushButton('Set'); done.setObjectName('primary'); done.clicked.connect(self.accept)
         buttons.addWidget(done)
         right.addLayout(buttons)
-        holder = QWidget(); holder.setLayout(right); holder.setMinimumWidth(330)
-        root.addWidget(holder, 1)
+        holder = QWidget(); holder.setLayout(right); holder.setMinimumWidth(0)
+        # Appearance introduces additional fields: scroll rather than clip the
+        # Hand/Set/Cancel controls on 600px-high and scaled Windows desktops.
+        settings_scroll=QScrollArea()
+        settings_scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        settings_scroll.setWidgetResizable(True)
+        settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        settings_scroll.setMinimumWidth(330)
+        settings_scroll.setWidget(holder)
+        root.addWidget(settings_scroll,1)
 
         for mine, theirs in self.pairs:
             self._connect(mine, theirs)
@@ -172,7 +198,12 @@ class ElementDialog(QDialog):
 
     def sync_enabled(self):
         for mine, theirs in self.pairs:
-            mine.setEnabled(theirs.isEnabled())
+            if mine in (self.paper_checkbox,self.paper_tol,self.paper_soft):
+                mine.setEnabled(self.w.is_image_artwork())
+            else:
+                # Hidden Inspector widgets are still active and persisted;
+                # only their Element Editor mirrors are visible.
+                mine.setEnabled(theirs.isEnabled())
 
     def rename(self, text):
         self.w.scenes[self.k]['name'] = text.strip() or None
