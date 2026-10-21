@@ -235,24 +235,49 @@ class ElementDialog(QDialog):
             import applog; applog.error('Element preview', exc)
             return
         card = QImage(PREVIEW_W, PREVIEW_H, QImage.Format.Format_ARGB32_Premultiplied)
-        card.fill(QColor('#ffffff') if w.background_spec() == 'transparent' else QColor(0, 0, 0, 0))
+        card.fill(QColor(0,0,0,0))
         painter = QPainter(card)
-        if w.background_spec() != 'transparent':
-            from backgrounds import picture_png
-            painter.fillRect(0, 0, PREVIEW_W, PREVIEW_H, QColor('#ffffff'))
-            spec = w.background_spec()
-            if spec.startswith('#') or spec in ('white', 'dark', 'black'):
-                painter.fillRect(0, 0, PREVIEW_W, PREVIEW_H,
-                                 QColor(spec if spec.startswith('#') else
-                                        {'white': '#ffffff', 'dark': '#242d3b', 'black': '#000000'}[spec]))
-            else:
-                from backgrounds import TEXTURES, texture_qimage
-                name = {t.lower(): t for t in TEXTURES}.get(spec)
-                if name:
-                    painter.drawImage(0, 0, texture_qimage(name, PREVIEW_W, PREVIEW_H))
-        scaled = frame.scaled(PREVIEW_W, PREVIEW_H, Qt.AspectRatioMode.KeepAspectRatio,
-                              Qt.TransformationMode.SmoothTransformation)
-        painter.drawImage((PREVIEW_W - scaled.width()) // 2, (PREVIEW_H - scaled.height()) // 2, scaled)
+        selected=self.test_background.currentText()
+        spec=({'White':'white','Dark':'dark','Black':'black',
+               'Transparent checker':'transparent'}.get(selected) or w.background_spec())
+        if spec == 'transparent':
+            for yy in range(0,PREVIEW_H,20):
+                for xx in range(0,PREVIEW_W,20):
+                    painter.fillRect(xx,yy,20,20,QColor('#dadada' if (xx//20+yy//20)%2 else '#fafafa'))
+        elif spec.startswith('#') or spec in ('white','dark','black'):
+            painter.fillRect(0,0,PREVIEW_W,PREVIEW_H,
+                QColor(spec if spec.startswith('#') else
+                       {'white':'#ffffff','dark':'#242d3b','black':'#000000'}[spec]))
+        else:
+            from backgrounds import TEXTURES, texture_qimage
+            name={t.lower():t for t in TEXTURES}.get(spec)
+            if name:
+                painter.drawImage(0,0,texture_qimage(name,PREVIEW_W,PREVIEW_H))
+        # The single-element view needs an artwork-only blend over its test
+        # background, followed by a SourceOver hand. Already-composed board
+        # pages must NOT be blended again.
+        options=w.preview_options()
+        is_page=w.drawn_over(w.scene_index) if w.drawing is not None else False
+        affected=(options is not None and not is_page and options.get('layers')!='hand'
+                  and (options.get('blend_mode','Normal')!='Normal' or
+                       float(options.get('artwork_opacity',100))!=100))
+        if affected:
+            from frame_render import compose_frame
+            from blend_modes import composition_mode
+            options=dict(options,width=PREVIEW_W,height=PREVIEW_H,background=False)
+            camera=w.preview_camera(options)
+            artwork=compose_frame(w.drawing,self.position,dict(options,layers='art',ghost=0),camera)
+            hand=compose_frame(w.drawing,self.position,dict(options,layers='hand',ghost=0),camera)
+            painter.setCompositionMode(composition_mode(options.get('blend_mode','Normal')))
+            painter.setOpacity(max(0.,min(1.,float(options.get('artwork_opacity',100))/100.)))
+            painter.drawImage(0,0,artwork)
+            painter.setOpacity(1.)
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            painter.drawImage(0,0,hand)
+        else:
+            scaled=frame.scaled(PREVIEW_W, PREVIEW_H, Qt.AspectRatioMode.KeepAspectRatio,
+                                Qt.TransformationMode.SmoothTransformation)
+            painter.drawImage((PREVIEW_W-scaled.width())//2,(PREVIEW_H-scaled.height())//2,scaled)
         painter.end()
         self.preview.setPixmap(QPixmap.fromImage(card))
 
