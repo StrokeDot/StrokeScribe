@@ -26,3 +26,36 @@ jobs:
       - run: |
           pip install --only-binary=:all: -r requirements.txt
       - run: python -X faulthandler -c "import applog,runpy; applog.setup(); runpy.run_path('tools/run_tests.py',run_name='__main__')" --limit 120 test_windows_shell test_project_lifecycle test_updater test_update_transaction
+
+  native-install:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python tools/build_windows_installer.py
+      - name: Build candidate installer
+        shell: pwsh
+        run: |
+          $version = python -c "import version; print(version.APP_VERSION)"
+          $iscc = "${env:ProgramFiles(x86)}\\Inno Setup 6\\ISCC.exe"
+          if (!(Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc "/DAppVersion=$version" installer\\StrokeScribe.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+      - name: Verify installed native identity and project integration
+        shell: pwsh
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
+          $setup = Get-ChildItem dist\\StrokeScribe-Setup-*.exe | Select-Object -First 1
+          python tools/verify_windows_identity.py "$($setup.FullName)"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Windows-identity-review-candidate
+          if-no-files-found: ignore
+          path: |
+            dist/*.exe
+            test-output/

@@ -73,7 +73,7 @@ Root: HKCU; Subkey: "Software\RegisteredApplications"; ValueType: string; ValueN
 function MaySetProjectDefault: Boolean;
 var Existing: String;
 begin
-  Result := (not RegQueryStringValue(HKCU, 'Software\Classes\.strokescribe', '', Existing)) or
+  Result := (not RegQueryStringValue(HKCR, '.strokescribe', '', Existing)) or
     (Existing = '') or (Existing = 'StrokeDot.StrokeScribe.Project');
 end;
 
