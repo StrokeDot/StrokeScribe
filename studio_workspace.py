@@ -1851,6 +1851,16 @@ def build_workspace(w, Canvas, BRAND_ICON):
         policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
         field.setSizePolicy(policy)
         field.setMinimumWidth(84)
+    # In a QScrollArea with widgetResizable=True, a Preferred-size panel
+    # still reports its full QVBoxLayout minimumSizeHint as a hard width.
+    # On Linux this stayed at 269px when the Inspector viewport was 262px.
+    # Let ONLY the outer Animation page shrink to the actual viewport.
+    # The interactive controls retain their explicit safe minimum widths.
+    # Do not apply Ignored to comboboxes or individual form controls: that
+    # earlier mistake made whole dropdowns disappear.
+    policy=animation.sizePolicy()
+    policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+    animation.setSizePolicy(policy)
     from PySide6.QtGui import QShortcut, QKeySequence
     w.save_shortcut=QShortcut(QKeySequence(QKeySequence.StandardKey.Save),w)
     w.save_shortcut.activated.connect(lambda: w.save_project())
