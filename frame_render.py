@@ -259,9 +259,20 @@ def _entering(drawing, fraction, opts, kind):
 
 def compose_frame(drawing, fraction, options, camera_path=None):
     """options: render_color_timeline keywords plus artwork_scale, duration and erase."""
-    # Artwork opacity is never applied to a hand. Render these as two independent
-    # images ONLY for non-default opacity; the Normal/100% legacy result is
-    # preserved exactly, including entrance/erase/painting behavior.
+    # Artwork opacity is never applied to the moving hand or independent
+    # overlays, including when "Drawing only (no hand)" is exported.
+    # Normal/100% keeps the legacy pixel and timing path unchanged.
+    if (options.get('layers','all')=='art' and
+            float(options.get('artwork_opacity',100))!=100):
+        from scenes import stack
+        art=compose_frame(drawing,fraction,dict(options,artwork_opacity=100,
+                          background=False,overlays=[]),camera_path)
+        extras=independent_overlays(drawing,fraction,options,camera_path)
+        result=stack(None,art,'Normal',options['artwork_opacity'],extras=extras)
+        if options.get('background') is False:
+            return result
+        from engine import apply_lettering_background
+        return apply_lettering_background(result,drawing)
     if (options.get('layers','all')=='all' and
             float(options.get('artwork_opacity',100))!=100):
         from scenes import stack
