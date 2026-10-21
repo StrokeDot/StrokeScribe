@@ -117,6 +117,7 @@ def import_svg(filename):
     has_fill=False
     visual_boxes=[]
     strokes = []
+    shapes = []
     total_points = 0
     for el in svg.elements():
         if not isinstance(el, Shape): continue
@@ -133,10 +134,30 @@ def import_svg(filename):
             color = str(el.fill) if el.fill is not None else '#153c54'
             if color in ('None','none'): continue
             warnings.add('Filled shapes are drawn as outlines; fills are not reconstructed as pen strokes.')
-        for sub_index, sub in enumerate(p.as_subpaths()):
+        shapes.append((el, color, list(p.as_subpaths())))
+    # Sampling. Dense sampling (a point every 0.4 SVG units) is the original
+    # method: Adaptive Hand Painting plans its brush route from these points,
+    # so it is kept whenever the drawing fits the point budget (exact .58
+    # behaviour). Only drawings that would exceed 500,000 points switch to
+    # curvature-adaptive sampling (added in .63 for complex vector imports).
+    def dense_count(seg):
+        return max(1, min(20000, math.ceil(seg.length(error=1e-5)/0.4))) + 1
+    dense = sum(dense_count(seg) for _, _, subs in shapes for sub in subs
+                for seg in sub if not isinstance(seg, Move)) <= 500_000
+    for el, color, subs in shapes:
+        for sub_index, sub in enumerate(subs):
             points=[]
             for seg in sub:
                 if isinstance(seg, Move): continue
+                if dense:
+                    # Dense curve sampling, then arc-length timing along the resulting geometry.
+                    n = max(1, min(20000, math.ceil(seg.length(error=1e-5)/0.4)))
+                    for j in range(n+1):
+                        pt=seg.point(j/n)
+                        xy=(float(pt.x),float(pt.y))
+                        if not all(math.isfinite(v) for v in xy): raise ValueError('Non-finite SVG coordinates.')
+                        if not points or math.dist(points[-1],xy)>1e-9: points.append(xy)
+                    continue
                 # Keep exact straight edges; subdivide curved edges only
                 # where the artwork would visibly differ from the chord.
                 for xy in _sample_svg_segment(seg, budget=500_000-total_points-len(points)):
@@ -147,6 +168,7 @@ def import_svg(filename):
             if len(points)>1:
                 strokes.append(Stroke(f'{el.id or "shape"} / {sub_index+1}',points,color,float(el.stroke_width or 3)))
                 total_points += len(points)
+            if total_points>500000: raise ValueError('Drawing is too complex (500,000 sampled points maximum).')
     if not strokes: raise ValueError('No drawable vector strokes found. Convert text or images to SVG paths first.')
     allpts=[pt for s in strokes for pt in s.points]
     xs,ys=zip(*allpts)
