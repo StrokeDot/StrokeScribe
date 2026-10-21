@@ -735,6 +735,16 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         try:
             self.restore_source_snapshot(snapshot.get('source'))
             settings=snapshot['settings']
+            # Older snapshots lack appearance controls. Revert to their
+            # historical full-opacity, no-cleanup defaults when switching.
+            for name,default in (('artwork_opacity',100),('paper_cleanup',False),
+                                 ('paper_tolerance',22),('paper_softness',8)):
+                if name not in settings:
+                    widget=getattr(self,name,None)
+                    if widget is not None:
+                        widget.blockSignals(True)
+                        set_widget_value(widget,default)
+                        widget.blockSignals(False)
             for name in self.PROJECT_SETTINGS:
                 widget=getattr(self,name,None)
                 if widget is None or name not in settings: continue
@@ -1442,6 +1452,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             drawing.artwork_assets=validate_assets(metadata)
             managed=materialize_assets(drawing.artwork_assets)
         settings=data.get('settings',{})
+        # Reset optional appearance fields while switching scenes so a legacy
+        # image cannot inherit cleanup or opacity from the preceding element.
+        settings=dict({'artwork_opacity':100,'paper_cleanup':False,
+                       'paper_tolerance':22,'paper_softness':8},**settings)
         # Settings first (without a refresh storm), then the drawing.
         for name in self.PROJECT_SETTINGS:
             widget=getattr(self,name,None)
