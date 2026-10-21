@@ -1,7 +1,12 @@
 name: AI resource awareness review
 on:
   pull_request:
-    paths: ['*.py', '.github/workflows/ai-resources.yml']
+    paths:
+      - 'ai_*.py'
+      - 'owned_process.py'
+      - 'create_image_dialog.py'
+      - 'test_ai_*.py'
+      - '.github/workflows/ai-resources.yml'
   workflow_dispatch:
 permissions:
   contents: read

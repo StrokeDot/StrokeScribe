@@ -1,6 +1,16 @@
 name: AI image engine checks
 on:
   pull_request:
+    paths:
+      - 'ai_*.py'
+      - 'create_image_dialog.py'
+      - 'owned_process.py'
+      - 'model_updates_live.py'
+      - 'image_generator_updates.py'
+      - 'models/**'
+      - 'tools/ci_*.py'
+      - 'requirements.txt'
+      - '.github/workflows/ai-engine.yml'
   workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

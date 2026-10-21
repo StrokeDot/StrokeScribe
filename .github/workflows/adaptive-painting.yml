@@ -1,6 +1,20 @@
 name: Adaptive painting cloud validation
 on:
   pull_request:
+    paths:
+      - 'adaptive_hand.py'
+      - 'image_painting.py'
+      - 'zigzag_paint.py'
+      - 'clean_paint.py'
+      - 'color_reveal.py'
+      - 'engine.py'
+      - 'frame_render.py'
+      - 'image_regions.py'
+      - 'eraser.py'
+      - 'test_adaptive.py'
+      - 'test_prototype.py'
+      - 'requirements.txt'
+      - '.github/workflows/adaptive-painting.yml'
   workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

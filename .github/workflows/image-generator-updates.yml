@@ -5,7 +5,6 @@ on:
       - 'create_image_dialog.py'
       - 'test_generator_polish.py'
       - 'update_dialog.py'
-      - 'app.py'
       - 'image_generator_updates.py'
       - 'model_updates_live.py'
       - 'test_live_model_updates.py'
