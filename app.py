@@ -1344,6 +1344,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def offer_recovery(self):
         """After a crash: offer the work that was autosaved."""
+        if getattr(self, "_shell_recovery_offered", False): return False
         import autosave
         info=autosave.pending()
         if not info: return False

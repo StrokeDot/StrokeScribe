@@ -49,6 +49,19 @@ class ShellOpenTests(unittest.TestCase):
             self.assertTrue(self.route(path))
         self.assertFalse(self.w.has_unsaved_changes())
         self.assertTrue(self.w.open_project(str(path)))
+    def test_initial_shell_open_preserves_recovered_unsaved_work(self):
+        path=self.project()
+        self.w.duration.setValue(self.w.duration.value()+2)
+        expected=self.w.duration.value();self.assertTrue(self.w.autosave_tick())
+        router=getattr(startup,'open_startup_path',None)
+        self.assertTrue(callable(router))
+        with patch.object(QMessageBox,'question',side_effect=[QMessageBox.StandardButton.Yes,QMessageBox.StandardButton.Cancel]):
+            self.assertFalse(router(self.w,path,initial=True))
+        self.assertEqual(self.w.duration.value(),expected)
+        self.assertTrue(self.w.has_unsaved_changes())
+        import autosave
+        self.assertIsNotNone(autosave.pending())
+        self.assertFalse(self.w.offer_recovery())
     def test_svg_argument_still_loads_vector_drawing(self):
         self.assertTrue(self.route(Path(__file__).parent/'samples'/'drawing.svg'))
         self.assertGreater(len(self.w.drawing.strokes),0)
