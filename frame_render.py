@@ -276,7 +276,7 @@ def compose_frame(drawing, fraction, options, camera_path=None):
     if (options.get('layers','all')=='all' and
             float(options.get('artwork_opacity',100))!=100):
         from scenes import stack
-        art=compose_frame(drawing,fraction,dict(options,layers='art',background=False,ghost=0,overlays=[]),camera_path)
+        art=compose_frame(drawing,fraction,dict(options,layers='art',background=False,ghost=0,overlays=[],artwork_opacity=100),camera_path)
         hand=compose_frame(drawing,fraction,dict(options,layers='hand',background=False,ghost=0,overlays=[]),camera_path)
         extras=independent_overlays(drawing,fraction,options,camera_path)
         output=stack(None,art,'Normal',options['artwork_opacity'],hand,extras)
