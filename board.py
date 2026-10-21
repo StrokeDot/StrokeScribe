@@ -241,12 +241,14 @@ class World:
                 continue
             from blend_modes import composition_mode
             p.setCompositionMode(composition_mode(self.items[j]['options'].get('blend_mode','Normal')))
+            p.setOpacity(max(0.,min(1.,float(self.items[j]['options'].get('artwork_opacity',100))/100.)))
             p.drawImage(QRectF(x, y, w, h), self.finished(j, w))
+            p.setOpacity(1.)
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
         p.end()
         return out
 
-    def put(self, under, image, frame, view, blend_mode='Normal'):
+    def put(self, under, image, frame, view, blend_mode='Normal', opacity=100., hand=None):
         """`image` (a frame of one scene, the frame's own picture) placed into a view picture."""
         from PySide6.QtCore import QRectF
         from PySide6.QtGui import QPainter
@@ -256,6 +258,11 @@ class World:
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         from blend_modes import composition_mode
         p.setCompositionMode(composition_mode(blend_mode))
+        p.setOpacity(max(0.,min(1.,float(opacity)/100.)))
         p.drawImage(QRectF(x, y, w, h), image)
+        p.setOpacity(1.)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        if hand is not None:
+            p.drawImage(QRectF(x,y,w,h),hand)
         p.end()
         return out
