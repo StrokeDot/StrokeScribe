@@ -1840,6 +1840,17 @@ def build_workspace(w, Canvas, BRAND_ICON):
                 heading.setMaximumWidth(106)
                 heading.setSizePolicy(QSizePolicy.Policy.Maximum,
                                       QSizePolicy.Policy.Preferred)
+    # Only the side-by-side Position X/Y spinboxes need to disregard their
+    # *preferred* native width. With a 270px Inspector and vertical scrollbar,
+    # both spinbox minimumSizeHints together still widened the scroll content
+    # (269px for a 262px viewport on Qt/Linux). Keep explicit 84px minima so
+    # the text and increment/decrement arrows remain functional. This must
+    # come after fit_to_width(), which normally resets spinbox size policies.
+    for field in (w.picture_x,w.picture_y):
+        policy=field.sizePolicy()
+        policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        field.setSizePolicy(policy)
+        field.setMinimumWidth(84)
     from PySide6.QtGui import QShortcut, QKeySequence
     w.save_shortcut=QShortcut(QKeySequence(QKeySequence.StandardKey.Save),w)
     w.save_shortcut.activated.connect(lambda: w.save_project())
