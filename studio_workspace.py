@@ -2046,6 +2046,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.sound_file_buttons={}
     from ui_icons import icon as _icon
     sound_files=form_layout();sound_l.addLayout(sound_files)
+    w.sound_remove_buttons={}
     for key,text in (('sound_pencil_file','Pencil'),('sound_brush_file','Brush'),('sound_eraser_file','Eraser')):
         box=QWidget();box.setMinimumWidth(0)
         row=QHBoxLayout(box);row.setContentsMargins(0,0,0,0);row.setSpacing(6)
@@ -2058,8 +2059,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
         reset.setToolTip(f'Remove the {text.lower()} sound.')
         reset.clicked.connect(lambda checked=False,k=key: w.set_sound_file(k,None))
         row.addWidget(reset)
+        reset.hide()                         # shown once a sound is chosen
         sound_files.addRow(text,box)
         w.sound_file_buttons[key]=(button,text)
+        w.sound_remove_buttons[key]=reset
     w.sound_volume=QSpinBox();w.sound_volume.setRange(0,100);w.sound_volume.setValue(80)
     w.sound_volume.setSuffix('%')
     e4=form_layout();e4.addRow('Volume',w.sound_volume)
@@ -2357,9 +2360,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # (269px for a 262px viewport on Qt/Linux). Keep explicit 84px minima so
     # the text and increment/decrement arrows remain functional. This must
     # come after fit_to_width(), which normally resets spinbox size policies.
+    # Position X and Y have their own rows now (experimental.81): they fill the
+    # row like every other field, keeping the explicit 84px minimum.
     for field in (w.picture_x,w.picture_y):
         policy=field.sizePolicy()
-        policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
         field.setSizePolicy(policy)
         field.setMinimumWidth(84)
     # In a QScrollArea with widgetResizable=True, a Preferred-size panel
