@@ -1958,7 +1958,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     lh=form_layout();hand_l.addLayout(lh)
     w.left_handed=QCheckBox('Left-handed')
     w.left_handed.setToolTip('Mirrors the drawing hand, the painting brush and the eraser, for left-handers.')
-    lh.addRow('',w.left_handed)
+    lh.addRow(QLabel(''),w.left_handed)      # an empty label keeps the shared column
     hand_l.addStretch(1)
     tabs.addTab(scroll_view(hand),'Hand')
 
