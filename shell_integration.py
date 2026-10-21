@@ -1,7 +1,7 @@
 """Bounded, current-user local delivery for installed shell-open requests."""
 import hashlib,json,tempfile
 from pathlib import Path
-from PySide6.QtCore import QObject,Signal,QLockFile
+from PySide6.QtCore import QObject,Signal,QLockFile,QEventLoop,QTimer
 from PySide6.QtNetwork import QLocalServer,QLocalSocket
 
 MAX_REQUEST=32768
@@ -30,19 +30,27 @@ class ProjectBroker(QObject):
         if path is not None and (not isinstance(path,str) or '\0' in path):return False
         data=json.dumps({'path':path},ensure_ascii=False).encode('utf-8')+b'\n'
         if len(data)>MAX_REQUEST:return False
-        socket=QLocalSocket();socket.connectToServer(name)
-        if not socket.waitForConnected(1500):
-            import logging
-            logging.getLogger(__name__).warning('Project request connection failed: %s',socket.errorString())
-            return False
-        socket.write(data)
-        while socket.bytesToWrite():
-            if not socket.waitForBytesWritten(1500) and socket.bytesToWrite():
-                import logging
-                logging.getLogger(__name__).warning('Project request write failed: %s (%s bytes pending)',socket.errorString(),socket.bytesToWrite())
-                socket.abort();return False
-        socket.disconnectFromServer()
-        return True
+        # Use the Qt event loop for overlapped Windows pipe writes. A blocking
+        # wait can run before the async writer starts and report a false failure.
+        # An acknowledgement proves the primary accepted the complete request,
+        # rather than merely accepting bytes into the secondary's write buffer.
+        socket=QLocalSocket();loop=QEventLoop();accepted=[False];reply=bytearray()
+        def send():
+            socket.write(data);socket.flush()
+        def receive():
+            reply.extend(bytes(socket.read(8)))
+            if bytes(reply)==b'ok\n':
+                accepted[0]=True;loop.quit()
+            elif len(reply)>=3:loop.quit()
+        socket.connected.connect(send);socket.readyRead.connect(receive)
+        socket.errorOccurred.connect(loop.quit)
+        socket.disconnected.connect(loop.quit)
+        timer=QTimer();timer.setSingleShot(True);timer.timeout.connect(loop.quit);timer.start(2000)
+        socket.connectToServer(name)
+        if not accepted[0] and socket.state()!=QLocalSocket.LocalSocketState.UnconnectedState:
+            loop.exec()
+        timer.stop();socket.abort()
+        return accepted[0]
     def _accept(self):
         while self.server.hasPendingConnections():
             socket=self.server.nextPendingConnection()
@@ -65,6 +73,7 @@ class ProjectBroker(QObject):
         except (ValueError,UnicodeError):
             socket.abort();return
         self.requested.emit(path)
+        socket.write(b'ok\n');socket.flush()
         socket.disconnectFromServer()
     def _closed(self,socket):
         # A peer may close immediately after writing its complete request.
