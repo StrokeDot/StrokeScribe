@@ -107,6 +107,30 @@ def _core(drawing, fraction, opts, camera_path=None):
     return crop(frame, width, height, zoom, cx, cy)
 
 
+def independent_overlays(drawing, fraction, options, camera_path=None):
+    """Overlay pictures/titles at their own 100% opacity, outside art blending.
+
+    Use the same scene-relative clock and camera crop as compose_frame(). These
+    layers sit between the composited artwork and the moving drawing hand.
+    """
+    items=options.get('overlays') or []
+    if not items or options.get('layers')=='hand':
+        return None
+    from camera import crop, render_size
+    import overlays
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QImage
+    width,height=options['width'],options['height']
+    zoom,cx,cy=(camera_path.at(fraction) if camera_path is not None
+                else (1.,.5,.5))
+    big_w,big_h=render_size(width,height,zoom)
+    layer=QImage(big_w,big_h,QImage.Format.Format_ARGB32_Premultiplied)
+    layer.fill(Qt.GlobalColor.transparent)
+    seconds=max(0.,min(1.,float(fraction)))*timeline_seconds(drawing,options)
+    overlays.paint(layer,items,seconds)
+    return crop(layer,width,height,zoom,cx,cy)
+
+
 def split_erase(drawing, fraction, options):
     """(base options, erase settings or None, base fraction or None, erase progress or None)."""
     opts = dict(options)
@@ -241,9 +265,10 @@ def compose_frame(drawing, fraction, options, camera_path=None):
     if (options.get('layers','all')=='all' and
             float(options.get('artwork_opacity',100))!=100):
         from scenes import stack
-        art=compose_frame(drawing,fraction,dict(options,layers='art',background=False,ghost=0),camera_path)
-        hand=compose_frame(drawing,fraction,dict(options,layers='hand',background=False,ghost=0),camera_path)
-        output=stack(None,art,'Normal',options['artwork_opacity'],hand)
+        art=compose_frame(drawing,fraction,dict(options,layers='art',background=False,ghost=0,overlays=[]),camera_path)
+        hand=compose_frame(drawing,fraction,dict(options,layers='hand',background=False,ghost=0,overlays=[]),camera_path)
+        extras=independent_overlays(drawing,fraction,options,camera_path)
+        output=stack(None,art,'Normal',options['artwork_opacity'],hand,extras)
         if options.get('background') is False:
             return output
         from engine import apply_lettering_background
