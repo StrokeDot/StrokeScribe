@@ -239,7 +239,8 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
                           duration=4, fade_duration=.4, hold_duration=.6,
                           final_image=None, thickness=1., hand=None,
                           hand_scale=.18, anchor=(.1,.1), reveal_mode='fade',
-                          brush_width=.14, painting_hand=None, stroke_spacing=.55):
+                          brush_width=.14, painting_hand=None, stroke_spacing=.55,
+                          paper_cleanup=False,paper_tolerance=22,paper_softness=8):
     """Show SVG drawing, then fade, brush, adaptive or zigzag painting."""
     if final_image is None or final_image.isNull():
         return render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)
@@ -248,6 +249,9 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         # renderer, hand and guide retirement are shared with Adaptive.
         drawing.paint_method=reveal_mode
         reveal_mode='adaptive'
+    # Keep raw source for brush-plan geometry; clean the visible colour pixels only.
+    display_image=(__import__('paper_cleanup').clean_paper(final_image,paper_tolerance,paper_softness)
+                   if paper_cleanup and getattr(drawing,'source_kind',None)=='image' else None)
     image_animation=getattr(drawing,'image_animation',None)
     if getattr(drawing,'source_kind',None)=='image' and image_animation in ('draw_paint','paint_only'):
         # This is a choice of visible animation, not an AI recognition mode.
@@ -261,7 +265,8 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
             paint_progress=min(1.,elapsed/paint_length)
             return paint_frame(drawing,final_image,width,height,paint_progress,
                                thickness,brush_width,stroke_spacing,
-                               painting_hand,hand_scale,anchor,False)
+                               painting_hand,hand_scale,anchor,False,
+                               display_image=display_image)
         total=timeline_duration(duration,final_image,fade_duration,hold_duration)
         elapsed=max(0.,min(1.,float(fraction)))*total
         stroke_progress,paint_progress=timeline_state(elapsed,duration,fade_duration)
@@ -270,7 +275,8 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
                           hand,hand_scale,anchor)
         return paint_frame(drawing,final_image,width,height,paint_progress,
                            thickness,brush_width,stroke_spacing,
-                           painting_hand,hand_scale,anchor,True)
+                           painting_hand,hand_scale,anchor,True,
+                           display_image=display_image)
     total = timeline_duration(duration, final_image, fade_duration, hold_duration)
     elapsed = max(0., min(1., float(fraction))) * total
     stroke_progress, reveal_progress = timeline_state(elapsed,duration,fade_duration)
