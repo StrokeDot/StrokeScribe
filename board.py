@@ -209,6 +209,15 @@ class World:
         opts = {k: v for k, v in it['options'].items() if k not in ('fps', 'audio', 'workers')}
         opts.update(width=q, height=max(2, round(q * self.aspect)), layers='art', ghost=0,
                     background=new_page(self.frames, j, self.aspect))
+        special=(opts.get('blend_mode','Normal')!='Normal' or
+                 float(opts.get('artwork_opacity',100))!=100)
+        if special:
+            # Titles/other independent overlays cannot inherit an artwork mode.
+            opts['overlays']=[]
+            opts['artwork_opacity']=100  # World.view applies opacity after caching the raw art.
+            # First-page lettering background is drawn separately in World.view
+            # so neither a blend mode nor opacity can alter the page itself.
+            opts['background']=False
         image = compose_frame(it['drawing'], 1., opts)
         size = image.sizeInBytes()
         used = sum(i.sizeInBytes() for i in self.cache.values())
@@ -216,6 +225,26 @@ class World:
             _, old = self.cache.popitem(last=False); used -= old.sizeInBytes()
         self.cache[key] = image
         return image
+
+    def finished_extras(self, j, width):
+        """Finished independent overlays of element j, cached at matching size."""
+        q=self._size(width)
+        key=(self.items[j]['key'],'extras',q)
+        if key in self.cache:
+            self.cache.move_to_end(key)
+            return self.cache[key]
+        from frame_render import independent_overlays
+        it=self.items[j]
+        opts=dict(it['options'],width=q,height=max(2,round(q*self.aspect)),
+                  background=False,layers='art')
+        extras=independent_overlays(it['drawing'],1.,opts)
+        if extras is not None:
+            used=sum(cached.sizeInBytes() for cached in self.cache.values())
+            while self.cache and used+extras.sizeInBytes()>self.BUDGET:
+                _,old=self.cache.popitem(last=False)
+                used-=old.sizeInBytes()
+            self.cache[key]=extras
+        return extras
 
     def place(self, frame, view, out_w, out_h):
         """Where a frame lands in an out_w × out_h picture of `view` (x, y, w, h in pixels)."""
@@ -240,13 +269,29 @@ class World:
             if w < 2 or x > out_w or y > out_h or x + w < 0 or y + h < 0:
                 continue
             from blend_modes import composition_mode
-            p.setCompositionMode(composition_mode(self.items[j]['options'].get('blend_mode','Normal')))
+            settings=self.items[j]['options']
+            mode=settings.get('blend_mode','Normal')
+            opacity=float(settings.get('artwork_opacity',100))
+            special=mode!='Normal' or opacity!=100
+            if special and new_page(self.frames,j,self.aspect):
+                bg=getattr(self.items[j]['drawing'],'lettering_background',None)
+                if bg is not None:
+                    from PySide6.QtGui import QColor
+                    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+                    p.fillRect(QRectF(x,y,w,h),QColor(bg))
+            p.setCompositionMode(composition_mode(mode))
+            p.setOpacity(max(0.,min(1.,opacity/100.)))
             p.drawImage(QRectF(x, y, w, h), self.finished(j, w))
+            p.setOpacity(1.)
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            if special:
+                extras=self.finished_extras(j,w)
+                if extras is not None:
+                    p.drawImage(QRectF(x,y,w,h),extras)
         p.end()
         return out
 
-    def put(self, under, image, frame, view, blend_mode='Normal'):
+    def put(self, under, image, frame, view, blend_mode='Normal', opacity=100., hand=None):
         """`image` (a frame of one scene, the frame's own picture) placed into a view picture."""
         from PySide6.QtCore import QRectF
         from PySide6.QtGui import QPainter
@@ -256,6 +301,11 @@ class World:
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         from blend_modes import composition_mode
         p.setCompositionMode(composition_mode(blend_mode))
+        p.setOpacity(max(0.,min(1.,float(opacity)/100.)))
         p.drawImage(QRectF(x, y, w, h), image)
+        p.setOpacity(1.)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        if hand is not None:
+            p.drawImage(QRectF(x,y,w,h),hand)
         p.end()
         return out

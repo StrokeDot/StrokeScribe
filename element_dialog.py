@@ -13,7 +13,7 @@ import time
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap, QImage, QPainter, QColor
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QHBoxLayout,
-                               QLabel, QLineEdit, QPushButton, QSlider, QVBoxLayout, QWidget)
+                               QLabel, QLineEdit, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea)
 
 PREVIEW_W, PREVIEW_H = 560, 315
 
@@ -58,6 +58,13 @@ class ElementDialog(QDialog):
         self.clock = QLabel('0.0 s'); self.clock.setMinimumWidth(80)
         player.addWidget(self.clock)
         left.addLayout(player)
+        background_picker=QHBoxLayout()
+        background_picker.addWidget(QLabel('Test background'))
+        self.test_background=QComboBox()
+        self.test_background.addItems(['Canvas background','White','Dark','Black','Transparent checker'])
+        self.test_background.currentIndexChanged.connect(lambda _:self.seek(self.position))
+        background_picker.addWidget(self.test_background,1)
+        left.addLayout(background_picker)
         note = QLabel('Only this element plays here. Set keeps your changes; Cancel puts everything back.')
         note.setWordWrap(True); note.setObjectName('note')
         left.addWidget(note); left.addStretch(1)
@@ -77,6 +84,29 @@ class ElementDialog(QDialog):
             form.addRow(text, mine)
             self.pairs.append((mine, theirs))
             return mine
+
+        right.addWidget(_section('APPEARANCE & BLENDING'))
+        appearance=QFormLayout();appearance.setSpacing(7);right.addLayout(appearance)
+        self.appearance_mode=add(appearance,'Blend mode',self._combo(w.blend_mode),w.blend_mode)
+        opacity_row=QWidget()
+        opacity_line=QHBoxLayout(opacity_row)
+        opacity_line.setContentsMargins(0,0,0,0)
+        self.opacity=QSlider(Qt.Orientation.Horizontal)
+        self.opacity.setRange(0,100)
+        self.opacity.setValue(round(w.artwork_opacity.value()))
+        self.opacity_value=QLabel(str(self.opacity.value())+'%')
+        self.opacity_value.setMinimumWidth(44)
+        self.opacity.valueChanged.connect(lambda value: self.opacity_value.setText(str(value)+'%'))
+        opacity_line.addWidget(self.opacity,1)
+        opacity_line.addWidget(self.opacity_value)
+        appearance.addRow('Opacity',opacity_row)
+        self.pairs.append((self.opacity,w.artwork_opacity))
+        self.clean_paper=add(appearance,'',self._check(w.paper_cleanup,
+                            'Clean white / paper background'),w.paper_cleanup)
+        self.paper_tolerance=add(appearance,'Tolerance',self._number(w.paper_tolerance),w.paper_tolerance)
+        self.paper_softness=add(appearance,'Edge softness',self._number(w.paper_softness),w.paper_softness)
+        self.clean_paper.setToolTip('Only bright, edge-connected paper becomes transparent; original image remains intact.')
+        self._can_clean_paper=bool(image or w.final_image is not None)
 
         right.addWidget(_section('COMES IN'))
         f1 = QFormLayout(); f1.setSpacing(7); right.addLayout(f1)
@@ -124,9 +154,15 @@ class ElementDialog(QDialog):
         buttons.addStretch(1); buttons.addWidget(cancel)
         done = QPushButton('Set'); done.setObjectName('primary'); done.clicked.connect(self.accept)
         buttons.addWidget(done)
-        right.addLayout(buttons)
         holder = QWidget(); holder.setLayout(right); holder.setMinimumWidth(330)
-        root.addWidget(holder, 1)
+        scroller=QScrollArea(); scroller.setWidgetResizable(True)
+        scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroller.setWidget(holder)
+        settings_side=QVBoxLayout()
+        settings_side.setSpacing(8); settings_side.setContentsMargins(0,0,0,0)
+        settings_side.addWidget(scroller,1)
+        settings_side.addLayout(buttons)
+        root.addLayout(settings_side,1)
 
         for mine, theirs in self.pairs:
             self._connect(mine, theirs)
@@ -159,7 +195,7 @@ class ElementDialog(QDialog):
     def _connect(self, mine, theirs):
         if isinstance(mine, QComboBox):
             mine.currentIndexChanged.connect(lambda i, t=theirs: self.change(lambda: t.setCurrentIndex(i)))
-        elif isinstance(mine, QDoubleSpinBox):
+        elif isinstance(mine, (QDoubleSpinBox,QSlider)):
             mine.valueChanged.connect(lambda v, t=theirs: self.change(lambda: t.setValue(v)))
         else:
             mine.toggled.connect(lambda on, t=theirs: self.change(lambda: t.setChecked(on)))
@@ -172,7 +208,12 @@ class ElementDialog(QDialog):
 
     def sync_enabled(self):
         for mine, theirs in self.pairs:
-            mine.setEnabled(theirs.isEnabled())
+            can=theirs.isEnabled()
+            if mine in (self.clean_paper,self.paper_tolerance,self.paper_softness):
+                can=can and self._can_clean_paper
+            if mine in (self.paper_tolerance,self.paper_softness):
+                can=can and self.clean_paper.isChecked()
+            mine.setEnabled(can)
 
     def rename(self, text):
         self.w.scenes[self.k]['name'] = text.strip() or None
@@ -206,24 +247,52 @@ class ElementDialog(QDialog):
             import applog; applog.error('Element preview', exc)
             return
         card = QImage(PREVIEW_W, PREVIEW_H, QImage.Format.Format_ARGB32_Premultiplied)
-        card.fill(QColor('#ffffff') if w.background_spec() == 'transparent' else QColor(0, 0, 0, 0))
+        card.fill(QColor(0,0,0,0))
         painter = QPainter(card)
-        if w.background_spec() != 'transparent':
-            from backgrounds import picture_png
-            painter.fillRect(0, 0, PREVIEW_W, PREVIEW_H, QColor('#ffffff'))
-            spec = w.background_spec()
-            if spec.startswith('#') or spec in ('white', 'dark', 'black'):
-                painter.fillRect(0, 0, PREVIEW_W, PREVIEW_H,
-                                 QColor(spec if spec.startswith('#') else
-                                        {'white': '#ffffff', 'dark': '#242d3b', 'black': '#000000'}[spec]))
-            else:
-                from backgrounds import TEXTURES, texture_qimage
-                name = {t.lower(): t for t in TEXTURES}.get(spec)
-                if name:
-                    painter.drawImage(0, 0, texture_qimage(name, PREVIEW_W, PREVIEW_H))
-        scaled = frame.scaled(PREVIEW_W, PREVIEW_H, Qt.AspectRatioMode.KeepAspectRatio,
-                              Qt.TransformationMode.SmoothTransformation)
-        painter.drawImage((PREVIEW_W - scaled.width()) // 2, (PREVIEW_H - scaled.height()) // 2, scaled)
+        selected=self.test_background.currentText()
+        spec=({'White':'white','Dark':'dark','Black':'black',
+               'Transparent checker':'transparent'}.get(selected) or w.background_spec())
+        if spec == 'transparent':
+            for yy in range(0,PREVIEW_H,20):
+                for xx in range(0,PREVIEW_W,20):
+                    painter.fillRect(xx,yy,20,20,QColor('#dadada' if (xx//20+yy//20)%2 else '#fafafa'))
+        elif spec.startswith('#') or spec in ('white','dark','black'):
+            painter.fillRect(0,0,PREVIEW_W,PREVIEW_H,
+                QColor(spec if spec.startswith('#') else
+                       {'white':'#ffffff','dark':'#242d3b','black':'#000000'}[spec]))
+        else:
+            from backgrounds import TEXTURES, texture_qimage
+            name={t.lower():t for t in TEXTURES}.get(spec)
+            if name:
+                painter.drawImage(0,0,texture_qimage(name,PREVIEW_W,PREVIEW_H))
+        # The single-element view needs an artwork-only blend over its test
+        # background, followed by a SourceOver hand. Already-composed board
+        # pages must NOT be blended again.
+        options=w.preview_options()
+        is_page=w.drawn_over(w.scene_index) if w.drawing is not None else False
+        affected=(options is not None and not is_page and options.get('layers')!='hand'
+                  and (options.get('blend_mode','Normal')!='Normal' or
+                       float(options.get('artwork_opacity',100))!=100))
+        if affected:
+            from frame_render import compose_frame, independent_overlays
+            from blend_modes import composition_mode
+            options=dict(options,width=PREVIEW_W,height=PREVIEW_H,background=False)
+            camera=w.preview_camera(options)
+            artwork=compose_frame(w.drawing,self.position,dict(options,layers='art',ghost=0,overlays=[],artwork_opacity=100),camera)
+            hand=compose_frame(w.drawing,self.position,dict(options,layers='hand',ghost=0,overlays=[]),camera)
+            extras=independent_overlays(w.drawing,self.position,options,camera)
+            painter.setCompositionMode(composition_mode(options.get('blend_mode','Normal')))
+            painter.setOpacity(max(0.,min(1.,float(options.get('artwork_opacity',100))/100.)))
+            painter.drawImage(0,0,artwork)
+            painter.setOpacity(1.)
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            if extras is not None:
+                painter.drawImage(0,0,extras)
+            painter.drawImage(0,0,hand)
+        else:
+            scaled=frame.scaled(PREVIEW_W, PREVIEW_H, Qt.AspectRatioMode.KeepAspectRatio,
+                                Qt.TransformationMode.SmoothTransformation)
+            painter.drawImage((PREVIEW_W-scaled.width())//2,(PREVIEW_H-scaled.height())//2,scaled)
         painter.end()
         self.preview.setPixmap(QPixmap.fromImage(card))
 

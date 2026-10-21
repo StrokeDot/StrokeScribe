@@ -279,7 +279,7 @@ def _reuse_frame(source,target):
     shutil.copyfile(source,target)
 
 
-def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0, camera_zoom=1.0, erase=None, workers=None, sound_files=None, layers='all', offset=(0., 0.), background=True, overlays=None, entrance='draw', pause=0., blend_mode='Normal'):
+def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0, camera_zoom=1.0, erase=None, workers=None, sound_files=None, layers='all', offset=(0., 0.), background=True, overlays=None, entrance='draw', pause=0., blend_mode='Normal', artwork_opacity=100.):
     """Write the PNG frames. workers: None/0 = automatic (several CPU cores for
     longer exports), 1 = one core, n = n worker processes."""
     folder=Path(folder)
@@ -299,7 +299,7 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
                  stroke_spacing=stroke_spacing,artwork_scale=artwork_scale,erase=erase,layers=layers,
                  offset=tuple(offset or (0.,0.)),background=background,overlays=list(overlays or ()),
                  entrance=entrance or 'draw',pause=float(pause or 0),
-                 blend_mode=blend_mode)
+                 blend_mode=blend_mode,artwork_opacity=artwork_opacity)
     from frame_render import timeline_seconds
     total=timeline_seconds(drawing,options)
     count=max(2,round(total*fps))

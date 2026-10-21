@@ -59,7 +59,7 @@ class VisibleControlRegression(unittest.TestCase):
         for name in ("source_type", "image_animation_style", "image_style",
                      "image_detail", "font_select"):
             self._assert_control(name)
-        for name in ("blend_mode", "reveal_mode", "pen_ease",
+        for name in ("reveal_mode", "pen_ease",
                      "entrance", "erase_mode", "camera"):
             self._assert_control(name)
 
@@ -72,7 +72,7 @@ class VisibleControlRegression(unittest.TestCase):
             APP.processEvents()
             APP.processEvents()
             for name in ("image_animation_style", "image_style", "image_detail",
-                         "blend_mode", "reveal_mode", "pen_ease"):
+                         "reveal_mode", "pen_ease"):
                 self._assert_control(name)
 
     def test_all_mounted_source_and_inspector_dropdowns_have_usable_geometry(self):
@@ -120,7 +120,7 @@ class VisibleControlRegression(unittest.TestCase):
         w = self.w
         w.source_type.setCurrentIndex(1)
         for name in ("image_animation_style", "image_style", "image_detail",
-                     "blend_mode", "reveal_mode", "pen_ease"):
+                     "reveal_mode", "pen_ease"):
             combo = getattr(w, name)
             self._assert_control(name)
             old = combo.currentIndex()

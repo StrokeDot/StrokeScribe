@@ -101,12 +101,16 @@ def finished_art(drawing, options, background=True):
     return compose_frame(drawing, 1., opts)
 
 
-def stack(base, top, blend_mode='Normal'):
-    """`top` over `base`, using the selected per-element blend mode."""
-    if base is None:
-        return top
+def stack(base, top, blend_mode='Normal', opacity=100., hand=None, extras=None):
+    """Composite artwork only with its own mode/opacity, then add hand normally."""
     if top is None:
         return base
+    if base is None and blend_mode=='Normal' and float(opacity)==100 and hand is None and extras is None:
+        return top
+    if base is None:
+        from PySide6.QtGui import QImage
+        base=QImage(top.size(),QImage.Format.Format_ARGB32_Premultiplied)
+        base.fill(0)
     from PySide6.QtGui import QImage, QPainter
     out = base.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     if out is base:
@@ -114,9 +118,34 @@ def stack(base, top, blend_mode='Normal'):
     p = QPainter(out)
     from blend_modes import composition_mode
     p.setCompositionMode(composition_mode(blend_mode))
+    p.setOpacity(max(0.,min(1.,float(opacity)/100.)))
     p.drawImage(0, 0, top)
+    p.setOpacity(1.)
+    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+    if extras is not None:
+        p.drawImage(0,0,extras)  # separately placed titles/overlays are not image effects
+    if hand is not None:
+        p.drawImage(0,0,hand)
     p.end()
     return out
+
+
+def composite_element(base, drawing, fraction, options, camera=None):
+    """Place artwork with per-element effects BELOW an unmodified moving hand.
+
+    Same renderer and fraction as final export. Legacy Normal/100 uses the
+    original combined render unchanged for existing saved project fidelity.
+    """
+    from frame_render import compose_frame
+    mode=options.get('blend_mode','Normal')
+    alpha=float(options.get('artwork_opacity',100))
+    if mode=='Normal' and alpha==100:
+        return stack(base,compose_frame(drawing,fraction,options,camera))
+    from frame_render import independent_overlays
+    art=compose_frame(drawing,fraction,dict(options,layers='art',ghost=0,overlays=[],artwork_opacity=100),camera)
+    hand=compose_frame(drawing,fraction,dict(options,layers='hand',ghost=0,overlays=[]),camera)
+    extras=independent_overlays(drawing,fraction,options,camera)
+    return stack(base,art,mode,alpha,hand,extras)
 
 
 def for_page(options):
@@ -280,8 +309,18 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                     else:
                         view = board.sub_view(all_frames[k], *camera.at(i / max(1, len(frames) - 1)), aspect)
                         under = world.view(view, width, height, upto=k)
-                    if not stack(under, QImage(str(frame)),
-                                 options.get('blend_mode','Normal')).save(str(frame), 'PNG', 80):
+                    mode=options.get('blend_mode','Normal')
+                    opacity=float(options.get('artwork_opacity',100))
+                    if mode!='Normal' or opacity!=100:
+                        # The already-exported PNG contains BOTH artwork and
+                        # moving hand. Re-render the independent layers at the
+                        # exact export fraction before applying the artwork-only
+                        # blend. Never blend/attenuate the drawing hand.
+                        rendered=composite_element(under,scene['drawing'],
+                            i/max(1,len(frames)-1),options,camera)
+                    else:
+                        rendered=stack(under,QImage(str(frame)))
+                    if not rendered.save(str(frame),'PNG',80):
                         raise OSError('Unable to save PNG frame.')
             start = index
             for frame in frames:
