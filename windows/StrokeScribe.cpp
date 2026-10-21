@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "user32.lib")
 #pragma comment(lib, "delayimp.lib")
 #pragma comment(lib, "advapi32.lib")
 

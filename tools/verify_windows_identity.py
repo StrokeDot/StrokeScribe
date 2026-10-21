@@ -111,6 +111,16 @@ window.close()
         icon_types=[shell_icon(path) for path in (project1,project2)]
         assert icon_types==['StrokeScribe Project']*2,icon_types
         evidence['shell_file_type']=icon_types
+        # Instrument only the existing startup-test screenshot branch in this
+        # disposable install to create a dirty document and a real modal dialog.
+        pristine=(target/'startup.py').read_text(encoding='utf-8')
+        hook=(ROOT/'tools'/'native_shell_modal_probe.py').read_text(encoding='utf-8')
+        (target/'native_shell_modal_probe.py').write_text(hook,encoding='utf-8')
+        instrumented=pristine.replace(
+            "                window.grab().save(str(root/'test-output'/'native-startup.png'))",
+            "                window.grab().save(str(root/'test-output'/'native-startup.png'))\n                import native_shell_modal_probe; native_shell_modal_probe.install(window,app,root)")
+        assert instrumented!=pristine
+        (target/'startup.py').write_text(instrumented,encoding='utf-8')
         child=subprocess.Popen([str(exe),str(project1)],cwd=str(area),env=run_env)
         wait_for(lambda:'Opened file: '+str(project1) in log_text(target) and 'Ready:' in log_text(target))
         env_pid=dict(os.environ,STROKESCRIBE_TEST_PROCESS=str(child.pid))
@@ -119,12 +129,20 @@ window.close()
         evidence['real_process']=proc
         # Same Windows shell API used by Explorer; spaces, &, # and Unicode
         # are passed as a single filename without a command shell.
+        wait_for(lambda:(target/'test-output'/'modal-ready').exists())
+        os.startfile(str(project2))
+        wait_for(lambda:(target/'test-output'/'modal-queued').exists(),timeout=8)
+        wait_for(lambda:(target/'test-output'/'native-unsaved.json').exists(),timeout=8)
+        evidence['shell_unsaved_and_modal']=json.loads((target/'test-output'/'native-unsaved.json').read_text())
+        # A later request after cancelling still uses the existing primary.
         os.startfile(str(project2))
         wait_for(lambda:'Opened file: '+str(project2) in log_text(target),timeout=8)
         assert child.poll() is None,'Primary exited instead of opening in its existing window'
         assert log_text(target).count('Starting StrokeScribe...')==1
         evidence['shell_open_existing_instance']=True
         child.wait(timeout=20);assert child.returncode==0;child=None
+        (target/'startup.py').write_text(pristine,encoding='utf-8')
+        (target/'native_shell_modal_probe.py').unlink(missing_ok=True)
         # Cold Explorer open is independent of the earlier subprocess argv test.
         (target/'startup.log').unlink(missing_ok=True)
         old=os.environ.copy()
@@ -155,6 +173,11 @@ window.close()
             time.sleep(1)
         finally:
             (target/'startup.py').write_bytes(original_startup)
+        # External project/config/model locations survive repair and uninstall.
+        sentinel=config/'preserve-me.json';sentinel.write_text('{"keep":true}')
+        model=area/'Existing AI models';model.mkdir(exist_ok=True)
+        weight=model/'existing-model.safetensors';weight.write_bytes(b'keep-model-sentinel')
+        original_project=project1.read_bytes()
         # Repair/upgrade does not change an unrelated default chosen afterwards.
         write(EXT,'StrokeScribe.Integration.Other')
         install();assert read(EXT)=='StrokeScribe.Integration.Other'
@@ -169,6 +192,9 @@ window.close()
         install();assert read(EXT)==PROGID
         uninstall();assert read(EXT) is None
         evidence['own_registration_cleanup']=True
+        assert project1.read_bytes()==original_project
+        assert sentinel.read_text()=='{"keep":true}' and weight.read_bytes()==b'keep-model-sentinel'
+        evidence['external_projects_settings_models_preserved']=True
         evidence['manual_visual_checks']='Task Manager friendly label and Explorer icon-cache appearance after desktop restart require manual visual acceptance.'
         out=ROOT/'test-output'/'windows-identity.json';out.parent.mkdir(exist_ok=True)
         out.write_text(json.dumps(evidence,indent=2,ensure_ascii=False),encoding='utf-8')
