@@ -75,6 +75,47 @@ class VisibleControlRegression(unittest.TestCase):
                          "blend_mode", "reveal_mode", "pen_ease"):
                 self._assert_control(name)
 
+    def test_all_mounted_source_and_inspector_dropdowns_have_usable_geometry(self):
+        w = self.w
+        w.source_type.setCurrentIndex(1)
+        APP.processEvents()
+        source = w.workspace_splitter.widget(0).findChildren(QComboBox)
+        self.assertGreaterEqual(len(source), 5)
+        for combo in source:
+            if not combo.isVisible():
+                continue  # hidden source mode and optional legacy fields
+            self._ensure_visible(combo)
+            self.assertGreaterEqual(combo.width(), 84, "Source dropdown collapsed")
+            self.assertGreaterEqual(combo.height(), 20, "Source dropdown lost height")
+        for tab in range(w.inspector_tabs.count()):
+            w.inspector_tabs.setCurrentIndex(tab)
+            APP.processEvents()
+            area = w.inspector_tabs.widget(tab)
+            boxes = area.widget().findChildren(QComboBox)
+            for combo in boxes:
+                if not combo.isVisible():
+                    continue  # conditionally hidden field intentionally
+                area.ensureWidgetVisible(combo)
+                APP.processEvents()
+                self.assertGreaterEqual(combo.width(), 84,
+                                        "Inspector tab %s dropdown collapsed" % tab)
+                self.assertGreaterEqual(combo.height(), 20,
+                                        "Inspector tab %s dropdown lost height" % tab)
+
+    def test_values_persist_with_existing_project_settings(self):
+        w = self.w
+        w.blend_mode.setCurrentText("Multiply")
+        w.reveal_mode.setCurrentText("Adaptive Hand Painting")
+        w.pen_ease.setCurrentText("Natural (ease in and out)")
+        w.image_style.setCurrentText("Detailed (all lines)")
+        w.image_detail.setCurrentText("Max")
+        state = w.settings_state()
+        self.assertEqual(state["blend_mode"], "Multiply")
+        self.assertEqual(state["reveal_mode"], w.reveal_mode.currentIndex())
+        self.assertEqual(state["pen_ease"], "Natural (ease in and out)")
+        self.assertEqual(state["image_style"], "Detailed (all lines)")
+        self.assertEqual(state["image_detail"], "Max")
+
     def test_popup_items_are_clickable_and_change_value(self):
         w = self.w
         w.source_type.setCurrentIndex(1)
