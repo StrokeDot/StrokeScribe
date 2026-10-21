@@ -9,6 +9,16 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Critical control visibility repair (v0.5.3-experimental.71)
+
+Targeted repair for a regression introduced in experimental.70: dropdown controls were still constructed and wired, but shared width-fitting and scroll-area changes assigned an Ignored Qt horizontal size policy to visible interactive widgets and panel content. This can collapse dropdown fields, leaving their labels visible and the row apparently empty.
+
+- Restore appropriate Qt width hints for combo boxes, buttons, checkboxes and scroll content, with a modest minimum dropdown width.
+- Use responsive form wrapping in the Inspector so normally-sized rows remain compact; preserve experimental.70 draggable/collapsible panels, independent scrolling and timeline.
+- No changes to rendering, painting, AI generation, project file formats or Python requirements.
+- Regression tests check actual control sizes, visibility, dropdown popup and mouse selection, as well as responsive layouts at narrow, 1920 and 2560-pixel windows.
+- Visual acceptance on an actual Windows screen is still required to verify display scaling, theme, and mouse behavior.
+
 ## Responsive Studio panels (v0.5.3-experimental.70)
 
 This update brings the tested Source / Program / Inspector layout improvements to experimental.69 installations without changing their animation, AI generation, painting, export, project data, or update dependencies.
