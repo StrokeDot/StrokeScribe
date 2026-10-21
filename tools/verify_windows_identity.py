@@ -57,15 +57,24 @@ def main():
     setup=Path(sys.argv[1]).resolve()
     saved_default=read(EXT)
     if saved_default:raise SystemExit('Runner already has a project association; refusing to alter it.')
-    evidence={};child=None;installed=False
+    evidence={};child=None;installed=False;install_count=0;uninstall_count=0
+    capture=ROOT/'test-output'/'installed-native';capture.mkdir(parents=True,exist_ok=True)
     def install():
-        nonlocal installed
-        subprocess.run([str(setup),'/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/DIR='+str(target)],check=True)
+        nonlocal installed,install_count
+        install_count+=1
+        subprocess.run([str(setup),'/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',
+                        '/LOG='+str(capture/f'install-{install_count}.log'),'/DIR='+str(target)],check=True)
+        assert (target/'StrokeScribe.exe').is_file() and (target/'unins000.exe').is_file(),'Installer returned before expected files were present'
         installed=True
     def uninstall():
-        nonlocal installed
-        subprocess.run([str(target/'unins000.exe'),'/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART'],check=True)
-        wait_for(lambda:not (target/'StrokeScribe.exe').exists())
+        nonlocal installed,uninstall_count
+        uninstall_count+=1
+        subprocess.run([str(target/'unins000.exe'),'/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',
+                        '/LOG='+str(capture/f'uninstall-{uninstall_count}.log')],check=True)
+        # Inno's outer uninstaller can return before its temporary worker and
+        # directory cleanup finish. Reinstall only after the whole target is gone,
+        # otherwise that cleanup can delete files from the next installation.
+        wait_for(lambda:not target.exists(),timeout=30)
         installed=False
     try:
         install()
@@ -174,6 +183,9 @@ window.close()
             time.sleep(1)
         finally:
             (target/'startup.py').write_bytes(original_startup)
+        if (target/'test-output').is_dir():shutil.copytree(target/'test-output',capture,dirs_exist_ok=True)
+        shutil.copy2(target/'startup.log',capture/'startup.log')
+        (capture/'checks-before-repair.json').write_text(json.dumps(evidence,indent=2,ensure_ascii=False),encoding='utf-8')
         # External project/config/model locations survive repair and uninstall.
         sentinel=config/'preserve-me.json';sentinel.write_text('{"keep":true}')
         model=area/'Existing AI models';model.mkdir(exist_ok=True)
