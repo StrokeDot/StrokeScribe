@@ -107,7 +107,14 @@ def align_forms(content, label_width):
                 heading.setFixedWidth(label_width)
             field = form.itemAt(index, QFormLayout.ItemRole.FieldRole)
             control = field.widget() if field else None
-            if control is not None and not isinstance(control, (QLabel, QCheckBox)):
+            if isinstance(control, QCheckBox):
+                # A checkbox row: fill the field column, but never ask for its
+                # full label width (an explicit 1px minimum wins over the hint).
+                policy = control.sizePolicy()
+                policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
+                control.setSizePolicy(policy)
+                control.setMinimumWidth(1)
+            elif control is not None and not isinstance(control, QLabel):
                 # Fields fill the row like the Animation panel's (the form only
                 # grows Expanding fields).
                 policy = control.sizePolicy()
