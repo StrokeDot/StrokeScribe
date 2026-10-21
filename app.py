@@ -50,7 +50,7 @@ def timecode(seconds):
 class Canvas(QWidget):
     """Program monitor: the frame on its preview background, plus a loading card."""
     def __init__(self):
-        super().__init__(); self.frame=None; self.background=0; self.custom_colour=None; self.blend_mode='Normal'; self.art_frame=None; self.hand_frame=None; self.art_opacity=100.; self.setMinimumSize(550,330)
+        super().__init__(); self.frame=None; self.background=0; self.custom_colour=None; self.blend_mode='Normal'; self.art_frame=None; self.hand_frame=None; self.overlay_frame=None; self.art_opacity=100.; self.setMinimumSize(550,330)
         self.busy_text=None; self.busy_percent=None; self.busy_detail=''
         self._spin=0
         self._spinner=QTimer(self); self._spinner.setInterval(40)
@@ -178,6 +178,8 @@ class Canvas(QWidget):
             else:
                 p.drawImage(QRectF(x,y,size.width(),size.height()),self.frame)
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            if self.overlay_frame is not None:
+                p.drawImage(QRectF(x,y,size.width(),size.height()),self.overlay_frame)
             if self.hand_frame is not None:
                 p.drawImage(QRectF(x,y,size.width(),size.height()),self.hand_frame)
             box=self.box_provider() if self.box_provider is not None else None
@@ -3061,6 +3063,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.canvas.frame=frame
         self.canvas.art_frame=None
         self.canvas.hand_frame=None
+        self.canvas.overlay_frame=None
         self.canvas.art_opacity=100.
         # Page/whole-video composition happens against earlier elements; in
         # single-element view the canvas supplies the visible background.
@@ -3071,10 +3074,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if mode!='Normal' or opacity!=100:
                 from frame_render import compose_frame
                 camera=self.preview_camera(opts)
+                from frame_render import independent_overlays
                 self.canvas.art_frame=compose_frame(self.drawing,self.position,
-                    dict(opts,layers='art',ghost=0,background=False),camera)
+                    dict(opts,layers='art',ghost=0,background=False,overlays=[]),camera)
                 self.canvas.hand_frame=compose_frame(self.drawing,self.position,
-                    dict(opts,layers='hand',ghost=0,background=False),camera)
+                    dict(opts,layers='hand',ghost=0,background=False,overlays=[]),camera)
+                self.canvas.overlay_frame=independent_overlays(self.drawing,self.position,opts,camera)
                 self.canvas.art_opacity=opacity
         self.canvas.blend_mode=('Normal' if view['all'] or view.get('page') else
                                 self.blend_mode.currentText())
