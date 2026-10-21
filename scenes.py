@@ -281,8 +281,24 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                     else:
                         view = board.sub_view(all_frames[k], *camera.at(i / max(1, len(frames) - 1)), aspect)
                         under = world.view(view, width, height, upto=k)
-                    if not stack(under, QImage(str(frame)),
-                                 options.get('blend_mode','Normal')).save(str(frame), 'PNG', 80):
+                    # Export uses the exact same separation as whole-video
+                    # preview: artwork gets this scene's blend and opacity,
+                    # the moving hand remains opaque and normally colored.
+                    from artwork_compositor import composite_element
+                    if layers=='all' and (
+                            options.get('blend_mode','Normal')!='Normal' or
+                            options.get('artwork_opacity',100)!=100):
+                        display_opts=dict(options)
+                        display_opts['hand_scale']=float(display_opts.get('hand_scale',.75)) / max(
+                            .25,float(display_opts.get('artwork_scale',1)))
+                        display_opts['width'],display_opts['height']=width,height
+                        output=composite_element(under,scene['drawing'],
+                            i/max(1,len(frames)-1),display_opts,camera)
+                    else:
+                        output=stack(under,QImage(str(frame)),
+                            options.get('blend_mode','Normal'),
+                            options.get('artwork_opacity',100))
+                    if not output.save(str(frame), 'PNG', 80):
                         raise OSError('Unable to save PNG frame.')
             start = index
             for frame in frames:
