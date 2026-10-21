@@ -9,6 +9,18 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Artwork appearance and blending candidate (v0.5.3-experimental.75)
+
+**Independent draft branch, not published.** This change is based on the automated-validated experimental.73 layout foundation, not on the experimental.74 native Windows host candidate. Existing .74 PR #35, main and the in-app channel remain unchanged.
+
+- In Element Editor, the new scrollable **Appearance & Blending** section exposes each scene's existing per-element Blend Mode and optional 0–100% opacity, non-destructive Clean white / paper background, adjustable tolerance and edge softness. The preview can be checked against white, dark, black or transparent checker.
+- Existing `blend_mode` project settings keep their spelling and value. Older projects default to **100% opaque** and paper cleanup **off**, and scene-switch/undo restore defaults rather than borrowing values from the previously selected scene.
+- The moving hand is rendered as its own SourceOver layer above blended/dimmed artwork in the single-scene monitor, multi-element board preview, and overlapping-scene export. Default Normal/100% rendering keeps its historical fast path.
+- The optional paper-cleaner finds bright near-neutral pixels connected to the edges, removes only those pixels (softening immediate boundaries), rejects coloured/variable boundaries and images where nearly all content would disappear. Original source image bytes remain untouched. White areas connected to the edge *can* be artwork; users must preview/tune or disable cleanup in that case.
+- **Mathematics:** Multiply white over white remains white; Screen black over black remains black; no blend mode is a white-pixel alpha remover. Blend results over transparent exports depend on a real destination; downstream editors need an opaque background or separate paper cleanup for true alpha.
+- Includes regression tests for UI visibility and element settings, image-paper cleanup, hand independence, and cross-platform CI. Full correctness requires pixel-level multi-scene render/export checks and user Windows/Filmora acceptance; tests are not a substitute for visual approval.
+- This is a source-only candidate; **do not deploy it through the .73 app updater** before the special-feature regression and full installer validation is confirmed.
+
 ## Inspector control stability on element switches (v0.5.3-experimental.73)
 
 Targeted repair for Inspector animation controls that could move outside the visible right panel when switching between a handwriting and image element. The shared Inspector form recalculated its width based on source-dependent settings; the Position X/Y row also demanded space for two spinboxes beside its label.
