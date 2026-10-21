@@ -9,6 +9,16 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Source panel consistency fix (v0.5.3-experimental.72)
+
+This focused update makes the Source panel's **Image source** option use the same compact label-above-input layout as handwriting, especially when the Source sidebar is dragged narrow.
+
+- Image source Animation / Drawing style / Detail fields are grouped with consistent spacing rather than a nested wide Qt form that could extend outside the scroll viewport and hide dropdown arrows.
+- Shorten the on-screen descriptions of the long Clean background and image action buttons (their detailed tooltips and operations are preserved).
+- Keep original project settings, generated artwork behavior, panel dividers, sidebar collapse, Inspector and vertical timeline.
+- Add Qt tests that switch SVG/Image modes, resize the Source sidebar from 225 to 450px, verify every image control remains inside the scroll viewport, open/select each Image dropdown, and confirm settings survive mode changes.
+- Windows display scaling and visual appearance still require a hands-on acceptance check.
+
 ## Critical control visibility repair (v0.5.3-experimental.71)
 
 Targeted repair for a regression introduced in experimental.70: dropdown controls were still constructed and wired, but shared width-fitting and scroll-area changes assigned an Ignored Qt horizontal size policy to visible interactive widgets and panel content. This can collapse dropdown fields, leaving their labels visible and the row apparently empty.
