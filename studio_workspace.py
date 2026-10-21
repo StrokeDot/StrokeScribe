@@ -1516,7 +1516,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
                              'Parts inside the artwork are kept.')
     w.clean_color.toggled.connect(lambda checked: w.reload_color())
     w.source_colors_slot.addWidget(w.clean_color)
-    w.use_color=QCheckBox('Reveal original artwork after drawing')
+    # Short label: it sits under the MATCHING COLORS heading in the narrow
+    # Source column (the long wording needed 251 px with Linux fonts).
+    w.use_color=QCheckBox('Reveal colors after drawing')
+    w.use_color.setToolTip('Reveal the original artwork (the matching colored PNG) after the lines are drawn.')
     w.use_color.setEnabled(False)
     w.source_colors_slot.addWidget(w.use_color)
     w.color_note=caption('No original PNG loaded')
