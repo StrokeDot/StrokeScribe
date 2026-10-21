@@ -9,6 +9,16 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Inspector control stability on element switches (v0.5.3-experimental.73)
+
+Targeted repair for Inspector animation controls that could move outside the visible right panel when switching between a handwriting and image element. The shared Inspector form recalculated its width based on source-dependent settings; the Position X/Y row also demanded space for two spinboxes beside its label.
+
+- Position X/Y now uses a full-width row with its label above both fields instead of squeezing both beside a separate label column.
+- Animation form rows keep a predictable label width and no longer dynamically wrap when image-only paint options are shown or hidden.
+- Existing arrows, tooltips, project settings, Hand/Sound/Export tabs, Source layouts, resizable panels and timeline remain unchanged.
+- New Qt regression tests switch image/lettering Inspector settings repeatedly at 270–420px sidebar widths and desktop window sizes, checking that entire spinboxes and their increment arrows fit and receive clicks.
+- Actual Windows display-scaling visual acceptance remains necessary; a passing CI suite alone does not prove the Windows layout appears perfect.
+
 ## Source panel consistency fix (v0.5.3-experimental.72)
 
 This focused update makes the Source panel's **Image source** option use the same compact label-above-input layout as handwriting, especially when the Source sidebar is dragged narrow.
