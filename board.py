@@ -238,9 +238,11 @@ class World:
                   background=False,layers='art')
         extras=independent_overlays(it['drawing'],1.,opts)
         if extras is not None:
+            used=sum(cached.sizeInBytes() for cached in self.cache.values())
+            while self.cache and used+extras.sizeInBytes()>self.BUDGET:
+                _,old=self.cache.popitem(last=False)
+                used-=old.sizeInBytes()
             self.cache[key]=extras
-            if len(self.cache)>32:
-                self.cache.popitem(last=False)
         return extras
 
     def place(self, frame, view, out_w, out_h):
