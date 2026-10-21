@@ -179,6 +179,42 @@ class AppearanceCompositingTests(unittest.TestCase):
         self.assertEqual(frame.pixelColor(30,25).alpha(),0)
         self.assertEqual(original.pixelColor(2,2).alpha(),255)
 
+    def test_element_editor_preview_preserves_hand_over_blended_canvas(self):
+        from app import Window
+        from element_dialog import ElementDialog
+        from PySide6.QtGui import QPainter
+        from PySide6.QtCore import QRect
+        w=Window()
+        dialog=None
+        try:
+            w.preview_background.setCurrentIndex(7)  # Black canvas
+            w.blend_mode.setCurrentText('Multiply')
+            w.artwork_opacity.setValue(100)
+            dialog=ElementDialog(w,w.scene_index)
+            self.assertFalse((getattr(w,'_view',None) or {}).get('all',False))
+            art=QImage(560,315,QImage.Format.Format_ARGB32_Premultiplied)
+            art.fill(QColor(255,255,255))
+            hand=QImage(560,315,QImage.Format.Format_ARGB32_Premultiplied)
+            hand.fill(0)
+            painter=QPainter(hand)
+            painter.fillRect(QRect(195,95,50,50),QColor(245,65,35))
+            painter.end()
+            w.render_view=lambda fraction,width: art
+            w.preview_camera=lambda opts:None
+            def raw_frame(drawing,fraction,options,camera=None):
+                return hand if options.get('layers')=='hand' else art
+            with patch('frame_render.compose_frame',side_effect=raw_frame):
+                dialog.seek(.5)
+            picture=dialog.preview.pixmap().toImage()
+            # Multiply over black: white source leaves black destination.
+            self.assertEqual(picture.pixelColor(100,100),QColor(0,0,0))
+            # The red moving hand is drawn normally AFTER blending.
+            self.assertEqual(picture.pixelColor(210,110),QColor(245,65,35))
+        finally:
+            if dialog is not None:
+                dialog.reject()
+            w.close()
+
     def test_legacy_image_settings_do_not_inherit_previous_opacity(self):
         from export_job import options_from_settings
         s=dict(res='1920 × 1080',blend_mode='Multiply')

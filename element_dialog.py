@@ -265,7 +265,38 @@ class ElementDialog(QDialog):
                     painter.drawImage(0, 0, texture_qimage(name, PREVIEW_W, PREVIEW_H))
         scaled = frame.scaled(PREVIEW_W, PREVIEW_H, Qt.AspectRatioMode.KeepAspectRatio,
                               Qt.TransformationMode.SmoothTransformation)
-        painter.drawImage((PREVIEW_W - scaled.width()) // 2, (PREVIEW_H - scaled.height()) // 2, scaled)
+        x,y=(PREVIEW_W-scaled.width())//2,(PREVIEW_H-scaled.height())//2
+        view=getattr(w,'_view',None) or {}
+        settings=view.get('options') or {}
+        mode=settings.get('blend_mode','Normal')
+        opacity=settings.get('artwork_opacity',100)
+        if (not view.get('all') and not view.get('page')
+                and settings.get('layers','all')=='all'
+                and (mode!='Normal' or opacity!=100)):
+            # The Element Editor has its OWN background painter. Re-compose
+            # artwork against that background first, then draw the original
+            # hand with SourceOver. Drawing the already-combined frame here
+            # would either hide Multiply or blend the hand by accident.
+            from artwork_compositor import bounded_opacity
+            from blend_modes import composition_mode
+            from frame_render import compose_frame
+            opts=dict(settings,width=PREVIEW_W,
+                      height=round(PREVIEW_W*view.get('ratio',PREVIEW_H/PREVIEW_W)))
+            camera=w.preview_camera(opts)
+            artwork=compose_frame(w.drawing,self.position,dict(opts,layers='art',ghost=0),camera)
+            hand=compose_frame(w.drawing,self.position,
+                               dict(opts,layers='hand',ghost=0,background=False),camera)
+            rect=scaled.rect().translated(x,y)
+            painter.setCompositionMode(composition_mode(mode))
+            painter.setOpacity(bounded_opacity(opacity))
+            painter.drawImage(rect,artwork)
+            painter.setOpacity(1.)
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            painter.drawImage(rect,hand)
+        else:
+            # Multi-element views are already blended over their earlier
+            # artwork within the scene compositor: never apply a second pass.
+            painter.drawImage(x,y,scaled)
         painter.end()
         self.preview.setPixmap(QPixmap.fromImage(card))
 
