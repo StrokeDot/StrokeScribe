@@ -1,0 +1,27 @@
+name: Windows application identity review
+on:
+  pull_request:
+    paths: ['startup.py', 'shell_integration.py', 'updater.py', 'windows/**', 'installer/**', 'tools/**', 'test_windows*.py', '.github/workflows/windows-identity.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-identity-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  shell-routing:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env: {QT_QPA_PLATFORM: offscreen}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
+      - run: pip install --only-binary=:all: -r requirements.txt
+      - run: python -X faulthandler tools/run_tests.py --limit 120 test_windows_shell test_project_lifecycle test_updater test_update_transaction
