@@ -139,6 +139,46 @@ class AppearanceCompositingTests(unittest.TestCase):
         finally:
             w.close()
 
+    def test_project_disk_roundtrip_keeps_appearance_with_original_source(self):
+        from app import Window
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        import projects
+        first=Window()
+        try:
+            first.blend_mode.setCurrentText('Screen')
+            first.artwork_opacity.setValue(43)
+            first.paper_cleanup.setChecked(True)
+            first.paper_tolerance.setValue(31)
+            first.paper_softness.setValue(11)
+            with TemporaryDirectory() as temp:
+                path=projects.save(Path(temp)/'artwork.strokescribe',
+                                   first.project_state())
+                project=projects.load(path)
+                saved=project['settings']
+                self.assertEqual(saved['blend_mode'],'Screen')
+                self.assertEqual(saved['artwork_opacity'],43)
+                self.assertTrue(saved['paper_cleanup'])
+                self.assertEqual(saved['paper_tolerance'],31)
+                self.assertEqual(saved['paper_softness'],11)
+                # No save operation may mutate embedded source artwork.
+                self.assertIn('drawing',project)
+        finally:
+            first.close()
+
+    def test_paint_complete_uses_cleaned_visual_without_mutating_original(self):
+        from image_painting import paint_frame,original_frame
+        from types import SimpleNamespace
+        drawing=SimpleNamespace(bounds=(0,0,28,24),source_kind='image')
+        original=img((245,245,245))
+        cleaned=clean_paper(original,tolerance=23,softness=0)
+        frame=paint_frame(drawing,original,64,48,.99,1,.14,.55,
+                          None,.1,(.1,.1),False,display_image=cleaned)
+        plain=original_frame(drawing,original,64,48)
+        self.assertGreater(plain.pixelColor(30,25).alpha(),0)
+        self.assertEqual(frame.pixelColor(30,25).alpha(),0)
+        self.assertEqual(original.pixelColor(2,2).alpha(),255)
+
     def test_legacy_image_settings_do_not_inherit_previous_opacity(self):
         from export_job import options_from_settings
         s=dict(res='1920 × 1080',blend_mode='Multiply')
