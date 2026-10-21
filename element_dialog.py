@@ -13,7 +13,7 @@ import time
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap, QImage, QPainter, QColor
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QHBoxLayout,
-                               QLabel, QLineEdit, QPushButton, QSlider, QVBoxLayout, QWidget)
+                               QLabel, QLineEdit, QPushButton, QSlider, QVBoxLayout, QWidget, QScrollArea)
 
 PREVIEW_W, PREVIEW_H = 560, 315
 
@@ -58,6 +58,13 @@ class ElementDialog(QDialog):
         self.clock = QLabel('0.0 s'); self.clock.setMinimumWidth(80)
         player.addWidget(self.clock)
         left.addLayout(player)
+        background_picker=QHBoxLayout()
+        background_picker.addWidget(QLabel('Test background'))
+        self.test_background=QComboBox()
+        self.test_background.addItems(['Canvas background','White','Dark','Black','Transparent checker'])
+        self.test_background.currentIndexChanged.connect(lambda _:self.seek(self.position))
+        background_picker.addWidget(self.test_background,1)
+        left.addLayout(background_picker)
         note = QLabel('Only this element plays here. Set keeps your changes; Cancel puts everything back.')
         note.setWordWrap(True); note.setObjectName('note')
         left.addWidget(note); left.addStretch(1)
@@ -77,6 +84,17 @@ class ElementDialog(QDialog):
             form.addRow(text, mine)
             self.pairs.append((mine, theirs))
             return mine
+
+        right.addWidget(_section('APPEARANCE & BLENDING'))
+        appearance=QFormLayout();appearance.setSpacing(7);right.addLayout(appearance)
+        self.appearance_mode=add(appearance,'Blend mode',self._combo(w.blend_mode),w.blend_mode)
+        self.opacity=add(appearance,'Opacity',self._number(w.artwork_opacity),w.artwork_opacity)
+        self.clean_paper=add(appearance,'',self._check(w.paper_cleanup,
+                            'Clean white / paper background'),w.paper_cleanup)
+        self.paper_tolerance=add(appearance,'Tolerance',self._number(w.paper_tolerance),w.paper_tolerance)
+        self.paper_softness=add(appearance,'Edge softness',self._number(w.paper_softness),w.paper_softness)
+        self.clean_paper.setToolTip('Only bright, edge-connected paper becomes transparent; original image remains intact.')
+        self._can_clean_paper=bool(image or w.final_image is not None)
 
         right.addWidget(_section('COMES IN'))
         f1 = QFormLayout(); f1.setSpacing(7); right.addLayout(f1)
@@ -124,9 +142,15 @@ class ElementDialog(QDialog):
         buttons.addStretch(1); buttons.addWidget(cancel)
         done = QPushButton('Set'); done.setObjectName('primary'); done.clicked.connect(self.accept)
         buttons.addWidget(done)
-        right.addLayout(buttons)
         holder = QWidget(); holder.setLayout(right); holder.setMinimumWidth(330)
-        root.addWidget(holder, 1)
+        scroller=QScrollArea(); scroller.setWidgetResizable(True)
+        scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroller.setWidget(holder)
+        settings_side=QVBoxLayout()
+        settings_side.setSpacing(8); settings_side.setContentsMargins(0,0,0,0)
+        settings_side.addWidget(scroller,1)
+        settings_side.addLayout(buttons)
+        root.addLayout(settings_side,1)
 
         for mine, theirs in self.pairs:
             self._connect(mine, theirs)
@@ -172,7 +196,12 @@ class ElementDialog(QDialog):
 
     def sync_enabled(self):
         for mine, theirs in self.pairs:
-            mine.setEnabled(theirs.isEnabled())
+            can=theirs.isEnabled()
+            if mine in (self.clean_paper,self.paper_tolerance,self.paper_softness):
+                can=can and self._can_clean_paper
+            if mine in (self.paper_tolerance,self.paper_softness):
+                can=can and self.clean_paper.isChecked()
+            mine.setEnabled(can)
 
     def rename(self, text):
         self.w.scenes[self.k]['name'] = text.strip() or None
