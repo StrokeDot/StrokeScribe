@@ -70,10 +70,14 @@ class SidebarController(QObject):
             for side in self.panels:
                 self.settings.setValue('workspace/' + side + '_open', False)
             self.settings.setValue('workspace/layout_version', LAYOUT_VERSION)
-        self.expanded = {
-            side: self.settings.value('workspace/' + side + '_open', default_open(), type=bool)
-            for side in self.panels
-        }
+        if headless():
+            self.expanded = {
+                side: self.settings.value('workspace/' + side + '_open', default_open(), type=bool)
+                for side in self.panels
+            }
+        else:
+            # Every launch starts with both panels retracted (canvas first).
+            self.expanded = {side: False for side in self.panels}
         self.animate = not headless()
         self._slide = None
         self._adjusting = True

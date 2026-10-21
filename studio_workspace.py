@@ -1809,21 +1809,25 @@ def build_workspace(w, Canvas, BRAND_ICON):
     hand=QWidget();hand_l=QVBoxLayout(hand)
     hand_l.setContentsMargins(9,12,9,8);hand_l.setSpacing(12)
     # Two clear parts: the hand that DRAWS the lines, and the one that PAINTS the colours.
-    def picture(key,text):
+    def picture(key):
         row=QHBoxLayout(); row.setSpacing(10)
         pic=QLabel(); pic.setObjectName('monitorWell'); pic.setFixedSize(120,92)
         pic.setAlignment(Qt.AlignmentFlag.AlignCenter)
         row.addWidget(pic); w.hand_pictures[key]=pic
-        note=caption(text); note.setWordWrap(True)
-        row.addWidget(note,1)
+        row.addStretch(1)
         hand_l.addLayout(row)
-        return note
+        return row
     w.hand_pictures={}
     # 1. The drawing hand.
     hand_l.addWidget(label('1 · DRAWING HAND (the lines)'))
-    picture('draw','This hand draws the lines of pictures and writes the text.')
+    picture('draw')
     w.hand_name=caption('Hand: none')
     hand_l.addWidget(w.hand_name)
+    # Size of the drawing hand, shown in % (the stored value stays Hand size).
+    draw_size=form_layout();hand_l.addLayout(draw_size)
+    w.hand_size_pct=QSpinBox();w.hand_size_pct.setRange(2,80);w.hand_size_pct.setSuffix('%')
+    w.hand_size_pct.setToolTip('Size of the drawing hand.')
+    draw_size.addRow('Size',w.hand_size_pct)
     builtin_row=QHBoxLayout()
     for text,name,tip in (('Built-in hand','hand','Hand holding a pen (default).'),
                           ('Pencil','pencil','A pencil on its own, no hand.'),
@@ -1845,6 +1849,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.showhand.setChecked(True);hand_l.addWidget(w.showhand)
     h=form_layout();hand_l.addLayout(h)
     w.handsize=w.number(.02,.8,.75,.01);h.addRow('Hand size',w.handsize)
+    h.setRowVisible(w.handsize,False)        # edited through Size (%) above
+    w.hand_size_pct.setValue(round(w.handsize.value()*100))
+    w.hand_size_pct.valueChanged.connect(
+        lambda v: abs(w.handsize.value()*100-v)>=.5 and w.handsize.setValue(v/100))
+    w.handsize.valueChanged.connect(lambda v: (w.hand_size_pct.blockSignals(True),
+        w.hand_size_pct.setValue(round(v*100)),w.hand_size_pct.blockSignals(False)))
     # Defaults calibrated for the built-in hand (assets/default_hand.png).
     w.ax=w.number(0,1,.08,.005);w.ax.setDecimals(3);h.addRow('Pen tip X',w.ax)
     w.ay=w.number(0,1,.13,.005);w.ay.setDecimals(3);h.addRow('Pen tip Y',w.ay)
@@ -1862,8 +1872,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     hand_l.addLayout(tip_row)
     # 2. The painting hand.
     hand_l.addWidget(label('2 · PAINTING HAND (the colours)'))
-    picture('paint','After the lines, this one paints the colours in. '
-                    'By default it is the same hand as above.')
+    picture('paint')
     from tools_kit import PAINT_CHOICES
     ph=form_layout();hand_l.addLayout(ph)
     w.paint_hand=QComboBox()
@@ -1873,7 +1882,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     ph.addRow('Paints with',w.paint_hand)
     w.paint_hand_size=w.number(5,90,30,1);w.paint_hand_size.setDecimals(0)
     w.paint_hand_size.setToolTip('Width of the painting hand, as a share of the video width.')
-    ph.addRow('Its size (%)',w.paint_hand_size)
+    w.paint_hand_size.setSuffix('%')
+    ph.addRow('Size',w.paint_hand_size)
+    w.paint_hand_form=ph
     w.paint_hand_choose=QPushButton('Choose painting hand…')
     w.paint_hand_choose.clicked.connect(lambda checked=False: w.choose_paint_hand())
     hand_l.addWidget(w.paint_hand_choose)
@@ -1881,9 +1892,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     hand_l.addWidget(w.paint_hand_name)
     w.show_paint_hand=QCheckBox('Show it while painting the colours')
     w.show_paint_hand.setChecked(True);hand_l.addWidget(w.show_paint_hand)
-    # 3. Both.
-    hand_l.addWidget(label('3 · BOTH HANDS'))
-    w.left_handed=QCheckBox('Left-handed (the hands come from the left)')
+    # 3. Left hand.
+    hand_l.addWidget(label('3 · LEFT HAND'))
+    w.left_handed=QCheckBox('Left-handed')
     w.left_handed.setToolTip('Mirrors the drawing hand, the painting brush and the eraser, for left-handers.')
     hand_l.addWidget(w.left_handed)
     hand_l.addStretch(1)
@@ -2236,6 +2247,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.sound_on.toggled.connect(lambda checked: (w.update_transport_icons(), w.sync_preview_sound()))
     w.paint_hand.activated.connect(lambda index: w.paint_hand_changed())
     w.paint_hand_size.valueChanged.connect(w.refresh)
+    w.update_paint_hand_label()          # Size shows only for a different painting hand
     w.camera.currentIndexChanged.connect(w.refresh)
     w.pen_ease.currentIndexChanged.connect(w.refresh)
     w.erase_mode.currentIndexChanged.connect(w.prepare_eraser)

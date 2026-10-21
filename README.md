@@ -9,6 +9,11 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Panels start retracted; cleaner Hand panel (v0.5.3-experimental.79)
+
+- Both side panels are **closed every time StrokeScribe opens**; click a rail icon to open one.
+- **Hand panel:** no description text under the hand pictures; the drawing hand has its **Size (%)** right under its picture; the painting hand's **Size** shows only when it paints with a different hand (with *Same as drawing hand* it uses the drawing hand's size); section 3 is now **Left hand**.
+
 ## Text, Sound, Music, Camera on the left; Image and AI on the right (v0.5.3-experimental.78)
 
 - **Left rail:** **Text** (handwriting and lettering), **Sound** (pencil, brush and eraser sounds), **Music** (voiceover / music track), **Camera** (camera follow).

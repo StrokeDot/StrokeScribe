@@ -277,5 +277,37 @@ class DualSidebarTests(unittest.TestCase):
             opened.assert_called_once_with('generate')
 
 
+    def test_hand_tab_sizes_and_labels(self):
+        import tools_kit
+        w = self.w
+        w.show_right_panel('hand')
+        APP.processEvents()
+        # Drawing hand size in %, kept in step with the stored Hand size.
+        self.assertTrue(w.hand_size_pct.isVisible())
+        self.assertEqual(w.hand_size_pct.value(), 75)
+        w.hand_size_pct.setValue(60)
+        self.assertAlmostEqual(w.handsize.value(), .60)
+        # Same as drawing hand: no separate (dead) size field.
+        w.paint_hand.setCurrentText(tools_kit.PAINT_SAME)
+        w.update_paint_hand_label()
+        APP.processEvents()
+        self.assertFalse(w.paint_hand_size.isVisible())
+        w.paint_hand.setCurrentText(tools_kit.PAINT_BRUSH)
+        w.update_paint_hand_label()
+        APP.processEvents()
+        self.assertTrue(w.paint_hand_size.isVisible())
+        self.assertEqual(w.left_handed.text(), 'Left-handed')
+
+    def test_panels_start_retracted_for_people(self):
+        import os
+        from unittest import mock
+        from workspace_layout import SidebarController
+        with mock.patch.dict(os.environ, {'QT_QPA_PLATFORM': 'windows'}):
+            layout = SidebarController(self.w, self.w.workspace_splitter,
+                                       self.w.handwriting_panel, self.w.workspace_splitter.widget(2),
+                                       self.w.source_sidebar_button, self.w.inspector_sidebar_button)
+        self.assertEqual(layout.expanded, {'source': False, 'inspector': False})
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
