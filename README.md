@@ -9,6 +9,19 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Windows application identity and project icons (v0.5.3-experimental.74)
+
+**Candidate on PR #35; not a published update.** The full installer adds a real
+StrokeScribe.exe host with the existing official icon and Windows metadata,
+per-user .strokescribe project associations, safe project opening into an
+existing window, and native update restart. The editor, project format, AI
+models and animation/export logic are preserved.
+
+See [Windows integration and acceptance checks](WINDOWS_INTEGRATION.md) for
+installation, file-default behavior, automated coverage and remaining desktop
+visual checks. The first adoption requires the full installer, not a source-only
+in-app update.
+
 ## Inspector control stability on element switches (v0.5.3-experimental.73)
 
 Targeted repair for Inspector animation controls that could move outside the visible right panel when switching between a handwriting and image element. The shared Inspector form recalculated its width based on source-dependent settings; the Position X/Y row also demanded space for two spinboxes beside its label.

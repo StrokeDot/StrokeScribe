@@ -82,6 +82,33 @@ class TransactionTests(unittest.TestCase):
         self.assert_old()
         self.assertFalse((self.app/updater.JOURNAL).exists())
 
+    def test_secondary_launch_leaves_live_update_transaction_untouched(self):
+        import startup,threading,os
+        staged=updater.stage_update(self.zip_with(),self.app)
+        live=threading.Event();resume=threading.Event();errors=[]
+        real=updater._atomic_json
+        def hold_journal(path,data):
+            real(path,data)
+            if Path(path)==self.app/updater.JOURNAL and not live.is_set():
+                live.set()
+                if not resume.wait(10):raise RuntimeError('secondary test timed out')
+        def commit():
+            try:updater.commit_update(staged)
+            except BaseException as exc:errors.append(exc)
+        with patch.object(updater,'_atomic_json',side_effect=hold_journal):
+            thread=threading.Thread(target=commit);thread.start()
+            try:
+                self.assertTrue(live.wait(5))
+                before={str(p.relative_to(self.app)):p.read_bytes() for p in self.app.rglob('*') if p.is_file()}
+                with patch.object(startup,'root',self.app),patch.dict(os.environ,STROKESCRIBE_NATIVE_HOST='1',STROKESCRIBE_SECONDARY_LAUNCH='1'):
+                    self.assertFalse(startup.recover_pending_update()['recovered'])
+                after={str(p.relative_to(self.app)):p.read_bytes() for p in self.app.rglob('*') if p.is_file()}
+                self.assertEqual(before,after,'Secondary must not alter journal, payload, backup or live files')
+            finally:resume.set();thread.join(10)
+        self.assertFalse(thread.is_alive());self.assertEqual(errors,[])
+        self.assertEqual((self.app/'app.py').read_text(),'new app')
+        self.assertFalse((self.app/updater.JOURNAL).exists())
+
     def test_stage_has_no_effect_on_active_application(self):
         staged=updater.stage_update(self.zip_with(),self.app)
         self.assertIsNotNone(staged)
