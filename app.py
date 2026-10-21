@@ -50,7 +50,7 @@ def timecode(seconds):
 class Canvas(QWidget):
     """Program monitor: the frame on its preview background, plus a loading card."""
     def __init__(self):
-        super().__init__(); self.frame=None; self.background=0; self.custom_colour=None; self.blend_mode='Normal'; self.setMinimumSize(550,330)
+        super().__init__(); self.frame=None; self.background=0; self.custom_colour=None; self.blend_mode='Normal'; self.art_frame=None; self.hand_frame=None; self.art_opacity=100.; self.setMinimumSize(550,330)
         self.busy_text=None; self.busy_percent=None; self.busy_detail=''
         self._spin=0
         self._spinner=QTimer(self); self._spinner.setInterval(40)
@@ -171,8 +171,15 @@ class Canvas(QWidget):
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             from blend_modes import composition_mode
             p.setCompositionMode(composition_mode(self.blend_mode))
-            p.drawImage(QRectF(x,y,size.width(),size.height()),self.frame)
+            if self.art_frame is not None:
+                p.setOpacity(max(0.,min(1.,self.art_opacity/100.)))
+                p.drawImage(QRectF(x,y,size.width(),size.height()),self.art_frame)
+                p.setOpacity(1.)
+            else:
+                p.drawImage(QRectF(x,y,size.width(),size.height()),self.frame)
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            if self.hand_frame is not None:
+                p.drawImage(QRectF(x,y,size.width(),size.height()),self.hand_frame)
             box=self.box_provider() if self.box_provider is not None else None
             if box:
                 from PySide6.QtGui import QPen
@@ -1199,7 +1206,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.refresh()
 
     # ------------------------------------------------------------ projects
-    PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','color_fade',
+    PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
                       'use_color','preserve_colors','showhand','left_handed','entrance','pause_after','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
@@ -2266,8 +2273,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             drawing,options,_,camera=self.preview_scene(k,width,height)
             frame=compose_frame(drawing,f,options,camera)
             if options.get('layers')=='hand': return frame,k,lengths,joins
-            return stack(self.scene_base(k,width,height,f,camera),frame,
-                         options.get('blend_mode','Normal')),k,lengths,joins
+            from scenes import composite_element
+            # Keeping the normal path byte-for-byte where no artwork effect is set.
+            result=composite_element(self.scene_base(k,width,height,f,camera),
+                                     drawing,f,options,camera)
+            return result,k,lengths,joins
         world=self.preview_world(width,height)
         if self.preview_scene(k,width,height)[1].get('layers')=='hand':
             from PySide6.QtGui import QImage
@@ -3043,8 +3053,23 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.status.setText('Preview could not be updated: '+str(exc)[:220])
             return
         self.canvas.frame=frame
-        # When the page is already composed in scenes.stack/World.view,
-        # blending again here would double-apply the effect.
+        self.canvas.art_frame=None
+        self.canvas.hand_frame=None
+        self.canvas.art_opacity=100.
+        # Page/whole-video composition happens against earlier elements; in
+        # single-element view the canvas supplies the visible background.
+        if not view['all'] and not view.get('page') and view['options'].get('layers')!='hand':
+            opts=dict(view['options'],width=frame.width(),height=frame.height())
+            mode=opts.get('blend_mode','Normal')
+            opacity=float(opts.get('artwork_opacity',100))
+            if mode!='Normal' or opacity!=100:
+                from frame_render import compose_frame
+                camera=self.preview_camera(opts)
+                self.canvas.art_frame=compose_frame(self.drawing,self.position,
+                    dict(opts,layers='art',ghost=0,background=False),camera)
+                self.canvas.hand_frame=compose_frame(self.drawing,self.position,
+                    dict(opts,layers='hand',ghost=0,background=False),camera)
+                self.canvas.art_opacity=opacity
         self.canvas.blend_mode=('Normal' if view['all'] or view.get('page') else
                                 self.blend_mode.currentText())
         if view['all']: self.canvas.highlight=[]
@@ -3138,9 +3163,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         camera=self.preview_camera(options)
         frame=compose_frame(self.drawing,fraction,options,camera)
         if view['page']:
-            from scenes import stack
-            return stack(self.scene_base(self.scene_index,width,height,fraction,camera),
-                         frame,options.get('blend_mode','Normal'))
+            from scenes import composite_element
+            return composite_element(self.scene_base(self.scene_index,width,height,fraction,camera),
+                                     self.drawing,fraction,options,camera)
         return frame
 
     def frame_index(self,fraction):
