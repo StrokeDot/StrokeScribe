@@ -19,8 +19,19 @@ from studio_workspace import TABS
 APP = QApplication.instance() or QApplication([])
 
 
+KEYS = ('workspace/source_width', 'workspace/inspector_width',
+        'workspace/source_open', 'workspace/inspector_open')
+
+
 class DualSidebarTests(unittest.TestCase):
     def setUp(self):
+        # Each test starts from the default panel state (tests open and close
+        # panels, and those states are remembered between windows).
+        from PySide6.QtCore import QSettings
+        self.settings = QSettings('StrokeScribe', 'Studio')
+        self.prior = {key: self.settings.value(key) for key in KEYS}
+        for key in KEYS:
+            self.settings.remove(key)
         self.w = Window()
         self.w.resize(1490, 890)
         self.w.show()
@@ -31,6 +42,11 @@ class DualSidebarTests(unittest.TestCase):
         self.w.playing = False
         self.w.close()
         APP.processEvents()
+        for key, value in self.prior.items():
+            if value is None:
+                self.settings.remove(key)
+            else:
+                self.settings.setValue(key, value)
 
     def page(self, key):
         return self.w.inspector_tabs.widget(TABS[key])
@@ -72,7 +88,9 @@ class DualSidebarTests(unittest.TestCase):
     def test_pen_movement_and_lines_live_in_animation(self):
         w = self.w
         animation = self.page('animation')
-        for name in ('pen_ease', 'camera', 'duration', 'lines_toggle', 'order', 'line_pace'):
+        from studio_workspace import LEFT
+        self.assertTrue(w.left_tabs.widget(LEFT['camera']).isAncestorOf(w.camera))
+        for name in ('pen_ease', 'duration', 'lines_toggle', 'order', 'line_pace'):
             self.assertTrue(animation.isAncestorOf(getattr(w, name)), name)
         self.assertEqual([w.pen_ease.itemText(i) for i in range(w.pen_ease.count())],
                          ['Constant speed', 'Natural (ease in and out)'])
@@ -144,7 +162,7 @@ class DualSidebarTests(unittest.TestCase):
         w.sidebar_layout.set_expanded('inspector', False)
         APP.processEvents()
         view = {a.text(): a for a in w.menus['view'].actions()}
-        view['Source panel'].trigger()
+        view['Image panel'].trigger()
         APP.processEvents()
         self.assertFalse(w.workspace_splitter.widget(2).isHidden())
         self.assertEqual(w.inspector_tabs.currentIndex(), TABS['source'])
@@ -209,6 +227,54 @@ class DualSidebarTests(unittest.TestCase):
         w.letter_detail_slider.setValue(96)
         self.assertEqual(w.font_size.value(), 96)
         self.assertTrue(w.font_color_button.text().startswith('#'))
+
+
+    def test_animated_slide_opens_and_closes_and_restores_the_panel(self):
+        from PySide6.QtTest import QTest
+        w = self.w
+        layout = w.sidebar_layout
+        panel = w.workspace_splitter.widget(2)
+        minimum, policy = panel.minimumWidth(), panel.sizePolicy().horizontalPolicy()
+        layout.animate = True
+        try:
+            layout.set_expanded('inspector', False)
+            QTest.qWait(30)
+            self.assertLessEqual(panel.minimumWidth(), 1)        # frozen: may shrink to nothing
+            QTest.qWait(450)
+            self.assertTrue(panel.isHidden())
+            self.assertEqual(panel.minimumWidth(), minimum)       # restored after the slide
+            self.assertEqual(panel.sizePolicy().horizontalPolicy(), policy)
+            w.rail_buttons['animation'].click()
+            QTest.qWait(450)
+            self.assertFalse(panel.isHidden())
+            self.assertGreaterEqual(w.workspace_splitter.sizes()[2], 270)
+            self.assertEqual(panel.minimumWidth(), minimum)
+            # A second click while sliding jumps the first slide to its end.
+            layout.set_expanded('inspector', False)
+            layout.set_expanded('inspector', True)
+            QTest.qWait(450)
+            self.assertFalse(panel.isHidden())
+            self.assertEqual(panel.minimumWidth(), minimum)
+        finally:
+            layout.animate = False
+
+    def test_left_rail_pages_and_ai_panel(self):
+        from unittest import mock
+        from studio_workspace import LEFT
+        w = self.w
+        for key in ('sound', 'music', 'camera', 'text'):
+            w.left_rail_buttons[key].click()
+            APP.processEvents()
+            self.assertEqual(w.left_tabs.currentIndex(), LEFT[key])
+            self.assertTrue(w.left_rail_buttons[key].isChecked())
+            self.assertEqual(w.handwriting_panel.title_label.text(), key.title())
+        w.left_rail_buttons['text'].click()                    # same icon again closes
+        APP.processEvents()
+        self.assertTrue(w.handwriting_panel.isHidden())
+        with mock.patch.object(w, 'open_create_image') as opened:
+            w.show_right_panel('ai')
+            w.ai_buttons['generate'].click()
+            opened.assert_called_once_with('generate')
 
 
 if __name__ == '__main__':

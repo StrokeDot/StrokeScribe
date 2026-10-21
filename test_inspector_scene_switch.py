@@ -88,7 +88,8 @@ class InspectorSceneSwitchGeometryTests(unittest.TestCase):
                     self.switch_element_type(image)
                     # This is where Experimental.72 could still paint controls
                     # outside the right edge of the visible Inspector.
-                    for page in (0,4):          # Animation and Source
+                    from studio_workspace import TABS
+                    for page in (TABS['animation'],TABS['source']):
                         area=w.inspector_tabs.widget(page)
                         w.inspector_tabs.setCurrentIndex(page)
                         APP.processEvents()

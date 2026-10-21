@@ -76,7 +76,6 @@ class SidebarController(QObject):
         }
         self.animate = not headless()
         self._slide = None
-        self._minimums = {side: panel.minimumWidth() for side, panel in self.panels.items()}
         self._adjusting = True
         for side, button in self.buttons.items():
             button.setCheckable(True)
@@ -131,24 +130,61 @@ class SidebarController(QObject):
             slide.stop()
             slide.finished.emit()
 
+    def _freeze(self, panel, width):
+        """Hold the panel's contents at their open width while it slides.
+
+        The panel can then be any width (its contents are clipped, not laid
+        out again), so the splitter moves it smoothly all the way to zero in
+        both directions instead of re-wrapping text every frame and stalling
+        at the panel's minimum width before snapping shut.
+        """
+        from PySide6.QtWidgets import QLayout, QSizePolicy
+        layout = panel.layout()
+        children = [layout.itemAt(i).widget() for i in range(layout.count())]
+        children = [c for c in children if c is not None]
+        saved = dict(policy=panel.sizePolicy(), constraint=layout.sizeConstraint(),
+                     minimum=panel.minimumWidth(),
+                     children=[(c, c.minimumWidth(), c.maximumWidth()) for c in children])
+        policy = QSizePolicy(panel.sizePolicy())
+        policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        panel.setSizePolicy(policy)
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
+        panel.setMinimumWidth(1)
+        width = max(1, int(width))
+        for child in children:
+            child.setFixedWidth(width)
+        return saved
+
+    def _thaw(self, panel, saved):
+        layout = panel.layout()
+        for child, low, high in saved['children']:
+            child.setMinimumWidth(low)
+            child.setMaximumWidth(high)
+        layout.setSizeConstraint(saved['constraint'])
+        panel.setSizePolicy(saved['policy'])
+        panel.setMinimumWidth(saved['minimum'])
+
     def _slide_to(self, side, expanded):
         """Animate the splitter from its current sizes to the new layout."""
         panel = self.panels[side]
-        start = self.splitter.sizes()
+        index = 0 if side == 'source' else 2
+        start = list(self.splitter.sizes())
+        width = self.widths[side] if expanded else max(start[index], 1)
+        saved = self._freeze(panel, width)
         if expanded:
-            panel.setMinimumWidth(0)           # let it grow from nothing
             panel.setVisible(True)
-            start = list(start)
-            start[0 if side == 'source' else 2] = 0
-            self.splitter.setSizes(start)
-        else:
-            panel.setMinimumWidth(0)           # let it shrink to nothing
+            start[index] = 0
+            self._adjusting = True
+            try:
+                self.splitter.setSizes(start)
+            finally:
+                self._adjusting = False
         end = self._target()
         slide = QVariantAnimation(self)
         slide.setDuration(SLIDE_MS)
         slide.setStartValue(0.0)
         slide.setEndValue(1.0)
-        slide.setEasingCurve(QEasingCurve.Type.OutCubic)
+        slide.setEasingCurve(QEasingCurve.Type.OutCubic if expanded else QEasingCurve.Type.InOutCubic)
 
         def step(t):
             t = float(t)
@@ -164,7 +200,7 @@ class SidebarController(QObject):
             self._adjusting = True
             try:
                 panel.setVisible(self.expanded[side])
-                panel.setMinimumWidth(self._minimums[side])
+                self._thaw(panel, saved)
                 self._resize()
             finally:
                 self._adjusting = False

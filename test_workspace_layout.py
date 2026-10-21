@@ -114,16 +114,19 @@ class WorkspaceLayoutTests(unittest.TestCase):
 
     def test_source_and_inspector_scroll_independently_without_horizontal_overflow(self):
         w = self.make_window(1040, 768)
-        source = w.workspace_splitter.widget(0).findChildren(QScrollArea)
+        source = [w.text_scroll]                     # left panel: Text page
         inspector = w.inspector_tabs.findChildren(QScrollArea)
         self.assertEqual(len(source), 1)
-        self.assertEqual(len(inspector), 5)          # Animation, Hand, Sound, Export, Source
+        self.assertEqual(len(inspector), 5)          # Animation, Hand, Export, Image, AI
         self.assertTrue(all(area.horizontalScrollBarPolicy() ==
                             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
                             for area in source + inspector))
         self.assertTrue(all(area.widgetResizable() for area in source + inspector))
         self.assertGreater(source[0].verticalScrollBar().maximum(), 0)
-        active = inspector[0]
+        w.show_right_panel('animation')
+        APP.processEvents()
+        active = w.inspector_tabs.currentWidget()
+        self.assertIn(active, inspector)
         self.assertGreater(active.verticalScrollBar().maximum(), 0)
         active.verticalScrollBar().setValue(0)
         source[0].verticalScrollBar().setValue(

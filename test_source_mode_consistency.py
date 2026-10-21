@@ -43,7 +43,7 @@ class SourceModeConsistencyTests(unittest.TestCase):
         APP.processEvents()
         APP.processEvents()
         from studio_workspace import TABS
-        self.handwriting=self.window.workspace_splitter.widget(0).findChild(QScrollArea)
+        self.handwriting=self.window.text_scroll          # left panel, Text page
         self.window.show_right_panel('source')
         APP.processEvents()
         self.source=self.window.inspector_tabs.widget(TABS['source'])

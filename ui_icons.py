@@ -19,8 +19,19 @@ _PATHS = {
             '<path d="M14 10.5V5.5a1.5 1.5 0 0 1 3 0V12"/>'
             '<path d="M17 9.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-1.2a6 6 0 0 1-4.7-2.3L3.6 15.4'
             'a1.6 1.6 0 0 1 2.4-2.1L8 15"/>',
-    # Two notes: Sound.
-    'sound': '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+    # A speaker with waves: Sound (drawing sounds).
+    'sound': '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9a4 4 0 0 1 0 6"/>'
+             '<path d="M18 6.5a7.5 7.5 0 0 1 0 11"/>',
+    # Two notes: Music (voiceover / music track).
+    'music': '<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+    # A big T: Text.
+    'text': '<path d="M5 6.5V4.5h14v2"/><path d="M12 4.5v15"/><path d="M9 19.5h6"/>',
+    # A camera: Camera.
+    'camera': '<path d="M3.5 8.5a2 2 0 0 1 2-2h2.2l1.6-2h5.4l1.6 2h2.2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13'
+              'a2 2 0 0 1-2-2z"/><circle cx="12" cy="13" r="3.6"/>',
+    # Sparkles: AI.
+    'ai': '<path d="M11 3.5l1.6 4.4 4.4 1.6-4.4 1.6L11 15.5l-1.6-4.4L5 9.5l4.4-1.6z"/>'
+          '<path d="M18 14l.8 2.2 2.2.8-2.2.8L18 20l-.8-2.2-2.2-.8 2.2-.8z"/>',
     # Arrow out of a tray: Export.
     'export': '<path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/>',
     # A pencil: Handwriting.

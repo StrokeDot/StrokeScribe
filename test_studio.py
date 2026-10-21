@@ -34,9 +34,13 @@ class StudioTests(unittest.TestCase):
         # so the long-standing indexes of the other pages are unchanged.
         self.assertEqual(w.inspector_tabs.count(),5)
         self.assertEqual([w.inspector_tabs.tabText(i) for i in range(5)],
-                         ['Animation','Hand','Sound','Export','Source'])
+                         ['Animation','Hand','Export','Image','AI'])
+        self.assertEqual([w.left_tabs.tabText(i) for i in range(w.left_tabs.count())],
+                         ['Text','Sound','Music','Camera'])
+        self.assertEqual(list(w.left_rail_buttons),['text','sound','music','camera'])
+        self.assertFalse(w.create_image_button.isVisible())     # the AI panel replaces it
         self.assertFalse(w.inspector_tabs.tabBar().isVisible())
-        self.assertEqual(list(w.rail_buttons),['source','animation','hand','sound','export'])
+        self.assertEqual(list(w.rail_buttons),['source','ai','animation','hand','export'])
         self.assertTrue(w.left_rail.isVisible() and w.right_rail.isVisible())
         # No project selector or resolution/FPS in the top bar any more.
         self.assertFalse(w.project_menu.isVisible())
@@ -150,7 +154,8 @@ class StudioTests(unittest.TestCase):
 
     def test_image_and_export_controls_preserved(self):
         w=self.window
-        w.inspector_tabs.setCurrentIndex(3)
+        from studio_workspace import TABS
+        w.inspector_tabs.setCurrentIndex(TABS['export'])
         self.assertTrue(w.webm.isVisible())
         self.assertTrue(w.keep_png.isVisible())
         self.assertEqual(w.webm_quality.value(),28)
@@ -185,7 +190,8 @@ class StudioTests(unittest.TestCase):
     def test_source_inspector_and_export_navigation(self):
         w=self.window
         w.quick_export.click()
-        self.assertEqual(w.inspector_tabs.currentIndex(),3)
+        from studio_workspace import TABS
+        self.assertEqual(w.inspector_tabs.currentIndex(),TABS['export'])
         w.fps.setValue(60)
         self.assertIn('60 fps',w.output_summary.text())
         w.inspector_tabs.setCurrentIndex(0)
