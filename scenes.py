@@ -101,19 +101,20 @@ def finished_art(drawing, options, background=True):
     return compose_frame(drawing, 1., opts)
 
 
-def stack(base, top, blend_mode='Normal'):
-    """`top` over `base`, using the selected per-element blend mode."""
-    if base is None:
-        return top
+def stack(base, top, blend_mode='Normal', opacity=100):
+    """Composite one artwork over an existing scene without changing inputs."""
     if top is None:
         return base
     from PySide6.QtGui import QImage, QPainter
-    out = base.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
-    if out is base:
-        out = base.copy()
-    p = QPainter(out)
+    from artwork_compositor import bounded_opacity
     from blend_modes import composition_mode
+    if base is None:
+        base = QImage(top.size(), QImage.Format.Format_ARGB32_Premultiplied)
+        base.fill(0)
+    out = base.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied).copy()
+    p = QPainter(out)
     p.setCompositionMode(composition_mode(blend_mode))
+    p.setOpacity(bounded_opacity(opacity))
     p.drawImage(0, 0, top)
     p.end()
     return out
