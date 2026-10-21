@@ -144,7 +144,7 @@ class WorkspaceLayoutTests(unittest.TestCase):
             self.assertGreater(area.viewport().width(), 185)
             for form in area.widget().findChildren(QFormLayout):
                 self.assertEqual(form.rowWrapPolicy(),
-                                 QFormLayout.RowWrapPolicy.WrapAllRows)
+                                 QFormLayout.RowWrapPolicy.WrapLongRows)
         # The source and inspector must remain navigable at the minimum size.
         self.assertTrue(w.export.isEnabled())
         self.assertTrue(w.source_type.isEnabled())
