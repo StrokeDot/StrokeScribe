@@ -1,5 +1,5 @@
 """Hosted Windows installation/shell verification. NEVER run on a user's installation."""
-import ctypes,json,os,subprocess,sys,time,winreg
+import ctypes,json,os,shutil,subprocess,sys,time,winreg
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
@@ -118,7 +118,7 @@ window.close()
         (target/'native_shell_modal_probe.py').write_text(hook,encoding='utf-8')
         instrumented=pristine.replace(
             "                window.grab().save(str(root/'test-output'/'native-startup.png'))",
-            "                window.grab().save(str(root/'test-output'/'native-startup.png'))\n                import native_shell_modal_probe; native_shell_modal_probe.install(window,app,root)")
+            "                window.grab().save(str(root/'test-output'/'native-startup.png'))\n                import native_shell_modal_probe; native_shell_modal_probe.install(window,app,root,broker)")
         assert instrumented!=pristine
         (target/'startup.py').write_text(instrumented,encoding='utf-8')
         child=subprocess.Popen([str(exe),str(project1)],cwd=str(area),env=run_env)
@@ -132,6 +132,7 @@ window.close()
         wait_for(lambda:(target/'test-output'/'modal-ready').exists())
         os.startfile(str(project2))
         wait_for(lambda:(target/'test-output'/'modal-queued').exists(),timeout=8)
+        (target/'test-output'/'modal-release').write_text('release')
         wait_for(lambda:(target/'test-output'/'native-unsaved.json').exists(),timeout=8)
         evidence['shell_unsaved_and_modal']=json.loads((target/'test-output'/'native-unsaved.json').read_text())
         # A later request after cancelling still uses the existing primary.
@@ -200,6 +201,11 @@ window.close()
         out.write_text(json.dumps(evidence,indent=2,ensure_ascii=False),encoding='utf-8')
         print(json.dumps(evidence,indent=2,ensure_ascii=True))
     finally:
+        capture=ROOT/'test-output'/'installed-native';capture.mkdir(parents=True,exist_ok=True)
+        if (target/'test-output').is_dir():shutil.copytree(target/'test-output',capture,dirs_exist_ok=True)
+        if (target/'startup.log').is_file():
+            shutil.copy2(target/'startup.log',capture/'startup.log')
+            print(log_text(target))
         if child is not None and child.poll() is None:
             child.wait(timeout=25)
         if installed:uninstall()
