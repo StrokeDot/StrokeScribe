@@ -103,10 +103,14 @@ def finished_art(drawing, options, background=True):
 
 def stack(base, top, blend_mode='Normal', opacity=100., hand=None):
     """Composite artwork only with its own mode/opacity, then add hand normally."""
-    if base is None:
-        return top
     if top is None:
         return base
+    if base is None and blend_mode=='Normal' and float(opacity)==100 and hand is None:
+        return top
+    if base is None:
+        from PySide6.QtGui import QImage
+        base=QImage(top.size(),QImage.Format.Format_ARGB32_Premultiplied)
+        base.fill(0)
     from PySide6.QtGui import QImage, QPainter
     out = base.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
     if out is base:
