@@ -89,6 +89,8 @@ class BlendTests(unittest.TestCase):
         try:
             w.resize(620,400)
             w.frame=solid((255,255,255),(160,90))
+            w.art_frame=w.frame.copy()
+            w.hand_frame=None
             w.set_background(2)  # Dark
             w.show()
             APP.processEvents()
