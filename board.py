@@ -215,9 +215,9 @@ class World:
             # Titles/other independent overlays cannot inherit an artwork mode.
             opts['overlays']=[]
             opts['artwork_opacity']=100  # World.view applies opacity after caching the raw art.
-            # A lettering page colour must not be attenuated with the ink.
-            if float(opts.get('artwork_opacity',100))!=100:
-                opts['background']=False
+            # First-page lettering background is drawn separately in World.view
+            # so neither a blend mode nor opacity can alter the page itself.
+            opts['background']=False
         image = compose_frame(it['drawing'], 1., opts)
         size = image.sizeInBytes()
         used = sum(i.sizeInBytes() for i in self.cache.values())
@@ -273,7 +273,7 @@ class World:
             mode=settings.get('blend_mode','Normal')
             opacity=float(settings.get('artwork_opacity',100))
             special=mode!='Normal' or opacity!=100
-            if opacity!=100 and new_page(self.frames,j,self.aspect):
+            if special and new_page(self.frames,j,self.aspect):
                 bg=getattr(self.items[j]['drawing'],'lettering_background',None)
                 if bg is not None:
                     from PySide6.QtGui import QColor
