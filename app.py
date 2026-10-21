@@ -2774,7 +2774,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         choice=self.paint_hand.currentText()
         library=choice==tools_kit.PAINT_LIBRARY
         self.paint_hand_choose.setVisible(library)
-        self.paint_hand_size.setEnabled(choice!=tools_kit.PAINT_SAME)
+        # "Same as drawing hand" paints with the drawing hand at its own size,
+        # so a separate size only exists for a different painting hand.
+        self.paint_hand_size.setEnabled(True)
+        if hasattr(self,'paint_hand_form'):
+            self.paint_hand_form.setRowVisible(self.paint_hand_size,choice!=tools_kit.PAINT_SAME)
         if library:
             name=Path(self.paint_hand_path).stem if self.paint_hand_path else 'none chosen yet'
             missing=self.paint_hand_path and not Path(self.paint_hand_path).is_file()
