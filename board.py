@@ -214,6 +214,7 @@ class World:
         if special:
             # Titles/other independent overlays cannot inherit an artwork mode.
             opts['overlays']=[]
+            opts['artwork_opacity']=100  # World.view applies opacity after caching the raw art.
             # A lettering page colour must not be attenuated with the ink.
             if float(opts.get('artwork_opacity',100))!=100:
                 opts['background']=False
