@@ -114,7 +114,7 @@ class WorkspaceLayoutTests(unittest.TestCase):
 
     def test_source_and_inspector_scroll_independently_without_horizontal_overflow(self):
         w = self.make_window(1040, 768)
-        source = w.workspace_splitter.widget(0).findChildren(QScrollArea)
+        source = [w.text_scroll]                     # left panel: Text page
         inspector = w.inspector_tabs.findChildren(QScrollArea)
         self.assertEqual(len(source), 1)
         self.assertEqual(len(inspector), 5)          # Animation, Hand, Sound, Export, Source

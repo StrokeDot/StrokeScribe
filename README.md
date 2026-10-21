@@ -9,6 +9,12 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Text, Sound, Music, Camera on the left; Image and AI on the right (v0.5.3-experimental.78)
+
+- **Left rail:** **Text** (handwriting and lettering), **Sound** (pencil, brush and eraser sounds), **Music** (voiceover / music track), **Camera** (camera follow).
+- **Right rail:** **Image** (was Source), **AI** (new: Line art for my image, Create image from text, Edit an image, Create a sound — replaces the top-bar *Create image* button), Animation, Hand, Export.
+- **Smoother closing:** a panel now keeps its layout while it slides (clipped, not re-laid out every frame), so closing is as smooth as opening.
+
 ## Panels open on click, fullscreen canvas (v0.5.3-experimental.77)
 
 - **Panels start closed** — only the icon rails show, so the canvas is big. Click **Writing** (left) or **Source / Animation / Hand / Sound / Export** (right) and the panel **slides open toward the canvas**, pushing it over. Click the same icon again, or the panel's **✕**, and it slides shut.

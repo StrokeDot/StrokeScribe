@@ -33,13 +33,15 @@ class VisibleControlRegression(unittest.TestCase):
     def _ensure_visible(self, combo):
         # Source, Animation, Hand, Sound and Export share the right panel and
         # show one page at a time (experimental.76): open the control's page.
-        tabs = self.w.inspector_tabs
-        for i in range(tabs.count()):
-            if tabs.widget(i).isAncestorOf(combo):
-                if tabs.currentIndex() != i:
-                    tabs.setCurrentIndex(i)
-                    APP.processEvents()
-                break
+        # Both side panels show one page at a time (Text/Sound/Music/Camera on
+        # the left since experimental.78): open whichever holds the control.
+        for tabs in (self.w.inspector_tabs, self.w.left_tabs):
+            for i in range(tabs.count()):
+                if tabs.widget(i).isAncestorOf(combo):
+                    if tabs.currentIndex() != i:
+                        tabs.setCurrentIndex(i)
+                        APP.processEvents()
+                    break
         parent = combo.parentWidget()
         while parent is not None and not isinstance(parent, QScrollArea):
             parent = parent.parentWidget()

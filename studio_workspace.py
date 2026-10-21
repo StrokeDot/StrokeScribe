@@ -879,11 +879,15 @@ def build_rails(w, tabs, inspector):
         return button
 
     left, left_l = rail_frame()
-    w.rail_text = rail_button('handwriting', 'Handwriting')
-    w.rail_text.setText('Writing')
-    w.rail_text.setToolTip('Handwriting: text and lettering')
-    w.rail_text.clicked.connect(lambda checked: layout.set_expanded('source', checked))
-    left_l.addWidget(w.rail_text)
+    w.left_rail_buttons = {}
+    for key, text in LEFT_RAIL:
+        button = rail_button(key, text)
+        button.setToolTip(text + ' panel')
+        button.clicked.connect(lambda checked=False, k=key: w.show_left_panel(k, toggle=True))
+        left_l.addWidget(button)
+        w.left_rail_buttons[key] = button
+    w.rail_text = w.left_rail_buttons['text']
+    w.rail_text.setToolTip('Text: handwriting and lettering')
     left_l.addStretch(1)
 
     right, right_l = rail_frame()
@@ -902,8 +906,9 @@ def build_rails(w, tabs, inspector):
 
     # Panel headers: an icon before the title, a close button at the end.
     hw_header = w.handwriting_panel.title_label.parentWidget().layout()
-    hw_header.insertWidget(0, _header_icon('handwriting'))
-    w.handwriting_close = _close_button('Close Handwriting panel')
+    w.left_panel_icon = _header_icon('text')
+    hw_header.insertWidget(0, w.left_panel_icon)
+    w.handwriting_close = _close_button('Close panel')
     w.handwriting_close.clicked.connect(lambda checked=False: layout.set_expanded('source', False))
     hw_header.addWidget(w.handwriting_close)
     right_header = inspector.title_label.parentWidget().layout()
@@ -922,9 +927,17 @@ def build_rails(w, tabs, inspector):
             layout.set_expanded('inspector', True)
         sync()
 
-    def show_handwriting_panel():
-        layout.set_expanded('source', True)
+    def show_left_panel(key, toggle=False):
+        index = LEFT[key]
+        if toggle and layout.expanded['source'] and w.left_tabs.currentIndex() == index:
+            layout.set_expanded('source', False)
+        else:
+            w.left_tabs.setCurrentIndex(index)
+            layout.set_expanded('source', True)
         sync()
+
+    def show_handwriting_panel():
+        show_left_panel('text')
         w.text.setFocus()
 
     def sync(*_):
@@ -932,18 +945,24 @@ def build_rails(w, tabs, inspector):
         key = next((k for k, i in TABS.items() if i == tabs.currentIndex()), 'source')
         inspector.title_label.setText(tabs.tabText(tabs.currentIndex()))
         w.right_panel_icon.setPixmap(pixmap(key, RAIL_ICON, 20))
-        w.rail_text.blockSignals(True)
-        w.rail_text.setChecked(bool(layout.expanded['source']))
-        w.rail_text.blockSignals(False)
+        left_key = next((k for k, i in LEFT.items() if i == w.left_tabs.currentIndex()), 'text')
+        w.handwriting_panel.title_label.setText(w.left_tabs.tabText(w.left_tabs.currentIndex()))
+        w.left_panel_icon.setPixmap(pixmap(left_key, RAIL_ICON, 20))
+        for name, button in w.left_rail_buttons.items():
+            button.blockSignals(True)
+            button.setChecked(bool(layout.expanded['source']) and w.left_tabs.currentIndex() == LEFT[name])
+            button.blockSignals(False)
         for name, button in w.rail_buttons.items():
             button.blockSignals(True)
             button.setChecked(bool(layout.expanded['inspector']) and tabs.currentIndex() == TABS[name])
             button.blockSignals(False)
 
     w.show_right_panel = show_right_panel
+    w.show_left_panel = show_left_panel
     w.show_handwriting_panel = show_handwriting_panel
     w.sync_rails = sync
     tabs.currentChanged.connect(sync)
+    w.left_tabs.currentChanged.connect(sync)
     layout.listeners.append(sync)
     sync()
     build_fullscreen(w)
@@ -1027,11 +1046,14 @@ class LineList(QListWidget):
 
 
 # Inspector tabs, in order.
-TABS = {'animation': 0, 'hand': 1, 'sound': 2, 'export': 3, 'source': 4}
+TABS = {'animation': 0, 'hand': 1, 'export': 2, 'source': 3, 'ai': 4}
+# Left panel pages (Text = handwriting).
+LEFT = {'text': 0, 'sound': 1, 'music': 2, 'camera': 3}
+LEFT_RAIL = (('text', 'Text'), ('sound', 'Sound'), ('music', 'Music'), ('camera', 'Camera'))
 # The right rail shows Source first; the tab widget keeps it last so the
 # long-standing indexes of the other panels never change.
-RAIL = (('source', 'Source'), ('animation', 'Animation'), ('hand', 'Hand'),
-        ('sound', 'Sound'), ('export', 'Export'))
+RAIL = (('source', 'Image'), ('ai', 'AI'), ('animation', 'Animation'), ('hand', 'Hand'),
+        ('export', 'Export'))
 
 
 class WheelGuard(QObject):
@@ -1151,6 +1173,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
                                      '(local models; runs on your graphics card).')
     w.create_image_button.clicked.connect(lambda checked=False: w.open_create_image())
     bar_l.addWidget(w.create_image_button)
+    w.create_image_button.hide()          # replaced by the AI panel (right rail)
     w.update_button=QPushButton('⬆ Update')
     w.update_button.setObjectName('primary')
     w.update_button.setToolTip('A new StrokeScribe version is ready. Click to update (no unzipping, no Setup).')
@@ -1209,7 +1232,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     outer.addWidget(w.vertical_splitter,1)
 
     # Handwriting (left): text and lettering only. Imports live in Source (right).
-    asset_panel,asset_outer,_=panel('assetPanel','Handwriting')
+    asset_panel,asset_outer,_=panel('assetPanel','Text')
     w.handwriting_panel=asset_panel
     asset_panel.setMinimumWidth(225)
     asset_panel.setMaximumWidth(460)
@@ -1521,7 +1544,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     lines_box_l.addWidget(w.lines_group)
     w.note=caption('Ready.')
     w.source_note_slot.addWidget(w.note)
-    asset_outer.addWidget(scroll_view(asset),1)
+    w.left_tabs=QTabWidget()
+    w.left_tabs.setDocumentMode(True)
+    w.left_tabs.setMinimumWidth(0)
+    w.left_tabs.tabBar().hide()
+    w.text_scroll=scroll_view(asset)
+    w.left_tabs.addTab(w.text_scroll,'Text')
+    asset_outer.addWidget(w.left_tabs,1)
     split.addWidget(asset_panel)
 
     # Large, dedicated visual monitor (center).
@@ -1672,7 +1701,6 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.camera.addItems(['Off','Gentle zoom','Close-up zoom'])
     w.camera.setToolTip('Camera follow: the view zooms in and glides after the pen, then pulls back '
                         'to show the whole picture at the end.')
-    a.addRow('Camera follow',w.camera)
     w.auto_timing_button=QPushButton('Auto timing')
     w.auto_timing_button.setToolTip('Pick draw, paint and hold times from how much there is to draw '
                                     'and paint (or from the voiceover length, if one is loaded).')
@@ -1973,7 +2001,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.sound_preview.setChecked(True)
     sound_l.addWidget(w.sound_preview)
     sound_l.addWidget(caption('Included in MP4, WebM and MOV. PNG exports also get soundtrack.wav.'))
-    sound_l.addWidget(label('VOICEOVER / MUSIC'))
+    sound_l.addStretch(1)
+    # Music: the voiceover / music track.
+    music=QWidget();music_l=QVBoxLayout(music)
+    music_l.setContentsMargins(9,12,9,8);music_l.setSpacing(10)
+    music_l.addWidget(label('VOICEOVER / MUSIC'))
     audio_row=QGridLayout()
     audio_row.setHorizontalSpacing(6)
     audio_row.setVerticalSpacing(5)
@@ -1988,24 +2020,54 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.remove_audio_button.setEnabled(False)
     w.remove_audio_button.clicked.connect(lambda checked=False: w.remove_audio())
     audio_row.addWidget(w.remove_audio_button,1,0,1,2)
-    sound_l.addLayout(audio_row)
+    music_l.addLayout(audio_row)
     w.audio_note=caption('No audio track')
-    sound_l.addWidget(w.audio_note)
+    music_l.addWidget(w.audio_note)
     e5=form_layout()
     w.audio_volume=QSpinBox();w.audio_volume.setRange(0,200);w.audio_volume.setValue(100)
     w.audio_volume.setSuffix('%');e5.addRow('Track volume',w.audio_volume)
     w.audio_offset=w.number(0,600,0,.1)
     w.audio_offset.setToolTip('Seconds into the video when the track starts.')
     e5.addRow('Starts at (s)',w.audio_offset)
-    sound_l.addLayout(e5)
+    music_l.addLayout(e5)
     w.fit_audio_button=QPushButton('Fit animation to audio')
     w.fit_audio_button.setEnabled(False)
     w.fit_audio_button.setToolTip('Stretch draw, paint, hold and erase times so the video ends when the track ends.')
     w.fit_audio_button.clicked.connect(lambda checked=False: w.fit_to_audio())
-    sound_l.addWidget(w.fit_audio_button)
-    sound_l.addStretch(1)
-    tabs.insertTab(TABS['sound'],scroll_view(sound),'Sound')      # before Export
-    tabs.insertTab(TABS['source'],scroll_view(source_page),'Source')
+    music_l.addWidget(w.fit_audio_button)
+    music_l.addStretch(1)
+    # Camera: camera follow (moves between elements are set on the timeline).
+    camera_page=QWidget();camera_l=QVBoxLayout(camera_page)
+    camera_l.setContentsMargins(9,12,9,8);camera_l.setSpacing(10)
+    camera_l.addWidget(label('CAMERA FOLLOW'))
+    camera_form=form_layout();camera_form.addRow('Camera follow',w.camera)
+    camera_l.addLayout(camera_form)
+    camera_l.addWidget(caption('The view zooms in and glides after the pen, then pulls back to show the '
+                               'whole picture. Camera moves between elements are set on the timeline '
+                               '(Then / Move).'))
+    camera_l.addStretch(1)
+    w.left_tabs.addTab(scroll_view(sound),'Sound')
+    w.left_tabs.addTab(scroll_view(music),'Music')
+    w.left_tabs.addTab(scroll_view(camera_page),'Camera')
+    tabs.insertTab(TABS['source'],scroll_view(source_page),'Image')
+    # AI: the Create Image / Create a sound tools (replaces the top-bar button).
+    ai_page=QWidget();ai_l=QVBoxLayout(ai_page)
+    ai_l.setContentsMargins(9,12,9,8);ai_l.setSpacing(10)
+    ai_l.addWidget(caption('Runs on your PC with the local AI engine. Each tool opens the Create '
+                           'Image window on that task.'))
+    w.ai_buttons={}
+    for task,text,tip in (
+            ('lineart','Line art for my image','An AI model redraws the selected image as clean line art.'),
+            ('generate','Create image from text','Describe a picture and create it on your PC.'),
+            ('edit','Edit an image','Change an image with a written instruction.'),
+            ('sound','Create a sound','Make a pencil, brush or eraser sound.')):
+        button=QPushButton(text);button.setToolTip(tip)
+        button.clicked.connect(lambda checked=False,t=task: w.open_create_image(t))
+        ai_l.addWidget(button)
+        w.ai_buttons[task]=button
+    w.ai_buttons['lineart'].setObjectName('primary')
+    ai_l.addStretch(1)
+    tabs.insertTab(TABS['ai'],scroll_view(ai_page),'AI')
     # The rail replaces the tab strip; the panel title names the open page.
     tabs.tabBar().hide()
     inspector.title_label.setText(tabs.tabText(tabs.currentIndex()))
@@ -2195,7 +2257,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.setAccessibleName('Animation timeline: click to scrub; double-click Draw or Paint to edit source; Ctrl+Shift+D or P edits selected source')
     fit_to_width(asset,stacked=True)       # labels above fields in the narrow column
     fit_to_width(source_page,stacked=True)
-    for content in (animation,hand,output,sound):
+    for content in (animation,hand,output,sound,music,camera_page,ai_page):
         fit_to_width(content,stacked=False)
         for form in content.findChildren(QFormLayout):
             form.setVerticalSpacing(5)

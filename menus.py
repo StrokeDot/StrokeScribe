@@ -52,8 +52,10 @@ def _toggle(menu, text, box):
 
 def _go(w, tab):
     """Show an Inspector tab by name (studio_workspace.TABS)."""
-    from studio_workspace import TABS
-    if hasattr(w, 'show_right_panel'):
+    from studio_workspace import TABS, LEFT
+    if tab in LEFT and hasattr(w, 'show_left_panel'):
+        w.show_left_panel(tab)            # Text, Sound, Music, Camera: left panel
+    elif hasattr(w, 'show_right_panel'):
         w.show_right_panel(tab)           # also reopens a collapsed right panel
     else:
         w.inspector_tabs.setCurrentIndex(TABS[tab])
@@ -132,9 +134,11 @@ def build_menus(w):
     _combo_menu(view, 'Preview background', w.preview_background)
     _combo_menu(view, 'Preview', w.preview_scope)
     view.addSeparator()
-    view.addAction('Handwriting panel', lambda: w.show_handwriting_panel()
-                   if hasattr(w, 'show_handwriting_panel') else None)
-    view.addAction('Source panel', lambda: _go(w, 'source'))
+    view.addAction('Text panel', lambda: _go(w, 'text'))
+    view.addAction('Image panel', lambda: _go(w, 'source'))
+    view.addAction('AI panel', lambda: _go(w, 'ai'))
+    view.addAction('Music panel', lambda: _go(w, 'music'))
+    view.addAction('Camera panel', lambda: _go(w, 'camera'))
     view.addAction('Animation settings', lambda: _go(w, 'animation'))
     view.addAction('Hand settings', lambda: _go(w, 'hand'))
     view.addAction('Sound settings', lambda: _go(w, 'sound'))
