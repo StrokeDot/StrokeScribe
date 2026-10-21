@@ -19,8 +19,19 @@ from studio_workspace import TABS
 APP = QApplication.instance() or QApplication([])
 
 
+KEYS = ('workspace/source_width', 'workspace/inspector_width',
+        'workspace/source_open', 'workspace/inspector_open')
+
+
 class DualSidebarTests(unittest.TestCase):
     def setUp(self):
+        # Each test starts from the default panel state (tests open and close
+        # panels, and those states are remembered between windows).
+        from PySide6.QtCore import QSettings
+        self.settings = QSettings('StrokeScribe', 'Studio')
+        self.prior = {key: self.settings.value(key) for key in KEYS}
+        for key in KEYS:
+            self.settings.remove(key)
         self.w = Window()
         self.w.resize(1490, 890)
         self.w.show()
@@ -31,6 +42,11 @@ class DualSidebarTests(unittest.TestCase):
         self.w.playing = False
         self.w.close()
         APP.processEvents()
+        for key, value in self.prior.items():
+            if value is None:
+                self.settings.remove(key)
+            else:
+                self.settings.setValue(key, value)
 
     def page(self, key):
         return self.w.inspector_tabs.widget(TABS[key])

@@ -117,13 +117,16 @@ class WorkspaceLayoutTests(unittest.TestCase):
         source = [w.text_scroll]                     # left panel: Text page
         inspector = w.inspector_tabs.findChildren(QScrollArea)
         self.assertEqual(len(source), 1)
-        self.assertEqual(len(inspector), 5)          # Animation, Hand, Sound, Export, Source
+        self.assertEqual(len(inspector), 5)          # Animation, Hand, Export, Image, AI
         self.assertTrue(all(area.horizontalScrollBarPolicy() ==
                             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
                             for area in source + inspector))
         self.assertTrue(all(area.widgetResizable() for area in source + inspector))
         self.assertGreater(source[0].verticalScrollBar().maximum(), 0)
-        active = inspector[0]
+        w.show_right_panel('animation')
+        APP.processEvents()
+        active = w.inspector_tabs.currentWidget()
+        self.assertIn(active, inspector)
         self.assertGreater(active.verticalScrollBar().maximum(), 0)
         active.verticalScrollBar().setValue(0)
         source[0].verticalScrollBar().setValue(
