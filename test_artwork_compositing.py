@@ -40,12 +40,12 @@ class AppearanceCompositingTests(unittest.TestCase):
         base=img((90,130,190))
         artwork=img((255,255,255))
         artwork.setPixelColor(3,3,QColor(0,0,0))
-        hand=QImage(*artwork.size(),QImage.Format.Format_ARGB32_Premultiplied)
+        hand=QImage(artwork.size(),QImage.Format.Format_ARGB32_Premultiplied)
         hand.fill(0)
         hand.setPixelColor(10,10,QColor(255,100,50))
         def fake_compose(drawing,fraction,options,camera_path=None):
             return hand if options['layers']=='hand' else artwork
-        with patch('frame_render.compose_frame',side_effect=fake_compose):
+        with patch('frame_render._compose_raw_frame',side_effect=fake_compose):
             mixed=composite_element(base,object(),.5,
                                    dict(layers='all',blend_mode='Multiply',artwork_opacity=40))
         self.assertEqual(mixed.pixelColor(10,10),QColor(255,100,50))
@@ -79,7 +79,7 @@ class AppearanceCompositingTests(unittest.TestCase):
     def test_single_export_composer_keeps_hand_full_color(self):
         from frame_render import compose_frame
         art=img((255,255,255))
-        pen=QImage(*art.size(),QImage.Format.Format_ARGB32_Premultiplied)
+        pen=QImage(art.size(),QImage.Format.Format_ARGB32_Premultiplied)
         pen.fill(0);pen.setPixelColor(12,12,QColor(225,45,25))
         def fake_raw(drawing,fraction,options,camera_path=None):
             return pen if options.get('layers')=='hand' else art
