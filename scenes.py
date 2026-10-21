@@ -142,7 +142,7 @@ def composite_element(base, drawing, fraction, options, camera=None):
     if mode=='Normal' and alpha==100:
         return stack(base,compose_frame(drawing,fraction,options,camera))
     from frame_render import independent_overlays
-    art=compose_frame(drawing,fraction,dict(options,layers='art',ghost=0,overlays=[]),camera)
+    art=compose_frame(drawing,fraction,dict(options,layers='art',ghost=0,overlays=[],artwork_opacity=100),camera)
     hand=compose_frame(drawing,fraction,dict(options,layers='hand',ghost=0,overlays=[]),camera)
     extras=independent_overlays(drawing,fraction,options,camera)
     return stack(base,art,mode,alpha,hand,extras)
