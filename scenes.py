@@ -101,8 +101,8 @@ def finished_art(drawing, options, background=True):
     return compose_frame(drawing, 1., opts)
 
 
-def stack(base, top, blend_mode='Normal'):
-    """`top` over `base`, using the selected per-element blend mode."""
+def stack(base, top, blend_mode='Normal', opacity=100., hand=None):
+    """Composite artwork only with its own mode/opacity, then add hand normally."""
     if base is None:
         return top
     if top is None:
@@ -114,9 +114,30 @@ def stack(base, top, blend_mode='Normal'):
     p = QPainter(out)
     from blend_modes import composition_mode
     p.setCompositionMode(composition_mode(blend_mode))
+    p.setOpacity(max(0.,min(1.,float(opacity)/100.)))
     p.drawImage(0, 0, top)
+    p.setOpacity(1.)
+    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+    if hand is not None:
+        p.drawImage(0,0,hand)
     p.end()
     return out
+
+
+def composite_element(base, drawing, fraction, options, camera=None):
+    """Place artwork with per-element effects BELOW an unmodified moving hand.
+
+    Same renderer and fraction as final export. Legacy Normal/100 uses the
+    original combined render unchanged for existing saved project fidelity.
+    """
+    from frame_render import compose_frame
+    mode=options.get('blend_mode','Normal')
+    alpha=float(options.get('artwork_opacity',100))
+    if mode=='Normal' and alpha==100:
+        return stack(base,compose_frame(drawing,fraction,options,camera))
+    art=compose_frame(drawing,fraction,dict(options,layers='art',ghost=0),camera)
+    hand=compose_frame(drawing,fraction,dict(options,layers='hand',ghost=0),camera)
+    return stack(base,art,mode,alpha,hand)
 
 
 def for_page(options):
