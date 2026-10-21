@@ -305,8 +305,18 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                     else:
                         view = board.sub_view(all_frames[k], *camera.at(i / max(1, len(frames) - 1)), aspect)
                         under = world.view(view, width, height, upto=k)
-                    if not stack(under, QImage(str(frame)),
-                                 options.get('blend_mode','Normal')).save(str(frame), 'PNG', 80):
+                    mode=options.get('blend_mode','Normal')
+                    opacity=float(options.get('artwork_opacity',100))
+                    if mode!='Normal' or opacity!=100:
+                        # The already-exported PNG contains BOTH artwork and
+                        # moving hand. Re-render the independent layers at the
+                        # exact export fraction before applying the artwork-only
+                        # blend. Never blend/attenuate the drawing hand.
+                        rendered=composite_element(under,scene['drawing'],
+                            i/max(1,len(frames)-1),options,camera)
+                    else:
+                        rendered=stack(under,QImage(str(frame)))
+                    if not rendered.save(str(frame),'PNG',80):
                         raise OSError('Unable to save PNG frame.')
             start = index
             for frame in frames:
