@@ -2578,11 +2578,19 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             for stroke in drawing.strokes:
                 stroke.color=self.letter_ink_color
 
+    def update_ink_swatch(self):
+        """Ink colour field: a swatch of the colour and its hex code."""
+        from PySide6.QtGui import QPixmap,QIcon
+        color=str(getattr(self,'letter_ink_color','#25364A') or '#25364A')
+        swatch=QPixmap(18,18);swatch.fill(QColor(color))
+        self.font_color_button.setIcon(QIcon(swatch))
+        self.font_color_button.setText(color.upper())
+
     def choose_letter_color(self):
         color=QColorDialog.getColor(QColor(self.letter_ink_color),self,'Letter ink color')
         if not color.isValid():return
         self.letter_ink_color=color.name()
-        self.font_color_button.setText('Letter color: '+self.letter_ink_color.upper())
+        self.update_ink_swatch()
         self.apply_letter_style()
         self.refresh()
 

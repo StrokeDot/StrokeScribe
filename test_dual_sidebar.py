@@ -152,5 +152,64 @@ class DualSidebarTests(unittest.TestCase):
         self.assertEqual(w.inspector_tabs.currentIndex(), TABS['animation'])
 
 
+    def test_close_buttons_and_rails_open_on_click(self):
+        w = self.w
+        split = w.workspace_splitter
+        w.right_panel_close.click()
+        APP.processEvents()
+        self.assertTrue(split.widget(2).isHidden())
+        self.assertFalse(any(b.isChecked() for b in w.rail_buttons.values()))
+        w.rail_buttons['animation'].click()                 # click opens the panel
+        APP.processEvents()
+        self.assertFalse(split.widget(2).isHidden())
+        self.assertEqual(w.inspector_tabs.currentIndex(), TABS['animation'])
+        self.assertEqual(split.widget(2).title_label.text(), 'Animation')
+        w.handwriting_close.click()
+        APP.processEvents()
+        self.assertTrue(split.widget(0).isHidden())
+        w.rail_text.click()
+        APP.processEvents()
+        self.assertFalse(split.widget(0).isHidden())
+
+    def test_panels_start_closed_for_people_and_open_for_the_harness(self):
+        from workspace_layout import default_open, headless
+        self.assertFalse(default_open('windows'))
+        self.assertFalse(default_open(''))
+        self.assertTrue(default_open('offscreen'))
+        self.assertTrue(headless('offscreen'))
+        self.assertFalse(self.w.sidebar_layout.animate)     # tests run without the slide
+
+    def test_canvas_fullscreen_hides_everything_but_the_canvas(self):
+        w = self.w
+        parts = (w.top_bar, w.left_rail, w.right_rail, w.timeline_panel,
+                 w.handwriting_panel, w.workspace_splitter.widget(2))
+        self.assertTrue(all(p.isVisible() for p in parts))
+        w.fullscreen_button.click()
+        APP.processEvents()
+        self.assertTrue(w.canvas_fullscreen)
+        self.assertTrue(w.canvas.isVisible())
+        self.assertFalse(any(p.isVisible() for p in parts))
+        self.assertFalse(w.menuBar().isVisible())
+        w.leave_canvas_fullscreen()                          # Esc / F11 do the same
+        APP.processEvents()
+        self.assertFalse(w.canvas_fullscreen)
+        self.assertTrue(all(p.isVisible() for p in parts))
+        # Panel states were not saved as closed.
+        self.assertTrue(w.sidebar_layout.expanded['source'])
+        self.assertTrue(w.sidebar_layout.expanded['inspector'])
+
+    def test_sliders_follow_their_fields(self):
+        w = self.w
+        w.artwork_size.setValue(150)
+        self.assertEqual(w.scale_slider.value(), 150)
+        w.scale_slider.setValue(80)
+        self.assertEqual(w.artwork_size.value(), 80)
+        w.opacity_slider.setValue(40)
+        self.assertEqual(w.artwork_opacity.value(), 40)
+        w.letter_detail_slider.setValue(96)
+        self.assertEqual(w.font_size.value(), 96)
+        self.assertTrue(w.font_color_button.text().startswith('#'))
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

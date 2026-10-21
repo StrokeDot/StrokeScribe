@@ -9,6 +9,15 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Panels open on click, fullscreen canvas (v0.5.3-experimental.77)
+
+- **Panels start closed** — only the icon rails show, so the canvas is big. Click **Writing** (left) or **Source / Animation / Hand / Sound / Export** (right) and the panel **slides open toward the canvas**, pushing it over. Click the same icon again, or the panel's **✕**, and it slides shut.
+- **Real icons** in the rails; the open item is highlighted. Each panel header shows its icon and a close button.
+- **Fullscreen canvas:** the button at the right of the Program header, or **F11**. **Esc** (or F11) leaves it.
+- **Source** shows a large preview (thumbnail, *No image loaded*, or *Handwriting element*) and a collapsible **Source settings** section with **Scale** and **Opacity sliders**.
+- **Handwriting:** Letter detail slider, ink colour as swatch + hex with a picker button, and a collapsible **Fonts** section.
+- Rotation, Crop / Mask, Color adjustments and the drawing-style tiles from the mockups need rendering work and will come as real features later.
+
 ## Dual-sidebar layout: Handwriting left, Source right (v0.5.3-experimental.76)
 
 UI-only rearrangement of existing controls; the rendering engine and export output are unchanged.

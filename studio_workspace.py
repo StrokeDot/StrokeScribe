@@ -23,6 +23,29 @@ from version import APP_VERSION, DISPLAY_NAME
 from theme import stylesheet as theme_stylesheet, colors as theme_colors
 
 
+def linked_slider(spin, low, high, scale=1):
+    """A horizontal slider kept in step with a spin box (the spin box owns the value)."""
+    from PySide6.QtWidgets import QSlider
+    slider = QSlider(Qt.Orientation.Horizontal)
+    slider.setRange(round(low * scale), round(high * scale))
+    slider.setValue(round(spin.value() * scale))
+    slider.setMinimumWidth(40)
+    slider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def from_slider(value):
+        if round(spin.value() * scale) != value:
+            spin.setValue(value / scale)
+
+    def from_spin(value):
+        slider.blockSignals(True)
+        slider.setValue(round(value * scale))
+        slider.blockSignals(False)
+
+    slider.valueChanged.connect(from_slider)
+    spin.valueChanged.connect(from_spin)
+    return slider
+
+
 def label(text, kind='section'):
     w=QLabel(text)
     w.setObjectName(kind)
@@ -804,15 +827,39 @@ def panel(object_name, title, hint=None):
     return frame,outer,header_l
 
 
+RAIL_ICON = '#A9A6B8'          # rail and header icons: muted, accent when open
+RAIL_ACTIVE = '#B7A6FF'
+
+
+def _header_icon(name):
+    from ui_icons import pixmap
+    mark = QLabel(); mark.setObjectName('panelIcon')
+    mark.setPixmap(pixmap(name, RAIL_ICON, 20)); mark.setFixedSize(22, 22)
+    return mark
+
+
+def _close_button(tip):
+    from PySide6.QtWidgets import QToolButton
+    from PySide6.QtCore import QSize
+    from ui_icons import icon
+    button = QToolButton(); button.setObjectName('panelClose')
+    button.setIcon(icon('close', RAIL_ICON)); button.setIconSize(QSize(16, 16))
+    button.setToolTip(tip); button.setAccessibleName(tip)
+    button.setAutoRaise(True)
+    return button
+
+
 def build_rails(w, tabs, inspector):
     """Icon rails beside the two side panels (outside the splitter).
 
-    Left rail: Text — shows or hides the Handwriting panel.
-    Right rail: Source, Animation, Hand, Sound, Export — opens that page in the
-    right panel; clicking the open page's icon again collapses the panel.
-    Both panels still collapse independently and remember their state.
+    Panels start closed, so the canvas is big. Left rail: Handwriting. Right
+    rail: Source, Animation, Hand, Sound, Export. Clicking an icon slides its
+    panel open toward the canvas (pushing the canvas over); clicking it again,
+    or the panel's close button, slides it shut. Each side remembers its state.
     """
     from PySide6.QtWidgets import QToolButton
+    from PySide6.QtCore import QSize
+    from ui_icons import icon
     layout = w.sidebar_layout
 
     def rail_frame():
@@ -821,16 +868,19 @@ def build_rails(w, tabs, inspector):
         column = QVBoxLayout(frame); column.setContentsMargins(3, 8, 3, 8); column.setSpacing(6)
         return frame, column
 
-    def rail_button(glyph, text):
+    def rail_button(name, text):
         button = QToolButton(); button.setObjectName('railButton')
-        button.setText(glyph + '\n' + text)
+        button.setText(text)
+        button.setIcon(icon(name, RAIL_ICON, '#FFFFFF'))
+        button.setIconSize(QSize(22, 22))
         button.setCheckable(True)
-        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         button.setAccessibleName(text)
         return button
 
     left, left_l = rail_frame()
-    w.rail_text = rail_button('Aa', 'Text')
+    w.rail_text = rail_button('handwriting', 'Handwriting')
+    w.rail_text.setText('Writing')
     w.rail_text.setToolTip('Handwriting: text and lettering')
     w.rail_text.clicked.connect(lambda checked: layout.set_expanded('source', checked))
     left_l.addWidget(w.rail_text)
@@ -838,8 +888,8 @@ def build_rails(w, tabs, inspector):
 
     right, right_l = rail_frame()
     w.rail_buttons = {}
-    for key, glyph, text in RAIL:
-        button = rail_button(glyph, text)
+    for key, text in RAIL:
+        button = rail_button(key, text)
         button.setToolTip(text + ' panel')
         button.clicked.connect(lambda checked=False, k=key: w.show_right_panel(k, toggle=True))
         right_l.addWidget(button)
@@ -849,6 +899,19 @@ def build_rails(w, tabs, inspector):
     w.workspace_row_layout.insertWidget(0, left)
     w.workspace_row_layout.addWidget(right)
     w.left_rail, w.right_rail = left, right
+
+    # Panel headers: an icon before the title, a close button at the end.
+    hw_header = w.handwriting_panel.title_label.parentWidget().layout()
+    hw_header.insertWidget(0, _header_icon('handwriting'))
+    w.handwriting_close = _close_button('Close Handwriting panel')
+    w.handwriting_close.clicked.connect(lambda checked=False: layout.set_expanded('source', False))
+    hw_header.addWidget(w.handwriting_close)
+    right_header = inspector.title_label.parentWidget().layout()
+    w.right_panel_icon = _header_icon('source')
+    right_header.insertWidget(0, w.right_panel_icon)
+    w.right_panel_close = _close_button('Close panel')
+    w.right_panel_close.clicked.connect(lambda checked=False: layout.set_expanded('inspector', False))
+    right_header.addWidget(w.right_panel_close)
 
     def show_right_panel(key, toggle=False):
         index = TABS[key]
@@ -865,13 +928,16 @@ def build_rails(w, tabs, inspector):
         w.text.setFocus()
 
     def sync(*_):
+        from ui_icons import pixmap
+        key = next((k for k, i in TABS.items() if i == tabs.currentIndex()), 'source')
         inspector.title_label.setText(tabs.tabText(tabs.currentIndex()))
+        w.right_panel_icon.setPixmap(pixmap(key, RAIL_ICON, 20))
         w.rail_text.blockSignals(True)
         w.rail_text.setChecked(bool(layout.expanded['source']))
         w.rail_text.blockSignals(False)
-        for key, button in w.rail_buttons.items():
+        for name, button in w.rail_buttons.items():
             button.blockSignals(True)
-            button.setChecked(bool(layout.expanded['inspector']) and tabs.currentIndex() == TABS[key])
+            button.setChecked(bool(layout.expanded['inspector']) and tabs.currentIndex() == TABS[name])
             button.blockSignals(False)
 
     w.show_right_panel = show_right_panel
@@ -880,6 +946,68 @@ def build_rails(w, tabs, inspector):
     tabs.currentChanged.connect(sync)
     layout.listeners.append(sync)
     sync()
+    build_fullscreen(w)
+
+
+def build_fullscreen(w):
+    """Canvas fullscreen: only the Program monitor (canvas + transport) shows.
+
+    The button in the Program header or F11 toggles it; Esc leaves it. Panel
+    open/closed states are restored afterwards and are not saved as changed.
+    """
+    from PySide6.QtGui import QKeySequence, QShortcut
+    from PySide6.QtCore import QSize
+    from ui_icons import icon
+    w.fullscreen_button.setIcon(icon('fullscreen', RAIL_ICON))
+    w.fullscreen_button.setIconSize(QSize(18, 18))
+    w.fullscreen_button.setToolTip('Fullscreen canvas (F11)')
+    w.canvas_fullscreen = False
+    saved = {}
+
+    def chrome():
+        return [w.menuBar(), w.top_bar, w.left_rail, w.right_rail, w.timeline_panel,
+                w.handwriting_panel, w.workspace_splitter.widget(2)]
+
+    def enter():
+        if w.canvas_fullscreen:
+            return
+        saved.clear()
+        saved['visible'] = {id(x): x.isVisible() for x in chrome()}
+        saved['banner'] = w.update_banner.isVisible()
+        saved['window'] = w.windowState()
+        for part in chrome():
+            part.hide()
+        w.update_banner.hide()
+        w.canvas_fullscreen = True
+        w.fullscreen_button.setIcon(icon('exit-fullscreen', RAIL_ICON))
+        w.fullscreen_button.setToolTip('Leave fullscreen (Esc or F11)')
+        w.exit_fullscreen_key.setEnabled(True)
+        w.showFullScreen()
+
+    def leave():
+        if not w.canvas_fullscreen:
+            return
+        w.canvas_fullscreen = False
+        w.exit_fullscreen_key.setEnabled(False)
+        w.setWindowState(saved.get('window', Qt.WindowState.WindowNoState))
+        for part in chrome():
+            part.setVisible(saved['visible'].get(id(part), True))
+        w.update_banner.setVisible(saved.get('banner', False))
+        w.sidebar_layout._resize()
+        w.fullscreen_button.setIcon(icon('fullscreen', RAIL_ICON))
+        w.fullscreen_button.setToolTip('Fullscreen canvas (F11)')
+
+    def toggle():
+        leave() if w.canvas_fullscreen else enter()
+
+    w.enter_canvas_fullscreen, w.leave_canvas_fullscreen = enter, leave
+    w.toggle_canvas_fullscreen = toggle
+    w.fullscreen_button.clicked.connect(lambda checked=False: toggle())
+    w.fullscreen_key = QShortcut(QKeySequence('F11'), w)
+    w.fullscreen_key.activated.connect(toggle)
+    w.exit_fullscreen_key = QShortcut(QKeySequence('Esc'), w)
+    w.exit_fullscreen_key.activated.connect(leave)
+    w.exit_fullscreen_key.setEnabled(False)
 
 
 class LineList(QListWidget):
@@ -902,8 +1030,8 @@ class LineList(QListWidget):
 TABS = {'animation': 0, 'hand': 1, 'sound': 2, 'export': 3, 'source': 4}
 # The right rail shows Source first; the tab widget keeps it last so the
 # long-standing indexes of the other panels never change.
-RAIL = (('source', '▣', 'Source'), ('animation', '▶', 'Animation'), ('hand', '✋', 'Hand'),
-        ('sound', '♪', 'Sound'), ('export', '⇪', 'Export'))
+RAIL = (('source', 'Source'), ('animation', 'Animation'), ('hand', 'Hand'),
+        ('sound', 'Sound'), ('export', 'Export'))
 
 
 class WheelGuard(QObject):
@@ -945,6 +1073,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # Original compact StrokeScribe branding, drawn using native Qt widgets.
     # The three brand dots are decoration, NOT fake OS close/minimize buttons.
     bar=QFrame(); bar.setObjectName('topBar')
+    w.top_bar=bar
     bar_l=QHBoxLayout(bar); bar_l.setContentsMargins(12,7,10,7)
     bar_l.setSpacing(8)
     if BRAND_ICON.is_file():
@@ -1080,7 +1209,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     outer.addWidget(w.vertical_splitter,1)
 
     # Handwriting (left): text and lettering only. Imports live in Source (right).
-    asset_panel,asset_outer,_=panel('assetPanel','Handwriting','Text & lettering')
+    asset_panel,asset_outer,_=panel('assetPanel','Handwriting')
     w.handwriting_panel=asset_panel
     asset_panel.setMinimumWidth(225)
     asset_panel.setMaximumWidth(460)
@@ -1111,18 +1240,21 @@ def build_workspace(w, Canvas, BRAND_ICON):
     src_l.addWidget(w.import_image_button)
     # The selected element, as it really is: an imported file (thumbnail and
     # its real name) or native handwriting (no thumbnail, no file name).
-    w.source_card=QFrame();w.source_card.setObjectName('monitorWell')
+    w.source_card=QFrame();w.source_card.setObjectName('sourcePreview')
     w.source_card.setMinimumWidth(0)
     w.source_card.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
-    card_l=QHBoxLayout(w.source_card);card_l.setContentsMargins(6,6,6,6);card_l.setSpacing(8)
-    w.source_card_thumb=QLabel();w.source_card_thumb.setFixedSize(72,48)
+    card_l=QVBoxLayout(w.source_card);card_l.setContentsMargins(12,14,12,14);card_l.setSpacing(6)
+    w.source_card_thumb=QLabel();w.source_card_thumb.setFixedHeight(150)
+    w.source_card_thumb.setMinimumWidth(0)
+    w.source_card_thumb.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Fixed)
     w.source_card_thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
     card_l.addWidget(w.source_card_thumb)
-    card_text=QVBoxLayout();card_text.setSpacing(2)
+    card_text=QVBoxLayout();card_text.setSpacing(4)
     w.source_card_title=label('','panelTitle')
     w.source_card_detail=caption('')
     for text in (w.source_card_title,w.source_card_detail):
         text.setWordWrap(True);text.setMinimumWidth(0)
+        text.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         text.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
     card_text.addWidget(w.source_card_title)
     card_text.addWidget(w.source_card_detail)
@@ -1130,13 +1262,23 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.edit_handwriting_button.setObjectName('subtle')
     w.edit_handwriting_button.clicked.connect(lambda checked=False: w.show_handwriting_panel())
     card_text.addWidget(w.edit_handwriting_button)
-    card_l.addLayout(card_text,1)
+    card_l.addLayout(card_text)
     src_l.addWidget(w.source_card)
+    # "Source settings" (collapsible): transform and appearance of the artwork.
+    w.source_settings_toggle=QPushButton('▾  Source settings')
+    w.source_settings_toggle.setObjectName('subtle');w.source_settings_toggle.setCheckable(True)
+    w.source_settings_toggle.setChecked(True)
+    src_l.addWidget(w.source_settings_toggle)
+    w.source_settings=QWidget();w.source_settings.setMinimumWidth(0)
+    ss_l=QVBoxLayout(w.source_settings);ss_l.setContentsMargins(0,0,0,0);ss_l.setSpacing(8)
+    w.source_settings_toggle.toggled.connect(lambda opened: (w.source_settings.setVisible(opened),
+        w.source_settings_toggle.setText(('▾' if opened else '▸')+'  Source settings')))
+    src_l.addWidget(w.source_settings)
     # Transform (imported artwork) — filled with the shared placement group.
     w.source_transform_heading=label('TRANSFORM')
-    src_l.addWidget(w.source_transform_heading)
+    ss_l.addWidget(w.source_transform_heading)
     w.source_transform_slot=QVBoxLayout();w.source_transform_slot.setSpacing(6)
-    src_l.addLayout(w.source_transform_slot)
+    ss_l.addLayout(w.source_transform_slot)
     # Image settings use the same compact vertical field rhythm as lettering.
     # Unlike a wrapped QFormLayout, these groups cannot impose a wide label
     # column on the Source viewport when its splitter is dragged narrower.
@@ -1209,9 +1351,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # Appearance and matching-colour fields are built with the Animation
     # controls further down; their places in Source are reserved here.
     w.source_appearance_heading=label('APPEARANCE')
-    src_l.addWidget(w.source_appearance_heading)
+    ss_l.addWidget(w.source_appearance_heading)
     w.source_appearance_slot=QVBoxLayout();w.source_appearance_slot.setSpacing(6)
-    src_l.addLayout(w.source_appearance_slot)
+    ss_l.addLayout(w.source_appearance_slot)
     w.source_colors_heading=label('MATCHING COLORS')
     src_l.addWidget(w.source_colors_heading)
     w.source_colors_slot=QVBoxLayout();w.source_colors_slot.setSpacing(6)
@@ -1244,7 +1386,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.font_size.setToolTip('How finely the letters are traced into pen lines. Higher: smoother letters '
                            '(more small lines, slower to prepare). Lower: simpler letters. It does NOT change '
                            'how big the text is: use Artwork size (Animation tab) for that.')
-    font_size_form.addRow('Letter detail',w.font_size)
+    w.letter_detail_slider=linked_slider(w.font_size,24,128)
+    detail_row=QWidget();detail_row.setMinimumWidth(0)
+    detail_l=QHBoxLayout(detail_row);detail_l.setContentsMargins(0,0,0,0);detail_l.setSpacing(8)
+    detail_l.addWidget(w.letter_detail_slider,1);detail_l.addWidget(w.font_size)
+    font_size_form.addRow('Letter detail',detail_row)
     # Letter detail applies by itself (a moment after the last change).
     w.letter_timer=QTimer(w); w.letter_timer.setSingleShot(True); w.letter_timer.setInterval(700)
     w.letter_timer.timeout.connect(lambda: w.reletter())
@@ -1261,7 +1407,15 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.font_color_button=QPushButton('Letter color: #25364A')
     w.font_color_button.setToolTip('Choose the ink color of handwritten text. Applies to current lettering and future lettering.')
     w.font_color_button.clicked.connect(w.choose_letter_color)
-    style_form.addRow('Ink color',w.font_color_button)
+    w.ink_picker_button=QToolButton();w.ink_picker_button.setObjectName('subtle')
+    from ui_icons import icon as _icon
+    w.ink_picker_button.setIcon(_icon('eyedropper','#A9A6B8'))
+    w.ink_picker_button.setToolTip('Pick a colour (use "Pick Screen Color" to take it from anywhere on screen)')
+    w.ink_picker_button.clicked.connect(lambda checked=False: w.choose_letter_color())
+    ink_row=QWidget();ink_row.setMinimumWidth(0)
+    ink_l=QHBoxLayout(ink_row);ink_l.setContentsMargins(0,0,0,0);ink_l.setSpacing(6)
+    ink_l.addWidget(w.font_color_button,1);ink_l.addWidget(w.ink_picker_button)
+    style_form.addRow('Ink color',ink_row)
     w.font_bg_mode=QComboBox()
     w.font_bg_mode.addItems(['Transparent (default)','White','Black','Custom color…'])
     w.font_bg_mode.setToolTip('Background of lettering exports and preview, independent of the checkerboard preview setting.')
@@ -1274,23 +1428,32 @@ def build_workspace(w, Canvas, BRAND_ICON):
     asset_l.addWidget(w.generate_text)
     w.download_font=QPushButton('Download selected font')
     w.download_font.clicked.connect(w.install_selected_font)
-    asset_l.addWidget(label('FONTS'))
-    asset_l.addWidget(w.download_font)
+    # Fonts (collapsible): downloads and imports, closed by default.
+    w.fonts_toggle=QPushButton('▸  Fonts');w.fonts_toggle.setObjectName('subtle')
+    w.fonts_toggle.setCheckable(True)
+    asset_l.addWidget(w.fonts_toggle)
+    w.fonts_box=QWidget();w.fonts_box.setMinimumWidth(0)
+    fonts_l=QVBoxLayout(w.fonts_box);fonts_l.setContentsMargins(0,0,0,0);fonts_l.setSpacing(8)
+    w.fonts_toggle.toggled.connect(lambda opened: (w.fonts_box.setVisible(opened),
+        w.fonts_toggle.setText(('▾' if opened else '▸')+'  Fonts')))
+    fonts_l.addWidget(w.download_font)
     from font_library import STARTER_FONTS as _ALL_FONTS
     w.download_starters=QPushButton(f'Download all {len(_ALL_FONTS)} fonts')
     w.download_starters.setToolTip('Download every font in the list at once (about 10–40 MB; already '
                                    'downloaded fonts are skipped). Or choose one and use it: it downloads by itself.')
     w.download_starters.clicked.connect(w.install_starter_fonts)
-    asset_l.addWidget(w.download_starters)
+    fonts_l.addWidget(w.download_starters)
     w.import_font_button=QPushButton('Import TTF / OTF…')
     w.import_font_button.clicked.connect(w.import_local_font)
-    asset_l.addWidget(w.import_font_button)
+    fonts_l.addWidget(w.import_font_button)
     browse_fonts=QPushButton('Browse Google Fonts ↗')
     browse_fonts.setObjectName('subtle')
     browse_fonts.clicked.connect(w.browse_google_fonts)
-    asset_l.addWidget(browse_fonts)
+    fonts_l.addWidget(browse_fonts)
     w.font_note=caption('Built-in pen works offline. Google Fonts are downloaded only when requested; license files are saved too.')
-    asset_l.addWidget(w.font_note)
+    fonts_l.addWidget(w.font_note)
+    asset_l.addWidget(w.fonts_box)
+    w.fonts_box.setVisible(False)
     # Placement (lettering only) — filled with the shared placement group.
     w.handwriting_placement_heading=label('PLACEMENT')
     asset_l.addWidget(w.handwriting_placement_heading)
@@ -1372,6 +1535,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.inspector_sidebar_button.setObjectName('subtle')
     w.inspector_sidebar_button.setFixedWidth(30)
     top.addWidget(w.inspector_sidebar_button)
+    # The rails open and close the panels now; these stay as hidden controls.
+    w.source_sidebar_button.hide();w.inspector_sidebar_button.hide()
+    w.fullscreen_button=QToolButton();w.fullscreen_button.setObjectName('subtle')
+    w.fullscreen_button.setAutoRaise(True)
+    w.fullscreen_button.setAccessibleName('Fullscreen canvas')
     body=QWidget();body.setObjectName('panelBody')
     monitor_l=QVBoxLayout(body);monitor_l.setContentsMargins(10,10,10,8)
     monitor_l.setSpacing(8)
@@ -1385,6 +1553,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.preview_background.setAccessibleName('Background')
     top.addWidget(label('Background','panelHint'))
     top.addWidget(w.preview_background)
+    top.addWidget(w.fullscreen_button)
     well=QFrame();well.setObjectName('monitorWell')
     well_l=QVBoxLayout(well);well_l.setContentsMargins(1,1,1,1)
     w.canvas=Canvas()
@@ -1459,8 +1628,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.placement_box=QWidget()
     w.placement_box.setMinimumWidth(0)
     placement_l=QVBoxLayout(w.placement_box);placement_l.setContentsMargins(0,0,0,0);placement_l.setSpacing(5)
-    placement_l.addWidget(label('Size','note'))
-    placement_l.addWidget(w.artwork_size)
+    placement_l.addWidget(label('Scale','note'))
+    scale_row=QHBoxLayout();scale_row.setSpacing(8)
+    scale_row.addWidget(w.artwork_size)
+    w.scale_slider=linked_slider(w.artwork_size,25,200)
+    scale_row.addWidget(w.scale_slider,1)
+    placement_l.addLayout(scale_row)
     # Position on the page: drag the picture on the preview, or type it here.
     w.picture_x=w.number(-100,100,0,1); w.picture_x.setSuffix('%')
     w.picture_y=w.number(-100,100,0,1); w.picture_y.setSuffix('%')
@@ -1539,6 +1712,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.artwork_opacity=w.number(0,100,100,1)
     w.artwork_opacity.setSuffix('%')
     blend_form.addRow('Opacity',w.artwork_opacity)
+    w.opacity_slider=linked_slider(w.artwork_opacity,0,100)
+    blend_form.addRow(w.opacity_slider)
     w.paper_cleanup=QCheckBox('Clean white / paper background')
     blend_form.addRow(w.paper_cleanup)
     w.paper_tolerance=w.number(0,80,22,1)
@@ -1847,6 +2022,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
 
     # Time-based workflow remains visible whichever Inspector tab is open.
     timeline,timeline_outer,timeline_head=panel('timelinePanel','Timeline','Click or drag to scrub')
+    w.timeline_panel=timeline
     # Overlays (pictures and titles on top of the scene, on their own tracks).
     w.add_picture_overlay=QPushButton('+ Picture'); w.add_picture_overlay.setObjectName('subtle')
     w.add_picture_overlay.setToolTip('Put a picture on top of this scene (PNG, JPG or SVG), with an entrance '
