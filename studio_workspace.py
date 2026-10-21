@@ -43,9 +43,10 @@ def scroll_view(content):
     scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
     scroll.setMinimumWidth(0)
-    scroll.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+    # Give the scroll viewport its real size hint; Ignored could collapse fields.
+    scroll.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
     content.setMinimumWidth(0)
-    content.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+    content.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
     scroll.setWidget(content)
     return scroll
 
@@ -754,13 +755,16 @@ def fit_to_width(content, stacked=False):
     for button in content.findChildren(QPushButton):
         # Expanding fills the column; the explicit minimum lets it shrink
         # below its text width rather than push the panel wider.
-        policy=button.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        policy=button.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
         button.setSizePolicy(policy);button.setMinimumWidth(60)
         if not button.toolTip(): button.setToolTip(button.text())
     for box in content.findChildren(QComboBox):
         box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        box.setMinimumContentsLength(4)
-        policy=box.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        box.setMinimumContentsLength(6)
+        # Never ignore the combobox size hint: Qt can allocate a zero-width
+        # field in QFormLayout while leaving the label/row fully visible.
+        box.setMinimumWidth(96)
+        policy=box.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
         box.setSizePolicy(policy)
         if not box.toolTip(): box.setToolTip(box.currentText())
     for box in content.findChildren(QAbstractSpinBox):
@@ -768,7 +772,7 @@ def fit_to_width(content, stacked=False):
         policy=box.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
         box.setSizePolicy(policy)
     for check in content.findChildren(QCheckBox):
-        policy=check.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        policy=check.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Preferred)
         check.setSizePolicy(policy)
         check.setMinimumWidth(0)
         if not check.toolTip(): check.setToolTip(check.text())
@@ -1248,7 +1252,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     tabs=QTabWidget()
     tabs.setDocumentMode(True)
     tabs.setMinimumWidth(0)
-    tabs.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Expanding)
+    tabs.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Expanding)
     tabs.tabBar().setElideMode(Qt.TextElideMode.ElideRight)
     tabs.tabBar().setUsesScrollButtons(True)
     w.inspector_tabs=tabs
@@ -1791,7 +1795,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.setAccessibleName('Animation timeline: click to scrub; double-click Draw or Paint to edit source; Ctrl+Shift+D or P edits selected source')
     fit_to_width(asset,stacked=True)       # labels above fields in the narrow column
     for content in (animation,hand,output,sound):
-        fit_to_width(content,stacked=True)  # inspector labels wrap instead of clipping controls
+        # Wrap only rows that truly cannot fit; avoid large empty label-field
+        # gaps created by stacking every Inspector row at all window widths.
+        fit_to_width(content,stacked=False)
+        for form in content.findChildren(QFormLayout):
+            form.setVerticalSpacing(5)
     from PySide6.QtGui import QShortcut, QKeySequence
     w.save_shortcut=QShortcut(QKeySequence(QKeySequence.StandardKey.Save),w)
     w.save_shortcut.activated.connect(lambda: w.save_project())
