@@ -817,8 +817,8 @@ def build_rails(w, tabs, inspector):
 
     def rail_frame():
         frame = QFrame(); frame.setObjectName('iconRail')
-        frame.setFixedWidth(60)
-        column = QVBoxLayout(frame); column.setContentsMargins(5, 8, 5, 8); column.setSpacing(6)
+        frame.setFixedWidth(56)
+        column = QVBoxLayout(frame); column.setContentsMargins(3, 8, 3, 8); column.setSpacing(6)
         return frame, column
 
     def rail_button(glyph, text):
@@ -1074,7 +1074,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.workspace_row=QWidget()
     w.workspace_row_layout=QHBoxLayout(w.workspace_row)
     w.workspace_row_layout.setContentsMargins(0,0,0,0)
-    w.workspace_row_layout.setSpacing(4)
+    w.workspace_row_layout.setSpacing(2)
     w.workspace_row_layout.addWidget(split,1)
     w.vertical_splitter.addWidget(w.workspace_row)
     outer.addWidget(w.vertical_splitter,1)
@@ -1112,13 +1112,18 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # The selected element, as it really is: an imported file (thumbnail and
     # its real name) or native handwriting (no thumbnail, no file name).
     w.source_card=QFrame();w.source_card.setObjectName('monitorWell')
-    card_l=QHBoxLayout(w.source_card);card_l.setContentsMargins(8,8,8,8);card_l.setSpacing(10)
-    w.source_card_thumb=QLabel();w.source_card_thumb.setFixedSize(96,64)
+    w.source_card.setMinimumWidth(0)
+    w.source_card.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
+    card_l=QHBoxLayout(w.source_card);card_l.setContentsMargins(6,6,6,6);card_l.setSpacing(8)
+    w.source_card_thumb=QLabel();w.source_card_thumb.setFixedSize(72,48)
     w.source_card_thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
     card_l.addWidget(w.source_card_thumb)
     card_text=QVBoxLayout();card_text.setSpacing(2)
     w.source_card_title=label('','panelTitle')
     w.source_card_detail=caption('')
+    for text in (w.source_card_title,w.source_card_detail):
+        text.setWordWrap(True);text.setMinimumWidth(0)
+        text.setSizePolicy(QSizePolicy.Policy.Ignored,QSizePolicy.Policy.Preferred)
     card_text.addWidget(w.source_card_title)
     card_text.addWidget(w.source_card_detail)
     w.edit_handwriting_button=QPushButton('Edit in Handwriting panel')

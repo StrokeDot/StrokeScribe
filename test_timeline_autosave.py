@@ -105,7 +105,9 @@ class WindowTests(ConfigDir):
         v = w.findChild(QSplitter, 'timelineSplit')
         self.assertIsNotNone(v)
         self.assertEqual(v.count(), 2)
-        self.assertIs(v.widget(0), w.findChild(QSplitter, 'workspaceSplit'))
+        # The panels' splitter sits in a row with the two icon rails (experimental.76).
+        self.assertIs(v.widget(0), w.workspace_row)
+        self.assertTrue(w.workspace_row.isAncestorOf(w.findChild(QSplitter, 'workspaceSplit')))
         top, bottom = v.sizes()
         v.setSizes([top - 120, bottom + 120]); self.app.processEvents()
         self.assertGreater(v.sizes()[1], bottom)          # timeline area can be made taller

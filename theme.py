@@ -140,7 +140,7 @@ QToolButton {{ background: {c['raised']}; color: {c['text']}; border: 1px solid 
 QToolButton:hover {{ background: {c['raised_hover']}; }}
 QFrame#iconRail {{ background: {c['panel']}; border: 0px; border-radius: 14px; }}
 QToolButton#railButton {{ background: transparent; color: {c['muted']}; border: 1px solid transparent;
-    border-radius: 10px; padding: 6px 1px; font-size: 10px; font-weight: 600; min-width: 50px; max-width: 50px; }}
+    border-radius: 10px; padding: 6px 0px; font-size: 10px; font-weight: 600; min-width: 50px; max-width: 50px; }}
 QToolButton#railButton:hover {{ background: {c['raised']}; color: {c['text']}; }}
 QToolButton#railButton:checked {{ background: {c['selection']}; border-color: {c['accent']}; color: {c['text']}; }}
 QToolButton::menu-indicator, QPushButton::menu-indicator {{ image: none; width: 0px; }}
