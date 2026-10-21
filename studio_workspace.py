@@ -1888,14 +1888,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.hand_size_pct=QSpinBox();w.hand_size_pct.setRange(2,80);w.hand_size_pct.setSuffix('%')
     w.hand_size_pct.setToolTip('Size of the drawing hand.')
     h.addRow('Size',w.hand_size_pct)
-    tools=[]
-    for text,name,tip in (('Hand','hand','The built-in hand holding a pen (default).'),
-                          ('Pencil','pencil','A pencil on its own, no hand.'),
-                          ('Marker','marker','A marker on its own, no hand.')):
-        button=QPushButton(text); button.setToolTip(tip)
-        button.clicked.connect(lambda checked=False,n=name: w.use_builtin_tool(n))
-        tools.append(button)
-    h.addRow('Built-in',pair(*tools))
+    w.builtin_tool=QComboBox()
+    w.builtin_tool.addItems(['Hand with pen','Pencil','Marker'])
+    w.builtin_tool.setToolTip('The built-in hand holding a pen (default), or a pencil or marker on its own.')
+    w.builtin_tool.activated.connect(
+        lambda index: w.use_builtin_tool(('hand','pencil','marker')[index]))
+    h.addRow('Built-in',w.builtin_tool)
     load_hand=QPushButton('My PNG…')
     load_hand.setToolTip('Your own transparent PNG of a hand holding a pen.')
     load_hand.clicked.connect(w.loadhand)
@@ -2342,7 +2340,14 @@ def build_workspace(w, Canvas, BRAND_ICON):
         tidy_side_page(content)
     # Image, Hand and Sound line up like Animation: one label column per page.
     align_forms(source_page,88)
-    align_forms(hand,96)
+    align_forms(hand,88)
+    # Buttons sharing a row may shrink (text clips) rather than widen the page.
+    for button in (w.find_tip_button,w.pick_tip_button):
+        button.setMinimumWidth(0)
+    for button in hand.findChildren(QPushButton):
+        if button.text() in ('My PNG…','Library…','Find','Click to set…'):
+            policy=button.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+            button.setSizePolicy(policy);button.setMinimumWidth(0)
     align_forms(sound,64)
     # QFormLayout.WrapLongRows can change the geometry of ALL animation
     # controls when image-specific rows are shown/hidden. In particular it

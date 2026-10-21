@@ -160,7 +160,8 @@ class RoundTripTests(unittest.TestCase):
                            '</svg>')
             drawing = import_svg(svg)
         self.assertEqual(len(drawing.strokes), 1)
-        self.assertEqual(drawing.strokes[0].points, [(0., 0.), (50., 40.)])
+        pts = drawing.strokes[0].points          # dense sampling within the point budget
+        self.assertEqual((pts[0], pts[-1]), ((0., 0.), (50., 40.)))
 
     def test_svg_rejects_custom_entity_declarations_and_internal_dtd(self):
         from engine import import_svg
