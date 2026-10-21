@@ -30,14 +30,14 @@ jobs:
           set -e
           T=tools/adaptive_compare
           python $T/make_colors.py "$RUNNER_TEMP/colors.png"
-          declare -A V=( [58]=259ef17 [62]=0e48d9e [63]=deb8f28 [66]=cf51695 [67]=58356bb [75]=a4a002a [now]=HEAD )
+          declare -A V=( [58]=259ef17 [62]=0e48d9e [63]=deb8f28 [66]=cf51695 [67]=58356bb [75]=a4a002a [now]=HEAD [fix]=d03a48a )
           mkdir -p "$RUNNER_TEMP/out"
-          for name in 58 62 63 66 67 75 now; do
+          for name in 58 62 63 66 67 75 now fix; do
             git worktree add -f "$RUNNER_TEMP/v$name" "${V[$name]}" >/dev/null 2>&1
             echo "== $name"
             python -I $T/adaptive_frames.py "$RUNNER_TEMP/v$name" "$RUNNER_TEMP/colors.png" "$RUNNER_TEMP/out/$name" || echo "render failed for $name"
           done
-          for name in 62 63 66 67 75 now; do
+          for name in 62 63 66 67 75 now fix; do
             mkdir -p "$RUNNER_TEMP/out/vs58-$name"
             python $T/compare.py "$RUNNER_TEMP/out/58" "$RUNNER_TEMP/out/$name" "$RUNNER_TEMP/out/vs58-$name" > "$RUNNER_TEMP/out/vs58-$name/summary.txt" || true
           done
