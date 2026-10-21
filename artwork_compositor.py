@@ -24,14 +24,14 @@ def composite_element(base, drawing, fraction, options, camera_path=None):
     project settings are never mutated.
     """
     from PySide6.QtGui import QImage
-    from frame_render import compose_frame
+    from frame_render import _compose_raw_frame
     from scenes import stack
 
     layers = options.get('layers', 'all')
     if layers == 'hand':
-        return compose_frame(drawing, fraction, options, camera_path)
+        return _compose_raw_frame(drawing, fraction, options, camera_path)
     art_opts = dict(options, layers='art', ghost=0)
-    artwork = compose_frame(drawing, fraction, art_opts, camera_path)
+    artwork = _compose_raw_frame(drawing, fraction, art_opts, camera_path)
     if base is None:
         base = QImage(artwork.size(), QImage.Format.Format_ARGB32_Premultiplied)
         base.fill(0)
@@ -39,6 +39,6 @@ def composite_element(base, drawing, fraction, options, camera_path=None):
                    options.get('artwork_opacity', 100))
     if layers == 'all':
         hand_opts = dict(options, layers='hand', ghost=0, background=False)
-        hand = compose_frame(drawing, fraction, hand_opts, camera_path)
+        hand = _compose_raw_frame(drawing, fraction, hand_opts, camera_path)
         result = stack(result, hand, 'Normal', 100)
     return result
