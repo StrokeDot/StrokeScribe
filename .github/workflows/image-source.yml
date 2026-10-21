@@ -76,7 +76,7 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
-    timeout-minutes: 25
+    timeout-minutes: 45
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
