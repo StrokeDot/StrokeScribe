@@ -999,52 +999,74 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.import_button.setObjectName('primary')
     w.import_button.clicked.connect(w.load)
     asset_l.addWidget(w.import_button)
+    # Image settings use the same compact vertical field rhythm as lettering.
+    # Unlike a wrapped QFormLayout, these groups cannot impose a wide label
+    # column on the Source viewport when its splitter is dragged narrower.
     w.image_controls=QWidget()
-    image_form=form_layout();w.image_controls.setLayout(image_form);w.image_source_form=image_form
-    image_form.addRow(caption('Line art: clean, artist-style pen strokes from any image, '
-                              'drawn by a small built-in line model. Original colors are painted afterwards.'))
+    w.image_controls.setMinimumWidth(0)
+    w.image_controls.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred)
+    image_form=QVBoxLayout(w.image_controls)
+    image_form.setContentsMargins(0,2,0,0)
+    image_form.setSpacing(8)
+    w.image_source_form=image_form
+
+    def image_choice(title, control):
+        group=QWidget()
+        group.setMinimumWidth(0)
+        group.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Preferred)
+        column=QVBoxLayout(group)
+        column.setContentsMargins(0,0,0,0)
+        column.setSpacing(4)
+        heading=label(title,'note')
+        heading.setWordWrap(True)
+        column.addWidget(heading)
+        column.addWidget(control)
+        image_form.addWidget(group)
+
+    image_form.addWidget(caption('Line art: clean, artist-style pen strokes from any image, '
+                                 'drawn by a small built-in line model. Original colors are painted afterwards.'))
     w.image_animation_style=QComboBox()
     w.image_animation_style.addItems(['Artist (layered)','Standard'])
     w.image_animation_style.setToolTip('Artist: light guide shapes first, then the main lines area by area '
                                        '(densest detail last, drawn more slowly), then dark accents, '
                                        'like a real pencil drawing. Standard: one pass of lines.')
-    image_form.addRow('Animation',w.image_animation_style)
+    image_choice('Animation',w.image_animation_style)
     w.image_style=QComboBox();w.image_style.addItems(['Clean drawing','Detailed (all lines)'])
     w.image_style.setToolTip('Clean drawing: fewer, longer, smooth strokes like an artist\'s drawing; '
                              'shading is revealed by the colour painting. Detailed: every line found.')
-    image_form.addRow('Drawing style',w.image_style)
+    image_choice('Drawing style',w.image_style)
     w.image_detail=QComboBox();w.image_detail.addItems(['Low','Medium','High','Max'])
     w.image_detail.setCurrentIndex(1)
     w.image_detail.setToolTip('How many inner lines are drawn. Medium is recommended; Max draws the most detail and takes a little longer.')
-    image_form.addRow('Detail',w.image_detail)
-    w.clean_faint=QCheckBox('Clean the background (fake transparency, leftovers)')
+    image_choice('Detail',w.image_detail)
+    w.clean_faint=QCheckBox('Clean the background')
     w.clean_faint.setToolTip('Removes nearly invisible pixels (under 25% visible) left by background removal, '
                              'so neither the drawing nor the hand goes there.')
-    image_form.addRow(w.clean_faint)
+    image_form.addWidget(w.clean_faint)
     w.preserve_colors=QCheckBox('Preserve original colors')
     w.preserve_colors.setChecked(True)
-    image_form.addRow(w.preserve_colors)
+    image_form.addWidget(w.preserve_colors)
     w.image_duration=w.number(.2,120,8,.5)
     # Painting timing belongs in the Animation inspector.
     w.image_duration.setParent(w.image_controls)
     w.rebuild_button=QPushButton('Apply image settings')
     w.rebuild_button.clicked.connect(w.rebuild_image)
-    image_form.addRow(w.rebuild_button)
-    w.ai_lineart_button=QPushButton('✦  AI line art for this image…')
+    image_form.addWidget(w.rebuild_button)
+    w.ai_lineart_button=QPushButton('✦  AI line art…')
     w.ai_lineart_button.setToolTip('An AI model redraws the image as clean line art; StrokeScribe '
                                    'traces those lines and paints your original colours.')
     w.ai_lineart_button.clicked.connect(lambda checked=False: w.open_create_image())
-    image_form.addRow(w.ai_lineart_button)
-    w.own_lines_button=QPushButton('Use my own line drawing…')
+    image_form.addWidget(w.ai_lineart_button)
+    w.own_lines_button=QPushButton('Use my line drawing…')
     w.own_lines_button.setToolTip('Already have a black line drawing of this image (for example from '
                                   'ChatGPT)? StrokeScribe lines it up with the image and traces it.')
     w.own_lines_button.clicked.connect(lambda checked=False: w.use_own_line_drawing())
-    image_form.addRow(w.own_lines_button)
+    image_form.addWidget(w.own_lines_button)
     w.export_svg_button=QPushButton('Export drawing as SVG…')
     w.export_svg_button.setToolTip('Save the strokes as an editable SVG plus the matching colour PNG. '
                                    'Fix any line in Inkscape, then import with SVG source.')
     w.export_svg_button.clicked.connect(lambda checked=False: w.export_svg())
-    image_form.addRow(w.export_svg_button)
+    image_form.addWidget(w.export_svg_button)
     w.image_controls.hide()
     asset_l.addWidget(w.image_controls)
     asset_l.addWidget(label('TEXT / HANDWRITING'))
