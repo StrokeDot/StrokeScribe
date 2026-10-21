@@ -101,11 +101,11 @@ def finished_art(drawing, options, background=True):
     return compose_frame(drawing, 1., opts)
 
 
-def stack(base, top, blend_mode='Normal', opacity=100., hand=None):
+def stack(base, top, blend_mode='Normal', opacity=100., hand=None, extras=None):
     """Composite artwork only with its own mode/opacity, then add hand normally."""
     if top is None:
         return base
-    if base is None and blend_mode=='Normal' and float(opacity)==100 and hand is None:
+    if base is None and blend_mode=='Normal' and float(opacity)==100 and hand is None and extras is None:
         return top
     if base is None:
         from PySide6.QtGui import QImage
@@ -122,6 +122,8 @@ def stack(base, top, blend_mode='Normal', opacity=100., hand=None):
     p.drawImage(0, 0, top)
     p.setOpacity(1.)
     p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+    if extras is not None:
+        p.drawImage(0,0,extras)  # separately placed titles/overlays are not image effects
     if hand is not None:
         p.drawImage(0,0,hand)
     p.end()
@@ -139,9 +141,11 @@ def composite_element(base, drawing, fraction, options, camera=None):
     alpha=float(options.get('artwork_opacity',100))
     if mode=='Normal' and alpha==100:
         return stack(base,compose_frame(drawing,fraction,options,camera))
-    art=compose_frame(drawing,fraction,dict(options,layers='art',ghost=0),camera)
-    hand=compose_frame(drawing,fraction,dict(options,layers='hand',ghost=0),camera)
-    return stack(base,art,mode,alpha,hand)
+    from frame_render import independent_overlays
+    art=compose_frame(drawing,fraction,dict(options,layers='art',ghost=0,overlays=[]),camera)
+    hand=compose_frame(drawing,fraction,dict(options,layers='hand',ghost=0,overlays=[]),camera)
+    extras=independent_overlays(drawing,fraction,options,camera)
+    return stack(base,art,mode,alpha,hand,extras)
 
 
 def for_page(options):
