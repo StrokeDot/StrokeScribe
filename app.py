@@ -2264,10 +2264,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         where,k,f=board.locate(lengths,joins,(self.position if fraction is None else fraction)*total)
         if where=='scene':
             drawing,options,_,camera=self.preview_scene(k,width,height)
-            frame=compose_frame(drawing,f,options,camera)
-            if options.get('layers')=='hand': return frame,k,lengths,joins
-            return stack(self.scene_base(k,width,height,f,camera),frame,
-                         options.get('blend_mode','Normal')),k,lengths,joins
+            from artwork_compositor import composite_element
+            under=self.scene_base(k,width,height,f,camera)
+            return composite_element(under,drawing,f,options,camera),k,lengths,joins
         world=self.preview_world(width,height)
         if self.preview_scene(k,width,height)[1].get('layers')=='hand':
             from PySide6.QtGui import QImage
@@ -3045,8 +3044,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.canvas.frame=frame
         # When the page is already composed in scenes.stack/World.view,
         # blending again here would double-apply the effect.
-        self.canvas.blend_mode=('Normal' if view['all'] or view.get('page') else
-                                self.blend_mode.currentText())
+        # The compositor owns blending. Do not blend a frame containing a hand
+        # again in Canvas; that made hands change color with Multiply/Screen.
+        self.canvas.blend_mode='Normal'
         if view['all']: self.canvas.highlight=[]
         self.canvas.update()
         self.stage_timeline.progress=max(0.,min(1.,self.position)); self.stage_timeline.update()
@@ -3136,12 +3136,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from frame_render import compose_frame
         options=dict(view['options'],width=width,height=height)
         camera=self.preview_camera(options)
-        frame=compose_frame(self.drawing,fraction,options,camera)
-        if view['page']:
-            from scenes import stack
-            return stack(self.scene_base(self.scene_index,width,height,fraction,camera),
-                         frame,options.get('blend_mode','Normal'))
-        return frame
+        if view['page'] or options.get('artwork_opacity',100)!=100:
+            from artwork_compositor import composite_element
+            under=(self.scene_base(self.scene_index,width,height,fraction,camera)
+                   if view['page'] else None)
+            return composite_element(under,self.drawing,fraction,options,camera)
+        return compose_frame(self.drawing,fraction,options,camera)
 
     def frame_index(self,fraction):
         count=max(1,round(self._view['length']*self.PREVIEW_FPS))
