@@ -1301,12 +1301,17 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.picture_center=QPushButton('Center'); w.picture_center.setObjectName('subtle')
     w.picture_center.setToolTip('Put the picture back in the middle.')
     w.picture_center.clicked.connect(lambda checked=False: (w.picture_x.setValue(0), w.picture_y.setValue(0)))
+    # Give the two position spinboxes the FULL row width. When this nested
+    # horizontal pair shared a form row with the 'Position X / Y' label, its
+    # combined minimum width could force the entire Inspector form outside the
+    # scroll viewport after image-only fields appeared.
     position=QVBoxLayout();position.setSpacing(5)
+    position.addWidget(label('Position X / Y','note'))
     xy=QHBoxLayout();xy.setSpacing(6)
     xy.addWidget(w.picture_x,1);xy.addWidget(w.picture_y,1)
     position.addLayout(xy)
     position.addWidget(w.picture_center)
-    a.addRow('Position X / Y',position)
+    a.addRow(position)
     w.pen_ease=QComboBox()
     w.pen_ease.addItems(['Constant speed','Natural (ease in and out)'])
     w.pen_ease.setToolTip('Natural: every line starts and ends a little slower, like a real hand.')
@@ -1817,11 +1822,24 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.setAccessibleName('Animation timeline: click to scrub; double-click Draw or Paint to edit source; Ctrl+Shift+D or P edits selected source')
     fit_to_width(asset,stacked=True)       # labels above fields in the narrow column
     for content in (animation,hand,output,sound):
-        # Wrap only rows that truly cannot fit; avoid large empty label-field
-        # gaps created by stacking every Inspector row at all window widths.
         fit_to_width(content,stacked=False)
         for form in content.findChildren(QFormLayout):
             form.setVerticalSpacing(5)
+    # QFormLayout.WrapLongRows can change the geometry of ALL animation
+    # controls when image-specific rows are shown/hidden. In particular it
+    # may grow the scroll content beyond its viewport and clip the right-hand
+    # spinbox buttons. A bounded label column gives each field stable space
+    # at the minimum 270px Inspector width, regardless of the selected element.
+    for form in animation.findChildren(QFormLayout):
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
+        for index in range(form.rowCount()):
+            item=form.itemAt(index,QFormLayout.ItemRole.LabelRole)
+            heading=item.widget() if item else None
+            if isinstance(heading,QLabel):
+                heading.setWordWrap(True)
+                heading.setMaximumWidth(106)
+                heading.setSizePolicy(QSizePolicy.Policy.Maximum,
+                                      QSizePolicy.Policy.Preferred)
     from PySide6.QtGui import QShortcut, QKeySequence
     w.save_shortcut=QShortcut(QKeySequence(QKeySequence.StandardKey.Save),w)
     w.save_shortcut.activated.connect(lambda: w.save_project())
