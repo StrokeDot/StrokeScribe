@@ -50,7 +50,15 @@ END
                   '/LIBPATH:'+str(runtime/'libs'),'python312.lib','shell32.lib','delayimp.lib',
                   '/DELAYLOAD:python312.dll','/SUBSYSTEM:WINDOWS','/MANIFEST:EMBED',
                   '/MANIFESTINPUT:'+str(manifest)]
-    command='call '+subprocess.list2cmdline([str(vcvars)])+' >nul && '+subprocess.list2cmdline(['rc','/nologo','/fo',str(resource),str(rc)])+' && '+subprocess.list2cmdline(compile_args)
-    subprocess.run(['cmd.exe','/d','/s','/c',command],check=True)
+    # Pass a fixed batch filename to cmd. Passing a quoted command as one
+    # subprocess list item adds C-runtime backslash escapes which cmd cannot parse.
+    def quote(value):return '"'+str(value).replace('%','%%')+'"'
+    commands=['@echo off','chcp 65001 >nul','call '+quote(vcvars)+' >nul',
+              'if errorlevel 1 exit /b 1',
+              ' '.join(map(quote,['rc','/nologo','/fo',resource,rc])),
+              'if errorlevel 1 exit /b 1',' '.join(map(quote,compile_args)),
+              'exit /b %errorlevel%']
+    (out/'build-host.cmd').write_text('\n'.join(commands)+'\n',encoding='utf-8')
+    subprocess.run(['cmd.exe','/d','/c','build-host.cmd'],cwd=str(out),check=True)
     if not target.is_file():raise RuntimeError('Native executable was not built.')
     return target

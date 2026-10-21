@@ -21,6 +21,10 @@ def recover_pending_update():
     This uses the already-present updater module from the application folder.
     It is safe to call repeatedly: no pending journal is a normal no-op.
     """
+    # The native host elects the instance before initializing Python. Never
+    # interpret the running primary's live update journal as a crashed update.
+    if os.environ.get('STROKESCRIBE_NATIVE_HOST')=='1' and os.environ.get('STROKESCRIBE_SECONDARY_LAUNCH')=='1':
+        return {'recovered':False}
     import updater
     return updater.recover_interrupted_update(root)
 
@@ -38,6 +42,12 @@ def open_startup_path(window,path,*,initial=False):
             if not restored and autosave.pending():
                 window._keep_autosave=True
                 return False
+    if getattr(window,'_keep_autosave',False):
+        import autosave
+        if autosave.pending():
+            QMessageBox.warning(window,'Recovery needs attention',
+                'The recovery copy could not be restored or saved. Open it from recovery before opening another project.')
+            return False
     if path.suffix.lower()=='.strokescribe':
         return bool(window.open_project(str(path)))
     if path.suffix.lower()=='.svg':
@@ -75,8 +85,13 @@ def main():
         if os.environ.get('STROKESCRIBE_NATIVE_HOST')=='1':
             from shell_integration import ProjectBroker,server_name
             broker=ProjectBroker(server_name(root),app)
-            if not broker.claim():
-                if ProjectBroker.forward(broker.name,incoming):return 0
+            secondary=os.environ.get('STROKESCRIBE_SECONDARY_LAUNCH')=='1'
+            if secondary or not broker.claim():
+                import time
+                deadline=time.monotonic()+5
+                while time.monotonic()<deadline:
+                    if ProjectBroker.forward(broker.name,incoming):return 0
+                    time.sleep(.1)
                 _error_box('StrokeScribe is starting or busy. Please try opening the project again.')
                 return 1
             broker.requested.connect(pending.append)

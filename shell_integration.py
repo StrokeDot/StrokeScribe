@@ -31,10 +31,16 @@ class ProjectBroker(QObject):
         data=json.dumps({'path':path},ensure_ascii=False).encode('utf-8')+b'\n'
         if len(data)>MAX_REQUEST:return False
         socket=QLocalSocket();socket.connectToServer(name)
-        if not socket.waitForConnected(1500):return False
+        if not socket.waitForConnected(1500):
+            import logging
+            logging.getLogger(__name__).warning('Project request connection failed: %s',socket.errorString())
+            return False
         socket.write(data)
         while socket.bytesToWrite():
-            if not socket.waitForBytesWritten(1500):socket.abort();return False
+            if not socket.waitForBytesWritten(1500) and socket.bytesToWrite():
+                import logging
+                logging.getLogger(__name__).warning('Project request write failed: %s (%s bytes pending)',socket.errorString(),socket.bytesToWrite())
+                socket.abort();return False
         socket.disconnectFromServer()
         return True
     def _accept(self):

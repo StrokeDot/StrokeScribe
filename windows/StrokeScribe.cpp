@@ -3,16 +3,52 @@
 #include <Python.h>
 #include <windows.h>
 #include <shellapi.h>
+#include <sddl.h>
+#include <cstdint>
+#include <cwchar>
 #include <filesystem>
 #include <string>
 #include <vector>
 #pragma comment(lib, "shell32.lib")
 #pragma comment(lib, "delayimp.lib")
+#pragma comment(lib, "advapi32.lib")
 
 static int error_box(const wchar_t* text) {
     MessageBoxW(nullptr,text,L"StrokeScribe could not start",MB_OK|MB_ICONERROR);
     return 1;
 }
+
+// Decide primary/secondary before Python imports or update recovery. The mutex
+// is scoped to this installation and Windows user, and never inherited by workers.
+struct InstanceGuard {
+    HANDLE handle=nullptr;
+    ~InstanceGuard() { if (handle) CloseHandle(handle); }
+    bool acquire(const std::filesystem::path& root,bool& secondary) {
+        HANDLE token=nullptr;DWORD bytes=0;
+        if (!OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY,&token)) return false;
+        GetTokenInformation(token,TokenUser,nullptr,0,&bytes);
+        std::vector<unsigned char> buffer(bytes);
+        bool ok=GetTokenInformation(token,TokenUser,buffer.data(),bytes,&bytes)!=FALSE;
+        CloseHandle(token);if (!ok) return false;
+        LPWSTR sid=nullptr;
+        if (!ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(buffer.data())->User.Sid,&sid)) return false;
+        std::wstring user(sid);LocalFree(sid);
+        auto location=root.lexically_normal().wstring();
+        CharLowerBuffW(location.data(),DWORD(location.size()));
+        uint64_t hash=14695981039346656037ull;
+        for (wchar_t c:location) { hash^=uint16_t(c);hash*=1099511628211ull; }
+        std::wstring name=L"Local\\StrokeScribe."+user+L"."+std::to_wstring(hash);
+        std::wstring acl=L"D:P(A;;GA;;;"+user+L")";
+        PSECURITY_DESCRIPTOR descriptor=nullptr;
+        if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(acl.c_str(),SDDL_REVISION_1,&descriptor,nullptr)) return false;
+        SECURITY_ATTRIBUTES security{sizeof(SECURITY_ATTRIBUTES),descriptor,FALSE};
+        handle=CreateMutexW(&security,FALSE,name.c_str());
+        DWORD error=GetLastError();LocalFree(descriptor);
+        secondary=handle && error==ERROR_ALREADY_EXISTS;
+        return handle!=nullptr;
+    }
+};
+
 int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int) {
     std::vector<wchar_t> filename(32768);
     DWORD length=GetModuleFileNameW(nullptr,filename.data(),DWORD(filename.size()));
@@ -40,6 +76,9 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int) {
         }
         first=argc;
     }
+    InstanceGuard instance;bool secondary=false;
+    if (!instance.acquire(root,secondary)) {LocalFree(args);return error_box(L"Cannot establish the current user's application identity.");}
+    SetEnvironmentVariableW(L"STROKESCRIBE_SECONDARY_LAUNCH",secondary?L"1":L"0");
     // Delay-load prevents Windows searching for the runtime DLL before this
     // secure full-path load. Existing worker launches still use pythonw.exe.
     SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
