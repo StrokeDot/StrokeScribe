@@ -1233,6 +1233,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.library_button.setToolTip('Your saved images and hands. Copies are kept in a folder you choose.')
     w.library_button.clicked.connect(lambda checked=False: w.open_library('images'))
     bar_l.addWidget(w.library_button)
+    # Pre-render, next to Library at the top: one click makes the preview play smoothly.
+    w.prerender_button=QPushButton('Pre-render')
+    w.prerender_button.setToolTip('Make every frame of the preview ready so it plays smoothly. Only the '
+                                  'parts you change are made again. Click again to stop.')
+    w.prerender_button.clicked.connect(lambda checked=False: w.prerender_whole())
+    bar_l.addWidget(w.prerender_button)
     w.create_image_button=QPushButton('✦  Create image')
     w.create_image_button.setToolTip('AI line art for your image, new images from text, or edits '
                                      '(local models; runs on your graphics card).')
@@ -1674,11 +1680,6 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.restart_button.setToolTip('Restart and play')
     w.restart_button.clicked.connect(w.restart)
     tr.addWidget(w.restart_button)
-    # Pre-render, next to the playback buttons.
-    w.prerender_button=QPushButton('Pre-render'); w.prerender_button.setObjectName('subtle')
-    w.prerender_button.setToolTip('Make every frame of the preview ready so it plays smoothly. Only the '
-                                  'parts you change are made again. Click again to stop.')
-    w.prerender_button.clicked.connect(lambda checked=False: w.prerender_whole())
     w.play=QPushButton();w.play.setObjectName('playButton')
     w.play.setToolTip('Play / pause (Space)')
     w.play.clicked.connect(w.toggle)
@@ -1691,7 +1692,6 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.mute_button.setToolTip('Sound on / off: pencil, brush and eraser sounds, in the preview and the exported video')
     w.mute_button.clicked.connect(lambda checked=False: w.sound_on.setChecked(not w.sound_on.isChecked()))
     tr.addWidget(w.mute_button)
-    tr.addWidget(w.prerender_button)
     tr.addStretch(1)
     w.clock_total=label('','timeTotal')
     w.clock_total.setMinimumWidth(104)

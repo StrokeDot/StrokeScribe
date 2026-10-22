@@ -134,6 +134,13 @@ class WindowTests(unittest.TestCase):
             fresh = w.render_segment(where, k, local, frames, w.PREVIEW_WIDTH)
             self.assertEqual(cached.convertToFormat(fresh.format()), fresh, (i, where, k))
 
+    def test_prerender_button_sits_next_to_library(self):
+        w = self.w
+        bar = w.library_button.parentWidget().layout()
+        self.assertIs(w.prerender_button.parentWidget(), w.library_button.parentWidget())
+        self.assertEqual(bar.indexOf(w.prerender_button), bar.indexOf(w.library_button) + 1)
+        self.assertTrue(w.prerender_button.isVisible())
+
     def test_prerender_button_runs_and_finishes(self):
         w = self.w
         w.prerender_whole()
