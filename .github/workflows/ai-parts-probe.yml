@@ -34,8 +34,10 @@ jobs:
         run: |
           python -c "from huggingface_hub import snapshot_download; snapshot_download('facebook/sam-vit-base', local_dir='sam-base', allow_patterns=['config.json','preprocessor_config.json','model.safetensors'])"
           python tools/ai_parts_probe/make_picture.py out/picture.png
-          python ai_parts_worker.py sam-base out/picture.png out/labels.png --cpu | tee out/run.json
-          python tools/ai_parts_probe/show.py out/labels.png out/parts.png
+          ls -la sam-base > out/files.txt 2>&1 || true
+          python ai_parts_worker.py sam-base out/picture.png out/labels.png --cpu > out/run.json 2> out/err.txt || true
+          tail -60 out/err.txt
+          python tools/ai_parts_probe/show.py out/labels.png out/parts.png 2>> out/err.txt || true
       - name: Publish (branch ai-parts-probe)
         if: always()
         shell: bash
