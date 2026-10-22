@@ -1723,6 +1723,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     animation_l.addWidget(label('DRAWING'))
     a=form_layout();animation_l.addLayout(a)
     w.duration=w.number(.2,120,4,.1);a.addRow('Draw time (s)',w.duration)
+    w.timing_form=a
     w.speed=w.number(.1,5,1,.1);a.addRow('Playback speed',w.speed)
     w.thickness=w.number(.1,10,1,.1);a.addRow('Line width',w.thickness)
     w.artwork_size=w.number(25,200,100,5)
@@ -2379,6 +2380,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.entrance.currentIndexChanged.connect(w.refresh)
     w.entrance.currentIndexChanged.connect(lambda index: w.update_entrance_controls())
     w.entrance_part.currentIndexChanged.connect(w.refresh)
+    w.entrance_part.currentIndexChanged.connect(lambda index: w.update_applicable())
+    w.use_color.toggled.connect(lambda checked: w.update_applicable())
+    w.preserve_colors.toggled.connect(lambda checked: w.update_applicable())
+    w.image_animation.currentIndexChanged.connect(lambda index: w.update_applicable())
+    w.erase_mode.currentIndexChanged.connect(lambda index: w.update_applicable())
     w.move_hand.toggled.connect(w.refresh)
     for widget in (w.move_hand_size,w.move_hand_gx,w.move_hand_gy):
         widget.valueChanged.connect(w.schedule_refresh)
