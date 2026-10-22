@@ -1818,7 +1818,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.reveal_mode=PaintModeCombo(lambda: w.open_paint_mode_picker())
     w.reveal_mode.addItems(['Brush painting','Adaptive Hand Painting','Zigzag sweep',
                             'Top to bottom (rows)','Left to right (columns)',
-                            'Adaptive — Short up/down strokes'])
+                            'Adaptive — Short up/down strokes',
+                            'Painter — real parts, strokes follow the shape'])
     w.reveal_mode.setItemData(3,'Like a painter: the colours are brushed in band by band from the top '
                               'down, sweeping left and right across the whole picture.',Qt.ItemDataRole.ToolTipRole)
     w.reveal_mode.setItemData(4,'The colours are brushed in band by band from the left to the right, '
@@ -1830,6 +1831,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
                               'short up/down brush flicks along that route. Does not use '
                               'top-to-bottom painting bands.',
                               Qt.ItemDataRole.ToolTipRole)
+    w.reveal_mode.setItemData(6,'New: paints like a person: big parts first, details last, each part '
+                              'brushed around its shape from the edge inwards.',Qt.ItemDataRole.ToolTipRole)
     a2.addRow('Paint mode',w.reveal_mode)
     w.image_paint_hint=caption('Image sources paint with Adaptive Hand Painting or Zigzag sweep. Original PNG colors are preserved.')
     a2.addRow(w.image_paint_hint)
