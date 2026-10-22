@@ -9,6 +9,10 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Whole video and export: colours sit on the lines again (v0.5.3-experimental.86)
+
+- An SVG element whose colour PNG has transparent margins (the TV) looked right when editing the element but wrong in the whole video and the export: the colours were smaller and shifted against the lines. The element view cleans the colour picture and crops it to its content before fitting it to the lines; the whole video and the export used the picture uncropped. Now all three use the very same prepared picture.
+
 ## Adaptive Hand Painting paints part by part again (v0.5.3-experimental.85)
 
 - **No more big zigzag across the whole picture.** Adaptive paints one region at a time, and for an SVG the regions are its closed shapes. Traced line drawings (for example the headset re-imported as a line SVG with its colour PNG) are mostly open lines with only the outer outline closed, so the whole picture was one region and the brush swept back and forth across all of it. Now any region bigger than 30% of the picture is split into the picture's colour areas (the same way PNG/image elements already work), so the hand paints the cushions, a speaker, the wood plate, the band… one after another.

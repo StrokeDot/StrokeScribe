@@ -61,6 +61,37 @@ def clean_qimage(image):
                   QImage.Format.Format_RGBA8888).copy()
 
 
+_PROJECT_COLORS = {}
+
+
+def project_color(data):
+    """(original, prepared) colour pictures of a saved SVG element, or (None, None).
+
+    The same preparation everywhere (editing one element, the whole video, export):
+    with "Clean the PNG's background" on (the default) the picture is cleaned and
+    cropped to its content, because the colours are fitted to the drawing's lines.
+    Using the uncropped picture squeezed its transparent margins in as well, so in
+    the whole video the colours came out smaller and shifted against the lines."""
+    b64 = data.get('color_png')
+    if not b64:
+        return None, None
+    clean = bool((data.get('settings') or {}).get('clean_color', True))
+    key = (hash(b64), len(b64), clean)
+    if key not in _PROJECT_COLORS:
+        from projects import qimage_from_b64
+        original = qimage_from_b64(b64)
+        prepared = original
+        if clean and original is not None:
+            try:
+                prepared = clean_qimage(original)
+            except Exception:
+                prepared = original
+        if len(_PROJECT_COLORS) > 12:
+            _PROJECT_COLORS.pop(next(iter(_PROJECT_COLORS)))
+        _PROJECT_COLORS[key] = (original, prepared)
+    return _PROJECT_COLORS[key]
+
+
 def timeline_duration(draw_duration, final_image=None, fade_duration=.4, hold_duration=.6):
     base = max(.001, float(draw_duration))
     if final_image is None or final_image.isNull():
