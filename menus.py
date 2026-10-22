@@ -101,8 +101,8 @@ def build_menus(w):
 
     # ---------------------------------------------------------------- Edit
     edit = bar.addMenu('&Edit'); w.menus['edit'] = edit
-    undo = edit.addAction('Undo\tCtrl+Z', lambda: w.undo())
-    redo = edit.addAction('Redo\tCtrl+Y', lambda: w.redo())
+    undo = edit.addAction('Undo  (Ctrl+Z)', lambda: w.undo())
+    redo = edit.addAction('Redo  (Ctrl+Y)', lambda: w.redo())
     edit.addSeparator()
     delete = edit.addAction('Delete selected lines\tDel', lambda: w.delete_lines())
     reverse = edit.addAction('Reverse selected lines', lambda: w.reverse_lines())

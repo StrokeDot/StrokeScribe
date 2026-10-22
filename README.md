@@ -21,6 +21,15 @@ A small local desktop tool for short SVG drawing overlays. Built from original a
 - **Move in**: an element that comes in with an effect has one *Move in* clip on the timeline. Moving in the whole picture has no painting or colour hold any more (only the move, then its pause); *Only the lines* is Move in + Paint.
 - **Pre-render** sits next to the play buttons under the preview.
 
+## Undo / redo for every change (v0.5.3-experimental.95)
+
+- **Ctrl+Y (redo) works again on Windows.** It was registered twice on the same key, so neither ran. Ctrl+Shift+Z redoes too.
+- **Ctrl+Z / Ctrl+Y in a number box or a list** undo the program, not just the typing in that box (text fields such as the handwriting text keep their own typing undo).
+- **Each element keeps its undo history** when you switch to another element and come back (before, switching started a new, empty history).
+- **Adding, deleting and moving elements and changing a transition** can be undone, in the order the changes were made together with the settings.
+- **The painting order and the AI parts** are part of undo too.
+- The status line says what was undone (for example "Undone: thickness").
+
 ## Line order window; Paint mode preview pause (v0.5.3-experimental.90)
 
 - **Line order** (Animation tab, the orange button): a big window with the drawing. Click lines to select them (click again to unselect), or drag a box around several. Selected lines are orange with their number; the others are coloured by when they are drawn (blue first, red last). Move all selected lines together: to the start, up, down, to the end or to a position. **Automatic order**: top to bottom, left to right, outlines first, nearest next (the pen travels least) or big shapes first, for all lines or only the selected ones. **Play order** shows the order line by line. Nothing changes until *Use this order* (one undo step).
