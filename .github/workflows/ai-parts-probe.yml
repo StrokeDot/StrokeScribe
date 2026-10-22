@@ -1,0 +1,49 @@
+name: AI parts probe
+# Diagnostic: file sizes of the Segment Anything checkpoints, and the part finder
+# (ai_parts_worker.py) run on CPU with the small model on a test picture.
+on:
+  push:
+    branches: [ci/ai-parts-probe]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+      - run: pip install transformers pillow numpy opencv-python-headless huggingface_hub
+      - name: Checkpoint files and sizes
+        shell: bash
+        run: |
+          mkdir -p out
+          for m in facebook/sam-vit-huge facebook/sam-vit-large facebook/sam-vit-base; do
+            echo "== $m" >> out/sizes.txt
+            curl -s "https://huggingface.co/api/models/$m" | python -c "import json,sys; d=json.load(sys.stdin); print('sha', d.get('sha'), 'gated', d.get('gated'), 'license', [t for t in d.get('tags',[]) if t.startswith('license')])" >> out/sizes.txt
+            curl -s "https://huggingface.co/api/models/$m/tree/main" | python -c "import json,sys; [print(f['path'], f.get('size'), (f.get('lfs') or {}).get('oid')) for f in json.load(sys.stdin)]" >> out/sizes.txt
+          done
+          python -c "import transformers; print('transformers', transformers.__version__)" >> out/sizes.txt
+          cat out/sizes.txt
+      - name: Find parts (small model, CPU)
+        shell: bash
+        run: |
+          python -c "from huggingface_hub import snapshot_download; snapshot_download('facebook/sam-vit-base', local_dir='sam-base', allow_patterns=['config.json','preprocessor_config.json','model.safetensors'])"
+          python tools/ai_parts_probe/make_picture.py out/picture.png
+          python ai_parts_worker.py sam-base out/picture.png out/labels.png --cpu | tee out/run.json
+          python tools/ai_parts_probe/show.py out/labels.png out/parts.png
+      - name: Publish (branch ai-parts-probe)
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out
+          git init -q && git checkout -q -b ai-parts-probe
+          git config user.name ci && git config user.email ci@example.invalid
+          git add -A && git commit -qm "AI parts probe for ${{ github.sha }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" ai-parts-probe
