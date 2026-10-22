@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
       - run: pip install transformers pillow numpy opencv-python-headless huggingface_hub
       - name: Checkpoint files and sizes
         shell: bash
