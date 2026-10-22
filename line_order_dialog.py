@@ -67,6 +67,8 @@ class OrderPicture(QWidget):
         self._press = None
         self._drag = None
         self.shown = None              # Play: only the first `shown` items
+        self.trail = []                # Trace the order: the paths drawn with the mouse
+        self.setMouseTracking(False)
 
     # ------------------------------------------------------------ drawing tab
     def transform(self):
@@ -131,6 +133,13 @@ class OrderPicture(QWidget):
         if self._drag is not None:
             p.setPen(QPen(ACCENT, 1.4, Qt.PenStyle.DashLine)); p.setBrush(QColor(255, 122, 26, 30))
             p.drawRect(self._drag)
+        if self.dialog.tracing and self.trail:
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor(40, 160, 255, 150), max(2., self.dialog.trace_size.value() * 2),
+                          Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            for path in self.trail:
+                if len(path) > 1:
+                    p.drawPath(_path(path))
         p.end()
 
     def _tag(self, p, x, y, number):
@@ -176,10 +185,87 @@ class OrderPicture(QWidget):
             self._tag(p, r.x() + cx / gw * r.width(), r.y() + cy / gh * r.height(), i + 1)
 
     # ------------------------------------------------------------ mouse
+    # ------------------------------------------------------------ tracing the order
+    def trace_hit(self, x, y):
+        """Everything under the cursor (within the trace size) joins the order, nearest first."""
+        d = self.dialog
+        r = d.trace_size.value()
+        if d.mode == 'paint':
+            grid = d.grid
+            rect = self.image_rect()
+            gh, gw = grid.shape
+            cx, cy = (x - rect.x()) / rect.width() * gw, (y - rect.y()) / rect.height() * gh
+            rr = r / rect.width() * gw
+            found = {}
+            for gy in range(max(0, int(cy - rr)), min(gh, int(cy + rr) + 1)):
+                for gx in range(max(0, int(cx - rr)), min(gw, int(cx + rr) + 1)):
+                    rid = int(grid[gy, gx])
+                    dist = ((gx + .5 - cx) ** 2 + (gy + .5 - cy) ** 2) ** .5
+                    if rid and dist <= rr and dist < found.get(rid, 1e9):
+                        found[rid] = dist
+            for rid, _ in sorted(found.items(), key=lambda kv: kv[1]):
+                if rid in d.parts:
+                    d.trace_add(d.parts.index(rid))
+            return
+        import numpy as np
+        a, b, owner, where = self.segments()
+        if not len(a):
+            return
+        ab = b - a
+        t = np.clip(((x - a[:, 0]) * ab[:, 0] + (y - a[:, 1]) * ab[:, 1]) / np.maximum((ab ** 2).sum(1), 1e-9), 0, 1)
+        dist = np.hypot(a[:, 0] + ab[:, 0] * t - x, a[:, 1] + ab[:, 1] * t - y)
+        close = dist <= r
+        if not close.any():
+            return
+        hits = {}
+        for k in np.flatnonzero(close):
+            i = int(owner[k])
+            if i not in hits or dist[k] < hits[i][0]:
+                hits[i] = (float(dist[k]), float(where[k] + t[k] * (where[k + 1] - where[k])
+                                                   if k + 1 < len(where) and owner[k + 1] == owner[k] else where[k]))
+        for i, (_, along) in sorted(hits.items(), key=lambda kv: kv[1][0]):
+            d.trace_add(i, flip=along > .5)
+
+    def segments(self):
+        """Every line as segments (numpy), made once per order and picture size."""
+        import numpy as np
+        key = (tuple(id(s) for s in self.dialog.strokes), self.width(), self.height())
+        if getattr(self, '_segments', None) and self._segments[0] == key:
+            return self._segments[1]
+        a, b, owner, where = [], [], [], []
+        for i, line in enumerate(self.polylines()):
+            if len(line) == 1:
+                line = line * 2
+            n = max(1, len(line) - 1)
+            for j in range(len(line) - 1):
+                a.append(line[j]); b.append(line[j + 1]); owner.append(i); where.append(j / n)
+        out = (np.asarray(a, float).reshape(-1, 2), np.asarray(b, float).reshape(-1, 2),
+               np.asarray(owner, int), np.asarray(where, float))
+        self._segments = (key, out)
+        return out
+
     def mousePressEvent(self, event):
+        if self.dialog.tracing:
+            self._trace_last = event.position()
+            self.trail.append([(event.position().x(), event.position().y())])
+            self.trace_hit(event.position().x(), event.position().y())
+            self.update(); return
         self._press = event.position()
 
     def mouseMoveEvent(self, event):
+        if self.dialog.tracing:
+            last = getattr(self, '_trace_last', None)
+            if last is None:
+                return
+            pos = event.position()
+            step = max(2., self.dialog.trace_size.value() / 2)
+            dist = ((pos.x() - last.x()) ** 2 + (pos.y() - last.y()) ** 2) ** .5
+            for k in range(1, int(dist / step) + 2):
+                f = min(1., k * step / max(1e-6, dist))
+                self.trace_hit(last.x() + (pos.x() - last.x()) * f, last.y() + (pos.y() - last.y()) * f)
+            self.trail[-1].append((pos.x(), pos.y()))
+            self._trace_last = pos
+            self.update(); return
         if self._press is None:
             return
         a, b = self._press, event.position()
@@ -187,6 +273,9 @@ class OrderPicture(QWidget):
             self._drag = QRectF(a, b).normalized(); self.update()
 
     def mouseReleaseEvent(self, event):
+        if self.dialog.tracing:
+            self._trace_last = None
+            self.update(); return
         if self._drag is not None:
             box = self._drag
             self._drag = None; self._press = None
@@ -277,6 +366,26 @@ class LineOrderDialog(QDialog):
         self.play_button.setToolTip('Show the order one by one. Click again to pause.')
         self.play_button.clicked.connect(lambda checked=False: self.toggle_play())
         view.addWidget(self.play_button)
+        # Trace the order: draw the path with the mouse; whatever it passes over comes next.
+        trace = QHBoxLayout(); left.addLayout(trace)
+        self.trace_button = QPushButton('Trace the order'); self.trace_button.setCheckable(True)
+        self.trace_button.setToolTip('Hold the mouse down and move over the picture the way the drawing should '
+                                     'go: every line (or part) the cursor passes gets the next number.')
+        self.trace_button.toggled.connect(self.set_tracing)
+        trace.addWidget(self.trace_button)
+        trace.addWidget(QLabel('Size'))
+        from PySide6.QtWidgets import QSlider
+        self.trace_size = QSlider(Qt.Orientation.Horizontal); self.trace_size.setRange(3, 45); self.trace_size.setValue(10)
+        self.trace_size.setToolTip('How wide an area the cursor picks up while tracing.')
+        self.trace_size.setMaximumWidth(140); trace.addWidget(self.trace_size)
+        self.trace_follow = QCheckBox('Turn lines to follow my path'); self.trace_follow.setChecked(True)
+        self.trace_follow.setToolTip('A line you reach at its far end is drawn from that end, so the pen follows your path.')
+        trace.addWidget(self.trace_follow)
+        self.trace_again = QPushButton('Start over'); self.trace_again.setToolTip('Forget the traced path and trace again.')
+        self.trace_again.clicked.connect(lambda checked=False: self.trace_restart())
+        trace.addWidget(self.trace_again); trace.addStretch(1)
+        self.tracing = False
+        self.traced = []               # what was traced, in order (stroke ids / part ids)
         self.play_timer = QTimer(self); self.play_timer.setInterval(70)
         self.play_timer.timeout.connect(self.play_step)
 
@@ -388,6 +497,8 @@ class LineOrderDialog(QDialog):
 
     def set_mode(self, mode):
         self.play_timer.stop(); self.picture.shown = None; self.play_button.setText('Play order')
+        if getattr(self, 'tracing', False) and mode != self.mode:
+            self.trace_button.setChecked(False)
         if mode == 'paint':
             ready = self.load_parts()
             if ready is not True:
@@ -589,6 +700,48 @@ class LineOrderDialog(QDialog):
         if self.picture.shown >= len(self.items()):
             self.play_timer.stop(); self.play_button.setText('Play order'); self.picture.shown = None
         self.picture.update()
+
+    # ------------------------------------------------------------ trace the order
+    def set_tracing(self, on):
+        self.tracing = bool(on)
+        self.trace_restart()
+        self.picture.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.ArrowCursor)
+        if on:
+            self.hint.setText('Trace: hold the mouse down and move over the picture the way it should be '
+                              + ('painted' if self.mode == 'paint' else 'drawn')
+                              + '. Everything you pass gets the next number. Let go and start again anywhere to '
+                              'go on; what you never touch comes after, in its present order.')
+        else:
+            self.set_mode(self.mode)
+
+    def trace_restart(self):
+        self.traced = []
+        self.picture.trail = []
+        self.selected = set()
+        self.fill()
+
+    def _key(self, item):
+        return item if self.mode == 'paint' else id(item)
+
+    def trace_add(self, index, flip=False):
+        """The item at `index` comes next in the order (after what was traced before)."""
+        items = list(self.items())
+        if not 0 <= index < len(items):
+            return
+        item = items[index]
+        if self._key(item) in self.traced:
+            return
+        if flip and self.mode == 'draw' and self.trace_follow.isChecked():
+            from history import edited_stroke
+            item = edited_stroke(item, reverse=True)
+            items[index] = item
+        self.traced.append(self._key(item))
+        place = {k: n for n, k in enumerate(self.traced)}
+        first = sorted((x for x in items if self._key(x) in place), key=lambda x: place[self._key(x)])
+        rest = [x for x in items if self._key(x) not in place]
+        self._set_items(first + rest)
+        self.selected = set(range(len(first)))
+        self.fill()
 
     def painting_order(self):
         """The chosen painting order to keep on the element (None: the default)."""
