@@ -20,14 +20,15 @@ jobs:
           cache: pip
       - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon0
       - run: pip install -r requirements.txt
-      - name: Segment cache tests, per version
+      - name: Which earlier test breaks the pre-render tests
         shell: bash
         run: |
           mkdir -p out
-          for v in bbc45ee 804eb28; do
-            git worktree add -f "$RUNNER_TEMP/v$v" $v >/dev/null 2>&1
-            (cd "$RUNNER_TEMP/v$v" && timeout 900 python -m unittest -v test_segment_cache) > out/$v.txt 2>&1 || true
-            echo "== $v"; tail -30 out/$v.txt
+          git worktree add -f "$RUNNER_TEMP/v94" 804eb28 >/dev/null 2>&1
+          cd "$RUNNER_TEMP/v94"
+          for m in test_studio test_workspace_layout test_ui_control_regression test_menus test_timeline_autosave test_render_pipeline_smoke test_element_kinds test_dual_sidebar test_inspector_scene_switch test_png_cleanup test_source_mode_consistency test_source_timeline test_prototype; do
+            timeout 900 python tools/run_tests.py $m test_segment_cache.WindowTests > "$GITHUB_WORKSPACE/out/$m.txt" 2>&1
+            echo "$m -> $(tail -1 $GITHUB_WORKSPACE/out/$m.txt)" | tee -a "$GITHUB_WORKSPACE/out/summary.txt"
           done
       - name: Publish
         if: always()
