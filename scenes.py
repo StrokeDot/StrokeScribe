@@ -156,8 +156,8 @@ def job_from_state(data, hand=None, overrides=None):
         drawing.image_regions = segment_regions(pil_image(image), 'high' if detail == 'max' else detail)
         options = options_from_settings(s, drawing, hand=scene_hand, image_source=image, image_mode=True)
     else:
-        options = options_from_settings(s, drawing, color_image=qimage_from_b64(data.get('color_png')),
-                                        hand=scene_hand)
+        from color_reveal import project_color
+        options = options_from_settings(s, drawing, color_image=project_color(data)[1], hand=scene_hand)
     options['overlays'] = list(data.get('overlays') or [])
     return drawing, options, s
 

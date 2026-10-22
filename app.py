@@ -1570,14 +1570,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # The colour picture as saved; cleaned like a newly loaded PNG (an older
             # project may have kept a painted checkerboard or faint leftovers).
             self.color_path='from-project' if data.get('svg_color_override') else None
-            self.color_original=qimage_from_b64(data.get('color_png'))
-            self.final_image=self.color_original
-            if self.final_image is not None and (data.get('settings') or {}).get('clean_color',True):
-                try:
-                    from color_reveal import clean_qimage
-                    self.final_image=clean_qimage(self.final_image)
-                except Exception:
-                    self.final_image=self.color_original
+            from color_reveal import project_color
+            self.color_original,self.final_image=project_color(data)
             if getattr(drawing,'svg_source',None) and getattr(drawing,'svg_has_fill',False) and not data.get('color_png'):
                 from svg_appearance import render_appearance
                 self.final_image=render_appearance(drawing)
