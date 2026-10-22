@@ -1,0 +1,7 @@
+total 366228
+drwxr-xr-x  3 runner runner      4096 Oct 22 03:36 .
+drwxr-xr-x 12 runner runner     12288 Oct 22 03:36 ..
+drwxr-xr-x  3 runner runner      4096 Oct 22 03:36 .cache
+-rw-r--r--  1 runner runner      6566 Oct 22 03:36 config.json
+-rw-r--r--  1 runner runner 374979480 Oct 22 03:36 model.safetensors
+-rw-r--r--  1 runner runner       466 Oct 22 03:36 preprocessor_config.json

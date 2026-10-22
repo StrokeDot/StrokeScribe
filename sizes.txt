@@ -1,0 +1,28 @@
+== facebook/sam-vit-huge
+sha 87aecf0df4ce6b30cd7de76e87673c49644bdf67 gated False license ['license:apache-2.0']
+.gitattributes 1477 None
+README.md 6886 None
+config.json 6569 None
+model.safetensors 2564432288 edfb0462392541fca9af44ff039bfb32dbd0c939997f3abb77a26e23af7afd7c
+preprocessor_config.json 466 None
+pytorch_model.bin 2564565013 9a14fd58481d203300024d94128edfce246b4b0db7e0b548ed52bf63578cbc38
+tf_model.h5 2565031808 a53881d671f1900f5d4890c00f3f27819fdc94323c012b648ca1bb0b3b1f0a60
+== facebook/sam-vit-large
+sha 6851e0441005b0fb96f2cc4dfac472f3d1b14af1 gated False license ['license:apache-2.0']
+.gitattributes 1477 None
+README.md 6671 None
+config.json 6570 None
+model.safetensors 1249428136 a57e1b13cd1545938dfcbc9fb26df7f60de6650237a9383382a874a623564b81
+preprocessor_config.json 466 None
+pytorch_model.bin 1249536149 149bba0bfe0b10f856adb815c37000978ceda04ed3a373c54e565645ae6b7c53
+tf_model.h5 1249899608 753587fe6b74cd660635f88ea8430afd96cf0267a1f109567fd941d16e69480e
+== facebook/sam-vit-base
+sha 70c1a07f894ebb5b307fd9eaaee97b9dfc16068f gated False license ['license:apache-2.0']
+.gitattributes 1477 None
+README.md 6727 None
+config.json 6566 None
+model.safetensors 374979480 892c410e496344e527255ccdcb2cb7244a609acb5389c7c4fdba1288f861c579
+preprocessor_config.json 466 None
+pytorch_model.bin 375050165 1a1e860feeb895bc46f704d4faad2a0be739b5dfdca0ebdda520ffbcfb73f348
+tf_model.h5 375292824 cfaf0843e7c825c7262261782344a8ea64a6914766ff886bc967198ece733ed5
+transformers 5.20.2
