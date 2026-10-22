@@ -123,6 +123,24 @@ def main(out):
     w.show_right_panel('hand')
     shot('hand-after-image', 'right')
     w.grab().save(str(out / 'window.png'))
+    # The Paint mode picker and the Line order window.
+    try:
+        w.show_right_panel('animation')
+        w.reveal_mode.showPopup(); settle(300)
+        if getattr(w, 'paint_mode_dialog', None):
+            w.paint_mode_dialog.grab().save(str(out / 'paint-mode-picker.png'))
+            w.paint_mode_dialog.reject(); settle()
+        dialog = w.open_line_order() if hasattr(w, 'open_line_order') else None
+        if dialog is not None:
+            settle(300)
+            for i in (0, 2, 3):
+                if i < len(dialog.strokes):
+                    dialog.picture_clicked(i)
+            settle(100)
+            dialog.grab().save(str(out / 'line-order.png'))
+            dialog.reject(); settle()
+    except Exception as exc:
+        report.append(f'dialog shots failed: {exc!r}')
     (out / 'report.txt').write_text('\n'.join(report) + '\n', encoding='utf-8')
     print('\n'.join(report))
     w.playing = False

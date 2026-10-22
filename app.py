@@ -2710,12 +2710,36 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self,'Font import',str(exc))
     def move(self,direction):
+        """Move up / down: every selected line one place (several at once)."""
         if not self.drawing:return
-        i=self.order.currentRow(); j=i+direction
-        if i<0 or not 0<=j<len(self.drawing.strokes): return
+        rows=self.selected_rows() or ([self.order.currentRow()] if self.order.currentRow()>=0 else [])
         strokes=list(self.drawing.strokes)
-        strokes[i],strokes[j]=strokes[j],strokes[i]
-        self.change_lines(strokes,keep={id(strokes[j])},current=j)
+        chosen=set(rows)
+        for i in (rows if direction<0 else reversed(rows)):
+            j=i+direction
+            if not 0<=j<len(strokes) or j in chosen: continue
+            strokes[i],strokes[j]=strokes[j],strokes[i]
+            chosen.discard(i);chosen.add(j)
+        if not chosen: return
+        self.change_lines(strokes,keep={id(strokes[k]) for k in chosen},current=min(chosen))
+
+    def open_line_order(self):
+        """The Line order window; its order is applied as one undo step."""
+        if not self.drawing or not self.drawing.strokes:
+            self.status.setText('Add a picture first: there are no lines to order yet.');return None
+        from line_order_dialog import LineOrderDialog
+        dialog=LineOrderDialog(self)
+        def done(result):
+            if result and [id(s) for s in dialog.strokes]!=[id(s) for s in self.drawing.strokes]:
+                keep={id(dialog.strokes[i]) for i in dialog.selected}
+                self.change_lines(dialog.strokes,keep=keep,current=min(dialog.selected) if dialog.selected else None,
+                                  status='Line order changed. Undo (Ctrl+Z) puts it back.')
+            self.line_order_dialog=None
+            dialog.deleteLater()
+        dialog.finished.connect(done)
+        self.line_order_dialog=dialog
+        dialog.open()
+        return dialog
     def loadhand(self):
         name,_=QFileDialog.getOpenFileName(self,'Hand overlay','','PNG (*.png)')
         if name:

@@ -81,6 +81,18 @@ class PickerTests(unittest.TestCase):
         self.assertEqual(len(dialog._frames[mode]), 18)
         dialog.reject()
 
+    def test_preview_can_be_paused(self):
+        w = self.w
+        w.reveal_mode.showPopup(); self.app.processEvents()
+        dialog = w.paint_mode_dialog
+        dialog.toggle_pause()
+        self.assertTrue(dialog.paused)
+        self.assertEqual(dialog.pause_button.text(), 'Play')
+        self.assertFalse(dialog.play_timer.isActive())
+        dialog.toggle_pause()
+        self.assertEqual(dialog.pause_button.text(), 'Pause')
+        dialog.reject()
+
     def test_no_preview_without_colours(self):
         w = self.w
         w.reveal_mode.showPopup(); self.app.processEvents()

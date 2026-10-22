@@ -74,6 +74,14 @@ class PaintModeDialog(QDialog):
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumSize(PREVIEW_WIDTH, round(PREVIEW_WIDTH * 9 / 16))
         side.addWidget(self.preview, 1)
+        self.preview.mousePressEvent = lambda event: self.toggle_pause()    # click the preview: pause / play
+        from PySide6.QtWidgets import QPushButton
+        controls = QHBoxLayout(); side.addLayout(controls)
+        self.pause_button = QPushButton('Pause')
+        self.pause_button.setToolTip('Pause or play the preview (or click the preview).')
+        self.pause_button.clicked.connect(lambda checked=False: self.toggle_pause())
+        controls.addWidget(self.pause_button); controls.addStretch(1)
+        self.paused = False
         self.note = QLabel(''); self.note.setWordWrap(True); self.note.setObjectName('caption')
         side.addWidget(self.note)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -140,7 +148,7 @@ class PaintModeDialog(QDialog):
         self._shown = 0
         if mode in self._frames and len(self._frames[mode]) == PREVIEW_FRAMES:
             self.note.setText('')
-            self.play_timer.start(); return
+            self.play(); return
         try:
             options, fractions = self.preview_plan(mode)
         except Exception as exc:
@@ -161,7 +169,7 @@ class PaintModeDialog(QDialog):
         if len(frames) >= len(fractions) or mode != self.chosen:
             self.render_timer.stop(); self._pending = None
             if mode == self.chosen:
-                self.note.setText(''); self.play_timer.start()
+                self.note.setText(''); self.play()
             return
         from frame_render import compose_frame
         try:
@@ -180,6 +188,21 @@ class PaintModeDialog(QDialog):
         out.fill(QColor(246, 244, 238))
         p = QPainter(out); p.drawImage(0, 0, image); p.end()
         return QPixmap.fromImage(out)
+
+    def play(self):
+        """Loop the ready preview, unless it is paused."""
+        if not self.paused:
+            self.play_timer.start()
+        else:
+            self.play_next()
+
+    def toggle_pause(self):
+        self.paused = not self.paused
+        self.pause_button.setText('Play' if self.paused else 'Pause')
+        if self.paused:
+            self.play_timer.stop()
+        elif self._frames.get(self.chosen) and self._pending is None:
+            self.play_timer.start()
 
     def play_next(self):
         frames = self._frames.get(self.chosen) or []
