@@ -20,15 +20,14 @@ jobs:
           cache: pip
       - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon0
       - run: pip install -r requirements.txt
-      - name: Why, per version
+      - name: Segment cache tests, per version
         shell: bash
         run: |
           mkdir -p out
-          cp tools/bisect/why.py "$RUNNER_TEMP/why.py"
-          for v in 2662f0b aad5ba5 dd05174 bbc45ee; do
+          for v in bbc45ee 804eb28; do
             git worktree add -f "$RUNNER_TEMP/v$v" $v >/dev/null 2>&1
-            (cd "$RUNNER_TEMP/v$v" && timeout 600 python "$RUNNER_TEMP/why.py") > out/$v.txt 2>&1 || true
-            echo "== $v"; tail -15 out/$v.txt
+            (cd "$RUNNER_TEMP/v$v" && timeout 900 python -m unittest -v test_segment_cache) > out/$v.txt 2>&1 || true
+            echo "== $v"; tail -30 out/$v.txt
           done
       - name: Publish
         if: always()
