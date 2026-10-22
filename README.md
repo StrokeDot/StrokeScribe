@@ -9,6 +9,13 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Line order for drawing and painting; Move in timeline; Pre-render by the play buttons (v0.5.3-experimental.92)
+
+- **Line order** has two tabs: **Drawing (lines)** and **Painting (parts)**. The Painting tab shows the parts Painter paints, over the colours; pick them and move them the same way, or order them automatically (big parts first, top to bottom, left to right, nearest next). Painter then paints in that order.
+- Simple names (Line 1, Line 2… / Part 1, Part 2…). **Default** puts back the order it had when it came in. *Move to place* starts where the selection is, so Move never jumps to the top by surprise. Reverse, Delete, Pace and Pause for the selected lines are in the window now; the small line list in the panel is gone (one place for the order).
+- **Move in**: an element that comes in with an effect has one *Move in* clip on the timeline. Moving in the whole picture has no painting or colour hold any more (only the move, then its pause); *Only the lines* is Move in + Paint.
+- **Pre-render** sits next to the play buttons under the preview.
+
 ## Line order window; Paint mode preview pause (v0.5.3-experimental.90)
 
 - **Line order** (Animation tab, the orange button): a big window with the drawing. Click lines to select them (click again to unselect), or drag a box around several. Selected lines are orange with their number; the others are coloured by when they are drawn (blue first, red last). Move all selected lines together: to the start, up, down, to the end or to a position. **Automatic order**: top to bottom, left to right, outlines first, nearest next (the pen travels least) or big shapes first, for all lines or only the selected ones. **Play order** shows the order line by line. Nothing changes until *Use this order* (one undo step).

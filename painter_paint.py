@@ -113,8 +113,11 @@ def _merge_crumbs(labels, support):
     return out
 
 
-def part_order(labels, origin):
-    """Big parts first, then medium, details last; nearest next within each size."""
+def part_order(labels, origin, custom=None):
+    """Big parts first, then medium, details last; nearest next within each size.
+
+    custom: the order chosen in the Line order window (Painting), as part ids; parts
+    it does not name follow in the default order."""
     import numpy as np
     painted = max(1, int((labels > 0).sum()))
     info = []
@@ -124,6 +127,12 @@ def part_order(labels, origin):
         tier = 0 if share >= TIERS[0] else (1 if share >= TIERS[1] else 2)
         info.append((rid, tier, (float(xs.mean()) + .5, float(ys.mean()) + .5)))
     order, cursor = [], origin
+    if custom:
+        known = {p[0] for p in info}
+        first = [int(r) for r in custom if int(r) in known]
+        chosen = set(first)
+        rest = part_order(labels, origin) if len(chosen) < len(known) else []
+        return first + [r for r in rest if r not in chosen]
     for tier in (0, 1, 2):
         left = [p for p in info if p[1] == tier]
         while left:
@@ -194,7 +203,7 @@ def build_painter_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
                       rid, clock + duration * f)
         clock += duration; cursor = point
 
-    for rid in part_order(grid, origin):
+    for rid in part_order(grid, origin, getattr(drawing, 'paint_part_order', None)):
         mask = grid == rid
         for stroke in shape_strokes(mask, gap):
             # Start each stroke at its end nearer to the hand.
@@ -217,3 +226,19 @@ def build_painter_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
     _reveal_faint_with_neighbours(arrival, labels, faint, gw, gh)
     return PaintPlan((gw, gh), labels, segments, [s.end for s in segments], arrival,
                      origin, clock, [], int(grid.max()))
+
+
+def parts_for_window(drawing, image):
+    """What the Line order window (Painting) needs: (grid labels, default order, centres).
+
+    grid: numpy array of part ids (0 = nothing), the same parts Painter paints."""
+    from adaptive_hand import pil_image
+    source = pil_image(image)
+    gw, gh, origin, support, faint = _grid(drawing, image, source)
+    grid = part_labels(drawing, source, support, gw, gh)
+    import numpy as np
+    centres = {}
+    for rid in [int(i) for i in np.unique(grid) if i > 0]:
+        ys, xs = np.nonzero(grid == rid)
+        centres[rid] = (float(xs.mean()) + .5, float(ys.mean()) + .5, int(len(xs)))
+    return grid, part_order(grid, origin), centres

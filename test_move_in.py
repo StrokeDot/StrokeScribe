@@ -177,3 +177,29 @@ class WindowTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipIf(SKIP, 'needs Qt')
+class TimelineTests(unittest.TestCase):
+    """exp.92: an element that moves in has one Move in clip, not Draw / Paint / Hold."""
+
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_whole_picture_move_has_no_painting_time(self):
+        from PySide6.QtGui import QColor, QImage
+        from engine import import_svg
+        from frame_render import timeline_seconds
+        from app import Window
+        d = import_svg(HERE / 'samples' / 'drawing.svg')
+        colours = QImage(100, 100, QImage.Format.Format_ARGB32_Premultiplied); colours.fill(QColor(200, 20, 20))
+        base = dict(width=320, height=180, duration=2., fade_duration=3., hold_duration=1., final_image=colours,
+                    pause=.5)
+        self.assertAlmostEqual(timeline_seconds(d, dict(base, entrance='Fade')), 2.5)            # move + pause
+        self.assertAlmostEqual(timeline_seconds(d, dict(base, entrance='Fade', entrance_part='lines')), 6.5)
+        self.assertAlmostEqual(timeline_seconds(d, base), 6.5)                                    # drawn: unchanged
+        parts = dict(Window.stage_parts(dict(base, entrance='Fade')))
+        self.assertEqual((parts['move'], parts['paint']), (2., 0.))
+        self.assertNotIn('draw', parts)

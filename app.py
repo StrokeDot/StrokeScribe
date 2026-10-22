@@ -1121,8 +1121,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self.lines_toggle.isChecked():
             self.order.scrollToItem(item)
             self.show_line_tools()
-        self.status.setText(f'Selected: {self.drawing.strokes[index].name}  •  Delete, Reverse, pace and pause '
-                            'are under LINES & ORDER on the left; drag in the list to reorder.')
+        self.status.setText(f'Selected: line {index+1}  •  Line order (Animation tab) moves, reverses, '
+                            'deletes and times the selected lines.')
 
     def show_line_tools(self):
         """Scroll the Source panel so the line list and its buttons are visible."""
@@ -1231,6 +1231,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.project_changes.mark_changed()
         self.playing=False
         self.drawing=drawing
+        if drawing is not None and not hasattr(drawing,'default_order'):
+            drawing.default_order=[s.name for s in drawing.strokes]   # Line order: Default
         self.fill_order()
         self.note.setText('\n'.join(drawing.warnings) or 'Ready. Press Play to draw from the beginning.')
         self.position=0 if getattr(drawing,'source_kind',None)=='image' else 1
@@ -2264,6 +2266,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """[(stage key, seconds)] of one element: Draw, Paint, Hold (+ pause), Out."""
         colour=options.get('final_image') is not None
         erase=options.get('erase')
+        if (options.get('entrance') or 'draw')!='draw':
+            # Comes in with an effect: one Move in clip (then the painting, when only the lines move in).
+            import move_in
+            from frame_render import move_seconds
+            lines=move_in.part_of(options)==move_in.PART_LINES
+            return [('move',move_seconds(options)),
+                    ('paint',float(options.get('fade_duration',0)) if lines else 0.),
+                    ('hold',(float(options.get('hold_duration',0)) if lines else 0.)+float(options.get('pause',0) or 0)),
+                    ('erase',float(erase['seconds']) if erase else 0.)]
         return [('draw',float(options.get('duration',0))),
                 ('paint',float(options.get('fade_duration',0)) if colour else 0.),
                 ('hold',(float(options.get('hold_duration',0)) if colour else 0.)+float(options.get('pause',0) or 0)),
@@ -2294,7 +2305,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         whole=sum(mine.values())
         if whole>0 and abs(whole-length)>1e-3:
             mine={k:v*length/whole for k,v in mine.items()}
-        tl.update_state(mine['draw'],mine['paint'],mine['hold'],self.position,mine['erase'])
+        moving='move' in mine
+        tl.update_state(mine['move' if moving else 'draw'],mine['paint'],mine['hold'],self.position,mine['erase'],
+                        first='Move in' if moving else 'Draw')
 
     def element_start(self,k=None):
         """Whole video: the second where element k starts."""
@@ -2729,11 +2742,22 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.status.setText('Add a picture first: there are no lines to order yet.');return None
         from line_order_dialog import LineOrderDialog
         dialog=LineOrderDialog(self)
+        drawing=self.drawing
         def done(result):
-            if result and [id(s) for s in dialog.strokes]!=[id(s) for s in self.drawing.strokes]:
-                keep={id(dialog.strokes[i]) for i in dialog.selected}
-                self.change_lines(dialog.strokes,keep=keep,current=min(dialog.selected) if dialog.selected else None,
-                                  status='Line order changed. Undo (Ctrl+Z) puts it back.')
+            if result and drawing is self.drawing:
+                paint=dialog.painting_order()
+                paint_changed=paint!=getattr(drawing,'paint_part_order',None)
+                if paint_changed:
+                    if paint: drawing.paint_part_order=paint
+                    elif hasattr(drawing,'paint_part_order'): del drawing.paint_part_order
+                lines=dialog.strokes
+                if [id(s) for s in lines]!=[id(s) for s in drawing.strokes]:
+                    keep={id(lines[i]) for i in dialog.line_selection if i<len(lines)}
+                    self.change_lines(lines,keep=keep,current=min(dialog.line_selection) if dialog.line_selection else None,
+                                      status='Order changed. Undo (Ctrl+Z) puts the lines back.')
+                elif paint_changed:
+                    self.project_changes.mark_changed();self.note_change()
+                    self.status.setText('Painting order changed.');self.refresh()
             self.line_order_dialog=None
             dialog.deleteLater()
         dialog.finished.connect(done)
@@ -3495,11 +3519,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.stage_timeline.set_audio(self.timeline_audio())
         self.stage_timeline.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() \
             else {'paint','hold','erase'}
-        erase=options.get('erase')
-        self.stage_timeline.update_state(options['duration'],
-            options['fade_duration'] if options['final_image'] is not None else 0,
-            (options['hold_duration'] if options['final_image'] is not None else 0)+options.get('pause',0),
-            self.position,erase['seconds'] if erase else 0)
+        parts=dict(self.stage_parts(options))
+        moving='move' in parts
+        self.stage_timeline.update_state(parts['move' if moving else 'draw'],parts['paint'],parts['hold'],
+            self.position,parts['erase'],first='Move in' if moving else 'Draw')
         options.pop('fps')
         # The artwork is scaled after rasterization. Compensating the hand
         # before that transform keeps its FINAL size independent of Artwork
