@@ -24,7 +24,7 @@ jobs:
             python: '3.12'
     name: quick (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 45      # Windows runs the same tests about twice as slowly
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
