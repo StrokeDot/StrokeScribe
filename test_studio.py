@@ -196,6 +196,7 @@ class StudioTests(unittest.TestCase):
         w.fps.setValue(60)
         self.assertIn('60 fps',w.output_summary.text())
         w.inspector_tabs.setCurrentIndex(0)
+        w.section_painting.set_expanded(True)           # the Colour & painting section, opened
         w.source_type.setCurrentIndex(1)
         # The import selector does not turn the existing SVG into an image.
         self.assertFalse(w.is_image_artwork())

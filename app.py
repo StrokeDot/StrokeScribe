@@ -1311,6 +1311,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.mp4_background.setEnabled(self.mp4.isChecked())
         self.update_transport_icons()
         self.update_element_panels()
+        self.update_applicable()
 
     def show_version_info(self):
         build_file = Path(__file__).resolve().parent / 'BUILD_INFO.txt'
@@ -3037,8 +3038,56 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     # ------------------------------------------------------------ move-in hand
     def update_entrance_controls(self):
         """'Moves in' only matters when the element comes in with an effect."""
-        if hasattr(self,'entrance_part'):
-            self.entrance_part.setEnabled(self.entrance.currentIndex()!=0)
+        self.update_applicable()
+
+    def update_applicable(self):
+        """Grey out what cannot apply to this element, so nothing looks clickable for nothing.
+
+        * Comes in with an effect (Fade in, Slide in…): the hand does not draw, so Draw time
+          becomes Move-in time and Pen movement does not apply; the painting settings apply
+          only when "only the lines" move in and the colours are painted after.
+        * No colours to paint: the painting settings do not apply.
+        * Goes out Off: the out time and eraser settings do not apply; Fade/Pop/… out show
+          no eraser, so only the out time applies."""
+        if not hasattr(self,'entrance_part') or not hasattr(self,'timing_form'): return
+        effect=self.entrance.currentIndex()!=0
+        lines_only=self.entrance_part.currentIndex()==1
+        image=self.is_image_artwork() if hasattr(self,'is_image_artwork') else False
+        if image:
+            colours=self.preserve_colors.isChecked() or self.image_animation.currentIndex()==1
+            if self.image_animation.currentIndex()==2: colours=False          # Drawing only
+        else:
+            colours=self.use_color.isChecked() and self.use_color.isEnabled()
+        painting=colours and (not effect or lines_only)
+        def able(widget,on,why):
+            if not hasattr(widget,'_tip'): widget._tip=widget.toolTip()
+            widget.setEnabled(on)
+            widget.setToolTip(widget._tip if on else f'Not used now: {why}')
+        label=self.timing_form.labelForField(self.duration)
+        if label is not None:
+            label.setText('Move-in time (s)' if effect else 'Draw time (s)')
+        self.duration.setToolTip('How long the element takes to come in with its effect.' if effect
+                                 else 'How long the hand takes to draw the lines.')
+        able(self.pen_ease,not effect,'the element comes in with an effect, the hand does not draw it.')
+        able(self.entrance_part,effect and colours,
+             'choose an effect in "Comes in" (and have colours) to pick what moves in.')
+        why='there are no colours to paint.' if not colours else \
+            'the whole picture moves in with its colours (choose "Only the lines" in Moves in to paint them).'
+        for widget in (self.reveal_mode,self.color_fade,self.image_duration,self.brush_width,
+                       self.stroke_spacing,self.color_hold):
+            able(widget,painting,why)
+        if hasattr(self,'painter_parts_buttons'):
+            able(self.painter_parts_buttons,painting,why)
+        able(self.camera,not effect or painting,'nothing is drawn or painted for the camera to follow.')
+        erase=self.erase_mode.currentText()
+        if hasattr(self,'erase_on') and self.erase_on.isChecked()!=(erase!='Off'):
+            self.erase_on.blockSignals(True); self.erase_on.setChecked(erase!='Off'); self.erase_on.blockSignals(False)
+            if hasattr(self,'section_out') and self.section_out.switch is not None: self.section_out.switch.update()
+        if erase!='Off': self._last_erase=erase
+        rubbing=erase in ('Zigzag (follows the shapes)','Along the lines')
+        able(self.erase_time,erase!='Off','"Goes out" is Off.')
+        able(self.erase_size,rubbing,'only an eraser that rubs (Zigzag or Along the lines) has a size.')
+        able(self.eraser,rubbing,'only an eraser that rubs (Zigzag or Along the lines) is shown.')
 
     def sync_hand_sides(self):
         """The Right | Left switches after a project, undo or element switch, and the

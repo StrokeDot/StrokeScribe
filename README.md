@@ -21,6 +21,13 @@ A small local desktop tool for short SVG drawing overlays. Built from original a
 - **Move in**: an element that comes in with an effect has one *Move in* clip on the timeline. Moving in the whole picture has no painting or colour hold any more (only the move, then its pause); *Only the lines* is Move in + Paint.
 - **Pre-render** sits next to the play buttons under the preview.
 
+## Cleaner panels, Filmora-style; settings that cannot apply are greyed out (v0.5.3-experimental.96)
+
+- **Sections that open on click.** Animation: *Drawing* (open), *Colour & painting*, *Goes out at the end* (with an on/off switch). Hand: *Drawing hand* (open), *Painting hand*, *Move-in hand*, each with an on/off switch on its header instead of a "Show while…" box. Click a header to open or close it.
+- **Slimmer rail:** smaller icons and labels; the open panel has a soft highlight and an accent icon instead of a big purple block.
+- **No "Program" title** over the preview.
+- **Greyed out when it cannot apply** (hover to see why): with *Comes in* set to an effect, *Draw time* becomes *Move-in time*, Pen movement is greyed out, and so is painting unless only the lines move in; without colours, the painting settings; with *Goes out* Off, the out time and eraser settings.
+
 ## Undo / redo for every change (v0.5.3-experimental.95)
 
 - **Ctrl+Y (redo) works again on Windows.** It was registered twice on the same key, so neither ran. Ctrl+Shift+Z redoes too.

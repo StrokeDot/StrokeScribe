@@ -61,6 +61,9 @@ class InspectorSceneSwitchGeometryTests(unittest.TestCase):
         return self.area
 
     def assert_inside_inspector(self, widget, name):
+        from ui_sections import reveal
+        reveal(widget)                     # open the panel section that holds it (exp.96)
+        APP.processEvents()
         self.area=self.area_of(widget)
         self.area.ensureWidgetVisible(widget, 0, 0)
         APP.processEvents()

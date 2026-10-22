@@ -97,7 +97,8 @@ class PainterPartsTests(unittest.TestCase):
             w.show(); self.app.processEvents()
             w.reveal_mode.setCurrentText('Adaptive Hand Painting'); self.app.processEvents()
             self.assertFalse(w.find_parts_button.isVisible())
-            w.reveal_mode.setCurrentText(w.PAINTER_TEXT); w.show_right_panel('animation'); self.app.processEvents()
+            w.reveal_mode.setCurrentText(w.PAINTER_TEXT); w.show_right_panel('animation')
+            w.section_painting.set_expanded(True); self.app.processEvents()
             self.assertTrue(w.find_parts_button.isVisible())
             self.assertIn('colour areas', w.painter_parts_note.text())
         finally:
@@ -114,10 +115,11 @@ class PainterPartsTests(unittest.TestCase):
             labels.info['parts'] = 2
             w.set_ai_parts(labels)
             self.assertIn('2 real parts', w.painter_parts_note.text())
-            self.assertTrue(w.colour_parts_button.isEnabled())
+            # The button itself (its row is greyed out when the element has nothing to paint).
+            self.assertTrue(w.colour_parts_button.isEnabledTo(w.painter_parts_buttons))
             w.forget_ai_parts()
             self.assertFalse(hasattr(w.drawing, 'ai_parts_image'))
-            self.assertFalse(w.colour_parts_button.isEnabled())
+            self.assertFalse(w.colour_parts_button.isEnabledTo(w.painter_parts_buttons))
         finally:
             w.close()
 

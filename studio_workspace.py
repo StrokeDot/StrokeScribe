@@ -929,15 +929,15 @@ def build_rails(w, tabs, inspector):
 
     def rail_frame():
         frame = QFrame(); frame.setObjectName('iconRail')
-        frame.setFixedWidth(56)
-        column = QVBoxLayout(frame); column.setContentsMargins(3, 8, 3, 8); column.setSpacing(6)
+        frame.setFixedWidth(52)
+        column = QVBoxLayout(frame); column.setContentsMargins(3, 8, 3, 8); column.setSpacing(4)
         return frame, column
 
     def rail_button(name, text):
         button = QToolButton(); button.setObjectName('railButton')
         button.setText(text)
-        button.setIcon(icon(name, RAIL_ICON, '#FFFFFF'))
-        button.setIconSize(QSize(22, 22))
+        button.setIcon(icon(name, RAIL_ICON, RAIL_ACTIVE))    # the open panel's icon in the accent colour
+        button.setIconSize(QSize(18, 18))
         button.setCheckable(True)
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         button.setAccessibleName(text)
@@ -1630,7 +1630,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     split.addWidget(asset_panel)
 
     # Large, dedicated visual monitor (center).
-    monitor,monitor_outer,top=panel('monitorPanel','Program')
+    monitor,monitor_outer,top=panel('monitorPanel','')
+    monitor.title_label.hide()                 # no "Program" title over the preview
     monitor.setMinimumWidth(390)
     w.source_sidebar_button=QToolButton()
     w.source_sidebar_button.setObjectName('subtle')
@@ -1720,9 +1721,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     animation=QWidget()
     animation_l=QVBoxLayout(animation);animation_l.setContentsMargins(9,12,9,8)
     animation_l.setSpacing(10)
-    animation_l.addWidget(label('DRAWING'))
-    a=form_layout();animation_l.addLayout(a)
+    from ui_sections import Section
+    # Filmora-style sections: click a header to open it; optional parts have a switch.
+    w.section_drawing=Section('Drawing',expanded=True)
+    animation_l.addWidget(w.section_drawing)
+    a=form_layout();w.section_drawing.body.addLayout(a)
     w.duration=w.number(.2,120,4,.1);a.addRow('Draw time (s)',w.duration)
+    w.timing_form=a
     w.speed=w.number(.1,5,1,.1);a.addRow('Playback speed',w.speed)
     w.thickness=w.number(.1,10,1,.1);a.addRow('Line width',w.thickness)
     w.artwork_size=w.number(25,200,100,5)
@@ -1785,7 +1790,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
                                     'and paint (or from the voiceover length, if one is loaded).')
     w.auto_timing_button.clicked.connect(lambda checked=False: w.auto_timing())
     w.auto_timing_button.hide()          # removed from the panel (kept for File projects/tests)
-    animation_l.addWidget(label('COLOR & PAINTING'))
+    w.section_painting=Section('Colour & painting',tip='How the colours are painted after the lines.')
+    animation_l.addWidget(w.section_painting)
     w.load_color_button=QPushButton('Load matching colored PNG…')
     w.load_color_button.clicked.connect(w.load_color)
     w.source_colors_slot.addWidget(w.load_color_button)
@@ -1832,7 +1838,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     blend_form.addRow('Edge softness',w.paper_softness)
     w.source_appearance_slot.addLayout(blend_form)
     w.appearance_form=blend_form
-    a2=form_layout();animation_l.addLayout(a2)
+    a2=form_layout();w.section_painting.body.addLayout(a2)
     w.reveal_mode=PaintModeCombo(lambda: w.open_paint_mode_picker())
     w.reveal_mode.addItems(['Brush painting','Adaptive Hand Painting','Zigzag sweep',
                             'Top to bottom (rows)','Left to right (columns)',
@@ -1889,8 +1895,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stroke_spacing.setToolTip('Lower values add more overlap between brush strokes.')
     a2.addRow('Stroke spacing',w.stroke_spacing)
     w.color_hold=w.number(0,30,.6,.1);a2.addRow('Hold (s)',w.color_hold)
-    animation_l.addWidget(label('GOES OUT AT THE END'))
-    a3=form_layout();animation_l.addLayout(a3)
+    # "Goes out" on / off: a switch for the Goes out list (Off, or the last way chosen).
+    w.erase_on=QCheckBox('Goes out at the end',animation);w.erase_on.hide()
+    w.erase_on.setToolTip('The element goes away at the end (eraser or an effect).')
+    w.section_out=Section('Goes out at the end',switch=w.erase_on,
+                          tip='How the element goes away at the end: an eraser, or an effect.')
+    animation_l.addWidget(w.section_out)
+    a3=form_layout();w.section_out.body.addLayout(a3)
     from eraser import MODES as _EXITS
     w.erase_mode=QComboBox()
     w.erase_mode.addItems(list(_EXITS))
@@ -1912,13 +1923,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     hand=QWidget();hand_l=QVBoxLayout(hand)
     hand_l.setContentsMargins(9,12,9,8);hand_l.setSpacing(12)
     # Two clear parts: the hand that DRAWS the lines, and the one that PAINTS the colours.
-    def picture(key):
+    def picture(key,into=None):
         row=QHBoxLayout(); row.setSpacing(10)
         pic=QLabel(); pic.setObjectName('monitorWell'); pic.setFixedSize(120,92)
         pic.setAlignment(Qt.AlignmentFlag.AlignCenter)
         row.addWidget(pic); w.hand_pictures[key]=pic
         row.addStretch(1)
-        hand_l.addLayout(row)
+        (into if into is not None else hand_l).addLayout(row)
         return row
     w.hand_pictures={}
 
@@ -1931,11 +1942,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
         return box
 
     # 1. The drawing hand: one label column, like the Animation panel.
-    hand_l.addWidget(label('1 · DRAWING HAND (the lines)'))
-    picture('draw')
+    from ui_sections import Section
+    w.section_draw_hand=Section('Drawing hand',expanded=True,tip='The hand that draws the lines.')
+    hand_l.addWidget(w.section_draw_hand)
+    picture('draw',w.section_draw_hand.body)
     w.hand_name=caption('Hand: none')
-    hand_l.addWidget(w.hand_name)
-    h=form_layout();hand_l.addLayout(h)
+    w.section_draw_hand.body.addWidget(w.hand_name)
+    h=form_layout();w.section_draw_hand.body.addLayout(h)
     w.hand_size_pct=QSpinBox();w.hand_size_pct.setRange(2,80);w.hand_size_pct.setSuffix('%')
     w.hand_size_pct.setToolTip('Size of the drawing hand.')
     h.addRow('Size',w.hand_size_pct)
@@ -1955,6 +1968,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.showhand=QCheckBox('Show while drawing')
     w.showhand.setToolTip('Show the hand while it draws the lines.')
     w.showhand.setChecked(True);h.addRow('',w.showhand)
+    h.setRowVisible(w.showhand,False)            # the switch on the section header
     # Right or left hand: a small two-way switch. The (hidden) check box keeps the
     # value for projects, undo and the element editor.
     w.left_handed=QCheckBox('Left-handed',hand);w.left_handed.hide()
@@ -1981,10 +1995,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.pick_tip_button.clicked.connect(lambda checked=False: w.pick_pen_tip())
     h.addRow('Pen tip',pair(w.find_tip_button,w.pick_tip_button))
     # 2. The painting hand.
-    hand_l.addWidget(label('2 · PAINTING HAND (the colours)'))
-    picture('paint')
+    w.section_paint_hand=Section('Painting hand',tip='The hand that paints the colours.')
+    hand_l.addWidget(w.section_paint_hand)
+    picture('paint',w.section_paint_hand.body)
     from tools_kit import PAINT_CHOICES
-    ph=form_layout();hand_l.addLayout(ph)
+    ph=form_layout();w.section_paint_hand.body.addLayout(ph)
     w.paint_hand=QComboBox()
     w.paint_hand.addItems(list(PAINT_CHOICES))
     w.paint_hand.setToolTip('The same hand paints the colours (default), or it switches to the built-in '
@@ -2004,15 +2019,17 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.show_paint_hand=QCheckBox('Show while painting')
     w.show_paint_hand.setToolTip('Show the hand while it paints the colours.')
     w.show_paint_hand.setChecked(True);ph.addRow('',w.show_paint_hand)
+    ph.setRowVisible(w.show_paint_hand,False)    # the switch on the section header
     w.paint_left_handed=QCheckBox('Left-handed',hand);w.paint_left_handed.hide()
     w.paint_left_handed_toggle=side_toggle(w.paint_left_handed,
         'Right-handed or left-handed painting hand. With "Same as drawing hand" it follows '
         'the drawing hand.')
     ph.addRow('Hand',w.paint_left_handed_toggle)
     # 3. The move-in hand: carries the picture in on the Slide effects (Animation > Comes in).
-    hand_l.addWidget(label('3 · MOVE-IN HAND (slides the picture in)'))
-    picture('move')
-    mh=form_layout();hand_l.addLayout(mh)
+    w.section_move_hand=Section('Move-in hand',tip='The hand that carries the picture in on the Slide effects.')
+    hand_l.addWidget(w.section_move_hand)
+    picture('move',w.section_move_hand.body)
+    mh=form_layout();w.section_move_hand.body.addLayout(mh)
     w.move_hand_name=caption('Hand: built-in (placeholder)')
     mh.addRow('',w.move_hand_name)
     w.move_hand_size=w.number(5,90,35,1);w.move_hand_size.setDecimals(0)
@@ -2037,6 +2054,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.move_hand.setToolTip('A hand carries the picture in when it slides in (Animation > Comes in: '
                            'Slide in from …), lets go, and leaves the way it came.')
     w.move_hand.setChecked(True);mh.addRow('',w.move_hand)
+    mh.setRowVisible(w.move_hand,False)          # the switch on the section header
+    w.section_draw_hand.attach_switch(w.showhand,'Show the hand while it draws the lines.')
+    w.section_paint_hand.attach_switch(w.show_paint_hand,'Show the hand while it paints the colours.')
+    w.section_move_hand.attach_switch(w.move_hand,'A hand carries the picture in on the Slide effects.')
     hand_l.addStretch(1)
     tabs.addTab(scroll_view(hand),'Hand')
 
@@ -2379,6 +2400,20 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.entrance.currentIndexChanged.connect(w.refresh)
     w.entrance.currentIndexChanged.connect(lambda index: w.update_entrance_controls())
     w.entrance_part.currentIndexChanged.connect(w.refresh)
+    w.entrance_part.currentIndexChanged.connect(lambda index: w.update_applicable())
+    w.use_color.toggled.connect(lambda checked: w.update_applicable())
+    w.preserve_colors.toggled.connect(lambda checked: w.update_applicable())
+    w.image_animation.currentIndexChanged.connect(lambda index: w.update_applicable())
+    w.erase_mode.currentIndexChanged.connect(lambda index: w.update_applicable())
+    def erase_switched(on):
+        if on:
+            if w.erase_mode.currentText()=='Off':
+                w.erase_mode.setCurrentText(getattr(w,'_last_erase',None) or 'Zigzag (follows the shapes)')
+            w.section_out.set_expanded(True)
+        elif w.erase_mode.currentText()!='Off':
+            w._last_erase=w.erase_mode.currentText()
+            w.erase_mode.setCurrentText('Off')
+    w.erase_on.toggled.connect(erase_switched)
     w.move_hand.toggled.connect(w.refresh)
     for widget in (w.move_hand_size,w.move_hand_gx,w.move_hand_gy):
         widget.valueChanged.connect(w.schedule_refresh)

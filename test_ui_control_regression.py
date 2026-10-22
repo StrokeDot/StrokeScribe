@@ -42,6 +42,9 @@ class VisibleControlRegression(unittest.TestCase):
                         tabs.setCurrentIndex(i)
                         APP.processEvents()
                     break
+        from ui_sections import reveal
+        reveal(combo)                      # open the panel section that holds it (exp.96)
+        APP.processEvents()
         parent = combo.parentWidget()
         while parent is not None and not isinstance(parent, QScrollArea):
             parent = parent.parentWidget()
@@ -58,7 +61,8 @@ class VisibleControlRegression(unittest.TestCase):
         print("VISIBLE_CONTROL_GEOMETRY %s width=%s height=%s visible=%s enabled=%s value=%r"
               % data, flush=True)
         self.assertTrue(widget.isVisible(), "Control was hidden: " + name)
-        self.assertTrue(widget.isEnabled(), "Control was disabled: " + name)
+        if not widget.toolTip().startswith('Not used now'):     # greyed out on purpose, with a reason
+            self.assertTrue(widget.isEnabled(), "Control was disabled: " + name)
         self.assertGreaterEqual(widget.width(), 84, "Control had no usable width: " + name)
         self.assertGreaterEqual(widget.height(), 20, "Control collapsed vertically: " + name)
         self.assertTrue(widget.currentText(), "Current value is invisible: " + name)

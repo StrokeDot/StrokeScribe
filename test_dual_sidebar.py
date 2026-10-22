@@ -288,6 +288,7 @@ class DualSidebarTests(unittest.TestCase):
         w.hand_size_pct.setValue(60)
         self.assertAlmostEqual(w.handsize.value(), .60)
         # Same as drawing hand: no separate (dead) size field.
+        w.section_paint_hand.set_expanded(True)          # open the Painting hand section
         w.paint_hand.setCurrentText(tools_kit.PAINT_SAME)
         w.update_paint_hand_label()
         APP.processEvents()
@@ -296,9 +297,8 @@ class DualSidebarTests(unittest.TestCase):
         w.update_paint_hand_label()
         APP.processEvents()
         self.assertTrue(w.paint_hand_size.isVisible())
-        for box in (w.showhand, w.show_paint_hand):    # really on screen
-            self.assertTrue(box.isVisible())
-            self.assertGreater(box.width(), 80, box.text())
+        for section in (w.section_draw_hand, w.section_paint_hand):   # on / off switch on each header
+            self.assertTrue(section.switch.isVisible())
         for toggle in (w.left_handed_toggle, w.paint_left_handed_toggle):   # Right | Left under each hand
             self.assertTrue(toggle.isVisible())
             self.assertGreater(toggle.width(), 80)

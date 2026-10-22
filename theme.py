@@ -140,9 +140,13 @@ QToolButton {{ background: {c['raised']}; color: {c['text']}; border: 1px solid 
 QToolButton:hover {{ background: {c['raised_hover']}; }}
 QFrame#iconRail {{ background: {c['panel']}; border: 0px; border-radius: 14px; }}
 QToolButton#railButton {{ background: transparent; color: {c['muted']}; border: 1px solid transparent;
-    border-radius: 10px; padding: 6px 0px; font-size: 10px; font-weight: 600; min-width: 50px; max-width: 50px; }}
+    border-radius: 8px; padding: 5px 0px; font-size: 9px; font-weight: 600; min-width: 46px; max-width: 46px; }}
 QToolButton#railButton:hover {{ background: {c['raised']}; color: {c['text']}; }}
-QToolButton#railButton:checked {{ background: {c['accent']}; border-color: {c['accent_hover']}; color: {c['accent_text']}; }}
+QToolButton#railButton:checked {{ background: {c['raised']}; border-color: transparent; color: {c['accent']}; }}
+QFrame#sectionHeader {{ background: transparent; border: 0px; border-bottom: 1px solid {c['border']}; border-radius: 0px; }}
+QFrame#sectionHeader:hover {{ background: {c['raised']}; }}
+QLabel#sectionHeaderTitle {{ color: {c['text']}; font-size: 12px; font-weight: 700; background: transparent; }}
+QWidget#sectionBody {{ background: transparent; }}
 QToolButton#panelClose {{ background: transparent; border: 0px; border-radius: 8px; padding: 4px; }}
 QToolButton#panelClose:hover {{ background: {c['raised']}; }}
 QLabel#panelIcon {{ background: transparent; }}
