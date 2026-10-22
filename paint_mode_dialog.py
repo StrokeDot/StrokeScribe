@@ -21,6 +21,12 @@ GROUPS = (
          'The same part-by-part route as Adaptive, with quick short up and down flicks of '
          'the brush along the way.'),
     )),
+    ('PAINTER — new: paints like a person', (
+        ('Painter — real parts, strokes follow the shape',
+         'Paints the picture the way a person would: the big parts first, then smaller '
+         'parts, details last. Each part is brushed around its own shape, from the edge '
+         'inwards. Tiny specks join the part next to them, so the hand does not hop around.'),
+    )),
     ('SWEEPS — across the whole picture', (
         ('Zigzag sweep',
          'The hand follows one route along the object, scribbling colour back and forth '

@@ -9,6 +9,12 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## New paint mode: Painter (v0.5.3-experimental.88)
+
+- **Painter — real parts, strokes follow the shape** paints the way a person would: the big parts first, then smaller parts, details last; each part is brushed around its own shape, from the edge inwards, instead of a straight back-and-forth scan. Tiny specks join the part next to them, so the hand does not hop around.
+- Parts come from the picture's colour areas for now; the AI part finder (Segment Anything) comes next and will give it real objects (a cushion, the band, a speaker).
+- All other paint modes are unchanged. Choose it in Paint mode (its own group in the picker).
+
 ## Paint mode picker; Right | Left under each hand (v0.5.3-experimental.87)
 
 - **Paint mode** opens a bigger window instead of a small list: the modes in groups (Adaptive Hand Painting and Adaptive — Short up/down together; the sweeps; Brush painting at the bottom), what each one does, and a live preview of the mode on the element you are editing. The modes themselves are unchanged.

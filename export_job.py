@@ -11,7 +11,8 @@ from pathlib import Path
 REVEAL_BY_TEXT = {'Brush painting': 'brush', 'Adaptive Hand Painting': 'adaptive',
                   'Zigzag sweep': 'zigzag', 'Top to bottom (rows)': 'rows',
                   'Left to right (columns)': 'columns',
-                  'Adaptive — Short up/down strokes': 'short_zigzag'}
+                  'Adaptive — Short up/down strokes': 'short_zigzag',
+                  'Painter — real parts, strokes follow the shape': 'painter'}
 MP4_BACKGROUNDS = ('white', 'dark', 'black')
 CAMERA_BY_TEXT = {'Off': 'off', 'Gentle zoom': 'gentle', 'Close-up zoom': 'close'}
 
@@ -89,7 +90,7 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
         options.update(final_image=image_source if not drawing_only and image_source is not None
                        and (s.get('preserve_colors', True) or paint_only) else None,
                        fade_duration=float(s.get('image_duration', 8)),
-                       reveal_mode=reveal if reveal in ('adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag') else 'adaptive',
+                       reveal_mode=reveal if reveal in ('adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag', 'painter') else 'adaptive',
                        duration=0. if paint_only else options['duration'])
     return options
 

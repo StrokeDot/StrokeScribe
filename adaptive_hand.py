@@ -452,6 +452,9 @@ def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
             from zigzag_paint import build_band_plan
             _CACHE[key]=build_band_plan(drawing,image,brush_width,stroke_spacing,
                                         across=method=='columns')
+        elif method=='painter':
+            from painter_paint import build_painter_plan
+            _CACHE[key]=build_painter_plan(drawing,image,brush_width,stroke_spacing)
         elif method=='short_zigzag':
             _CACHE[key]=build_plan(drawing,image,brush_width,stroke_spacing,
                                    short_vertical=True)
