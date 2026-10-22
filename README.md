@@ -21,6 +21,12 @@ A small local desktop tool for short SVG drawing overlays. Built from original a
 - **Move in**: an element that comes in with an effect has one *Move in* clip on the timeline. Moving in the whole picture has no painting or colour hold any more (only the move, then its pause); *Only the lines* is Move in + Paint.
 - **Pre-render** sits next to the play buttons under the preview.
 
+## Pre-render like Filmora (v0.5.3-experimental.97)
+
+- **Render bar over the timeline:** red where the preview is not ready yet, green where it is. Change something and only that part turns red.
+- **Pre-render** opens a window like Filmora's: *Creating the preview render for smooth playback*, the frame being made (for example 268 / 1160), the estimated time left, and Cancel. Only the red parts are made; it closes by itself when everything is green.
+- **The render is deleted when StrokeScribe closes**, so it takes no disk space. Tick *Keep the render after closing StrokeScribe* in the Pre-render window if you want it kept.
+
 ## Cleaner panels, Filmora-style; settings that cannot apply are greyed out (v0.5.3-experimental.96)
 
 - **Sections that open on click.** Animation: *Drawing* (open), *Colour & painting*, *Goes out at the end* (with an on/off switch). Hand: *Drawing hand* (open), *Painting hand*, *Move-in hand*, each with an on/off switch on its header instead of a "Show while…" box. Click a header to open or close it.
