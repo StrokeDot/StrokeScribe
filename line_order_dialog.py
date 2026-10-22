@@ -66,6 +66,7 @@ class LinePicture(QWidget):
         n = len(lines)
         limit = n if self.shown is None else self.shown
         colours = d.colour_order.isChecked()
+        p.setBrush(Qt.BrushStyle.NoBrush)
         for i, line in enumerate(lines[:limit]):
             if len(line) < 2 or i in d.selected:
                 continue
@@ -82,6 +83,7 @@ class LinePicture(QWidget):
             if i >= limit or i >= n or len(lines[i]) < 2:
                 continue
             line = lines[i]
+            p.setBrush(Qt.BrushStyle.NoBrush)              # a line, never a filled shape
             p.setPen(QPen(ACCENT, 4.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
             path = QPainterPath(QPointF(*line[0]))
             for pt in line[1:]:
@@ -164,7 +166,7 @@ class LineOrderDialog(QDialog):
         self.colour_order = QCheckBox('Colour by order (blue = first, red = last)')
         self.colour_order.setChecked(True); self.colour_order.toggled.connect(self.picture.update)
         view.addWidget(self.colour_order); view.addStretch(1)
-        self.play_button = QPushButton('▶ Play order')
+        self.play_button = QPushButton('Play order')
         self.play_button.setToolTip('Show the lines one by one in their drawing order. Click again to pause.')
         self.play_button.clicked.connect(lambda checked=False: self.toggle_play())
         view.addWidget(self.play_button)
@@ -313,16 +315,16 @@ class LineOrderDialog(QDialog):
     # ------------------------------------------------------------ play
     def toggle_play(self):
         if self.play_timer.isActive():
-            self.play_timer.stop(); self.play_button.setText('▶ Play order'); return
+            self.play_timer.stop(); self.play_button.setText('Play order'); return
         if self.picture.shown is None or self.picture.shown >= len(self.strokes):
             self.picture.shown = 0
-        self.play_button.setText('❚❚ Pause')
+        self.play_button.setText('Pause')
         self.play_timer.start()
 
     def play_step(self):
         self.picture.shown = (self.picture.shown or 0) + 1
         if self.picture.shown >= len(self.strokes):
-            self.play_timer.stop(); self.play_button.setText('▶ Play order'); self.picture.shown = None
+            self.play_timer.stop(); self.play_button.setText('Play order'); self.picture.shown = None
         self.picture.update()
 
     def done(self, result):
