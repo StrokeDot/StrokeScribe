@@ -81,6 +81,7 @@ class ElementDialog(QDialog):
         right.addWidget(_section('COMES IN'))
         f1 = QFormLayout(); f1.setSpacing(7); right.addLayout(f1)
         add(f1, 'How', self._combo(w.entrance), w.entrance)
+        add(f1, 'Moves in', self._combo(w.entrance_part), w.entrance_part)
         add(f1, 'Time (s)', self._number(w.duration), w.duration)
 
         right.addWidget(_section('COLOURS'))

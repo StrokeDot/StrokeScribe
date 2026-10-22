@@ -192,7 +192,14 @@ def track(drawing, options, total_seconds, rate=30.):
     count = max(2, int(math.ceil(total_seconds * rate)) + 1)
     pause = max(0., float(options.get('pause', 0) or 0))
     if (options.get('entrance') or 'draw') != 'draw':
-        return [((i / (count - 1)) * total_seconds, PenSample(None, None)) for i in range(count)]
+        import move_in
+        if move_in.part_of(options) != move_in.PART_LINES:
+            return [((i / (count - 1)) * total_seconds, PenSample(None, None)) for i in range(count)]
+        # Only the lines move in: no pen while they move, then the colours are painted as usual.
+        lines_end = max(.001, float(options.get('duration', 4) or 0))
+        plain = dict(options, entrance='draw')
+        return [(t, PenSample(None, None) if t < lines_end else s)
+                for t, s in track(drawing, plain, total_seconds, rate)]
     if pause <= 0:
         return [((i / (count - 1)) * total_seconds, pen_at(drawing, i / (count - 1), **options))
                 for i in range(count)]

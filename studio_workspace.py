@@ -1749,6 +1749,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.entrance.setToolTip('How this element appears: drawn by the hand, or with an effect (no hand) '
                           'during its animation time.')
     a.addRow('Comes in',w.entrance)
+    import move_in
+    w.entrance_part=QComboBox(); w.entrance_part.addItems(list(move_in.PARTS))
+    w.entrance_part.setToolTip('What comes in with the effect: the whole picture, or only the lines '
+                               '(then the painting hand paints the colours as usual).')
+    a.addRow('Moves in',w.entrance_part)
     w.pause_after=w.number(0,60,0,.5)
     w.pause_after.setToolTip('Seconds the finished element stays on screen before it goes out or the '
                              'camera moves on (works with or without colours).')
@@ -1953,8 +1958,36 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.show_paint_hand=QCheckBox('Show while painting')
     w.show_paint_hand.setToolTip('Show the hand while it paints the colours.')
     w.show_paint_hand.setChecked(True);ph.addRow('',w.show_paint_hand)
-    # 3. Left hand.
-    hand_l.addWidget(label('3 · LEFT HAND'))
+    # 3. The move-in hand: carries the picture in on the Slide effects (Animation > Comes in).
+    hand_l.addWidget(label('3 · MOVE-IN HAND (slides the picture in)'))
+    picture('move')
+    mh=form_layout();hand_l.addLayout(mh)
+    w.move_hand_name=caption('Hand: built-in (placeholder)')
+    mh.addRow('',w.move_hand_name)
+    w.move_hand_size=w.number(5,90,35,1);w.move_hand_size.setDecimals(0)
+    w.move_hand_size.setSuffix('%')
+    w.move_hand_size.setToolTip('Width of the move-in hand, as a share of the video width.')
+    mh.addRow('Size',w.move_hand_size)
+    w.move_hand_choose=QPushButton('My PNG…')
+    w.move_hand_choose.setToolTip('Your own transparent PNG of a hand that holds the picture. '
+                                  'Draw it coming from below (arm down); it is turned for the other sides.')
+    w.move_hand_choose.clicked.connect(lambda checked=False: w.choose_move_hand())
+    w.move_hand_builtin=QPushButton('Built-in')
+    w.move_hand_builtin.setToolTip('Go back to the built-in hand.')
+    w.move_hand_builtin.clicked.connect(lambda checked=False: w.set_move_hand(None))
+    mh.addRow('Hand',pair(w.move_hand_choose,w.move_hand_builtin))
+    w.move_hand_gx=w.number(0,1,move_in.DEFAULT_GRIP[0],.005);w.move_hand_gx.setDecimals(3)
+    w.move_hand_gx.setToolTip('Where the hand holds the picture, across the hand image (0 = left, 1 = right).')
+    mh.addRow('Grip X',w.move_hand_gx)
+    w.move_hand_gy=w.number(0,1,move_in.DEFAULT_GRIP[1],.005);w.move_hand_gy.setDecimals(3)
+    w.move_hand_gy.setToolTip('Where the hand holds the picture, down the hand image (0 = top, 1 = bottom).')
+    mh.addRow('Grip Y',w.move_hand_gy)
+    w.move_hand=QCheckBox('Show while moving in')
+    w.move_hand.setToolTip('A hand carries the picture in when it slides in (Animation > Comes in: '
+                           'Slide in from …), lets go, and leaves the way it came.')
+    w.move_hand.setChecked(True);mh.addRow('',w.move_hand)
+    # 4. Left hand.
+    hand_l.addWidget(label('4 · LEFT HAND'))
     lh=form_layout();hand_l.addLayout(lh)
     w.left_handed=QCheckBox('Left-handed')
     w.left_handed.setToolTip('Mirrors the drawing hand, the painting brush and the eraser, for left-handers.')
@@ -2302,6 +2335,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.showhand.toggled.connect(w.refresh)
     w.left_handed.toggled.connect(w.refresh)
     w.entrance.currentIndexChanged.connect(w.refresh)
+    w.entrance.currentIndexChanged.connect(lambda index: w.update_entrance_controls())
+    w.entrance_part.currentIndexChanged.connect(w.refresh)
+    w.move_hand.toggled.connect(w.refresh)
+    for widget in (w.move_hand_size,w.move_hand_gx,w.move_hand_gy):
+        widget.valueChanged.connect(w.schedule_refresh)
     w.pause_after.valueChanged.connect(w.refresh)
     w.res.currentIndexChanged.connect(w.refresh)
     w.use_color.toggled.connect(w.refresh)
@@ -2324,6 +2362,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.paint_hand.activated.connect(lambda index: w.paint_hand_changed())
     w.paint_hand_size.valueChanged.connect(w.refresh)
     w.update_paint_hand_label()          # Size shows only for a different painting hand
+    w.update_move_hand_label()
     w.camera.currentIndexChanged.connect(w.refresh)
     w.pen_ease.currentIndexChanged.connect(w.refresh)
     w.erase_mode.currentIndexChanged.connect(w.prepare_eraser)

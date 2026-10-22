@@ -194,7 +194,9 @@ def soundtrack(drawing, options, path, volume=.8):
     files = options.get('sound_files') or ()
     recordings = {kind: load_recording(p) for kind, p in zip(SOUND_KINDS, files) if p}
     if (options.get('entrance') or 'draw') != 'draw':        # comes in with an effect: no pencil / brush
-        recordings = {k: v for k, v in recordings.items() if k not in ('draw', 'paint')}
+        import move_in
+        quiet = ('draw',) if move_in.part_of(options) == move_in.PART_LINES else ('draw', 'paint')
+        recordings = {k: v for k, v in recordings.items() if k not in quiet}
     erase = options.get('erase') or {}
     from frame_render import EXITS
     if erase.get('mode') in EXITS:                             # goes out with an effect: no eraser sound

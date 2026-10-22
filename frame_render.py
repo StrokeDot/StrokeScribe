@@ -178,19 +178,26 @@ EXITS = {'fade': 'Fade', 'pop': 'Pop', 'zoom': 'Zoom', 'spin': 'Spin', 'out-left
 _FINISHED = {}
 
 
-def finished_picture(drawing, opts):
-    """The finished element (no hand, no overlays, in place), cached."""
-    clean = {k: v for k, v in opts.items() if k not in ('overlays', '_seconds', 'erase')}
+def finished_picture(drawing, opts, lines_only=False):
+    """The finished element (no hand, no overlays, in place), cached.
+
+    lines_only: the lines drawn but no colours yet (Comes in: only the lines)."""
+    clean = {k: v for k, v in opts.items() if k not in ('overlays', '_seconds', 'erase', 'move_hand',
+                                                        'move_hand_grip', 'move_hand_size', 'entrance_part')}
     clean.update(offset=(0., 0.), ghost=0, pause=0, entrance='draw')
     layers = clean.get('layers', 'all')
     clean['layers'] = 'hand' if layers == 'hand' else 'art'
-    key = _erase_key(drawing, clean, {'mode': 'finished', 'size': 0})
+    key = _erase_key(drawing, clean, {'mode': 'lines' if lines_only else 'finished', 'size': 0})
     if key in _FINISHED:
         _FINISHED[key] = _FINISHED.pop(key)          # most recently used last
         return _FINISHED[key]
     while len(_FINISHED) >= 24:                       # several elements at several sizes
         _FINISHED.pop(next(iter(_FINISHED)))
-    _FINISHED[key] = _core(drawing, 1., clean)
+    fraction = 1.
+    if lines_only:
+        plain = timeline_seconds(drawing, clean)
+        fraction = min(1., max(.001, float(clean.get('duration', 4))) / max(.001, plain))
+    _FINISHED[key] = _core(drawing, fraction, clean)
     return _FINISHED[key]
 
 
@@ -218,19 +225,42 @@ def effect_frame(image, kind, p):
     return out
 
 
-def _entering(drawing, fraction, opts, kind):
-    """The element comes in with an effect during its animation time, then stays."""
+def _entering(drawing, fraction, opts, kind, lines_only=False):
+    """The element comes in with an effect during its animation time, then stays.
+
+    On the Slide effects a move-in hand can carry it in (move_in.py)."""
+    import move_in
     plain = timeline_seconds(drawing, dict(opts, pause=0))
     length = float(opts.get('duration', 4) or 0) or float(opts.get('fade_duration', .4) or .4)
-    p = fraction * plain / max(.05, length)
-    finished = finished_picture(drawing, opts)
-    frame = effect_frame(finished, kind, min(1., p))
-    frame = shift(frame, *offset_of(opts))
-    items = opts.get('overlays') if opts.get('layers', 'all') != 'hand' else None
+    p = min(1., fraction * plain / max(.05, length))
+    side = move_in.carried(opts, kind)
+    pp = move_in.picture_progress(p, side)
+    layers = opts.get('layers', 'all')
+    art = finished_picture(drawing, dict(opts, layers='art'), lines_only)
+    frame = effect_frame(art, kind, pp)
+    if layers == 'hand':            # Hand only: nothing of the picture (a faint copy in the preview)
+        ghost = float(opts.get('ghost', 0) or 0)
+        frame = _ghosted(frame, _blank(frame), ghost) if ghost > 0 else _blank(frame)
+    dx, dy = offset_of(opts)
+    frame = shift(frame, dx, dy)
+    items = opts.get('overlays') if layers != 'hand' else None
     if items and opts.get('_seconds') is not None:
         import overlays
         overlays.paint(frame, items, opts['_seconds'])
+    if side is not None and p < 1:
+        import overlays
+        _, ex, ey, _, _ = overlays._effect(kind, pp)
+        point = move_in.hand_position(move_in.alpha_box(art), side, p, (ex + dx, ey + dy))
+        if frame is art:
+            frame = art.copy()
+        move_in.draw_hand(frame, opts['move_hand'], opts.get('move_hand_grip') or move_in.DEFAULT_GRIP,
+                          float(opts.get('move_hand_size', .35)), point, side)
     return frame
+
+
+def _lines_part(opts):
+    import move_in
+    return move_in.part_of(opts) == move_in.PART_LINES
 
 
 def _compose_raw_frame(drawing, fraction, options, camera_path=None):
@@ -247,8 +277,12 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
             plain = whole - pause
             base_fraction = min(1., base_fraction * whole / plain) if plain > 0 else 1.
         entrance = opts.get('entrance') or 'draw'
-        if entrance != 'draw':
-            frame = _entering(drawing, base_fraction, opts, entrance)
+        lines_only = entrance != 'draw' and _lines_part(opts)
+        if lines_only and base_fraction * timeline_seconds(drawing, dict(opts, pause=0)) >= \
+                float(opts.get('duration', 4) or 0):
+            frame = _core(drawing, base_fraction, opts, camera_path)    # the colours are painted
+        elif entrance != 'draw':
+            frame = _entering(drawing, base_fraction, opts, entrance, lines_only)
         else:
             frame = _core(drawing, base_fraction, opts, camera_path)
     elif erase.get('mode') in EXITS:

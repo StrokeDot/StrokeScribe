@@ -9,6 +9,12 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Move in: only the lines, and a hand that carries the picture (v0.5.3-experimental.84)
+
+- **Moves in** (Animation, under *Comes in*): *The whole picture* (as before), or *Only the lines, then paint the colours*. The lines come in with the effect, then the painting hand paints the colours as usual, with its brush sound.
+- **Move-in hand** (Hand tab, section 3): on *Slide in from …* a hand holds the edge the picture comes from, carries it to its place, lets go and leaves the way it came. Turn it off with *Show while moving in*. The hand is a placeholder (the built-in hand) until you choose your own with *My PNG…*. Draw it coming from below (arm down); it is turned for the other sides. *Grip X / Y* says where the hand holds the picture.
+- Older projects keep their slides without a hand.
+
 ## Segment pre-render; smooth Opacity and Blend (v0.5.3-experimental.83)
 
 - **Only what you change is made again.** The preview keeps its ready-made frames per element (counted from the element's own start) and per camera move. Editing one element, or making it longer, no longer throws away the frames of the others. Before, any change discarded every ready frame of the whole video.
