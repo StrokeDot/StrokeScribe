@@ -296,10 +296,12 @@ class DualSidebarTests(unittest.TestCase):
         w.update_paint_hand_label()
         APP.processEvents()
         self.assertTrue(w.paint_hand_size.isVisible())
-        self.assertEqual(w.left_handed.text(), 'Left-handed')
-        for box in (w.showhand, w.show_paint_hand, w.left_handed):    # really on screen
+        for box in (w.showhand, w.show_paint_hand):    # really on screen
             self.assertTrue(box.isVisible())
             self.assertGreater(box.width(), 80, box.text())
+        for toggle in (w.left_handed_toggle, w.paint_left_handed_toggle):   # Right | Left under each hand
+            self.assertTrue(toggle.isVisible())
+            self.assertGreater(toggle.width(), 80)
 
     def test_panels_start_retracted_for_people(self):
         import os

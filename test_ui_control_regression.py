@@ -135,8 +135,9 @@ class VisibleControlRegression(unittest.TestCase):
     def test_popup_items_are_clickable_and_change_value(self):
         w = self.w
         w.source_type.setCurrentIndex(1)
+        # Paint mode opens its own picker window instead (test_paint_mode_picker).
         for name in ("image_animation_style", "image_style", "image_detail",
-                     "reveal_mode", "pen_ease"):
+                     "pen_ease"):
             combo = getattr(w, name)
             self._assert_control(name)
             old = combo.currentIndex()

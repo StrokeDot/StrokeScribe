@@ -9,6 +9,11 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Paint mode picker; Right | Left under each hand (v0.5.3-experimental.87)
+
+- **Paint mode** opens a bigger window instead of a small list: the modes in groups (Adaptive Hand Painting and Adaptive — Short up/down together; the sweeps; Brush painting at the bottom), what each one does, and a live preview of the mode on the element you are editing. The modes themselves are unchanged.
+- **Hand tab:** a small *Right | Left* switch under the drawing hand and another under the painting hand (the separate "Left hand" section is gone). With *Same as drawing hand* the painting switch follows the drawing hand. Older projects keep their single setting for both hands.
+
 ## Whole video and export: colours sit on the lines again (v0.5.3-experimental.86)
 
 - An SVG element whose colour PNG has transparent margins (the TV) looked right when editing the element but wrong in the whole video and the export: the colours were smaller and shifted against the lines. The element view cleans the colour picture and crops it to its content before fitting it to the lines; the whole video and the export used the picture uncropped. Now all three use the very same prepared picture.
