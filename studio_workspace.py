@@ -2495,10 +2495,20 @@ def build_workspace(w, Canvas, BRAND_ICON):
         lambda: None if isinstance(QApplication.focusWidget(),(QPlainTextEdit,QComboBox)) else w.toggle())
     w.undo_shortcut=QShortcut(QKeySequence(QKeySequence.StandardKey.Undo),w)
     w.undo_shortcut.activated.connect(lambda: w.undo())
+    # Redo: Ctrl+Y and Ctrl+Shift+Z, ONE shortcut per key. On Windows the standard Redo
+    # key is Ctrl+Y too; two shortcuts on the same key are "ambiguous" and neither ran.
     w.redo_shortcuts=[]
-    for keys in (QKeySequence(QKeySequence.StandardKey.Redo),QKeySequence('Ctrl+Y')):
+    seen=set()
+    for keys in QKeySequence.keyBindings(QKeySequence.StandardKey.Redo)+[QKeySequence('Ctrl+Y'),
+                                                                         QKeySequence('Ctrl+Shift+Z')]:
+        text=keys.toString()
+        if not text or text in seen: continue
+        seen.add(text)
         shortcut=QShortcut(keys,w); shortcut.activated.connect(lambda: w.redo())
         w.redo_shortcuts.append(shortcut)
+    # Ctrl+Z / Ctrl+Y in a number box or a list undo the program, not just the typing.
+    w.undo_keys=UndoKeys(w)
+    QApplication.instance().installEventFilter(w.undo_keys)
     w.delete_shortcuts=[]
     for target in (w.canvas,w.order):
         shortcut=QShortcut(QKeySequence(QKeySequence.StandardKey.Delete),target)
@@ -2552,3 +2562,39 @@ def side_toggle(box, tip):
     holder.sync=sync;holder.buttons=buttons
     sync()
     return holder
+
+
+class UndoKeys(QObject):
+    """Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z go to the program's undo even when a number box,
+    a slider, a list or a dropdown has the keyboard. Only real text fields (writing a
+    title, the handwriting text) keep their own typing undo."""
+
+    def __init__(self, window):
+        super().__init__(window)
+        self.window = window
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent
+        from PySide6.QtGui import QKeySequence
+        if event.type() not in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
+            return False
+        if not isinstance(obj, QWidget) or obj.window() is not self.window:
+            return False
+        undo = event.matches(QKeySequence.StandardKey.Undo)
+        redo = (event.matches(QKeySequence.StandardKey.Redo) or
+                (event.key() == Qt.Key.Key_Y and event.modifiers() == Qt.KeyboardModifier.ControlModifier) or
+                (event.key() == Qt.Key.Key_Z and event.modifiers() ==
+                 (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)))
+        if not (undo or redo):
+            return False
+        from PySide6.QtWidgets import QLineEdit, QPlainTextEdit, QTextEdit
+        box = obj
+        if isinstance(obj, QLineEdit) and isinstance(obj.parent(), (QAbstractSpinBox, QComboBox)):
+            box = obj.parent()                           # the text inside a number box
+        if isinstance(box, (QPlainTextEdit, QTextEdit)) or (isinstance(box, QLineEdit) and box is obj):
+            return False                                 # a real text field: its own typing undo
+        if event.type() == QEvent.Type.ShortcutOverride:
+            event.accept()                               # the key comes to us as a key press
+            return True
+        (self.window.undo if undo else self.window.redo)()
+        return True

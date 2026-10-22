@@ -221,7 +221,9 @@ class ArtworkWorkflow:
                         self.artwork_size.setValue(55.);self.picture_x.setValue(-22.);self.picture_y.setValue(0.)
                         self.store_scene(thumbnail=False)
                         spot=self.free_spot(self.page_occupancy(members))
+                self.record_structure('add element')
                 self._leave_scene()
+                self._stash_history()
                 from scenes import DEFAULT_TRANSITION,DEFAULT_TRANSITION_SECONDS
                 scene=dict(state=None,transition=DEFAULT_TRANSITION,
                            transition_seconds=DEFAULT_TRANSITION_SECONDS,name=ctx['name'],thumb=None)

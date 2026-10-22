@@ -448,6 +448,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from history import History
         from project_lifecycle import ProjectChangeTracker
         self.history=History()
+        self.project_undo=[];self.project_redo=[]     # element list changes (see record_structure)
         self.project_changes=ProjectChangeTracker()
         self._autosaved_signature=None
         self._closed=False
@@ -717,12 +718,22 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.project_menu.setToolTip('Current artwork: '+self.project_title)
 
     # ------------------------------------------------ undo / redo (everything)
+    def next_seq(self):
+        """A number that grows with every recorded change (orders element and project undo)."""
+        self._undo_seq=getattr(self,'_undo_seq',0)+1
+        return self._undo_seq
+
     def snapshot(self):
         import json
+        from history import EXTRA_NAMES
+        d=self.drawing
+        extras={n:getattr(d,n) for n in EXTRA_NAMES if d is not None and hasattr(d,n)}
         return {'settings':self.settings_state(),
                 'strokes':tuple(self.drawing.strokes) if self.drawing else (),
                 'overlays':json.dumps(getattr(self,'overlays',[])),
-                'source':self.source_snapshot()}
+                'source':self.source_snapshot(),
+                'extras':extras,
+                'seq':self.next_seq()}
 
     def reset_history(self):
         if hasattr(self,'history_timer'): self.history_timer.stop()
@@ -740,7 +751,54 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.history_timer.stop()
         if self.history.record(self.snapshot()):
             self.project_changes.mark_changed()
+            self.project_redo.clear()                # a new change: nothing to redo any more
         self.update_history_controls()
+
+    # ---------------------------------------------- project undo (elements added, deleted, moved)
+    def structure_copy(self):
+        """The element list as it is now, with the element being edited saved into it."""
+        scenes=[dict(s) for s in self.scenes]
+        if self.drawing is not None and 0<=self.scene_index<len(scenes):
+            if self.history_timer.isActive(): self.commit_history()
+            scenes[self.scene_index]['state']=self.scene_state()
+            scenes[self.scene_index]['history']=self.history
+        return scenes,self.scene_index
+
+    def record_structure(self,label):
+        """Remember the element list before a change to it (add, delete, move, transition)."""
+        if self._restoring or not getattr(self,'drawing',None): return
+        scenes,index=self.structure_copy()
+        self.project_undo.append((self.next_seq(),scenes,index,label))
+        del self.project_undo[:-30]
+        self.project_redo.clear(); self.history.redo_stack.clear()
+        self.update_history_controls()
+
+    def restore_structure(self,scenes,index):
+        from history import History
+        self.playing=False
+        self.scenes=[dict(s) for s in scenes]
+        self._scene_cache={}; self._base_cache=OrderedDict()
+        self.scene_index=-1
+        self.history=History()
+        self._enter_scene(index)
+        self.fill_scenes(); self.refresh()
+
+    def _project_step(self,from_stack,to_stack,verb):
+        seq,scenes,index,label=from_stack.pop()
+        here,here_index=self.structure_copy()
+        to_stack.append((seq,here,here_index,label))
+        self.restore_structure(scenes,index)
+        self.project_changes.mark_changed()
+        self.status.setText(f'{verb}: {label}')
+        self.update_history_controls()
+
+    def _stash_history(self):
+        """Leaving an element: its undo history stays with it (it comes back with it)."""
+        from history import History
+        if 0<=self.scene_index<len(self.scenes):
+            if self.history_timer.isActive(): self.commit_history()
+            self.scenes[self.scene_index]['history']=self.history
+        self.history=History()
 
     def watch_settings(self):
         """Every setting control feeds the undo history."""
@@ -755,16 +813,46 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             elif isinstance(widget,QAbstractButton): widget.toggled.connect(self.note_change)
 
     def update_history_controls(self):
-        self.undo_button.setEnabled(self.history.can_undo())
-        self.redo_button.setEnabled(self.history.can_redo())
+        self.undo_button.setEnabled(self.history.can_undo() or bool(self.project_undo))
+        self.redo_button.setEnabled(self.history.can_redo() or bool(self.project_redo))
+
+    def _setting_names(self,names):
+        from projects import widget_value  # noqa: F401
+        pretty=[]
+        for n in names[:3]:
+            if n in ('seq',): continue
+            pretty.append(n.replace('_',' ').replace('picture x','position X').replace('picture y','position Y'))
+        more=len(names)-3
+        return ', '.join(pretty)+(f' and {more} more' if more>0 else '')
 
     def undo(self):
+        """Undo the latest change: of this element, or to the element list (whichever came last)."""
         if self.history_timer.isActive(): self.commit_history()
+        element=self.history.current.get('seq',0) if self.history.can_undo() and self.history.current else -1
+        project=self.project_undo[-1][0] if self.project_undo else -1
+        if element<0 and project<0:
+            self.status.setText('Nothing to undo.'); return
+        if project>element:
+            self._project_step(self.project_undo,self.project_redo,'Undone'); return
+        from history import changed_settings
+        before=self.history.current
         self.restore(self.history.undo())
+        names=changed_settings(before,self.history.current)
+        self.status.setText('Undone'+(f': {self._setting_names(names)}' if names else '')+'  •  Ctrl+Y redoes it')
 
     def redo(self):
         if self.history_timer.isActive(): self.commit_history()
+        element=self.history.redo_stack[-1].get('seq',0) if self.history.can_redo() else -1
+        project=self.project_redo[-1][0] if self.project_redo else -1
+        if element<0 and project<0:
+            self.status.setText('Nothing to redo.'); return
+        if project>element:
+            self._project_step(self.project_redo,self.project_undo,'Redone'); return
+        from history import changed_settings
+        before=self.history.current
         self.restore(self.history.redo())
+        names=changed_settings(before,self.history.current)
+        self.status.setText('Redone'+(f': {self._setting_names(names)}' if names else ''))
 
     # Older names (stroke order only) kept for compatibility.
     def undo_stroke_order(self): self.undo()
@@ -814,6 +902,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 selected=set(id(s) for s in self.selected_strokes())
                 self.drawing.strokes=list(snapshot['strokes'])
                 self.fill_order(keep=selected)
+            if self.drawing is not None and 'extras' in snapshot:
+                from history import EXTRA_NAMES
+                extras=snapshot['extras'] or {}
+                for name in EXTRA_NAMES:
+                    if name in extras: setattr(self.drawing,name,extras[name])
+                    elif hasattr(self.drawing,name): delattr(self.drawing,name)
+                self.update_painter_parts()
         finally:
             self._restoring=False
         self.update_history_controls()
@@ -1494,6 +1589,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if k==index: scene['state']=None          # lives in the editor
         self.scenes=scene_list; self.scene_index=index
         self._scene_cache={}
+        if not self._restoring:
+            self.project_undo=[];self.project_redo=[]   # another project: nothing of this one to undo
         self.apply_scene_state(main)
         self.fill_scenes()
 
@@ -1732,6 +1829,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self._entering_scene=False
         applog.info('Editing element %d of %d',k+1,len(self.scenes))
         self.scenes[k]['state']=None              # lives in the editor now
+        saved=self.scenes[k].pop('history',None)   # its own undo history, kept while it was not edited
+        if saved is not None:
+            self.history=saved
+            self.update_history_controls()
         self._scene_cache={key:v for key,v in self._scene_cache.items()
                            if any(id(s['state'])==key for s in self.scenes)}
         self.fill_scenes()
@@ -1743,6 +1844,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.fill_scenes(); return
         self.playing=False
         self._leave_scene()
+        self._stash_history()
         self._enter_scene(row)
         if self.all_scenes():
             # Whole video: the playhead jumps to where this element ends (finished).
@@ -1762,7 +1864,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import copy, applog
         applog.info('Adding a scene after scene %d',self.scene_index+1)
         self.playing=False
+        self.record_structure('add element')
         self._leave_scene()
+        self._stash_history()
         current=self.scenes[self.scene_index]
         new=dict(state=copy.deepcopy(current['state']),transition=current['transition'],
                  transition_seconds=current['transition_seconds'],name=f'Element {len(self.scenes)+1}',
@@ -1927,7 +2031,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.status.setText('This page is full, so the new picture goes on a new page: the camera moves there. '
                                 'Make pictures smaller (Artwork size) to fit more on one page.')
             return False
+        self.record_structure('add picture on the same page')
         self._leave_scene()
+        self._stash_history()
         current=self.scenes[self.scene_index]
         state=copy.deepcopy(current['state'])
         settings=state.setdefault('settings',{})
@@ -1949,6 +2055,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             f'Delete element {self.scene_index+1} ({self.scene_label(self.scene_index)})?')
         if answer!=QMessageBox.StandardButton.Yes: return
         self.playing=False
+        self.record_structure(f'delete element {self.scene_index+1}')
         removed=self.scene_index
         import applog
         applog.info('Deleting scene %d of %d',removed+1,len(self.scenes))
@@ -1960,12 +2067,19 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def move_scene(self,direction):
         k=self.scene_index; j=k+direction
         if not 0<=j<len(self.scenes): return
+        self.record_structure('move element')
         self.scenes[k],self.scenes[j]=self.scenes[j],self.scenes[k]
         self.scene_index=j
         self.fill_scenes(); self.refresh()
 
     def scene_transition_changed(self):
         scene=self.scenes[self.scene_index]
+        if (scene['transition'],scene['transition_seconds'])!=(self.scene_transition.currentText(),
+                                                               self.scene_transition_time.value()):
+            last=self.project_undo[-1] if self.project_undo else None
+            # One undo step while the time is being changed, not one per arrow click.
+            if not (last and last[3]=='transition' and self._undo_seq-last[0]<=1):
+                self.record_structure('transition')
         scene['transition']=self.scene_transition.currentText()
         scene['transition_seconds']=self.scene_transition_time.value()
         last=self.scene_index==len(self.scenes)-1

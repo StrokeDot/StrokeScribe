@@ -9,6 +9,22 @@ from __future__ import annotations
 import copy
 
 
+def extras_key(extras):
+    """What matters of the drawing's extras (painting order, AI parts) for 'did it change'."""
+    if not extras:
+        return None
+    return (tuple(extras.get('paint_part_order') or ()), extras.get('ai_parts_digest'))
+
+
+EXTRA_NAMES = ('paint_part_order', 'ai_parts_image', 'ai_parts_digest', 'ai_parts_count')
+
+
+def changed_settings(before, after):
+    """Names of the settings that differ between two snapshots (for 'Undid: …')."""
+    a, b = (before or {}).get('settings', {}), (after or {}).get('settings', {})
+    return [k for k in sorted(set(a) | set(b)) if a.get(k) != b.get(k)]
+
+
 class History:
     def __init__(self, limit=100):
         self.limit = limit
@@ -22,7 +38,8 @@ class History:
         return (a['settings'] == b['settings'] and len(a['strokes']) == len(b['strokes'])
                 and all(x is y for x, y in zip(a['strokes'], b['strokes']))
                 and a.get('overlays') == b.get('overlays')
-                and a.get('source') is b.get('source'))
+                and a.get('source') is b.get('source')
+                and extras_key(a.get('extras')) == extras_key(b.get('extras')))
 
     def reset(self, snapshot):
         self.undo_stack.clear(); self.redo_stack.clear()
