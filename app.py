@@ -3627,7 +3627,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 or view['token']!=self._view_token()):
             return
         if QApplication.mouseButtons()!=Qt.MouseButton.NoButton:
-            self.prerender_timer.start(200); return     # the user is dragging something
+            # The user is dragging something: wait. A button "held" for more than 5 s
+            # without any change is a stale state (it happens after a double-click that
+            # opens a window), so pre-render goes on instead of waiting forever.
+            self._held_checks=getattr(self,'_held_checks',0)+1
+            if self._held_checks<25:
+                self.prerender_timer.start(200); return
+        else:
+            self._held_checks=0
         index,count=self.frame_index(self.position)
         if not self._prerender_all and self.segment_cache.memory_full(
                 self.PREVIEW_WIDTH*round(self.PREVIEW_WIDTH*view['ratio'])*4):
