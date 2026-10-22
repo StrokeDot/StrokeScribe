@@ -199,6 +199,11 @@ class StageTimeline(QFrame):
                         'Drop a sound or music file on the lower row; drag it to move it.')
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
+    def set_render_state(self, runs, count, fps):
+        """Preview frames ready or not: [(first frame, last frame, ready)] (see Window.render_runs)."""
+        self.render_runs=list(runs); self.render_count=int(count); self.render_fps=float(fps) or 30.
+        self.update()
+
     def update_state(self, draw, paint, hold, progress, erase=0., first='Draw'):
         self.first_label=first              # 'Move in' when the element comes in with an effect
         self.draw_seconds=max(0.,float(draw))
@@ -409,6 +414,17 @@ class StageTimeline(QFrame):
                            f'{t:.0f}s' if major>=1 else f'{t:.1f}s')
         p.setPen(QPen(QColor(c['border']),1))
         p.drawLine(QPointF(left,ruler_h+.5),QPointF(left+width,ruler_h+.5))
+        # Render bar under the ruler: red = preview frames not ready yet, green = ready.
+        runs=getattr(self,'render_runs',None)
+        if runs and getattr(self,'render_count',0):
+            fps=getattr(self,'render_fps',30.)
+            p.setPen(Qt.PenStyle.NoPen)
+            for first,last,ready in runs:
+                x0=self._x(first/fps); x1=self._x((last+1)/fps)
+                x0=max(left,min(left+width,x0)); x1=max(left,min(left+width,x1))
+                if x1<=x0: continue
+                p.setBrush(QColor('#3BBF7A') if ready else QColor('#E5484D'))
+                p.drawRect(QRectF(x0,ruler_h-3,x1-x0,3))
         # Clips for each phase, like clips on an editor track.
         stages=[(getattr(self,'first_label','Draw'),self.draw_seconds,c['draw']),
                 ('Paint',self.paint_seconds,c['paint']),

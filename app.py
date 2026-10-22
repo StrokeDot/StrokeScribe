@@ -469,6 +469,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self._camera_key=None; self._camera_path=None
         from preview_cache import SegmentCache
         self.segment_cache=SegmentCache()        # ready-made preview frames, per segment
+        try:
+            from prerender_dialog import keep_render
+            if not keep_render():
+                self.segment_cache.clear_disk()      # a render left by a crash: not kept
+        except Exception:
+            pass
         self._frames=ReadyFrames(self); self._view=None
         self._fp_tokens={}; self._fp_counter=0
         self._prerender_all=False; self._prerender_next=0
@@ -3677,6 +3683,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self.status.setText('Preview could not be updated: '+str(exc)[:220]); return False
             self.show_whole_timeline(segments,lengths,joins,options)
             total=sum(lengths)+sum(joins)
+            self.schedule_render_bar()
             self._view=dict(all=True,length=total,ratio=ratio,token=self._view_token(),
                             lengths=list(lengths),joins=list(joins),width=width,height=height)
             return True
@@ -3698,6 +3705,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         # Pictures of earlier scenes in this frame stay on the board under it.
         page=self.drawn_over(self.scene_index) and options.get('layers')!='hand'
         if page: options['background']=False
+        self.schedule_render_bar()
         self._view=dict(all=False,options=options,page=page,ratio=ratio,length=self.timeline_length(),
                         token=self._view_token(),width=self.PREVIEW_WIDTH,
                         height=round(self.PREVIEW_WIDTH*ratio))
@@ -3768,6 +3776,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self._play_cost=spent if not cost else .7*cost+.3*spent*self.PREVIEW_WIDTH/width
         if width==self.PREVIEW_WIDTH:
             self.segment_cache.put(segment,local,width,frame)
+            self.schedule_render_bar()
         return frame
 
     def keep_frame(self,index,frame):
@@ -3825,6 +3834,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.segment_cache.put(segment,local,self.PREVIEW_WIDTH,frame,disk=self._prerender_all)
         if self._prerender_all:
             self.update_prerender_button()
+        else:
+            self.schedule_render_bar()
         self.prerender_timer.start(1)
 
     def ready_frames(self):
@@ -3848,19 +3859,66 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.playing=False
         if getattr(self,'_view',None) is None and not self.build_view(): return
         self._prerender_all=True; self._prerender_next=0
+        from prerender_dialog import PrerenderDialog
+        dialog=PrerenderDialog(self)
+        def closed(result):
+            if self._prerender_all:                  # Cancel (or closed): stop where it is
+                self._prerender_all=False
+                self.update_prerender_button()
+                self.status.setText('Pre-render stopped. The frames made so far stay ready (green on the timeline).')
+            self.prerender_dialog=None
+            dialog.deleteLater()
+        dialog.finished.connect(closed)
+        self.prerender_dialog=dialog
+        dialog.open()
         self.update_prerender_button()
         self.start_prerender()
 
     def update_prerender_button(self,done=False):
+        self.schedule_render_bar()
+        dialog=getattr(self,'prerender_dialog',None)
         button=getattr(self,'prerender_button',None)
         if button is None: return
         if self._prerender_all:
             total=self.frame_index(1.)[1]+1 if getattr(self,'_view',None) else 1
             percent=min(99,round(100*self._prerender_next/max(1,total)))
             button.setText(f'Stop pre-render ({percent}%)')
+            if dialog is not None: dialog.show_progress(self._prerender_next,total)
         else:
             button.setText('Pre-render')
-            if done: self.status.setText('Pre-render finished: the preview plays from ready-made frames.')
+            if done:
+                self.status.setText('Pre-render finished: the preview plays from ready-made frames.')
+                if dialog is not None: dialog.accept()
+
+    # ------------------------------------------------ render bar over the timeline
+    def schedule_render_bar(self):
+        """Red where preview frames are not ready, green where they are (like Filmora)."""
+        if not hasattr(self,'render_bar_timer'):
+            self.render_bar_timer=QTimer(self);self.render_bar_timer.setSingleShot(True)
+            self.render_bar_timer.setInterval(250)
+            self.render_bar_timer.timeout.connect(self.update_render_bar)
+        if not self.render_bar_timer.isActive(): self.render_bar_timer.start()
+
+    def render_runs(self):
+        """[(first frame, last frame, ready)] of the current preview, and the frame count."""
+        if getattr(self,'_view',None) is None: return [],0
+        count=self.frame_index(1.)[1]+1
+        runs=[]
+        for i in range(count):
+            segment,local,_,_,_=self.segment_at(i)
+            ready=self.segment_cache.has(segment,local,self.PREVIEW_WIDTH)
+            if runs and runs[-1][2]==ready: runs[-1][1]=i
+            else: runs.append([i,i,ready])
+        return [tuple(r) for r in runs],count
+
+    def update_render_bar(self):
+        timeline=getattr(self,'stage_timeline',None)
+        if timeline is None or not hasattr(timeline,'set_render_state'): return
+        try:
+            runs,count=self.render_runs()
+        except Exception:
+            runs,count=[],0
+        timeline.set_render_state(runs,count,self.PREVIEW_FPS)
 
     def scrub(self,value):
         self.position=value/1000
@@ -4079,6 +4137,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # leave the recovery timer active for the still-open project.
             self._closed=True
             self.autosave_timer.stop()
+            try:
+                from prerender_dialog import keep_render
+                if not keep_render(): self.segment_cache.clear_disk()   # no render left on disk
+            except Exception:
+                pass
             if not getattr(self,'_keep_autosave',False):
                 import autosave; autosave.clear()
             event.accept()
