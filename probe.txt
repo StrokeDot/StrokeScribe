@@ -1,0 +1,23 @@
+test_cancel_editor_keeps_project_and_history (test_source_timeline.SourceTimelineTests.test_cancel_editor_keeps_project_and_history) ... ok
+test_double_click_one_edit_click_scrubs_and_locked_blocks (test_source_timeline.SourceTimelineTests.test_double_click_one_edit_click_scrubs_and_locked_blocks) ... ok
+test_keyboard_source_actions_exist_even_without_paint_duration (test_source_timeline.SourceTimelineTests.test_keyboard_source_actions_exist_even_without_paint_duration) ... ok
+test_single_scope_uses_selected_scene_not_zero (test_source_timeline.SourceTimelineTests.test_single_scope_uses_selected_scene_not_zero) ... ok
+test_stage_hit_uses_draw_paint_rectangles_and_skips_join (test_source_timeline.SourceTimelineTests.test_stage_hit_uses_draw_paint_rectangles_and_skips_join) ... ok
+test_probe (test_zz_probe.Probe.test_probe) ... 
+PROBE mouse MouseButton.LeftButton modal None visible True playing False busy False preparing False view True token ok True cache /tmp/tmpgjcrz9q6 env /tmp/tmpgjcrz9q6
+PROBE ready (0, 97)
+== test_single_scope_uses_selected_scene_not_zero
+PROBE mouse MouseButton.NoButton modal None visible True playing False busy False preparing False view True token ok True cache /tmp/tmpk1aatz7j env /tmp/tmpk1aatz7j
+PROBE ready (5, 97)
+== test_stage_hit_uses_draw_paint_rectangles_and_skips_join
+PROBE mouse MouseButton.NoButton modal None visible True playing False busy False preparing False view True token ok True cache /tmp/tmpu9fnchi4 env /tmp/tmpu9fnchi4
+PROBE ready (5, 97)
+== test_double_click_one_edit_click_scrubs_and_locked_blocks
+PROBE mouse MouseButton.LeftButton modal None visible True playing False busy False preparing False view True token ok True cache /tmp/tmpxu5pweob env /tmp/tmpxu5pweob
+PROBE ready (0, 97)
+== test_keyboard_source_actions_exist_even_without_paint_duration
+PROBE mouse MouseButton.NoButton modal None visible True playing False busy False preparing False view True token ok True cache /tmp/tmp3oco0hw7 env /tmp/tmp3oco0hw7
+PROBE ready (5, 97)
+== test_cancel_editor_keeps_project_and_history
+PROBE mouse MouseButton.NoButton modal None visible True playing False busy False preparing False view True token ok True cache /tmp/tmphx5_1xh5 env /tmp/tmphx5_1xh5
+PROBE ready (5, 97)
