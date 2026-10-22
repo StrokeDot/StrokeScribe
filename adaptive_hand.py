@@ -138,6 +138,42 @@ def _reveal_faint_with_neighbours(arrival, labels, faint, gw, gh):
             arrival[cell] = float(borrowed[cell])
 
 
+OPEN_AREA_SHARE = .30   # one region bigger than this share of the picture: split it by colour
+COLOUR_SPLIT = 'colour-areas-1'    # in the plan key: plans made before this change are not reused
+SPLIT_DETAIL = 'medium'  # colour areas for the split ('low' merges shades across parts)
+
+
+def _split_open_area_by_colour(labels, support, source, gw, gh):
+    """Paint part by part even when the SVG has few closed shapes.
+
+    Adaptive paints one region at a time, and an SVG's regions are its closed
+    shapes. Traced line drawings are mostly open lines (often with only the
+    outer outline closed), so nearly the whole picture was ONE region and the
+    brush zigzagged across all of it. Any region covering more than
+    OPEN_AREA_SHARE of the picture is split into the picture's colour areas
+    (the same segmentation as image sources); smaller closed shapes keep
+    their own regions."""
+    from collections import Counter
+    painted = sum(1 for a in support if a)
+    if not painted:
+        return
+    sizes = Counter(rid for rid in labels if rid)
+    big = {rid for rid, n in sizes.items() if n > OPEN_AREA_SHARE * painted}
+    if not big:
+        return
+    try:
+        from image_regions import segment_regions
+        regions = segment_regions(source, SPLIT_DETAIL)
+    except Exception:
+        return
+    if tuple(regions.size) != (gw, gh):
+        return
+    first = max(labels) + 1
+    for i, rid in enumerate(labels):
+        if rid in big and regions.labels[i]:
+            labels[i] = first + regions.labels[i]
+
+
 def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55, short_vertical=False):
     from color_reveal import artwork_rect, last_stroke_canvas_endpoint
     source=pil_image(image)
@@ -186,6 +222,8 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55, short_vertic
             if inside and support[i] and not assigned[i]:
                 labels[i]=rid; assigned[i]=1
     image_regions=getattr(drawing,'image_regions',None)
+    if image_regions is None:
+        _split_open_area_by_colour(labels,support,source,gw,gh)
     if image_regions is not None:
         # Image reconstruction supplies coarse color regions. Preserve the
         # existing SVG segmentation path when this metadata is absent.
@@ -396,7 +434,8 @@ def _plan_key(drawing,image,brush_width,stroke_spacing):
     return (geometry,region_map,getattr(drawing,'image_region_priority',False),
             getattr(drawing,'image_semantic_order',()),tuple(drawing.bounds),
             (image.width(),image.height()),_alpha_digest(image),
-            float(brush_width),float(stroke_spacing),getattr(drawing,'paint_method','adaptive'))
+            float(brush_width),float(stroke_spacing),getattr(drawing,'paint_method','adaptive'),
+            COLOUR_SPLIT)
 
 def plan_ready(drawing,image,brush_width=.14,stroke_spacing=.55):
     """True when plan_for would return at once (the brush plan is cached)."""
