@@ -134,6 +134,8 @@ def build_menus(w):
     _combo_menu(view, 'Preview background', w.preview_background)
     _combo_menu(view, 'Preview', w.preview_scope)
     view.addSeparator()
+    view.addAction('Pre-render preview', lambda: w.prerender_whole())
+    view.addSeparator()
     view.addAction('Text panel', lambda: _go(w, 'text'))
     view.addAction('Image panel', lambda: _go(w, 'source'))
     view.addAction('AI panel', lambda: _go(w, 'ai'))

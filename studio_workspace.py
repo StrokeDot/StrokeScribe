@@ -2174,6 +2174,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.add_text_overlay=QPushButton('+ Text'); w.add_text_overlay.setObjectName('subtle')
     w.add_text_overlay.setToolTip('Put a title or label on top of this scene, with an entrance effect.')
     w.add_text_overlay.clicked.connect(lambda checked=False: w.add_overlay_text())
+    w.prerender_button=QPushButton('Pre-render'); w.prerender_button.setObjectName('subtle')
+    w.prerender_button.setToolTip('Make every frame of the preview ready so it plays smoothly. Only the '
+                                  'parts you change are made again. Click again to stop.')
+    w.prerender_button.clicked.connect(lambda checked=False: w.prerender_whole())
+    timeline_head.addWidget(w.prerender_button)
     timeline_head.addWidget(w.add_text_overlay)
     w.timeline_status=label('','panelHint')
     timeline_head.addWidget(w.timeline_status)
@@ -2310,7 +2315,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
         elif isinstance(field,QCheckBox):
             field.toggled.connect(w.refresh)
         else:
-            field.valueChanged.connect(w.refresh)
+            # Opacity / tolerance / softness are dragged with sliders: redraw at
+            # most every 40 ms instead of once per slider step.
+            field.valueChanged.connect(w.schedule_refresh)
     w.brush_width.valueChanged.connect(w.schedule_brush_refresh)
     w.show_paint_hand.toggled.connect(w.refresh)
     w.sound_on.toggled.connect(lambda checked: (w.update_transport_icons(), w.sync_preview_sound()))
