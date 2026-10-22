@@ -1248,6 +1248,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.update_project_title(self.project_title)
         self.refresh()
         self.update_element_panels()
+        self.update_painter_parts()
         self.reset_history()
         if getattr(self,'scenes',None) and not getattr(self,'_entering_scene',False):
             self.scenes[self.scene_index]['thumb']=None      # new artwork: new thumbnail
@@ -2924,6 +2925,112 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.update_move_hand_label()
         self.note_change()
         self.refresh()
+
+    # ------------------------------------------------------------ AI parts (Painter)
+    PAINTER_TEXT='Painter — real parts, strokes follow the shape'
+
+    def update_painter_parts(self):
+        """The Parts row shows only for Painter: which parts it paints, and the AI button."""
+        if not hasattr(self,'painter_parts_buttons'): return
+        painter=self.reveal_mode.currentText()==self.PAINTER_TEXT
+        self.paint_form.setRowVisible(self.painter_parts_note,painter)
+        self.paint_form.setRowVisible(self.painter_parts_buttons,painter)
+        found=getattr(self.drawing,'ai_parts_image',None) if self.drawing is not None else None
+        count=getattr(self.drawing,'ai_parts_count',None) if found is not None else None
+        self.painter_parts_note.setText(
+            f'Parts: {count or "the"} real parts found by the AI' if found is not None
+            else 'Parts: colour areas. "Find real parts" lets the AI find the objects instead.')
+        self.colour_parts_button.setEnabled(found is not None)
+        self.find_parts_button.setEnabled(self.drawing is not None and not getattr(self,'_finding_parts',False))
+
+    def parts_picture(self):
+        """The colour picture Painter paints (PIL RGBA), or None."""
+        image=self.options().get('final_image')
+        if image is None or image.isNull(): return None
+        from adaptive_hand import pil_image
+        return pil_image(image)
+
+    def find_ai_parts(self):
+        """Segment Anything finds the picture's parts (downloads the model the first time)."""
+        import ai_engine, ai_parts, hashlib, threading
+        if self.drawing is None: return
+        picture=self.parts_picture()
+        if picture is None:
+            QMessageBox.information(self,'Find real parts','This element has no colours to paint, so there are no parts to find.')
+            return
+        paths=ai_engine.Paths()
+        if not ai_parts.engine_ready(paths):
+            QMessageBox.information(self,'Find real parts',
+                'The AI engine is not installed yet. Set it up once from the AI panel '
+                '(Create image with AI), then come back here.')
+            return
+        need=not ai_parts.model_ready(paths)
+        if need and QMessageBox.question(self,'Find real parts',
+                f'The first time, StrokeScribe downloads Segment Anything by Meta '
+                f'({ai_parts.download_size_gb():.1f} GB, licence {ai_parts.LICENSE}). '
+                'After that it finds the parts of a picture in a few seconds on your graphics card.\n\n'
+                'Download it now?')!=QMessageBox.StandardButton.Yes:
+            return
+        from PySide6.QtWidgets import QProgressDialog
+        dialog=QProgressDialog('Finding the parts…','Cancel',0,0,self)
+        dialog.setWindowTitle('Find real parts');dialog.setMinimumDuration(0)
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        state=dict(done=False,error=None,labels=None,progress=None,text='Finding the parts…',cancel=False)
+        dialog.canceled.connect(lambda: state.__setitem__('cancel',True))
+        drawing=self.drawing
+        def work():
+            try:
+                if need:
+                    def report(done,total,name):
+                        state['progress']=(done,total);state['text']=f'Downloading Segment Anything… {done/1024**3:.2f} of {total/1024**3:.2f} GB'
+                    ai_parts.download(paths,report,lambda: state['cancel'])
+                state['progress']=None;state['text']='Finding the parts…'
+                state['labels']=ai_parts.find_parts(paths,picture,cancelled=lambda: state['cancel'])
+            except Exception as exc:
+                state['error']=exc
+            finally:
+                state['done']=True
+        self._finding_parts=True;self.update_painter_parts()
+        threading.Thread(target=work,daemon=True).start()
+        timer=QTimer(self);timer.setInterval(150)
+        def poll():
+            dialog.setLabelText(state['text'])
+            if state['progress']:
+                done,total=state['progress'];dialog.setMaximum(1000);dialog.setValue(round(done*1000/max(1,total)))
+            else:
+                dialog.setMaximum(0)
+            if not state['done']: return
+            timer.stop();dialog.reset();dialog.close();self._finding_parts=False
+            if state['error'] is not None:
+                if not isinstance(state['error'],(InterruptedError,ai_engine.Cancelled)) and not state['cancel']:
+                    import applog;applog.error('Find real parts',state['error'])
+                    QMessageBox.warning(self,'Find real parts',str(state['error']))
+                self.update_painter_parts();return
+            labels=state['labels']
+            if drawing is not self.drawing:          # the element changed meanwhile
+                self.update_painter_parts();return
+            self.set_ai_parts(labels)
+        timer.timeout.connect(poll);timer.start()
+        self._parts_timer=timer
+
+    def set_ai_parts(self,labels):
+        """Keep the found parts on the element (saved with the project) and repaint."""
+        import hashlib
+        drawing=self.drawing
+        if labels is None:
+            for name in ('ai_parts_image','ai_parts_digest','ai_parts_count'):
+                if hasattr(drawing,name): delattr(drawing,name)
+        else:
+            drawing.ai_parts_image=labels
+            drawing.ai_parts_digest=hashlib.sha1(labels.tobytes()).hexdigest()
+            drawing.ai_parts_count=int(labels.info.get('parts') or 0) or None
+        if hasattr(self,'project_changes'): self.project_changes.mark_changed()
+        self.note_change()
+        self.update_painter_parts()
+        self.refresh()
+
+    def forget_ai_parts(self):
+        if self.drawing is not None: self.set_ai_parts(None)
 
     def open_paint_mode_picker(self):
         """Paint mode: the bigger picker with groups, descriptions and a preview."""
