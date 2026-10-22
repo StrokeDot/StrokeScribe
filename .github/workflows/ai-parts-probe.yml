@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
-      - run: pip install transformers pillow numpy opencv-python-headless huggingface_hub
+      - run: pip install transformers pillow numpy scipy huggingface_hub
       - name: Checkpoint files and sizes
         shell: bash
         run: |
