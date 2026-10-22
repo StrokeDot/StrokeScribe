@@ -1,0 +1,48 @@
+name: Filmora OFX test plugin
+on:
+  push:
+    branches: [feature/filmora-ofx-test]
+    paths: ['ofx/**', '.github/workflows/ofx-test-plugin.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get OpenFX and stb (pinned)
+        shell: bash
+        run: |
+          git clone -q https://github.com/AcademySoftwareFoundation/openfx deps/openfx
+          git -C deps/openfx checkout -q c3f1c2dcf4f51762b794c4fc21181b4a501be1bf
+          git clone -q https://github.com/nothings/stb deps/stb
+          git -C deps/stb checkout -q a7d4c2175630e1ea5b6f8dd00ab96fed0b97b96d
+      - name: Build (MSVC x64 Release)
+        shell: bash
+        run: |
+          cmake -S ofx -B build -A x64 -DOFX_INCLUDE="$PWD/deps/openfx/include" -DSTB_DIR="$PWD/deps/stb"
+          cmake --build build --config Release
+      - name: Crash test in a small OFX host
+        shell: bash
+        run: |
+          mkdir -p frames
+          LOCALAPPDATA="$PWD/frames" build/Release/ofx_test_host.exe build/Release/StrokeScribeTest.ofx frames
+          cat frames/StrokeScribe/ofx-test.log
+      - name: Package bundle
+        shell: pwsh
+        run: |
+          $b = "pkg/StrokeScribeTest.ofx.bundle/Contents/Win64"
+          New-Item -ItemType Directory -Force $b | Out-Null
+          Copy-Item build/Release/StrokeScribeTest.ofx $b/
+          Compress-Archive -Path pkg/StrokeScribeTest.ofx.bundle -DestinationPath StrokeScribeTest-ofx-win64.zip
+          Compress-Archive -Path frames/*.png -DestinationPath test-frames.zip
+      - name: Publish prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="ofx-test-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" StrokeScribeTest-ofx-win64.zip test-frames.zip --prerelease --target "$GITHUB_SHA" \
+            --title "Filmora OFX test plugin (build ${GITHUB_RUN_NUMBER})" \
+            --notes "Test plugin for Filmora. Unzip and copy StrokeScribeTest.ofx.bundle into C:\\Program Files\\Common Files\\OFX\\Plugins, then restart Filmora."
