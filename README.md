@@ -9,6 +9,10 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Trace the order with the mouse (v0.5.3-experimental.93)
+
+- **Line order → Trace the order**: hold the mouse down and move over the picture the way the drawing should go. Every line the cursor passes gets the next number, in that order; let go and press again anywhere to go on. Lines you never touch come after, in their present order. *Size* sets how wide an area the cursor picks up; *Turn lines to follow my path* draws a line from the end you reached first. *Start over* forgets the traced path. Works on the Painting tab too (drag over the parts in the order to paint them).
+
 ## Line order for drawing and painting; Move in timeline; Pre-render by the play buttons (v0.5.3-experimental.92)
 
 - **Line order** has two tabs: **Drawing (lines)** and **Painting (parts)**. The Painting tab shows the parts Painter paints, over the colours; pick them and move them the same way, or order them automatically (big parts first, top to bottom, left to right, nearest next). Painter then paints in that order.

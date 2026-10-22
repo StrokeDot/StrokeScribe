@@ -160,6 +160,33 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(part_order(dialog.grid, (0, 0), w.drawing.paint_part_order)[0], chosen[0])
         self.assertIsNotNone(plan_for)
 
+    def test_trace_the_order_with_the_mouse(self):
+        w = self.w
+        names = [s.name for s in w.drawing.strokes]
+        dialog = w.open_line_order()
+        self.app.processEvents()
+        dialog.trace_button.setChecked(True)
+        self.assertTrue(dialog.tracing)
+        dialog.trace_size.setValue(3)
+        lines = dialog.picture.polylines()
+        def middle(i):
+            line = lines[i]
+            return line[len(line) // 2]
+        first, second = middle(3), middle(1)
+        dialog.picture.trace_hit(*first)                                  # passes over line 4 first
+        lines = dialog.picture.polylines()
+        dialog.picture.trace_hit(*second)                                 # then over line 2
+        order = [s.name for s in dialog.strokes]
+        self.assertEqual(order[:2], [names[3], names[1]])                 # the traced path comes first
+        self.assertEqual(sorted(order), sorted(names))                    # nothing lost
+        self.assertEqual(dialog.selected, {0, 1})                         # numbered 1, 2
+        dialog.picture.trace_hit(*first)                                  # passing again changes nothing
+        self.assertEqual([s.name for s in dialog.strokes][:2], [names[3], names[1]])
+        dialog.trace_restart()
+        self.assertEqual(dialog.traced, [])
+        dialog.accept(); self.app.processEvents()
+        self.assertEqual([s.name for s in w.drawing.strokes][:2], [names[3], names[1]])
+
     def test_box_select_and_small_list_moves_several(self):
         w = self.w
         dialog = w.open_line_order()
