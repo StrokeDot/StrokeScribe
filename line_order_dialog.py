@@ -1,116 +1,181 @@
-"""The Line order window: see the drawing big, pick lines, move them together,
-or let StrokeScribe order them automatically.
+"""The Line order window: the order of the drawing (lines) and of the painting (parts).
 
-* Click a line on the picture to select it; click it again to unselect it. Drag a
-  box on the picture to select every line inside it. The list works too (Ctrl or
-  Shift + click, or drag several lines to a new place).
-* Selected lines are bright orange with their number; the other lines are coloured
-  by when they are drawn (blue = early, red = late), so you can see the order.
-* Move the selected lines together: to the start, up, down, to the end, or to a
-  position. They keep their order among themselves.
-* Automatic order: for all lines or only the selected ones.
-* Play shows the order line by line (Pause stops it).
-Nothing changes in the project until you press "Use this order" (one undo step).
+Drawing tab: the lines in the order the pen draws them.
+Painting tab: the parts in the order the brush paints them (Painter paint mode).
+
+* Click a line or part on the picture to select it; click it again to unselect it.
+  Drag a box to select everything inside it. The list works too.
+* Selected items are orange with their number; the others are coloured by when
+  they come (blue = first, red = last).
+* Move the selected items together, to the start, up, down, to the end or to a place.
+* Automatic orders, Default (the order it had when it came in), and Play.
+* Drawing tab: Reverse, Delete, Pace and Pause for the selected lines.
+Nothing changes in the project until "Use this order" (one undo step).
 """
 from __future__ import annotations
 
+import re
+
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                               QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton,
-                               QSpinBox, QVBoxLayout, QWidget)
+                               QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+                               QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
 ACCENT = QColor(255, 122, 26)
+PAINT_AUTO = (
+    ('Big parts first, details last', 'The default: the biggest parts first, then smaller ones, details last.'),
+    ('Top to bottom', 'Parts higher in the picture first.'),
+    ('Left to right', 'Parts further left first.'),
+    ('Nearest next', 'Each next part is the one closest to where the brush is.'),
+)
 
 
 def order_colour(i, n):
-    """Blue for early lines to red for late ones."""
+    """Blue for early items to red for late ones."""
     t = i / max(1, n - 1)
     return QColor.fromHsvF(.66 * (1 - t), .75, .85)
 
 
-class LinePicture(QWidget):
-    """The drawing, big: click to select lines, drag a box to select several."""
-    clicked = Signal(int)              # index of a line, or -1 for empty space
-    boxed = Signal(list)               # indexes of the lines inside a dragged box
+def default_line_order(strokes, drawing=None):
+    """The lines in the order they had when the picture came in."""
+    names = [s.name for s in strokes]
+    lead = [re.match(r'\s*(\d+)', n) for n in names]
+    if names and all(lead):                                  # traced SVGs: 001-outline, 002-line…
+        return [s for _, s in sorted(zip([int(m.group(1)) for m in lead], strokes), key=lambda p: p[0])]
+    last = [re.findall(r'(\d+)', n) for n in names]
+    if names and all(last):
+        numbers = [int(x[-1]) for x in last]
+        if len(set(numbers)) == len(numbers):                # line 1, line 2… / Pen H / 1…
+            return [s for _, s in sorted(zip(numbers, strokes), key=lambda p: p[0])]
+    recorded = getattr(drawing, 'default_order', None) if drawing is not None else None
+    if recorded and sorted(recorded) == sorted(names):
+        place = {n: i for i, n in enumerate(recorded)}
+        return sorted(strokes, key=lambda s: place[s.name])
+    return list(strokes)
+
+
+class OrderPicture(QWidget):
+    """The picture: click to select, drag a box to select several."""
+    clicked = Signal(int)
+    boxed = Signal(list)
 
     def __init__(self, dialog):
         super().__init__()
         self.dialog = dialog
         self.setMinimumSize(520, 420)
-        self.setMouseTracking(True)
         self._press = None
         self._drag = None
-        self.shown = None              # Play: only the first `shown` lines
+        self.shown = None              # Play: only the first `shown` items
 
-    # Geometry: drawing coordinates -> widget pixels.
+    # ------------------------------------------------------------ drawing tab
     def transform(self):
         x0, y0, x1, y1 = self.dialog.bounds
         w, h = max(1e-6, x1 - x0), max(1e-6, y1 - y0)
         pad = 18
         scale = min((self.width() - 2 * pad) / w, (self.height() - 2 * pad) / h)
-        ox = (self.width() - w * scale) / 2 - x0 * scale
-        oy = (self.height() - h * scale) / 2 - y0 * scale
-        return scale, ox, oy
+        return scale, (self.width() - w * scale) / 2 - x0 * scale, (self.height() - h * scale) / 2 - y0 * scale
 
     def polylines(self):
         scale, ox, oy = self.transform()
         return [[(x * scale + ox, y * scale + oy) for x, y in s.points] for s in self.dialog.strokes]
 
+    # ------------------------------------------------------------ painting tab
+    def image_rect(self):
+        image = self.dialog.colours
+        pad = 18
+        w, h = self.width() - 2 * pad, self.height() - 2 * pad
+        scale = min(w / max(1, image.width()), h / max(1, image.height()))
+        iw, ih = image.width() * scale, image.height() * scale
+        return QRectF((self.width() - iw) / 2, (self.height() - ih) / 2, iw, ih)
+
+    def part_at(self, x, y):
+        grid = self.dialog.grid
+        r = self.image_rect()
+        gh, gw = grid.shape
+        gx, gy = int((x - r.x()) / r.width() * gw), int((y - r.y()) / r.height() * gh)
+        if 0 <= gx < gw and 0 <= gy < gh and grid[gy, gx] > 0:
+            rid = int(grid[gy, gx])
+            return self.dialog.parts.index(rid) if rid in self.dialog.parts else -1
+        return -1
+
+    def overlay(self):
+        """The parts coloured by order (selected ones orange), as a picture over the colours."""
+        import numpy as np
+        d = self.dialog
+        grid = d.grid
+        n = len(d.parts)
+        limit = n if self.shown is None else self.shown
+        palette = np.zeros((int(grid.max()) + 1, 4), np.uint8)
+        for i, rid in enumerate(d.parts):
+            if i >= limit:
+                palette[rid] = (255, 255, 255, 215)                    # not painted yet (Play)
+                continue
+            if i in d.selected:
+                palette[rid] = (255, 122, 26, 200)
+            elif d.colour_order.isChecked():
+                c = order_colour(i, n)
+                palette[rid] = (c.red(), c.green(), c.blue(), 105)
+        rgba = np.ascontiguousarray(palette[grid])
+        image = QImage(rgba.data, rgba.shape[1], rgba.shape[0], rgba.shape[1] * 4, QImage.Format.Format_RGBA8888)
+        return image.copy()
+
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.fillRect(self.rect(), QColor(250, 248, 243))
-        d = self.dialog
-        lines = self.polylines()
-        n = len(lines)
-        limit = n if self.shown is None else self.shown
-        colours = d.colour_order.isChecked()
-        p.setBrush(Qt.BrushStyle.NoBrush)
-        for i, line in enumerate(lines[:limit]):
-            if len(line) < 2 or i in d.selected:
-                continue
-            colour = order_colour(i, n) if colours else QColor(70, 70, 80)
-            if self.shown is not None and i == limit - 1:
-                colour = ACCENT
-            p.setPen(QPen(colour, 2.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-            path = QPainterPath(QPointF(*line[0]))
-            for pt in line[1:]:
-                path.lineTo(QPointF(*pt))
-            p.drawPath(path)
-        font = QFont(); font.setBold(True); font.setPointSizeF(8.5); p.setFont(font)
-        for i in sorted(d.selected):
-            if i >= limit or i >= n or len(lines[i]) < 2:
-                continue
-            line = lines[i]
-            p.setBrush(Qt.BrushStyle.NoBrush)              # a line, never a filled shape
-            p.setPen(QPen(ACCENT, 4.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-            path = QPainterPath(QPointF(*line[0]))
-            for pt in line[1:]:
-                path.lineTo(QPointF(*pt))
-            p.drawPath(path)
-            # Its number in the drawing order, at its start.
-            x, y = line[0]
-            label = QRectF(x - 13, y - 22, 26, 17)
-            p.setPen(Qt.PenStyle.NoPen); p.setBrush(ACCENT); p.drawRoundedRect(label, 5, 5)
-            p.setPen(QColor('white')); p.drawText(label, Qt.AlignmentFlag.AlignCenter, str(i + 1))
+        if self.dialog.mode == 'paint':
+            self.paint_parts(p)
+        else:
+            self.paint_lines(p)
         if self._drag is not None:
             p.setPen(QPen(ACCENT, 1.4, Qt.PenStyle.DashLine)); p.setBrush(QColor(255, 122, 26, 30))
             p.drawRect(self._drag)
         p.end()
 
-    def line_at(self, x, y, tolerance=9.):
-        best, best_d = -1, tolerance
-        for i, line in enumerate(self.polylines()):
-            for a, b in zip(line, line[1:]):
-                ax, ay = a; bx, by = b
-                dx, dy = bx - ax, by - ay
-                t = max(0., min(1., ((x - ax) * dx + (y - ay) * dy) / max(1e-9, dx * dx + dy * dy)))
-                dist = ((ax + dx * t - x) ** 2 + (ay + dy * t - y) ** 2) ** .5
-                if dist < best_d:
-                    best, best_d = i, dist
-        return best
+    def _tag(self, p, x, y, number):
+        font = QFont(); font.setBold(True); font.setPointSizeF(8.5); p.setFont(font)
+        label = QRectF(x - 13, y - 9, 26, 17)
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(ACCENT); p.drawRoundedRect(label, 5, 5)
+        p.setPen(QColor('white')); p.drawText(label, Qt.AlignmentFlag.AlignCenter, str(number))
+        p.setBrush(Qt.BrushStyle.NoBrush)
 
+    def paint_lines(self, p):
+        d = self.dialog
+        lines = self.polylines()
+        n = len(lines)
+        limit = n if self.shown is None else self.shown
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for i, line in enumerate(lines[:limit]):
+            if len(line) < 2 or i in d.selected:
+                continue
+            colour = order_colour(i, n) if d.colour_order.isChecked() else QColor(70, 70, 80)
+            if self.shown is not None and i == limit - 1:
+                colour = ACCENT
+            p.setPen(QPen(colour, 2.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            p.drawPath(_path(line))
+        for i in sorted(d.selected):
+            if i >= min(limit, n) or len(lines[i]) < 2:
+                continue
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(ACCENT, 4.5, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+            p.drawPath(_path(lines[i]))
+            x, y = lines[i][0]
+            self._tag(p, x, y - 13, i + 1)
+
+    def paint_parts(self, p):
+        d = self.dialog
+        r = self.image_rect()
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        p.drawImage(r, d.colours)
+        p.drawImage(r, self.overlay())
+        gh, gw = d.grid.shape
+        for i in sorted(d.selected):
+            rid = d.parts[i]
+            cx, cy, _ = d.centres[rid]
+            self._tag(p, r.x() + cx / gw * r.width(), r.y() + cy / gh * r.height(), i + 1)
+
+    # ------------------------------------------------------------ mouse
     def mousePressEvent(self, event):
         self._press = event.position()
 
@@ -124,16 +189,46 @@ class LinePicture(QWidget):
     def mouseReleaseEvent(self, event):
         if self._drag is not None:
             box = self._drag
-            inside = [i for i, line in enumerate(self.polylines())
-                      if line and all(box.contains(QPointF(x, y)) for x, y in line)]
             self._drag = None; self._press = None
-            self.boxed.emit(inside); self.update(); return
+            self.boxed.emit(self.inside(box)); self.update(); return
         self._press = None
-        self.clicked.emit(self.line_at(event.position().x(), event.position().y()))
+        x, y = event.position().x(), event.position().y()
+        self.clicked.emit(self.part_at(x, y) if self.dialog.mode == 'paint' else self.line_at(x, y))
+
+    def inside(self, box):
+        if self.dialog.mode == 'paint':
+            r = self.image_rect()
+            gh, gw = self.dialog.grid.shape
+            out = []
+            for i, rid in enumerate(self.dialog.parts):
+                cx, cy, _ = self.dialog.centres[rid]
+                if box.contains(QPointF(r.x() + cx / gw * r.width(), r.y() + cy / gh * r.height())):
+                    out.append(i)
+            return out
+        return [i for i, line in enumerate(self.polylines())
+                if line and all(box.contains(QPointF(x, y)) for x, y in line)]
+
+    def line_at(self, x, y, tolerance=9.):
+        best, best_d = -1, tolerance
+        for i, line in enumerate(self.polylines()):
+            for (ax, ay), (bx, by) in zip(line, line[1:]):
+                dx, dy = bx - ax, by - ay
+                t = max(0., min(1., ((x - ax) * dx + (y - ay) * dy) / max(1e-9, dx * dx + dy * dy)))
+                dist = ((ax + dx * t - x) ** 2 + (ay + dy * t - y) ** 2) ** .5
+                if dist < best_d:
+                    best, best_d = i, dist
+        return best
+
+
+def _path(line):
+    path = QPainterPath(QPointF(*line[0]))
+    for pt in line[1:]:
+        path.lineTo(QPointF(*pt))
+    return path
 
 
 class DropList(QListWidget):
-    """The line list; says when lines were dragged to a new place."""
+    """The list; says when items were dragged to a new place."""
     dropped = Signal()
 
     def dropEvent(self, event):
@@ -142,39 +237,52 @@ class DropList(QListWidget):
 
 
 class LineOrderDialog(QDialog):
-    def __init__(self, window):
+    def __init__(self, window, mode='draw'):
         super().__init__(window)
-        from line_order import AUTO
         self.setWindowTitle('Line order')
         self.window_ = window
         drawing = window.drawing
-        self.original = list(drawing.strokes)
+        self.drawing = drawing
         self.strokes = list(drawing.strokes)
         self.bounds = tuple(drawing.bounds)
-        self.selected = set(window.selected_rows()) if hasattr(window, 'selected_rows') else set()
+        self.line_selection = set(window.selected_rows()) if hasattr(window, 'selected_rows') else set()
+        self.part_selection = set()
+        self.parts = []                 # part ids in painting order
+        self.parts_changed = False
+        self.grid = None
+        self.colours = None
+        self.mode = 'draw'
         outer = QVBoxLayout(self)
+        # Drawing | Painting
+        switch = QHBoxLayout(); outer.addLayout(switch)
+        self.tab_buttons = {}
+        for key, text in (('draw', 'Drawing (lines)'), ('paint', 'Painting (parts)')):
+            b = QPushButton(text); b.setCheckable(True); b.setObjectName('primary' if key == 'draw' else '')
+            b.clicked.connect(lambda checked=False, k=key: self.set_mode(k))
+            switch.addWidget(b); self.tab_buttons[key] = b
+        switch.addStretch(1)
         body = QHBoxLayout(); outer.addLayout(body, 1)
         left = QVBoxLayout(); body.addLayout(left, 3)
-        self.picture = LinePicture(self)
+        self.picture = OrderPicture(self)
         self.picture.clicked.connect(self.picture_clicked)
         self.picture.boxed.connect(self.picture_boxed)
         left.addWidget(self.picture, 1)
-        hint = QLabel('Click a line to select it, click it again to unselect it. Drag a box to select '
-                      'every line inside. Selected lines are orange, with their number.')
-        hint.setWordWrap(True); hint.setObjectName('caption'); left.addWidget(hint)
+        self.hint = QLabel(''); self.hint.setWordWrap(True); self.hint.setObjectName('caption')
+        left.addWidget(self.hint)
         view = QHBoxLayout(); left.addLayout(view)
         self.colour_order = QCheckBox('Colour by order (blue = first, red = last)')
         self.colour_order.setChecked(True); self.colour_order.toggled.connect(self.picture.update)
         view.addWidget(self.colour_order); view.addStretch(1)
         self.play_button = QPushButton('Play order')
-        self.play_button.setToolTip('Show the lines one by one in their drawing order. Click again to pause.')
+        self.play_button.setToolTip('Show the order one by one. Click again to pause.')
         self.play_button.clicked.connect(lambda checked=False: self.toggle_play())
         view.addWidget(self.play_button)
         self.play_timer = QTimer(self); self.play_timer.setInterval(70)
         self.play_timer.timeout.connect(self.play_step)
 
         right = QVBoxLayout(); body.addLayout(right, 2)
-        right.addWidget(self._title('LINES (drawing order)'))
+        self.list_title = self._title('')
+        right.addWidget(self.list_title)
         self.list = DropList()
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
@@ -187,49 +295,128 @@ class LineOrderDialog(QDialog):
         for text, slot in (('Select all', self.select_all), ('Clear selection', self.clear_selection)):
             b = QPushButton(text); b.clicked.connect(lambda checked=False, f=slot: f()); sel.addWidget(b)
 
-        right.addWidget(self._title('MOVE THE SELECTED LINES TOGETHER'))
+        right.addWidget(self._title('MOVE THE SELECTED ONES TOGETHER'))
         grid = QGridLayout(); right.addLayout(grid)
         self.move_buttons = []
         for col, (text, how) in enumerate((('To start', 'start'), ('Up', 'up'), ('Down', 'down'), ('To end', 'end'))):
             b = QPushButton(text); b.clicked.connect(lambda checked=False, h=how: self.move(h))
             grid.addWidget(b, 0, col); self.move_buttons.append(b)
-        grid.addWidget(QLabel('To position'), 1, 0)
-        self.position = QSpinBox(); self.position.setRange(1, max(1, len(self.strokes)))
+        grid.addWidget(QLabel('Move to place'), 1, 0)
+        self.position = QSpinBox(); self.position.setRange(1, 1)
+        self.position.setToolTip('The place in the order where the first selected one goes.')
         grid.addWidget(self.position, 1, 1, 1, 2)
         self.to_position = QPushButton('Move'); self.to_position.clicked.connect(lambda checked=False: self.move('at'))
         grid.addWidget(self.to_position, 1, 3); self.move_buttons.append(self.to_position)
 
+        # Drawing only: what the selected lines do.
+        self.line_tools = QWidget()
+        lt = QGridLayout(self.line_tools); lt.setContentsMargins(0, 0, 0, 0)
+        from stroke_timing import PACES
+        self.reverse_button = QPushButton('Reverse'); self.reverse_button.clicked.connect(lambda c=False: self.edit(reverse=True))
+        self.reverse_button.setToolTip('Draw the selected lines from the other end.')
+        self.delete_button = QPushButton('Delete'); self.delete_button.clicked.connect(lambda c=False: self.delete())
+        self.delete_button.setToolTip('Remove the selected lines from the animation.')
+        self.pace = QComboBox(); self.pace.addItems([name for name, _ in PACES]); self.pace.setCurrentText('Normal')
+        self.pace.activated.connect(lambda i: self.set_pace())
+        self.pause = QDoubleSpinBox(); self.pause.setRange(0, 10); self.pause.setSingleStep(.25); self.pause.setSuffix(' s')
+        self.pause.valueChanged.connect(lambda v: self.set_pause())
+        lt.addWidget(self.reverse_button, 0, 0); lt.addWidget(self.delete_button, 0, 1)
+        lt.addWidget(QLabel('Pace'), 1, 0); lt.addWidget(self.pace, 1, 1)
+        lt.addWidget(QLabel('Pause after'), 2, 0); lt.addWidget(self.pause, 2, 1)
+        self.line_tools_title = self._title('THE SELECTED LINES')
+        right.addWidget(self.line_tools_title); right.addWidget(self.line_tools)
+
         right.addWidget(self._title('AUTOMATIC ORDER'))
         auto = QGridLayout(); right.addLayout(auto)
-        self.auto = QComboBox(); self.auto.addItems([name for name, _ in AUTO])
+        self.auto = QComboBox()
         self.auto_about = QLabel(''); self.auto_about.setWordWrap(True); self.auto_about.setObjectName('caption')
-        self.auto.currentIndexChanged.connect(lambda i: self.auto_about.setText(AUTO[i][1]))
-        self.auto_about.setText(AUTO[0][1])
-        self.auto_scope = QComboBox(); self.auto_scope.addItems(['All lines', 'Only the selected lines'])
+        self.auto.currentIndexChanged.connect(lambda i: self.auto_about.setText(self.autos()[i][1] if 0 <= i < len(self.autos()) else ''))
+        self.auto_scope = QComboBox(); self.auto_scope.addItems(['All', 'Only the selected ones'])
         apply = QPushButton('Apply'); apply.clicked.connect(lambda checked=False: self.apply_auto())
         auto.addWidget(self.auto, 0, 0, 1, 2); auto.addWidget(self.auto_scope, 1, 0); auto.addWidget(apply, 1, 1)
         right.addWidget(self.auto_about)
-        reset = QPushButton('Back to how it was'); reset.clicked.connect(lambda checked=False: self.reset())
-        right.addWidget(reset)
+        default = QPushButton('Default'); default.setToolTip('The order it had when it came in.')
+        default.clicked.connect(lambda checked=False: self.default())
+        right.addWidget(default)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText('Use this order')
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
         outer.addWidget(buttons)
-        self.resize(1120, 700)
-        self.fill()
+        self.resize(1120, 720)
+        self.set_mode(mode)
 
     def _title(self, text):
         label = QLabel(text); label.setObjectName('sectionTitle'); return label
 
+    # ------------------------------------------------------------ the two tabs
+    @property
+    def selected(self):
+        return self.part_selection if self.mode == 'paint' else self.line_selection
+
+    @selected.setter
+    def selected(self, rows):
+        if self.mode == 'paint':
+            self.part_selection = set(rows)
+        else:
+            self.line_selection = set(rows)
+
+    def items(self):
+        return self.parts if self.mode == 'paint' else self.strokes
+
+    def autos(self):
+        from line_order import AUTO
+        return PAINT_AUTO if self.mode == 'paint' else AUTO
+
+    def load_parts(self):
+        """The parts Painter paints (only with the Painter paint mode and colours)."""
+        if self.grid is not None:
+            return True
+        w = self.window_
+        if w.reveal_mode.currentText() != getattr(w, 'PAINTER_TEXT', ''):
+            return 'The painting order works with the Painter paint mode. Choose Painter in Paint mode first.'
+        image = w.options().get('final_image')
+        if image is None or image.isNull():
+            return 'This element has no colours to paint.'
+        from painter_paint import parts_for_window
+        self.grid, self.default_parts, self.centres = parts_for_window(self.drawing, image)
+        chosen = [int(r) for r in (getattr(self.drawing, 'paint_part_order', None) or ())]
+        known = set(self.default_parts)
+        self.parts = [r for r in chosen if r in known] + [r for r in self.default_parts if r not in set(chosen)]
+        self.colours = image
+        return True
+
+    def set_mode(self, mode):
+        self.play_timer.stop(); self.picture.shown = None; self.play_button.setText('Play order')
+        if mode == 'paint':
+            ready = self.load_parts()
+            if ready is not True:
+                self.hint.setText(ready)
+                self.tab_buttons['paint'].setChecked(False); self.tab_buttons['draw'].setChecked(True)
+                return
+        self.mode = mode
+        for key, b in self.tab_buttons.items():
+            b.setChecked(key == mode)
+        painting = mode == 'paint'
+        self.list_title.setText('PARTS (painting order)' if painting else 'LINES (drawing order)')
+        self.line_tools.setVisible(not painting); self.line_tools_title.setVisible(not painting)
+        self.hint.setText('Click a part to select it, click it again to unselect it. Drag a box to select '
+                          'several. Selected parts are orange, with their number.' if painting else
+                          'Click a line to select it, click it again to unselect it. Drag a box to select '
+                          'every line inside. Selected lines are orange, with their number.')
+        self.auto.blockSignals(True); self.auto.clear(); self.auto.addItems([n for n, _ in self.autos()])
+        self.auto.blockSignals(False); self.auto_about.setText(self.autos()[0][1])
+        self.fill()
+
     # ------------------------------------------------------------ list and selection
     def fill(self):
-        from history import describe
         self.list.blockSignals(True)
         self.list.clear()
-        n = len(self.strokes)
-        for i, stroke in enumerate(self.strokes):
-            item = QListWidgetItem(f'{i + 1:>3} · {describe(stroke)}')
+        items = self.items()
+        n = len(items)
+        word = 'Part' if self.mode == 'paint' else 'Line'
+        for i in range(n):
+            item = QListWidgetItem(f'{word} {i + 1}')
             item.setData(Qt.ItemDataRole.UserRole, i)
             item.setForeground(order_colour(i, n).darker(115))
             self.list.addItem(item)
@@ -240,9 +427,20 @@ class LineOrderDialog(QDialog):
 
     def update_state(self):
         k = len(self.selected)
-        self.count.setText(f'{k} line{"s" if k != 1 else ""} selected' if k else 'No line selected')
-        for b in self.move_buttons:
+        word = 'part' if self.mode == 'paint' else 'line'
+        self.count.setText(f'{k} {word}{"s" if k != 1 else ""} selected' if k else f'No {word} selected')
+        for b in self.move_buttons + [self.reverse_button, self.delete_button, self.pace, self.pause]:
             b.setEnabled(bool(k))
+        if k:
+            self.position.blockSignals(True); self.position.setValue(min(self.selected) + 1)
+            self.position.blockSignals(False)
+            if self.mode == 'draw':
+                from stroke_timing import pace_name
+                first = self.strokes[min(self.selected)]
+                self.pace.blockSignals(True); self.pause.blockSignals(True)
+                self.pace.setCurrentText(pace_name(getattr(first, 'pace', 1.)))
+                self.pause.setValue(float(getattr(first, 'pause', 0.) or 0.))
+                self.pace.blockSignals(False); self.pause.blockSignals(False)
         self.picture.update()
 
     def list_selected(self):
@@ -250,14 +448,21 @@ class LineOrderDialog(QDialog):
         self.update_state()
 
     def list_dropped(self):
-        """Lines dragged to a new place in the list (several at once is fine)."""
         order = [self.list.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.list.count())]
-        if sorted(order) != list(range(len(self.strokes))):
+        items = self.items()
+        if sorted(order) != list(range(len(items))):
             return
-        chosen = {id(self.strokes[i]) for i in self.selected}
-        self.strokes = [self.strokes[i] for i in order]
-        self.selected = {i for i, s in enumerate(self.strokes) if id(s) in chosen}
+        chosen = {id(items[i]) if self.mode == 'draw' else items[i] for i in self.selected}
+        new = [items[i] for i in order]
+        self._set_items(new)
+        self.selected = {i for i, x in enumerate(new) if (id(x) if self.mode == 'draw' else x) in chosen}
         self.fill()
+
+    def _set_items(self, new):
+        if self.mode == 'paint':
+            self.parts = list(new); self.parts_changed = True
+        else:
+            self.strokes = list(new)
 
     def set_selected(self, rows):
         self.selected = set(rows)
@@ -278,7 +483,7 @@ class LineOrderDialog(QDialog):
         self.set_selected(self.selected | set(rows))
 
     def select_all(self):
-        self.set_selected(range(len(self.strokes)))
+        self.set_selected(range(len(self.items())))
 
     def clear_selection(self):
         self.set_selected(())
@@ -289,43 +494,107 @@ class LineOrderDialog(QDialog):
         rows = sorted(self.selected)
         if not rows:
             return
-        count = len(self.strokes) - len(rows)          # places in the list without the block
+        items = self.items()
+        count = len(items) - len(rows)
         rest_before = len([i for i in range(rows[0]) if i not in self.selected])
         target = {'start': 0, 'end': count, 'up': max(0, rest_before - 1),
-                  'down': min(count, rest_before + 1),
-                  'at': self.position.value() - 1}[how]
-        self.strokes, new = move_block(self.strokes, rows, target)
-        self.selected = set(new)
+                  'down': min(count, rest_before + 1), 'at': self.position.value() - 1}[how]
+        new, placed = move_block(items, rows, target)
+        self._set_items(new)
+        self.selected = set(placed)
         self.fill()
 
     def apply_auto(self):
-        from line_order import apply_order
         only = self.auto_scope.currentIndex() == 1
         if only and not self.selected:
-            self.auto_about.setText('Select some lines first, or choose "All lines".')
+            self.auto_about.setText('Select some first, or choose "All".')
             return
-        self.strokes, rows = apply_order(self.strokes, self.auto.currentText(),
-                                         sorted(self.selected) if only else None)
+        rows = sorted(self.selected) if only else None
+        if self.mode == 'paint':
+            new = self.ordered_parts([self.parts[r] for r in rows] if rows else list(self.parts), self.auto.currentText())
+            if rows:
+                parts = list(self.parts)
+                for r, x in zip(rows, new):
+                    parts[r] = x
+                new = parts
+            self._set_items(new)
+        else:
+            from line_order import apply_order
+            self.strokes, _ = apply_order(self.strokes, self.auto.currentText(), rows)
         self.selected = set(rows) if only else set()
         self.fill()
 
-    def reset(self):
-        self.strokes = list(self.original); self.selected = set(); self.fill()
+    def ordered_parts(self, parts, kind):
+        import math
+        c = self.centres
+        if kind == 'Big parts first, details last':
+            place = {r: i for i, r in enumerate(self.default_parts)}
+            return sorted(parts, key=lambda r: place.get(r, 0))
+        if kind == 'Top to bottom':
+            return sorted(parts, key=lambda r: (c[r][1], c[r][0]))
+        if kind == 'Left to right':
+            return sorted(parts, key=lambda r: (c[r][0], c[r][1]))
+        left = list(parts)
+        out = [min(left, key=lambda r: (c[r][1], c[r][0]))]
+        left.remove(out[0])
+        while left:
+            here = c[out[-1]][:2]
+            nxt = min(left, key=lambda r: math.dist(here, c[r][:2]))
+            left.remove(nxt); out.append(nxt)
+        return out
+
+    def default(self):
+        if self.mode == 'paint':
+            self._set_items(self.default_parts)
+        else:
+            self.strokes = default_line_order(self.strokes, self.drawing)
+        self.selected = set()
+        self.fill()
+
+    # ------------------------------------------------------------ the selected lines
+    def edit(self, **change):
+        from history import edited_stroke
+        rows = set(self.line_selection)
+        self.strokes = [edited_stroke(s, **change) if i in rows else s for i, s in enumerate(self.strokes)]
+        self.fill()
+
+    def set_pace(self):
+        from stroke_timing import pace_value
+        self.edit(pace=pace_value(self.pace.currentText()))
+
+    def set_pause(self):
+        if self.line_selection:
+            self.edit(pause=self.pause.value())
+
+    def delete(self):
+        rows = set(self.line_selection)
+        if not rows or len(rows) >= len(self.strokes):
+            self.count.setText('At least one line has to stay.'); return
+        self.strokes = [s for i, s in enumerate(self.strokes) if i not in rows]
+        self.line_selection = set()
+        self.fill()
 
     # ------------------------------------------------------------ play
     def toggle_play(self):
         if self.play_timer.isActive():
             self.play_timer.stop(); self.play_button.setText('Play order'); return
-        if self.picture.shown is None or self.picture.shown >= len(self.strokes):
+        if self.picture.shown is None or self.picture.shown >= len(self.items()):
             self.picture.shown = 0
         self.play_button.setText('Pause')
+        self.play_timer.setInterval(70 if self.mode == 'draw' else 260)
         self.play_timer.start()
 
     def play_step(self):
         self.picture.shown = (self.picture.shown or 0) + 1
-        if self.picture.shown >= len(self.strokes):
+        if self.picture.shown >= len(self.items()):
             self.play_timer.stop(); self.play_button.setText('Play order'); self.picture.shown = None
         self.picture.update()
+
+    def painting_order(self):
+        """The chosen painting order to keep on the element (None: the default)."""
+        if not self.parts_changed:
+            return getattr(self.drawing, 'paint_part_order', None)
+        return None if list(self.parts) == list(self.default_parts) else [int(r) for r in self.parts]
 
     def done(self, result):
         self.play_timer.stop()

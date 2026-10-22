@@ -199,7 +199,8 @@ class StageTimeline(QFrame):
                         'Drop a sound or music file on the lower row; drag it to move it.')
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-    def update_state(self, draw, paint, hold, progress, erase=0.):
+    def update_state(self, draw, paint, hold, progress, erase=0., first='Draw'):
+        self.first_label=first              # 'Move in' when the element comes in with an effect
         self.draw_seconds=max(0.,float(draw))
         self.paint_seconds=max(0.,float(paint))
         self.hold_seconds=max(0.,float(hold))
@@ -409,7 +410,7 @@ class StageTimeline(QFrame):
         p.setPen(QPen(QColor(c['border']),1))
         p.drawLine(QPointF(left,ruler_h+.5),QPointF(left+width,ruler_h+.5))
         # Clips for each phase, like clips on an editor track.
-        stages=[('Draw',self.draw_seconds,c['draw']),
+        stages=[(getattr(self,'first_label','Draw'),self.draw_seconds,c['draw']),
                 ('Paint',self.paint_seconds,c['paint']),
                 ('Hold',self.hold_seconds,c['hold']),
                 ('Out',self.erase_seconds,c.get('erase','#D9667E'))]
@@ -505,11 +506,12 @@ class StageTimeline(QFrame):
                                  QPointF(play_x-6,ruler_h-6)]))
         p.end()
 
-    STAGE_NAMES={'draw':'Draw','paint':'Paint','hold':'Hold','erase':'Out'}
+    STAGE_NAMES={'draw':'Draw','paint':'Paint','hold':'Hold','erase':'Out','move':'Move in'}
 
     def _paint_whole(self, p, c, clips, small):
         """Whole video: one block per element with its parts inside, camera moves between."""
-        colours={'draw':c['draw'],'paint':c['paint'],'hold':c['hold'],'erase':c.get('erase','#D9667E')}
+        colours={'draw':c['draw'],'paint':c['paint'],'hold':c['hold'],'erase':c.get('erase','#D9667E'),
+                 'move':c['draw']}
         p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
         bold=QFont(self.font()); bold.setPointSizeF(8.5); bold.setBold(True)
         for k,start,secs,seg in self._blocks():
@@ -1603,6 +1605,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     for widget in (w.reverse_button,w.delete_button,w.line_pace,w.line_pause):
         widget.setEnabled(False)
     w.lines_group.setVisible(False)
+    # One place for the order: the Line order window. The small list stays inside
+    # (selection on the preview uses it) but is not shown.
+    w.lines_toggle.setVisible(False)
     w.lines_toggle.toggled.connect(
         lambda opened: (w.lines_group.setVisible(opened),
                         w.lines_toggle.setText('▾ Lines & order' if opened else '▸ Lines & order')))
@@ -1669,6 +1674,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.restart_button.setToolTip('Restart and play')
     w.restart_button.clicked.connect(w.restart)
     tr.addWidget(w.restart_button)
+    # Pre-render, next to the playback buttons.
+    w.prerender_button=QPushButton('Pre-render'); w.prerender_button.setObjectName('subtle')
+    w.prerender_button.setToolTip('Make every frame of the preview ready so it plays smoothly. Only the '
+                                  'parts you change are made again. Click again to stop.')
+    w.prerender_button.clicked.connect(lambda checked=False: w.prerender_whole())
     w.play=QPushButton();w.play.setObjectName('playButton')
     w.play.setToolTip('Play / pause (Space)')
     w.play.clicked.connect(w.toggle)
@@ -1681,6 +1691,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.mute_button.setToolTip('Sound on / off: pencil, brush and eraser sounds, in the preview and the exported video')
     w.mute_button.clicked.connect(lambda checked=False: w.sound_on.setChecked(not w.sound_on.isChecked()))
     tr.addWidget(w.mute_button)
+    tr.addWidget(w.prerender_button)
     tr.addStretch(1)
     w.clock_total=label('','timeTotal')
     w.clock_total.setMinimumWidth(104)
@@ -2241,11 +2252,6 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.add_text_overlay=QPushButton('+ Text'); w.add_text_overlay.setObjectName('subtle')
     w.add_text_overlay.setToolTip('Put a title or label on top of this scene, with an entrance effect.')
     w.add_text_overlay.clicked.connect(lambda checked=False: w.add_overlay_text())
-    w.prerender_button=QPushButton('Pre-render'); w.prerender_button.setObjectName('subtle')
-    w.prerender_button.setToolTip('Make every frame of the preview ready so it plays smoothly. Only the '
-                                  'parts you change are made again. Click again to stop.')
-    w.prerender_button.clicked.connect(lambda checked=False: w.prerender_whole())
-    timeline_head.addWidget(w.prerender_button)
     timeline_head.addWidget(w.add_text_overlay)
     w.timeline_status=label('','panelHint')
     timeline_head.addWidget(w.timeline_status)

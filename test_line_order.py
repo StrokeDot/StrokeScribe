@@ -111,6 +111,55 @@ class WindowTests(unittest.TestCase):
         dialog.reject(); self.app.processEvents()
         self.assertEqual(names, [s.name for s in w.drawing.strokes])          # Cancel keeps the order
 
+    def test_names_default_and_place(self):
+        w = self.w
+        names = [s.name for s in w.drawing.strokes]
+        dialog = w.open_line_order()
+        self.assertEqual(dialog.list.item(0).text(), 'Line 1')            # simple names
+        dialog.picture_clicked(2)
+        self.assertEqual(dialog.position.value(), 3)                       # Move to place starts where it is
+        dialog.move('at')
+        self.assertEqual([s.name for s in dialog.strokes], names)          # so Move keeps it there
+        dialog.move('start')
+        dialog.default()                                                   # back to the order it came in
+        self.assertEqual([s.name for s in dialog.strokes], names)
+        dialog.picture_clicked(0)
+        dialog.edit(reverse=True)
+        self.assertTrue(dialog.strokes[0].reversed)
+        dialog.reject()
+
+    def test_painting_tab_orders_the_painter_parts(self):
+        from PySide6.QtGui import QColor, QImage, QPainter
+        w = self.w
+        colours = QImage(400, 300, QImage.Format.Format_ARGB32_Premultiplied)
+        colours.fill(QColor(0, 0, 0, 0))
+        p = QPainter(colours)
+        p.fillRect(20, 20, 160, 260, QColor(200, 40, 40)); p.fillRect(220, 20, 160, 260, QColor(40, 60, 200))
+        p.fillRect(240, 200, 30, 30, QColor(240, 220, 30)); p.end()
+        w.final_image = colours
+        w.use_color.setEnabled(True); w.use_color.setChecked(True)
+        dialog = w.open_line_order()
+        dialog.set_mode('paint')
+        self.assertEqual(dialog.mode, 'draw')                              # not Painter: explained, stays on Drawing
+        self.assertIn('Painter', dialog.hint.text())
+        dialog.reject(); self.app.processEvents()
+        w.reveal_mode.setCurrentText(w.PAINTER_TEXT)
+        dialog = w.open_line_order()
+        dialog.set_mode('paint')
+        self.assertEqual(dialog.mode, 'paint')
+        self.assertGreaterEqual(len(dialog.parts), 2)
+        self.assertEqual(dialog.list.item(0).text(), 'Part 1')
+        last = len(dialog.parts) - 1
+        dialog.picture_clicked(last)
+        dialog.move('start')
+        chosen = list(dialog.parts)
+        dialog.accept(); self.app.processEvents()
+        self.assertEqual(w.drawing.paint_part_order, chosen)
+        from adaptive_hand import plan_for
+        from painter_paint import part_order
+        self.assertEqual(part_order(dialog.grid, (0, 0), w.drawing.paint_part_order)[0], chosen[0])
+        self.assertIsNotNone(plan_for)
+
     def test_box_select_and_small_list_moves_several(self):
         w = self.w
         dialog = w.open_line_order()

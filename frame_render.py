@@ -231,7 +231,7 @@ def _entering(drawing, fraction, opts, kind, lines_only=False):
     On the Slide effects a move-in hand can carry it in (move_in.py)."""
     import move_in
     plain = timeline_seconds(drawing, dict(opts, pause=0))
-    length = float(opts.get('duration', 4) or 0) or float(opts.get('fade_duration', .4) or .4)
+    length = move_seconds(opts)
     p = min(1., fraction * plain / max(.05, length))
     side = move_in.carried(opts, kind)
     pp = move_in.picture_progress(p, side)
@@ -366,6 +366,11 @@ def camera_for(drawing, options, zoom, rate=30.):
     return path
 
 
+def move_seconds(options):
+    """Length of a move-in effect: the element's animation time."""
+    return float(options.get('duration', 4) or 0) or float(options.get('fade_duration', .4) or .4)
+
+
 def timeline_seconds(drawing, options):
     """Length of the animation in seconds for these options (erase stage included)."""
     from color_reveal import timeline_duration
@@ -374,6 +379,11 @@ def timeline_seconds(drawing, options):
         base = {k: v for k, v in options.items() if k != 'erase'}
         return timeline_seconds(drawing, base) + max(.1, float(erase.get('seconds', 3)))
     pause = max(0., float(options.get('pause', 0) or 0))      # the element stays, finished
+    if (options.get('entrance') or 'draw') != 'draw':
+        import move_in
+        if move_in.part_of(options) == move_in.PART_ALL:
+            # The whole picture moves in: only the move (no drawing, painting or colour hold).
+            return move_seconds(options) + pause
     image = options.get('final_image')
     if image is None or image.isNull():
         return max(.001, float(options.get('duration', 4))) + pause
