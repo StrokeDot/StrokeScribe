@@ -48,17 +48,34 @@ def find_parts(model_dir, image_path, out_path, cpu=False):
     labels = np.zeros(alpha.shape, np.uint16)
     for i, m in enumerate(masks[:65000], 1):
         labels[m] = i
-    # Picture left without any part: one more part per connected piece.
+    # Picture left without any part: bigger leftover pieces become parts of their
+    # own; thin edges and specks join the nearest part.
     rest = alpha & (labels == 0)
+    next_id = int(labels.max()) + 1
     if rest.any():
         try:
-            import cv2
-            n, comp = cv2.connectedComponents(rest.astype(np.uint8), connectivity=4)
-            for c in range(1, n):
-                labels[comp == c] = len(masks) + c
+            from scipy import ndimage
+            comp, n = ndimage.label(rest)
+            sizes = ndimage.sum(rest, comp, range(1, n + 1))
+            for c, size in enumerate(sizes, 1):
+                if size >= MIN_SHARE * area * 4:
+                    labels[comp == c] = next_id; next_id += 1
         except ImportError:
-            labels[rest] = len(masks) + 1
-    out = Image.fromarray(labels, 'I;16')
+            pass
+        rest = alpha & (labels == 0)
+        for _ in range(64):                          # grow the parts into what is left
+            if not rest.any():
+                break
+            grown = labels.copy()
+            for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                shifted = np.roll(labels, (dy, dx), axis=(0, 1))
+                take = (grown == 0) & (shifted > 0)
+                grown[take] = shifted[take]
+            labels = np.where(alpha, grown, 0).astype(np.uint16)
+            rest = alpha & (labels == 0)
+        if rest.any():
+            labels[rest] = next_id
+    out = Image.fromarray(labels.astype(np.uint16))      # 16-bit label picture
     if out.size != (w, h):
         out = out.resize((w, h), Image.Resampling.NEAREST)
     out.save(out_path)
