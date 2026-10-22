@@ -1,0 +1,41 @@
+name: Bisect pre-render
+on:
+  push:
+    branches: [ci/bisect-prerender]
+permissions:
+  contents: write
+jobs:
+  bisect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon0
+      - run: pip install -r requirements.txt
+      - name: Why, per version
+        shell: bash
+        run: |
+          mkdir -p out
+          cp tools/bisect/why.py "$RUNNER_TEMP/why.py"
+          for v in 2662f0b aad5ba5 dd05174 bbc45ee; do
+            git worktree add -f "$RUNNER_TEMP/v$v" $v >/dev/null 2>&1
+            (cd "$RUNNER_TEMP/v$v" && timeout 600 python "$RUNNER_TEMP/why.py") > out/$v.txt 2>&1 || true
+            echo "== $v"; tail -15 out/$v.txt
+          done
+      - name: Publish
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out && git init -q && git checkout -q -b bisect-prerender
+          git config user.name ci && git config user.email ci@example.invalid
+          git add -A && git commit -qm "bisect" && git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" bisect-prerender
