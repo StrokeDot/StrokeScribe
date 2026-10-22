@@ -63,7 +63,9 @@ class PaintModeDialog(QDialog):
         self._shown = 0
         outer = QVBoxLayout(self)
         body = QHBoxLayout(); outer.addLayout(body, 1)
-        self.list = QListWidget(); self.list.setMinimumWidth(270)
+        self.list = QListWidget(); self.list.setMinimumWidth(340)
+        self.list.setWordWrap(True)
+        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body.addWidget(self.list)
         side = QVBoxLayout(); body.addLayout(side, 1)
         self.title = QLabel(); self.title.setObjectName('sectionTitle')
@@ -110,7 +112,7 @@ class PaintModeDialog(QDialog):
         self.play_timer.timeout.connect(self.play_next)
         start = self.items.get(current) or next(iter(self.items.values()))
         self.list.setCurrentItem(start)
-        self.resize(820, 470)
+        self.resize(900, 480)
 
     # ------------------------------------------------------------ choosing
     def select(self, item):
