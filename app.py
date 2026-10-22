@@ -789,6 +789,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                         widget.blockSignals(True)
                         set_widget_value(widget,default)
                         widget.blockSignals(False)
+            if 'paint_left_handed' not in settings:      # older snapshots: one switch for both hands
+                settings=dict(settings,paint_left_handed=bool(settings.get('left_handed',False)))
             for name in self.PROJECT_SETTINGS:
                 widget=getattr(self,name,None)
                 if widget is None or name not in settings: continue
@@ -1259,7 +1261,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     # ------------------------------------------------------------ projects
     PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
-                      'use_color','preserve_colors','showhand','left_handed','entrance','entrance_part','pause_after','show_paint_hand','handsize','ax','ay',
+                      'use_color','preserve_colors','showhand','left_handed','paint_left_handed','entrance','entrance_part','pause_after','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
                       'sound_on','sound_volume','sound_preview','preview_background','image_detail',
                       'image_style','image_animation_style','clean_faint',
@@ -1511,7 +1513,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         settings=dict({'artwork_opacity':100,'paper_cleanup':False,
                        'paper_tolerance':22,'paper_softness':8,
                        # Older projects: slides came in without a hand.
-                       'move_hand':False,'entrance_part':'The whole picture'},**settings)
+                       'move_hand':False,'entrance_part':'The whole picture',
+                       # Older projects: one Left-handed switch for both hands.
+                       'paint_left_handed':bool(settings.get('left_handed',False))},**settings)
         # Settings first (without a refresh storm), then the drawing.
         for name in self.PROJECT_SETTINGS:
             widget=getattr(self,name,None)
@@ -2835,6 +2839,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.paint_hand_name.setText('Painting hand: '+name+(' (file missing: using the drawing hand)' if missing else ''))
         else:
             self.paint_hand_name.setText('')
+        self.sync_hand_sides()
 
     def paint_hand_changed(self):
         import tools_kit
@@ -2872,6 +2877,19 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if hasattr(self,'entrance_part'):
             self.entrance_part.setEnabled(self.entrance.currentIndex()!=0)
 
+    def sync_hand_sides(self):
+        """The Right | Left switches after a project, undo or element switch, and the
+        painting hand's switch following the drawing hand when it is the same hand."""
+        import tools_kit
+        if not hasattr(self,'paint_left_handed_toggle'): return
+        same=self.paint_hand.currentText()==tools_kit.PAINT_SAME
+        if same and self.paint_left_handed.isChecked()!=self.left_handed.isChecked():
+            self.paint_left_handed.blockSignals(True)
+            self.paint_left_handed.setChecked(self.left_handed.isChecked())
+            self.paint_left_handed.blockSignals(False)
+        self.paint_left_handed_toggle.setEnabled(not same)
+        self.left_handed_toggle.sync();self.paint_left_handed_toggle.sync()
+
     def update_move_hand_label(self):
         if not hasattr(self,'move_hand_name'): return
         path=getattr(self,'move_hand_path',None)
@@ -2883,6 +2901,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.move_hand_name.setText('Hand: '+Path(path).stem)
         self.move_hand_builtin.setEnabled(bool(path))
         self.update_entrance_controls()
+        self.sync_hand_sides()
 
     def choose_move_hand(self):
         name,_=QFileDialog.getOpenFileName(self,'Choose the move-in hand','','Pictures (*.png *.webp)')
@@ -2905,6 +2924,26 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.update_move_hand_label()
         self.note_change()
         self.refresh()
+
+    def open_paint_mode_picker(self):
+        """Paint mode: the bigger picker with groups, descriptions and a preview."""
+        from paint_mode_dialog import PaintModeDialog
+        combo=self.reveal_mode
+        model=combo.model()
+        def allowed(text):
+            i=combo.findText(text)
+            item=model.item(i) if i>=0 and hasattr(model,'item') else None
+            return i>=0 and (item is None or item.isEnabled())
+        dialog=PaintModeDialog(self,combo.currentText(),allowed)
+        def done(result):
+            if result and dialog.chosen and allowed(dialog.chosen):
+                combo.setCurrentIndex(combo.findText(dialog.chosen))
+            self.paint_mode_dialog=None
+            dialog.deleteLater()
+        dialog.finished.connect(done)
+        self.paint_mode_dialog=dialog
+        dialog.open()                      # window-modal, without blocking the program
+        return dialog
 
     def update_sound_buttons(self):
         for key,(button,text) in self.sound_file_buttons.items():
@@ -3124,11 +3163,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self._camera_key=key
         return self._camera_path
 
-    def options(self):
+    def options(self,overrides=None):
         from export_job import options_from_settings
         image_source=self.is_image_artwork()
+        settings=self.settings_state()
+        if overrides: settings.update(overrides)
         options=options_from_settings(
-            self.settings_state(),self.drawing,
+            settings,self.drawing,
             color_image=None if image_source else self.final_image,hand=self.hand,
             image_source=self.image_result.image if image_source and self.image_result else None,
             image_mode=image_source)

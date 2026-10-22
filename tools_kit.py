@@ -132,7 +132,8 @@ def painting_hand(settings, hand):
         stamp = None
     if stamp is None:
         return hand                                  # file gone: fall back to the drawing hand
-    left = bool(s.get('left_handed'))
+    side = s.get('paint_left_handed')                # its own Right | Left switch (Hand tab)
+    left = bool(s.get('left_handed') if side is None else side)
     key = (path, stamp, tuple(known) if known else None, share, hand_scale, anchor, left)
     tool = _CACHE.get(key)
     if tool is None:

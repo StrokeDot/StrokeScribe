@@ -1815,7 +1815,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.source_appearance_slot.addLayout(blend_form)
     w.appearance_form=blend_form
     a2=form_layout();animation_l.addLayout(a2)
-    w.reveal_mode=QComboBox()
+    w.reveal_mode=PaintModeCombo(lambda: w.open_paint_mode_picker())
     w.reveal_mode.addItems(['Brush painting','Adaptive Hand Painting','Zigzag sweep',
                             'Top to bottom (rows)','Left to right (columns)',
                             'Adaptive — Short up/down strokes'])
@@ -1916,6 +1916,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.showhand=QCheckBox('Show while drawing')
     w.showhand.setToolTip('Show the hand while it draws the lines.')
     w.showhand.setChecked(True);h.addRow('',w.showhand)
+    # Right or left hand: a small two-way switch. The (hidden) check box keeps the
+    # value for projects, undo and the element editor.
+    w.left_handed=QCheckBox('Left-handed',hand);w.left_handed.hide()
+    w.left_handed_toggle=side_toggle(w.left_handed,
+        'Right-handed or left-handed drawing hand. Left mirrors the drawing hand, the eraser '
+        'and the move-in hand.')
+    h.addRow('Hand',w.left_handed_toggle)
     w.handsize=w.number(.02,.8,.75,.01);h.addRow('Hand size',w.handsize)
     h.setRowVisible(w.handsize,False)        # edited through Size (%) above
     w.hand_size_pct.setValue(round(w.handsize.value()*100))
@@ -1958,6 +1965,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.show_paint_hand=QCheckBox('Show while painting')
     w.show_paint_hand.setToolTip('Show the hand while it paints the colours.')
     w.show_paint_hand.setChecked(True);ph.addRow('',w.show_paint_hand)
+    w.paint_left_handed=QCheckBox('Left-handed',hand);w.paint_left_handed.hide()
+    w.paint_left_handed_toggle=side_toggle(w.paint_left_handed,
+        'Right-handed or left-handed painting hand. With "Same as drawing hand" it follows '
+        'the drawing hand.')
+    ph.addRow('Hand',w.paint_left_handed_toggle)
     # 3. The move-in hand: carries the picture in on the Slide effects (Animation > Comes in).
     hand_l.addWidget(label('3 · MOVE-IN HAND (slides the picture in)'))
     picture('move')
@@ -1986,12 +1998,6 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.move_hand.setToolTip('A hand carries the picture in when it slides in (Animation > Comes in: '
                            'Slide in from …), lets go, and leaves the way it came.')
     w.move_hand.setChecked(True);mh.addRow('',w.move_hand)
-    # 4. Left hand.
-    hand_l.addWidget(label('4 · LEFT HAND'))
-    lh=form_layout();hand_l.addLayout(lh)
-    w.left_handed=QCheckBox('Left-handed')
-    w.left_handed.setToolTip('Mirrors the drawing hand, the painting brush and the eraser, for left-handers.')
-    lh.addRow(QLabel(''),w.left_handed)      # an empty label keeps the shared column
     hand_l.addStretch(1)
     tabs.addTab(scroll_view(hand),'Hand')
 
@@ -2334,6 +2340,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
         widget.valueChanged.connect(w.refresh)
     w.showhand.toggled.connect(w.refresh)
     w.left_handed.toggled.connect(w.refresh)
+    w.left_handed.toggled.connect(lambda checked: w.sync_hand_sides())
+    w.paint_left_handed.toggled.connect(w.refresh)
     w.entrance.currentIndexChanged.connect(w.refresh)
     w.entrance.currentIndexChanged.connect(lambda index: w.update_entrance_controls())
     w.entrance_part.currentIndexChanged.connect(w.refresh)
@@ -2466,3 +2474,40 @@ def build_workspace(w, Canvas, BRAND_ICON):
     calm_wheel(w)
     w.wheel_guard=WheelGuard(w)
     QApplication.instance().installEventFilter(w.wheel_guard)
+
+
+class PaintModeCombo(QComboBox):
+    """The Paint mode list: clicking it opens the bigger picker (paint_mode_dialog)
+    instead of a dropdown. The list itself, its order and its items stay the same."""
+
+    def __init__(self, picker=None):
+        super().__init__()
+        self.picker = picker
+
+    def showPopup(self):
+        if self.picker is None:
+            return super().showPopup()
+        self.picker()
+
+
+def side_toggle(box, tip):
+    """Two small buttons, Right | Left, kept in step with the check box `box` (checked = left)."""
+    from PySide6.QtWidgets import QButtonGroup
+    holder=QWidget();holder.setMinimumWidth(0);holder.setObjectName('sideToggle')
+    row=QHBoxLayout(holder);row.setContentsMargins(0,0,0,0);row.setSpacing(0)
+    group=QButtonGroup(holder);group.setExclusive(True)
+    buttons=[]
+    for text,left in (('Right',False),('Left',True)):
+        b=QPushButton(text);b.setCheckable(True);b.setToolTip(tip)
+        b.setMinimumWidth(0);b.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+        b.setObjectName('sideToggleLeft' if left else 'sideToggleRight')
+        b.clicked.connect(lambda checked=False,left=left: box.setChecked(left))
+        group.addButton(b);row.addWidget(b,1);buttons.append(b)
+    def sync(*_):
+        left=box.isChecked()
+        for b,is_left in zip(buttons,(False,True)):
+            b.blockSignals(True);b.setChecked(left==is_left);b.blockSignals(False)
+    box.toggled.connect(sync)
+    holder.sync=sync;holder.buttons=buttons
+    sync()
+    return holder
