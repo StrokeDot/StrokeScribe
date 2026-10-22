@@ -9,6 +9,11 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Painter: real parts found by AI (v0.5.3-experimental.89)
+
+- With **Painter** chosen, the Animation tab shows **Parts**. *Find real parts (AI)…* lets Segment Anything (Meta, Apache 2.0) find the real objects of the picture: a cushion, a speaker, the band, whatever its shading. Painter then paints them part by part. The first time it downloads the model (about 2.4 GB) into the AI engine; after that a picture takes a few seconds on the graphics card. The parts are saved with the project, so playback and export never need the AI. *Colour areas* goes back to colour parts.
+- Needs the AI engine (set up once from Create image with AI).
+
 ## New paint mode: Painter (v0.5.3-experimental.88)
 
 - **Painter — real parts, strokes follow the shape** paints the way a person would: the big parts first, then smaller parts, details last; each part is brushed around its own shape, from the edge inwards, instead of a straight back-and-forth scan. Tiny specks join the part next to them, so the hand does not hop around.

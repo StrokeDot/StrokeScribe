@@ -48,14 +48,19 @@ def part_labels(drawing, source, support, gw, gh):
     """One label per grid cell (0 = nothing to paint): the picture's parts."""
     import numpy as np
     from PIL import Image
-    parts = getattr(drawing, 'ai_parts', None) or getattr(drawing, 'image_regions', None)
-    if parts is None:
-        from image_regions import segment_regions
-        parts = segment_regions(source, 'medium')
-    ids = parts.labels
-    if tuple(parts.size) != (gw, gh):
-        im = Image.new('I', tuple(parts.size)); im.putdata(list(parts.labels))
-        ids = list(im.resize((gw, gh), Image.Resampling.NEAREST).getdata())
+    found = getattr(drawing, 'ai_parts_image', None)            # AI parts (ai_parts.py), when found
+    if found is not None:
+        from ai_parts import regions_of
+        ids = regions_of(found, (gw, gh))
+    else:
+        parts = getattr(drawing, 'image_regions', None)
+        if parts is None:
+            from image_regions import segment_regions
+            parts = segment_regions(source, 'medium')
+        ids = parts.labels
+        if tuple(parts.size) != (gw, gh):
+            im = Image.new('I', tuple(parts.size)); im.putdata(list(parts.labels))
+            ids = list(im.resize((gw, gh), Image.Resampling.NEAREST).getdata())
     raw = np.asarray(ids, np.int32).reshape(gh, gw)
     sup = np.asarray(support, np.uint8).reshape(gh, gw) > 0
     raw = np.where(sup, np.where(raw > 0, raw, 1), 0)

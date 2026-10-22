@@ -435,7 +435,7 @@ def _plan_key(drawing,image,brush_width,stroke_spacing):
             getattr(drawing,'image_semantic_order',()),tuple(drawing.bounds),
             (image.width(),image.height()),_alpha_digest(image),
             float(brush_width),float(stroke_spacing),getattr(drawing,'paint_method','adaptive'),
-            COLOUR_SPLIT)
+            COLOUR_SPLIT,getattr(drawing,'ai_parts_digest',None))
 
 def plan_ready(drawing,image,brush_width=.14,stroke_spacing=.55):
     """True when plan_for would return at once (the brush plan is cached)."""

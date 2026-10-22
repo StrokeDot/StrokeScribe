@@ -1834,6 +1834,24 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.reveal_mode.setItemData(6,'New: paints like a person: big parts first, details last, each part '
                               'brushed around its shape from the edge inwards.',Qt.ItemDataRole.ToolTipRole)
     a2.addRow('Paint mode',w.reveal_mode)
+    # Painter: which parts it paints (colour areas, or real parts found by the AI).
+    w.painter_parts_note=caption('Parts: colour areas')
+    w.painter_parts_note.setWordWrap(True)
+    a2.addRow('',w.painter_parts_note)
+    w.find_parts_button=QPushButton('Find real parts (AI)…')
+    w.find_parts_button.setToolTip('Segment Anything finds the real parts of this picture (a cushion, '
+                                   'a speaker, the band) for Painter. Runs once on your graphics card; '
+                                   'the first time it downloads the model (about 2.4 GB).')
+    w.find_parts_button.clicked.connect(lambda checked=False: w.find_ai_parts())
+    w.colour_parts_button=QPushButton('Colour areas')
+    w.colour_parts_button.setToolTip('Forget the AI parts and paint by colour areas again.')
+    w.colour_parts_button.clicked.connect(lambda checked=False: w.forget_ai_parts())
+    w.painter_parts_buttons=QWidget();w.painter_parts_buttons.setMinimumWidth(0)
+    _row=QHBoxLayout(w.painter_parts_buttons);_row.setContentsMargins(0,0,0,0);_row.setSpacing(6)
+    for _b in (w.find_parts_button,w.colour_parts_button):
+        _b.setMinimumWidth(0);_b.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
+        _row.addWidget(_b,1)
+    a2.addRow('Parts',w.painter_parts_buttons)
     w.image_paint_hint=caption('Image sources paint with Adaptive Hand Painting or Zigzag sweep. Original PNG colors are preserved.')
     a2.addRow(w.image_paint_hint)
     w.color_fade=w.number(0,20,.4,.1);a2.addRow('SVG paint time (s)',w.color_fade)
@@ -2357,6 +2375,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.color_fade.valueChanged.connect(w.refresh)
     w.color_hold.valueChanged.connect(w.refresh)
     w.reveal_mode.currentIndexChanged.connect(w.refresh)
+    w.reveal_mode.currentIndexChanged.connect(lambda index: w.update_painter_parts())
     for field in (w.blend_mode,w.artwork_opacity,w.paper_cleanup,
                   w.paper_tolerance,w.paper_softness):
         if isinstance(field,QComboBox):
@@ -2374,6 +2393,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.paint_hand_size.valueChanged.connect(w.refresh)
     w.update_paint_hand_label()          # Size shows only for a different painting hand
     w.update_move_hand_label()
+    w.update_painter_parts()
     w.camera.currentIndexChanged.connect(w.refresh)
     w.pen_ease.currentIndexChanged.connect(w.refresh)
     w.erase_mode.currentIndexChanged.connect(w.prepare_eraser)
