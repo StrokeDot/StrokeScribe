@@ -458,6 +458,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.preview_sound=None
         self.audio_path=None; self.audio_seconds=None
         self.paint_hand_path=None; self.paint_hand_tip=None
+        self.move_hand_path=None
         self.sound_files={'sound_pencil_file':None,'sound_brush_file':None,'sound_eraser_file':None}
         from scenes import DEFAULT_TRANSITION, DEFAULT_TRANSITION_SECONDS
         self.scenes=[dict(state=None,transition=DEFAULT_TRANSITION,
@@ -780,7 +781,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # Older snapshots lack appearance controls. Revert to their
             # historical full-opacity, no-cleanup defaults when switching.
             for name,default in (('artwork_opacity',100),('paper_cleanup',False),
-                                 ('paper_tolerance',22),('paper_softness',8)):
+                                 ('paper_tolerance',22),('paper_softness',8),('move_hand',False),
+                                 ('entrance_part','The whole picture')):
                 if name not in settings:
                     widget=getattr(self,name,None)
                     if widget is not None:
@@ -796,6 +798,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.paint_hand_path=settings.get('paint_hand_path')
             self.paint_hand_tip=settings.get('paint_hand_tip')
             self.update_paint_hand_label()
+            self.move_hand_path=settings.get('move_hand_path')
+            self.update_move_hand_label()
             for key in self.sound_files: self.sound_files[key]=settings.get(key)
             self.update_sound_buttons()
             self.canvas.set_background(self.preview_background.currentIndex())
@@ -1255,12 +1259,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     # ------------------------------------------------------------ projects
     PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
-                      'use_color','preserve_colors','showhand','left_handed','entrance','pause_after','show_paint_hand','handsize','ax','ay',
+                      'use_color','preserve_colors','showhand','left_handed','entrance','entrance_part','pause_after','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
                       'sound_on','sound_volume','sound_preview','preview_background','image_detail',
                       'image_style','image_animation_style','clean_faint',
                       'erase_mode','erase_time','erase_size','eraser',
-                      'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export','export_layers','clean_color','export_done_sound')
+                      'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export','export_layers','clean_color','export_done_sound',
+                      'move_hand','move_hand_size','move_hand_gx','move_hand_gy')
 
     def project_state(self):
         """Everything needed to reopen this project: the edited scene plus all scenes."""
@@ -1292,6 +1297,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self.paint_hand_path and Path(self.paint_hand_path).is_file():
             import base64
             state['paint_hand_png']=base64.b64encode(Path(self.paint_hand_path).read_bytes()).decode('ascii')
+        move=getattr(self,'move_hand_path',None)
+        if move and Path(move).is_file():
+            import base64
+            state['move_hand_png']=base64.b64encode(Path(move).read_bytes()).decode('ascii')
         metadata=getattr(self.drawing,'artwork_assets',None)
         if metadata:
             state['artwork']=metadata
@@ -1500,7 +1509,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         # Reset optional appearance fields while switching scenes so a legacy
         # image cannot inherit cleanup or opacity from the preceding element.
         settings=dict({'artwork_opacity':100,'paper_cleanup':False,
-                       'paper_tolerance':22,'paper_softness':8},**settings)
+                       'paper_tolerance':22,'paper_softness':8,
+                       # Older projects: slides came in without a hand.
+                       'move_hand':False,'entrance_part':'The whole picture'},**settings)
         # Settings first (without a refresh storm), then the drawing.
         for name in self.PROJECT_SETTINGS:
             widget=getattr(self,name,None)
@@ -1518,6 +1529,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.paint_hand_path=tools_kit.restore_paint_hand(settings.get('paint_hand_path'),data.get('paint_hand_png'))
         self.paint_hand_tip=settings.get('paint_hand_tip')
         self.update_paint_hand_label()
+        self.move_hand_path=tools_kit.restore_paint_hand(settings.get('move_hand_path'),data.get('move_hand_png'))
+        self.update_move_hand_label()
         for key in self.sound_files:
             path=settings.get(key)
             self.sound_files[key]=path if path and Path(path).is_file() else None
@@ -2859,6 +2872,46 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.note_change()
         self.refresh()
 
+    # ------------------------------------------------------------ move-in hand
+    def update_entrance_controls(self):
+        """'Moves in' only matters when the element comes in with an effect."""
+        if hasattr(self,'entrance_part'):
+            self.entrance_part.setEnabled(self.entrance.currentIndex()!=0)
+
+    def update_move_hand_label(self):
+        if not hasattr(self,'move_hand_name'): return
+        path=getattr(self,'move_hand_path',None)
+        if not path:
+            self.move_hand_name.setText('Hand: built-in (placeholder)')
+        elif not Path(path).is_file():
+            self.move_hand_name.setText(f'Hand: {Path(path).stem} (file missing; using the built-in hand)')
+        else:
+            self.move_hand_name.setText('Hand: '+Path(path).stem)
+        self.move_hand_builtin.setEnabled(bool(path))
+        self.update_entrance_controls()
+
+    def choose_move_hand(self):
+        name,_=QFileDialog.getOpenFileName(self,'Choose the move-in hand','','Pictures (*.png *.webp)')
+        if name: self.set_move_hand(self.keep_in_library('hands',name))
+
+    def set_move_hand(self,path):
+        """The move-in hand (None: the built-in one). A new picture gets its grip found by itself."""
+        import move_in
+        if path:
+            image=QImage(str(path))
+            if image.isNull():
+                QMessageBox.warning(self,'Move-in hand','Could not read this hand image.'); return
+            import tools_kit
+            gx,gy=tools_kit.tip_for_image(image)
+        else:
+            gx,gy=move_in.DEFAULT_GRIP
+        self.move_hand_path=str(path) if path else None
+        for box,value in ((self.move_hand_gx,gx),(self.move_hand_gy,gy)):
+            box.blockSignals(True); box.setValue(float(value)); box.blockSignals(False)
+        self.update_move_hand_label()
+        self.note_change()
+        self.refresh()
+
     def update_sound_buttons(self):
         for key,(button,text) in self.sound_file_buttons.items():
             path=self.sound_files.get(key)
@@ -2958,6 +3011,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         state['paint_hand_path']=self.paint_hand_path
         state.update(self.sound_files)
         state['paint_hand_tip']=self.paint_hand_tip
+        state['move_hand_path']=getattr(self,'move_hand_path',None)
         state['background_color']=getattr(self,'background_color',None)
         return state
 
@@ -3305,8 +3359,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             paint=options.get('painting_hand') if self.show_paint_hand.isChecked() else None
             if paint is None and self.show_paint_hand.isChecked() and self.paint_hand.currentIndex()==0:
                 paint=draw
-            for key,image in (('draw',draw),('paint',paint)):
-                label=pictures[key]
+            move=options.get('move_hand')
+            for key,image in (('draw',draw),('paint',paint),('move',move)):
+                label=pictures.get(key)
+                if label is None: continue
                 stamp=image.cacheKey() if image is not None and not image.isNull() else None
                 if getattr(label,'_stamp','x')==stamp: continue
                 label._stamp=stamp
