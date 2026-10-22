@@ -3389,7 +3389,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.final_image.cacheKey() if getattr(self,'final_image',None) is not None else None,
             self._token(getattr(self,'image_result',None)),
             self.hand.cacheKey() if self.hand is not None else None,
-            repr(getattr(self,'overlays',[])),getattr(d,'pen_ease',None))
+            repr(getattr(self,'overlays',[])),getattr(d,'pen_ease',None),
+            # How the colours are painted: the painting order (Line order → Painting)
+            # and the AI parts. Without them, playback reused frames painted the old way.
+            tuple(getattr(d,'paint_part_order',None) or ()),getattr(d,'ai_parts_digest',None))
         memo['edited_fp']=fp
         return fp
 

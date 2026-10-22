@@ -187,6 +187,18 @@ class WindowTests(unittest.TestCase):
         dialog.accept(); self.app.processEvents()
         self.assertEqual([s.name for s in w.drawing.strokes][:2], [names[3], names[1]])
 
+    def test_painting_order_makes_new_preview_frames(self):
+        w = self.w
+        w.refresh(); self.app.processEvents()
+        before = w.edited_fingerprint()
+        w.drawing.paint_part_order = [3, 1, 2]
+        w.clear_frames()
+        self.assertNotEqual(before, w.edited_fingerprint())     # playback cannot reuse old frames
+        w.drawing.ai_parts_digest = 'abc'
+        after_order = w.edited_fingerprint()
+        w.clear_frames()
+        self.assertNotEqual(after_order, w.edited_fingerprint())
+
     def test_box_select_and_small_list_moves_several(self):
         w = self.w
         dialog = w.open_line_order()
