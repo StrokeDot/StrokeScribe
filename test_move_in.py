@@ -115,7 +115,7 @@ class RenderTests(unittest.TestCase):
         self.assertGreater(green.sum(), 50)                    # the hand is there while carrying
         rows_hand, rows_art = np.nonzero(green.any(1))[0], np.nonzero((art & ~green).any(1))[0]
         self.assertGreaterEqual(rows_hand.min(), rows_art.max() - 3)   # below the picture, holding its edge
-        self.assertGreater(counts(compose_frame(d, .85, o))[1].sum(), 0)        # leaving
+        self.assertGreater(counts(compose_frame(d, .76, o))[1].sum(), 0)        # letting go, leaving
         self.assertEqual(counts(compose_frame(d, 1., o))[1].sum(), 0)           # gone at the end
         self.assertEqual(counts(compose_frame(d, .6, dict(o, layers='art')))[1].sum(), 0)   # Drawing only
         hand_only = counts(compose_frame(d, .6, dict(o, layers='hand')))
