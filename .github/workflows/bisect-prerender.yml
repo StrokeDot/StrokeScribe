@@ -20,15 +20,17 @@ jobs:
           cache: pip
       - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libxkbcommon0
       - run: pip install -r requirements.txt
-      - name: Which earlier test breaks the pre-render tests
+      - name: Probe after test_source_timeline
         shell: bash
         run: |
           mkdir -p out
           git worktree add -f "$RUNNER_TEMP/v94" 804eb28 >/dev/null 2>&1
+          cp tools/bisect/test_zz_probe.py "$RUNNER_TEMP/v94/"
           cd "$RUNNER_TEMP/v94"
-          for m in test_source_timeline test_prototype; do
-            timeout 900 python tools/run_tests.py $m test_segment_cache.WindowTests > "$GITHUB_WORKSPACE/out/$m.txt" 2>&1
-            echo "$m -> $(tail -1 $GITHUB_WORKSPACE/out/$m.txt)" | tee -a "$GITHUB_WORKSPACE/out/summary.txt"
+          timeout 900 python tools/run_tests.py test_source_timeline.SourceTimelineTests test_zz_probe 2>&1 | grep -E "PROBE|\.\.\. " | tee "$GITHUB_WORKSPACE/out/probe.txt"
+          for t in test_single_scope_uses_selected_scene_not_zero test_stage_hit_uses_draw_paint_rectangles_and_skips_join test_double_click_one_edit_click_scrubs_and_locked_blocks test_keyboard_source_actions_exist_even_without_paint_duration test_cancel_editor_keeps_project_and_history; do
+            echo "== $t" >> "$GITHUB_WORKSPACE/out/probe.txt"
+            timeout 600 python tools/run_tests.py test_source_timeline.SourceTimelineTests.$t test_zz_probe 2>&1 | grep -E "PROBE" >> "$GITHUB_WORKSPACE/out/probe.txt"
           done
       - name: Publish
         if: always()
