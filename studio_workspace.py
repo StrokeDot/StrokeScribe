@@ -1544,6 +1544,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # Lines & order works for every kind of element, so it lives in Animation.
     w.lines_box=QWidget()
     lines_box_l=QVBoxLayout(w.lines_box);lines_box_l.setContentsMargins(0,0,0,0);lines_box_l.setSpacing(8)
+    # The big Line order window (line_order_dialog): see, pick, move several lines, auto order.
+    w.line_order_button=QPushButton('✎  Line order…')
+    w.line_order_button.setObjectName('primary')
+    w.line_order_button.setToolTip('Open the Line order window: see the drawing big, pick several lines '
+                                   'and move them together, or order them automatically.')
+    w.line_order_button.clicked.connect(lambda checked=False: w.open_line_order())
+    lines_box_l.addWidget(w.line_order_button)
     w.lines_toggle=QPushButton('▸ Lines & order')
     w.lines_toggle.setObjectName('subtle')
     w.lines_toggle.setCheckable(True)
@@ -2506,6 +2513,11 @@ class PaintModeCombo(QComboBox):
     def __init__(self, picker=None):
         super().__init__()
         self.picker = picker
+        # A button that opens the picker: no dropdown arrow.
+        self.setObjectName('paintModeButton')
+        self.setStyleSheet('QComboBox#paintModeButton::drop-down { width: 0px; border: none; }'
+                           'QComboBox#paintModeButton::down-arrow { image: none; width: 0px; }')
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def showPopup(self):
         if self.picker is None:

@@ -9,6 +9,12 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Line order window; Paint mode preview pause (v0.5.3-experimental.90)
+
+- **Line order** (Animation tab, the orange button): a big window with the drawing. Click lines to select them (click again to unselect), or drag a box around several. Selected lines are orange with their number; the others are coloured by when they are drawn (blue first, red last). Move all selected lines together: to the start, up, down, to the end or to a position. **Automatic order**: top to bottom, left to right, outlines first, nearest next (the pen travels least) or big shapes first, for all lines or only the selected ones. **Play order** shows the order line by line. Nothing changes until *Use this order* (one undo step).
+- The small list's *Move up / Move down* now moves every selected line.
+- **Paint mode**: no dropdown arrow (it opens the picker); the picker's preview has *Pause / Play* (or click the preview).
+
 ## Painter: real parts found by AI (v0.5.3-experimental.89)
 
 - With **Painter** chosen, the Animation tab shows **Parts**. *Find real parts (AI)…* lets Segment Anything (Meta, Apache 2.0) find the real objects of the picture: a cushion, a speaker, the band, whatever its shading. Painter then paints them part by part. The first time it downloads the model (about 2.4 GB) into the AI engine; after that a picture takes a few seconds on the graphics card. The parts are saved with the project, so playback and export never need the AI. *Colour areas* goes back to colour parts.
