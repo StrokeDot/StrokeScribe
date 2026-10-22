@@ -3080,6 +3080,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             able(self.painter_parts_buttons,painting,why)
         able(self.camera,not effect or painting,'nothing is drawn or painted for the camera to follow.')
         erase=self.erase_mode.currentText()
+        if hasattr(self,'erase_on') and self.erase_on.isChecked()!=(erase!='Off'):
+            self.erase_on.blockSignals(True); self.erase_on.setChecked(erase!='Off'); self.erase_on.blockSignals(False)
+            if hasattr(self,'section_out') and self.section_out.switch is not None: self.section_out.switch.update()
+        if erase!='Off': self._last_erase=erase
         rubbing=erase in ('Zigzag (follows the shapes)','Along the lines')
         able(self.erase_time,erase!='Off','"Goes out" is Off.')
         able(self.erase_size,rubbing,'only an eraser that rubs (Zigzag or Along the lines) has a size.')

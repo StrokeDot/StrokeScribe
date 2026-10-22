@@ -97,7 +97,8 @@ class PainterPartsTests(unittest.TestCase):
             w.show(); self.app.processEvents()
             w.reveal_mode.setCurrentText('Adaptive Hand Painting'); self.app.processEvents()
             self.assertFalse(w.find_parts_button.isVisible())
-            w.reveal_mode.setCurrentText(w.PAINTER_TEXT); w.show_right_panel('animation'); self.app.processEvents()
+            w.reveal_mode.setCurrentText(w.PAINTER_TEXT); w.show_right_panel('animation')
+            w.section_painting.set_expanded(True); self.app.processEvents()
             self.assertTrue(w.find_parts_button.isVisible())
             self.assertIn('colour areas', w.painter_parts_note.text())
         finally:
