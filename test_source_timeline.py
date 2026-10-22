@@ -44,6 +44,7 @@ class SourceTimelineTests(WorkflowFixture):
         self.assertEqual(spy.count(),1);self.assertEqual(spy.at(0),['paint',2]);self.assertEqual(edge.count(),0)
         t.locked=True;QTest.mouseDClick(t,Qt.MouseButton.LeftButton,pos=p)
         self.assertEqual(spy.count(),1)
+        QTest.mouseRelease(t,Qt.MouseButton.LeftButton,pos=p)    # leave no button "held" for later tests
         t.close();t.deleteLater()
     def test_keyboard_source_actions_exist_even_without_paint_duration(self):
         t=self.w.stage_timeline

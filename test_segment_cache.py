@@ -134,6 +134,16 @@ class WindowTests(unittest.TestCase):
             fresh = w.render_segment(where, k, local, frames, w.PREVIEW_WIDTH)
             self.assertEqual(cached.convertToFormat(fresh.format()), fresh, (i, where, k))
 
+    def test_a_stale_held_button_does_not_stop_prerender_forever(self):
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+        w = self.w
+        with mock.patch.object(QApplication, 'mouseButtons', return_value=Qt.MouseButton.LeftButton):
+            for _ in range(30):
+                w.prerender_step()
+        self.assertGreater(w.ready_frames()[0], 0)
+
     def test_prerender_button_sits_next_to_library(self):
         w = self.w
         bar = w.library_button.parentWidget().layout()
