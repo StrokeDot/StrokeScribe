@@ -41,6 +41,13 @@ class SelectTests(unittest.TestCase):
         root = self.make_repo(files)
         self.assertEqual(select(['hub.py'], root), ['test_studio'])
 
+    def test_shards_cover_every_module_once(self):
+        from tools.select_tests import shard
+        names = [f'test_{i}' for i in range(11)]
+        parts = [shard(names, k, 4) for k in range(1, 5)]
+        self.assertEqual(sorted(sum(parts, [])), sorted(names))
+        self.assertTrue(all(parts))
+
     def test_this_repository_selects_real_modules(self):
         chosen = select(['workspace_layout.py'])
         self.assertIn('test_workspace_layout', chosen)
