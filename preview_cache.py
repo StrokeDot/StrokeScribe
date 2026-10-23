@@ -13,8 +13,12 @@ plus the frame number inside the segment. So:
 
 Two tiers: recent frames in memory (fast, bounded), and frames made by
 "Pre-render" on disk (bounded, oldest removed first) so a long video does not
-have to fit in memory. Disk frames are JPEG when fully opaque (much smaller),
-PNG when they have transparency.
+have to fit in memory. The memory tier grows with the computer's memory.
+
+Disk frames are stored as raw pixels (exp.101): reading one back is a plain file
+read, a few milliseconds. PNG frames (older versions) took tens of milliseconds
+to decode each, too slow to play from at 30 frames a second. Older .png / .jpg
+frames are still read.
 """
 from __future__ import annotations
 
@@ -23,8 +27,39 @@ import os
 from collections import OrderedDict
 from pathlib import Path
 
-MEMORY_BUDGET = 600 * 1024 * 1024
+MEMORY_BUDGET = 600 * 1024 * 1024            # the least; more on computers with more memory
 DISK_BUDGET = 20 * 1024 ** 3
+RAW_MAGIC = b'SSRAW1'
+
+
+def physical_memory():
+    """Bytes of memory in this computer, or None when unknown."""
+    try:
+        if os.name == 'nt':
+            import ctypes
+
+            class Status(ctypes.Structure):
+                _fields_ = [('length', ctypes.c_ulong), ('load', ctypes.c_ulong),
+                            ('total', ctypes.c_ulonglong), ('free', ctypes.c_ulonglong),
+                            ('page_total', ctypes.c_ulonglong), ('page_free', ctypes.c_ulonglong),
+                            ('virtual_total', ctypes.c_ulonglong), ('virtual_free', ctypes.c_ulonglong),
+                            ('extended', ctypes.c_ulonglong)]
+            status = Status(); status.length = ctypes.sizeof(Status)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+                return int(status.total)
+            return None
+        return int(os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES'))
+    except Exception:
+        return None
+
+
+def memory_budget():
+    """Memory for ready frames: a sixth of the computer's memory, between 600 MB and 4 GB
+    (16 GB -> 2.7 GB, about 1300 frames at the preview size; 64 GB -> 4 GB)."""
+    total = physical_memory()
+    if not total:
+        return MEMORY_BUDGET
+    return int(max(MEMORY_BUDGET, min(4 * 1024 ** 3, total // 6)))
 
 
 def default_folder():
@@ -55,9 +90,12 @@ def _opaque(image):
         return False
 
 
+memory_budget_default = memory_budget
+
+
 class SegmentCache:
-    def __init__(self, folder=None, memory_budget=MEMORY_BUDGET, disk_budget=DISK_BUDGET):
-        self.memory_budget = memory_budget
+    def __init__(self, folder=None, memory_budget=None, disk_budget=DISK_BUDGET):
+        self.memory_budget = memory_budget if memory_budget is not None else memory_budget_default()
         self.disk_budget = disk_budget
         self.folder = Path(folder) if folder else default_folder()
         self._memory = OrderedDict()
@@ -122,11 +160,16 @@ class SegmentCache:
         if entry is None:
             return None
         from PySide6.QtGui import QImage
-        frame = QImage(str(entry[0]))
-        if frame.isNull():
+        path = entry[0]
+        if path.suffix == '.raw':
+            frame = _read_raw(path)
+        else:
+            frame = QImage(str(path))
+            if not frame.isNull():
+                frame = frame.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+        if frame is None or frame.isNull():
             self._drop(key)
             return None
-        frame = frame.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
         self.put_memory_only(key, frame)
         return frame
 
@@ -146,13 +189,8 @@ class SegmentCache:
             return
         try:
             self.folder.mkdir(parents=True, exist_ok=True)
-            if _opaque(frame):
-                path = self.folder / (key + '.jpg')
-                ok = frame.save(str(path), 'JPG', 95)
-            else:
-                path = self.folder / (key + '.png')
-                ok = frame.save(str(path), 'PNG', 80)
-            if not ok:
+            path = self.folder / (key + '.raw')
+            if not _write_raw(path, frame):
                 return
             size = path.stat().st_size
         except OSError:
@@ -181,3 +219,37 @@ class SegmentCache:
     def clear_disk(self):
         for key in list(self._disk_index()):
             self._drop(key)
+
+
+def _write_raw(path, frame):
+    """The frame's pixels as they are (ARGB32 premultiplied), with its size in front."""
+    try:
+        import struct
+        from PySide6.QtGui import QImage
+        image = frame if frame.format() == QImage.Format.Format_ARGB32_Premultiplied else \
+            frame.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+        w, h, line = image.width(), image.height(), image.bytesPerLine()
+        temp = path.with_name(path.name + '.part')
+        with open(temp, 'wb') as f:
+            f.write(RAW_MAGIC + struct.pack('<III', w, h, line))
+            f.write(bytes(image.constBits())[:line * h])
+        os.replace(temp, path)
+        return True
+    except Exception:
+        return False
+
+
+def _read_raw(path):
+    try:
+        import struct
+        from PySide6.QtGui import QImage
+        data = Path(path).read_bytes()
+        if data[:len(RAW_MAGIC)] != RAW_MAGIC:
+            return None
+        w, h, line = struct.unpack('<III', data[len(RAW_MAGIC):len(RAW_MAGIC) + 12])
+        pixels = data[len(RAW_MAGIC) + 12:]
+        if len(pixels) < line * h:
+            return None
+        return QImage(pixels, w, h, line, QImage.Format.Format_ARGB32_Premultiplied).copy()
+    except Exception:
+        return None
