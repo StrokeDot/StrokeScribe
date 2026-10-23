@@ -156,6 +156,11 @@ class WorkspaceLayoutTests(unittest.TestCase):
                 aligned=(TABS['animation'],TABS['hand'],TABS['source'])
                 expected=(QFormLayout.RowWrapPolicy.DontWrapRows if index in aligned
                           else QFormLayout.RowWrapPolicy.WrapLongRows)
+                holder=form.parentWidget()
+                if any(sec.isAncestorOf(holder) or sec is holder
+                       for sec in (w.section_ink,w.section_look_colour,w.section_look_light)):
+                    # Ink / Colour / Light: the label above each slider row (exp.100).
+                    expected=QFormLayout.RowWrapPolicy.WrapAllRows
                 self.assertEqual(form.rowWrapPolicy(),expected)
         # The source and inspector must remain navigable at the minimum size.
         self.assertTrue(w.export.isEnabled())
