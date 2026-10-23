@@ -32,7 +32,7 @@ class CacheTests(unittest.TestCase):
             cache.put(('a',), 1, 200, clear, disk=True)
             self.assertIs(cache.get(('a',), 0, 200), opaque)
             names = sorted(p.suffix for p in Path(tmp).iterdir())
-            self.assertEqual(names, ['.jpg', '.png'])           # JPEG only when fully opaque
+            self.assertEqual(names, ['.raw', '.raw'])           # raw pixels: fast to read back (exp.101)
             for i in range(2, 6):                                 # memory overflows: oldest leave
                 cache.put(('b',), i, 200, opaque)
             self.assertLessEqual(cache._memory_bytes, cache.memory_budget)
@@ -42,6 +42,26 @@ class CacheTests(unittest.TestCase):
             fresh = SegmentCache(tmp)                             # a new session finds them too
             self.assertTrue(fresh.has(('a',), 0, 200))
             self.assertFalse(fresh.has(('a',), 0, 100))           # another width is another frame
+
+    def test_raw_frames_come_back_exactly_and_quickly(self):
+        import time
+        from preview_cache import SegmentCache, memory_budget
+        self.assertGreaterEqual(memory_budget(), 600 * 1024 * 1024)
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = SegmentCache(tmp, memory_budget=1, disk_budget=10 ** 9)
+            frame = QImage(960, 540, QImage.Format.Format_ARGB32_Premultiplied)
+            frame.fill(QColor(30, 120, 200, 128))
+            cache.put(('v',), 0, 960, frame, disk=True)
+            cache.forget_memory()
+            began = time.perf_counter()
+            back = cache.get(('v',), 0, 960)
+            spent = time.perf_counter() - began
+            self.assertEqual(back.size(), frame.size())
+            self.assertEqual(back.pixelColor(5, 5), frame.pixelColor(5, 5))
+            self.assertLess(spent, .1)
+            old = Path(tmp) / (cache.name(('w',), 0, 960) + '.png')      # older versions: PNG
+            frame.save(str(old)); cache._disk = None
+            self.assertIsNotNone(cache.get(('w',), 0, 960))
 
     def test_disk_budget_removes_the_oldest(self):
         from preview_cache import SegmentCache
