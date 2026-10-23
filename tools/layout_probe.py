@@ -39,23 +39,23 @@ def main():
         for r in rows[:10]:
             out.append(f'    right={r[0]} x={r[1]} min={r[2]} {r[3]} {r[4]!r} {r[5]!r}')
 
-    for state in ('closed', 'open'):
-        if state == 'open':
-            for s in w.findChildren(Section):
-                s.set_expanded(True)
-        for win in ((1040, 768), (1490, 890)):
-            w.resize(*win); app.processEvents()
-            for right in (270, 330):
-                split = w.workspace_splitter
-                split.moveSplitter(split.width() - right, 2); app.processEvents()
-                for image in (False, True):
-                    w.is_image_artwork = (lambda v=image: v); w.sync_workspace(); app.processEvents()
-                    for name, page in (('animation', TABS['animation']), ('source', TABS['source']),
-                                       ('hand', TABS['hand'])):
-                        area = w.inspector_tabs.widget(page)
-                        w.inspector_tabs.setCurrentIndex(page); app.processEvents()
-                        if area.widget().width() > area.viewport().width() + 2:
-                            report(f'{state} {win} right={right} image={image} {name}', area)
+    names = ("duration", "speed", "thickness", "artwork_size", "picture_x", "picture_y",
+             "pause_after", "pen_ease", "entrance", "reveal_mode")
+    for win in ((1040, 768), (1490, 890), (1920, 1080), (2560, 1440)):
+        w.resize(*win); app.processEvents()
+        for right in (270, 330, 420):
+            split = w.workspace_splitter
+            split.moveSplitter(split.width() - right, 2); app.processEvents()
+            for image in (False, True, False, True):
+                w.is_image_artwork = (lambda v=image: v); w.sync_workspace(); app.processEvents(); app.processEvents()
+                for name, page in (('animation', TABS['animation']), ('source', TABS['source'])):
+                    area = w.inspector_tabs.widget(page)
+                    w.inspector_tabs.setCurrentIndex(page); app.processEvents()
+                    if area.widget().width() > area.viewport().width() + 2:
+                        report(f'{win} right={right} image={image} {name} '
+                               f'vbar={area.verticalScrollBar().isVisible()}', area)
+                for n in names:                          # what the test opens after its first round
+                    reveal(getattr(w, n)); app.processEvents()
     print('\n'.join(out) or 'no overflow')
     w.close()
 
