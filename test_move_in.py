@@ -187,8 +187,16 @@ class WindowTests(unittest.TestCase):
 
     def test_controls(self):
         from app import Window
+        from PySide6.QtGui import QColor, QImage
+        from engine import import_svg
         w = Window()
         try:
+            # Colours to paint: "Moves in" (whole picture / only the lines) needs them (exp.96).
+            w.set_drawing(import_svg(HERE / 'samples' / 'drawing.svg'))
+            colours = QImage(200, 120, QImage.Format.Format_ARGB32_Premultiplied)
+            colours.fill(QColor(200, 60, 40))
+            w.final_image = colours
+            w.use_color.setEnabled(True); w.use_color.setChecked(True)
             w.entrance.setCurrentIndex(0)
             self.assertFalse(w.entrance_part.isEnabled())        # drawn by the hand: nothing moves in
             w.entrance.setCurrentText('Slide in from the bottom')
