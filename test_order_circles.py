@@ -110,6 +110,32 @@ class OrderWindowTests(unittest.TestCase):
         back = drawing_from_dict(drawing_to_dict(w.drawing))
         self.assertEqual(back.saved_orders[0]['name'], 'Order 1')        # and saved with the project
 
+    def test_circled_group_stays_first_when_the_rest_is_traced(self):
+        """exp.101: circle the people (group 1), then trace the rest: the people are still
+        painted first (a trace used to put them after everything traced)."""
+        w = self.w
+        d = w.open_line_order()
+        d.circle_button.setChecked(True)
+        d.circle_done([(65, 0), (130, 0), (130, 50), (65, 50)])          # lines 4, 5, 6
+        d.circle_button.setChecked(False)
+        d.trace_button.setChecked(True)
+        at = lambda name: [s.name for s in d.strokes].index(name)
+        d.trace_add(at('line 2')); d.trace_add(at('line 1')); d.trace_add(at('line 5'))
+        names = [s.name for s in d.strokes]
+        self.assertEqual(names[:3], ['line 4', 'line 5', 'line 6'])      # the group first
+        self.assertEqual(names[3:5], ['line 2', 'line 1'])               # then the trace
+        d.reject()
+
+    def test_reopened_window_shows_the_saved_order_in_use(self):
+        w = self.w
+        d = w.open_line_order()
+        d.selected = {5}; d.move('start')
+        d.save_order()
+        d.accept(); self.app.processEvents()
+        d = w.open_line_order()
+        self.assertEqual(d.saved.currentText(), 'Order 1')               # not "Default"
+        d.reject()
+
 
 if __name__ == '__main__':
     unittest.main()
