@@ -147,11 +147,27 @@ def main(out):
         w._playhead_only = True; w.refresh()
         times.append(time.perf_counter() - t0)
     w.playing = False
-    times.sort()
-    log.append(f'play: {count} frames, drawn again {misses["n"]} (the rest ready-made); '
-               f'per frame median {times[len(times) // 2] * 1000:.0f} ms, '
-               f'90% {times[int(len(times) * .9)] * 1000:.0f} ms, worst {times[-1] * 1000:.0f} ms '
-               f'(smooth at 30 fps needs < 33 ms)')
+
+    def report(label, times):
+        times = sorted(times)
+        log.append(f'{label}: {count} frames, drawn again {misses["n"]} (the rest ready-made); '
+                   f'per frame median {times[len(times) // 2] * 1000:.1f} ms, '
+                   f'90% {times[int(len(times) * .9)] * 1000:.1f} ms, worst {times[-1] * 1000:.1f} ms '
+                   f'(smooth at 30 fps needs < 33 ms)')
+    report('play from memory', times)
+    # The same frames read back from the disk (a long video does not fit in memory).
+    w.segment_cache.forget_memory(); misses['n'] = 0
+    w.playing = True
+    times = []
+    for i in range(count):
+        w.position = i / max(1, count - 1)
+        t0 = time.perf_counter()
+        w._playhead_only = True; w.refresh()
+        times.append(time.perf_counter() - t0)
+    w.playing = False
+    report('play from disk', times)
+    log.append(f'memory for ready frames: {w.segment_cache.memory_budget / 1024 ** 2:.0f} MB, '
+               f'disk used {w.segment_cache.disk_bytes() / 1024 ** 2:.0f} MB')
     (out / 'play.txt').write_text('\n'.join(log) + '\n', encoding='utf-8')
     print('\n'.join(log))
     w.close(); settle()
