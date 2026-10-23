@@ -2612,6 +2612,20 @@ def build_workspace(w, Canvas, BRAND_ICON):
         policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
         field.setSizePolicy(policy)
         field.setMinimumWidth(84)
+    # Ink on the page / Colour / Light: each slider row (slider, number, reset) is too wide
+    # to sit beside its label in the narrowest Image panel (exp.100: 287 px for 260).
+    # The label goes above the row, and the number box is a little narrower.
+    from PySide6.QtWidgets import QAbstractSpinBox as _Spin
+    for section in (w.section_ink,w.section_look_colour,w.section_look_light):
+        for form in section.findChildren(QFormLayout):
+            form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows)
+            for index in range(form.rowCount()):
+                item=form.itemAt(index,QFormLayout.ItemRole.LabelRole)
+                heading=item.widget() if item else None
+                if isinstance(heading,QLabel):
+                    heading.setMinimumWidth(0); heading.setMaximumWidth(16777215)
+        for spin in section.findChildren(_Spin):
+            spin.setMinimumWidth(64)
     # In a QScrollArea with widgetResizable=True, a Preferred-size panel
     # still reports its full QVBoxLayout minimumSizeHint as a hard width.
     # On Linux this stayed at 269px when the Inspector viewport was 262px.
