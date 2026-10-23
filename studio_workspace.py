@@ -1859,6 +1859,16 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.move_time=w.number(.2,120,4,.1)
     w.move_time.setToolTip('How long the element takes to come in with its effect.')
     mi.addRow('Move-in time (s)',w.move_time)
+    # The hand that carries the picture in (Slide effects): upload it right here too.
+    w.move_in_hand_button=QPushButton('Upload hand…')
+    w.move_in_hand_button.setToolTip('Your own transparent PNG of a hand that holds the picture while it '
+                                     'slides in. Draw it coming from below (arm down); it is turned for '
+                                     'the other sides. More settings: Hand panel > Move-in hand.')
+    w.move_in_hand_button.clicked.connect(lambda checked=False: w.choose_move_hand())
+    mi.addRow('Moving hand',w.move_in_hand_button)
+    w.move_in_hand_name=caption('Built-in hand')
+    w.move_in_hand_name.setWordWrap(True)
+    mi.addRow('',w.move_in_hand_name)
     w.section_painting=Section('Colour & painting',tip='How the colours are painted after the lines.')
     animation_l.addWidget(w.section_painting)
     w.load_color_button=QPushButton('Load matching colored PNG…')
@@ -2106,7 +2116,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.move_hand_size.setSuffix('%')
     w.move_hand_size.setToolTip('Width of the move-in hand, as a share of the video width.')
     mh.addRow('Size',w.move_hand_size)
-    w.move_hand_choose=QPushButton('My PNG…')
+    w.move_hand_choose=QPushButton('Upload hand…')
     w.move_hand_choose.setToolTip('Your own transparent PNG of a hand that holds the picture. '
                                   'Draw it coming from below (arm down); it is turned for the other sides.')
     w.move_hand_choose.clicked.connect(lambda checked=False: w.choose_move_hand())

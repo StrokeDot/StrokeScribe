@@ -3175,6 +3175,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.move_hand_name.setText(f'Hand: {Path(path).stem} (file missing; using the built-in hand)')
         else:
             self.move_hand_name.setText('Hand: '+Path(path).stem)
+        if hasattr(self,'move_in_hand_name'):
+            self.move_in_hand_name.setText(self.move_hand_name.text().replace('Hand: ','')
+                                           .replace('built-in (placeholder)','Built-in hand'))
         self.move_hand_builtin.setEnabled(bool(path))
         self.update_entrance_controls()
         self.sync_hand_sides()

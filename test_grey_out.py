@@ -141,3 +141,12 @@ class DrawingSwitchTests(unittest.TestCase):
         self.assertFalse(w.draw_on.isChecked())
         self.assertTrue(w.move_in_on.isChecked())
 
+    def test_move_in_has_its_own_upload_hand_button(self):
+        from unittest import mock
+        w = self.w
+        self.assertTrue(w.section_move_in.isAncestorOf(w.move_in_hand_button))
+        with mock.patch.object(w, 'choose_move_hand') as choose:
+            w.move_in_hand_button.click()
+            choose.assert_called_once()
+        self.assertEqual(w.move_in_hand_name.text(), 'Built-in hand')
+
