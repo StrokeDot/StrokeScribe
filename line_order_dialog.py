@@ -68,6 +68,7 @@ class OrderPicture(QWidget):
         self._drag = None
         self.shown = None              # Play: only the first `shown` items
         self.trail = []                # Trace the order: the paths drawn with the mouse
+        self.lasso = None              # Circle: the loop being drawn (widget points)
         self.setMouseTracking(False)
 
     # ------------------------------------------------------------ drawing tab
@@ -133,6 +134,11 @@ class OrderPicture(QWidget):
         if self._drag is not None:
             p.setPen(QPen(ACCENT, 1.4, Qt.PenStyle.DashLine)); p.setBrush(QColor(255, 122, 26, 30))
             p.drawRect(self._drag)
+        self.paint_circles(p)
+        if self.lasso and len(self.lasso) > 1:
+            p.setBrush(QColor(255, 122, 26, 35))
+            p.setPen(QPen(ACCENT, 2, Qt.PenStyle.DashLine))
+            p.drawPolygon([QPointF(x, y) for x, y in self.lasso])
         if self.dialog.tracing and self.trail:
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(QColor(40, 160, 255, 150), max(2., self.dialog.trace_size.value() * 2),
@@ -141,6 +147,35 @@ class OrderPicture(QWidget):
                 if len(path) > 1:
                     p.drawPath(_path(path))
         p.end()
+
+    # ------------------------------------------------------------ circles
+    def to_widget(self, point):
+        """A circle point (drawing units, or picture fractions on the Painting tab) on screen."""
+        x, y = point
+        if self.dialog.mode == 'paint':
+            r = self.image_rect()
+            return r.x() + x * r.width(), r.y() + y * r.height()
+        scale, ox, oy = self.transform()
+        return x * scale + ox, y * scale + oy
+
+    def from_widget(self, x, y):
+        if self.dialog.mode == 'paint':
+            r = self.image_rect()
+            return (x - r.x()) / max(1e-6, r.width()), (y - r.y()) / max(1e-6, r.height())
+        scale, ox, oy = self.transform()
+        return (x - ox) / scale, (y - oy) / scale
+
+    def paint_circles(self, p):
+        """The circles drawn so far, each with its group number."""
+        for k, poly in enumerate(self.dialog.circles.get(self.dialog.mode, [])):
+            pts = [QPointF(*self.to_widget(pt)) for pt in poly]
+            if len(pts) < 3:
+                continue
+            p.setBrush(QColor(255, 122, 26, 22))
+            p.setPen(QPen(ACCENT, 2, Qt.PenStyle.SolidLine))
+            p.drawPolygon(pts)
+            top = min(pts, key=lambda q: q.y())
+            self._tag(p, top.x(), top.y() - 10, k + 1)
 
     def _tag(self, p, x, y, number):
         font = QFont(); font.setBold(True); font.setPointSizeF(8.5); p.setFont(font)
@@ -244,7 +279,20 @@ class OrderPicture(QWidget):
         self._segments = (key, out)
         return out
 
+    def item_at(self, x, y):
+        return self.part_at(x, y) if self.dialog.mode == 'paint' else self.line_at(x, y)
+
     def mousePressEvent(self, event):
+        ctrl = bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        if self.dialog.circling:
+            if ctrl:                                         # Ctrl+click in a circle: remove it
+                self.dialog.circle_remove_at(*self.from_widget(event.position().x(), event.position().y()))
+                return
+            self.lasso = [(event.position().x(), event.position().y())]
+            self.update(); return
+        if self.dialog.tracing and ctrl:                     # Ctrl+click: take it out of the trace
+            self.dialog.trace_remove(self.item_at(event.position().x(), event.position().y()))
+            return
         if self.dialog.tracing:
             self._trace_last = event.position()
             self.trail.append([(event.position().x(), event.position().y())])
@@ -253,6 +301,13 @@ class OrderPicture(QWidget):
         self._press = event.position()
 
     def mouseMoveEvent(self, event):
+        if self.dialog.circling:
+            if self.lasso is not None:
+                pos = event.position()
+                last = self.lasso[-1]
+                if abs(pos.x() - last[0]) + abs(pos.y() - last[1]) >= 3:
+                    self.lasso.append((pos.x(), pos.y())); self.update()
+            return
         if self.dialog.tracing:
             last = getattr(self, '_trace_last', None)
             if last is None:
@@ -273,6 +328,11 @@ class OrderPicture(QWidget):
             self._drag = QRectF(a, b).normalized(); self.update()
 
     def mouseReleaseEvent(self, event):
+        if self.dialog.circling:
+            lasso, self.lasso = self.lasso, None
+            if lasso and len(lasso) >= 3:
+                self.dialog.circle_done([self.from_widget(x, y) for x, y in lasso])
+            self.update(); return
         if self.dialog.tracing:
             self._trace_last = None
             self.update(); return
@@ -338,6 +398,9 @@ class LineOrderDialog(QDialog):
         self.part_selection = set()
         self.parts = []                 # part ids in painting order
         self.parts_changed = False
+        self.circles = {'draw': [], 'paint': [list(map(tuple, c)) for c in (getattr(drawing, 'paint_circles', None) or [])]}
+        self.circled_ids = []
+        self.circling = False
         self.grid = None
         self.colours = None
         self.mode = 'draw'
@@ -381,7 +444,13 @@ class LineOrderDialog(QDialog):
         self.trace_follow = QCheckBox('Turn lines to follow my path'); self.trace_follow.setChecked(True)
         self.trace_follow.setToolTip('A line you reach at its far end is drawn from that end, so the pen follows your path.')
         trace.addWidget(self.trace_follow)
-        self.trace_again = QPushButton('Start over'); self.trace_again.setToolTip('Forget the traced path and trace again.')
+        self.circle_button = QPushButton('Circle'); self.circle_button.setCheckable(True)
+        self.circle_button.setToolTip('Draw a loop around things: everything inside becomes group 1, the next '
+                                      'loop group 2, and so on, in that order. Ctrl+click in a loop removes it.')
+        self.circle_button.toggled.connect(self.set_circling)
+        trace.addWidget(self.circle_button)
+        self.trace_again = QPushButton('Start over')
+        self.trace_again.setToolTip('Forget the traced path and the circles, and start again.')
         self.trace_again.clicked.connect(lambda checked=False: self.trace_restart())
         trace.addWidget(self.trace_again); trace.addStretch(1)
         self.tracing = False
@@ -444,9 +513,16 @@ class LineOrderDialog(QDialog):
         apply = QPushButton('Apply'); apply.clicked.connect(lambda checked=False: self.apply_auto())
         auto.addWidget(self.auto, 0, 0, 1, 2); auto.addWidget(self.auto_scope, 1, 0); auto.addWidget(apply, 1, 1)
         right.addWidget(self.auto_about)
-        default = QPushButton('Default'); default.setToolTip('The order it had when it came in.')
-        default.clicked.connect(lambda checked=False: self.default())
-        right.addWidget(default)
+        right.addWidget(self._title('SAVED ORDERS'))
+        saved = QGridLayout(); right.addLayout(saved)
+        self.saved = QComboBox()
+        self.saved.setToolTip('Default, or an order you saved: choose it to use it again.')
+        self.saved.activated.connect(lambda i: self.use_saved(i))
+        save = QPushButton('Save order'); save.setToolTip('Keep this order under a name, to come back to it later.')
+        save.clicked.connect(lambda checked=False: self.save_order())
+        self.forget = QPushButton('Delete'); self.forget.setToolTip('Delete the saved order chosen in the list.')
+        self.forget.clicked.connect(lambda checked=False: self.delete_saved())
+        saved.addWidget(self.saved, 0, 0, 1, 2); saved.addWidget(save, 1, 0); saved.addWidget(self.forget, 1, 1)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText('Use this order')
@@ -488,8 +564,9 @@ class LineOrderDialog(QDialog):
         if image is None or image.isNull():
             return 'This element has no colours to paint.'
         from painter_paint import parts_for_window
-        self.grid, self.default_parts, self.centres = parts_for_window(self.drawing, image)
-        chosen = [int(r) for r in (getattr(self.drawing, 'paint_part_order', None) or ())]
+        self.grid, self.default_parts, self.centres, self.circled_ids = parts_for_window(
+            self.drawing, image, self.circles['paint'])
+        chosen = [int(r) for r in (getattr(self.drawing, 'paint_part_order', None) or self.circled_ids)]
         known = set(self.default_parts)
         self.parts = [r for r in chosen if r in known] + [r for r in self.default_parts if r not in set(chosen)]
         self.colours = image
@@ -499,6 +576,8 @@ class LineOrderDialog(QDialog):
         self.play_timer.stop(); self.picture.shown = None; self.play_button.setText('Play order')
         if getattr(self, 'tracing', False) and mode != self.mode:
             self.trace_button.setChecked(False)
+        if getattr(self, 'circling', False) and mode != self.mode:
+            self.circle_button.setChecked(False)
         if mode == 'paint':
             ready = self.load_parts()
             if ready is not True:
@@ -517,6 +596,7 @@ class LineOrderDialog(QDialog):
                           'every line inside. Selected lines are orange, with their number.')
         self.auto.blockSignals(True); self.auto.clear(); self.auto.addItems([n for n, _ in self.autos()])
         self.auto.blockSignals(False); self.auto_about.setText(self.autos()[0][1])
+        self.fill_saved()
         self.fill()
 
     # ------------------------------------------------------------ list and selection
@@ -704,21 +784,181 @@ class LineOrderDialog(QDialog):
     # ------------------------------------------------------------ trace the order
     def set_tracing(self, on):
         self.tracing = bool(on)
-        self.trace_restart()
+        if on and self.circle_button.isChecked():
+            self.circle_button.setChecked(False)
+        self.trace_base = list(self.items())
+        self.trace_restart(circles=False)
         self.picture.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.ArrowCursor)
         if on:
             self.hint.setText('Trace: hold the mouse down and move over the picture the way it should be '
                               + ('painted' if self.mode == 'paint' else 'drawn')
                               + '. Everything you pass gets the next number. Let go and start again anywhere to '
-                              'go on; what you never touch comes after, in its present order.')
+                              'go on; what you never touch comes after, in its present order. Ctrl+click a '
+                              'numbered one to take it out again.')
         else:
             self.set_mode(self.mode)
 
-    def trace_restart(self):
+    def trace_restart(self, circles=True):
+        if circles and self.circles.get(self.mode):
+            self.circles[self.mode] = []
+            self.apply_circles()
         self.traced = []
         self.picture.trail = []
         self.selected = set()
         self.fill()
+
+    def trace_remove(self, index):
+        """Take the item at `index` out of the trace: it goes back after the traced ones."""
+        items = list(self.items())
+        if not 0 <= index < len(items) or self._key(items[index]) not in self.traced:
+            return
+        self.traced.remove(self._key(items[index]))
+        base = getattr(self, 'trace_base', items)
+        where = {self._name(x): n for n, x in enumerate(base)}
+        place = {k: n for n, k in enumerate(self.traced)}
+        first = sorted((x for x in items if self._key(x) in place), key=lambda x: place[self._key(x)])
+        rest = sorted((x for x in items if self._key(x) not in place), key=lambda x: where.get(self._name(x), 0))
+        self._set_items(first + rest)
+        self.selected = set(range(len(first)))
+        self.fill()
+
+    def _name(self, item):
+        return item if self.mode == 'paint' else item.name
+
+    # ------------------------------------------------------------ circles
+    def set_circling(self, on):
+        self.circling = bool(on)
+        if on and self.trace_button.isChecked():
+            self.trace_button.setChecked(False)
+        self.picture.setCursor(Qt.CursorShape.CrossCursor if on else Qt.CursorShape.ArrowCursor)
+        if on:
+            self.hint.setText('Circle: draw a loop around what should come first; everything inside becomes '
+                              'group 1. The next loop is group 2, and so on. '
+                              + ('A loop cuts its own part out of the picture, so only what is inside is painted '
+                                 'together. ' if self.mode == 'paint' else
+                                 'A line belongs to a loop when most of it is inside. ')
+                              + 'Ctrl+click in a loop removes it. What is not circled comes after.')
+        else:
+            self.set_mode(self.mode)
+
+    def circle_done(self, poly):
+        self.circles[self.mode].append([tuple(map(float, pt)) for pt in poly])
+        self.apply_circles()
+
+    def circle_remove_at(self, x, y):
+        for k in reversed(range(len(self.circles[self.mode]))):
+            if _inside(self.circles[self.mode][k], x, y):
+                del self.circles[self.mode][k]
+                self.apply_circles()
+                return
+
+    def apply_circles(self):
+        """The order from the circles: group 1, group 2…, then everything else as it was."""
+        if self.mode == 'paint':
+            from painter_paint import parts_for_window
+            previous = [r for r in self.parts if r not in set(self.circled_ids)]
+            self.grid, self.default_parts, self.centres, self.circled_ids = parts_for_window(
+                self.drawing, self.colours, self.circles['paint'])
+            known = set(self.centres)
+            rest = [r for r in previous if r in known and r not in set(self.circled_ids)]
+            rest += [r for r in self.default_parts if r not in set(rest) and r not in set(self.circled_ids)]
+            self.parts = list(self.circled_ids) + rest
+            self.parts_changed = True
+            self.selected = set(range(len(self.circled_ids)))
+        else:
+            groups, used = [], set()
+            for poly in self.circles['draw']:
+                group = [s for s in self.strokes if id(s) not in used and _mostly_inside(poly, s.points)]
+                used |= {id(s) for s in group}
+                groups.extend(group)
+            base = getattr(self, 'circle_base', None)
+            if base is None or {id(s) for s in base} != {id(s) for s in self.strokes}:
+                base = self.circle_base = list(self.strokes)
+            self.strokes = groups + [s for s in base if id(s) not in used]
+            self.selected = set(range(len(groups)))
+        self.fill()
+
+    def painting_circles(self):
+        return [list(map(list, c)) for c in self.circles['paint']] or None
+
+    # ------------------------------------------------------------ saved orders
+    def saved_orders(self):
+        return [o for o in (getattr(self.drawing, 'saved_orders', None) or []) if o.get('kind') == self.mode]
+
+    def fill_saved(self):
+        self.saved.blockSignals(True)
+        self.saved.clear()
+        self.saved.addItem('Default')
+        for o in self.saved_orders():
+            self.saved.addItem(o['name'])
+        self.saved.blockSignals(False)
+        self.forget.setEnabled(False)
+
+    def save_order(self):
+        """Keep the current order of this tab under a name (saved with the project)."""
+        everything = list(getattr(self.drawing, 'saved_orders', None) or [])
+        name = f'Order {len(self.saved_orders()) + 1}'
+        if self.mode == 'paint':
+            entry = dict(kind='paint', name=name, parts=[int(r) for r in self.parts],
+                         circles=self.painting_circles() or [])
+        else:
+            seen = {}
+            lines = []
+            for s in self.strokes:
+                seen[s.name] = seen.get(s.name, 0) + 1
+                lines.append([s.name, seen[s.name], bool(getattr(s, 'reversed', False))])
+            entry = dict(kind='draw', name=name, lines=lines)
+        everything.append(entry)
+        self.drawing.saved_orders = everything
+        self.saved_changed = True
+        self.fill_saved()
+        self.saved.setCurrentIndex(self.saved.count() - 1)
+        self.forget.setEnabled(True)
+        self.count.setText(f'Saved as "{name}".')
+
+    def use_saved(self, index):
+        self.forget.setEnabled(index > 0)
+        if index == 0:
+            self.circles[self.mode] = []
+            if self.mode == 'paint':
+                self.apply_circles()
+            self.default(); return
+        entry = self.saved_orders()[index - 1]
+        if self.mode == 'paint':
+            self.circles['paint'] = [list(map(tuple, c)) for c in entry.get('circles') or []]
+            self.apply_circles()
+            known = set(self.centres)
+            first = [int(r) for r in entry.get('parts', []) if int(r) in known]
+            self.parts = first + [r for r in self.parts if r not in set(first)]
+            self.parts_changed = True
+        else:
+            from history import edited_stroke
+            pool = {}
+            for s in self.strokes:
+                pool.setdefault(s.name, []).append(s)
+            new = []
+            for name, n, rev in entry.get('lines', []):
+                options = pool.get(name) or []
+                if n - 1 < len(options) and options[n - 1] is not None:
+                    s = options[n - 1]; options[n - 1] = None
+                    if bool(getattr(s, 'reversed', False)) != bool(rev):
+                        s = edited_stroke(s, reverse=True)
+                    new.append(s)
+            used = {id(s) for s in new}
+            left = [s for group in pool.values() for s in group if s is not None and id(s) not in used]
+            left_ids = {id(s) for s in left}
+            self.strokes = new + [s for s in self.strokes if id(s) in left_ids]
+        self.selected = set()
+        self.fill()
+
+    def delete_saved(self):
+        index = self.saved.currentIndex()
+        if index <= 0:
+            return
+        entry = self.saved_orders()[index - 1]
+        self.drawing.saved_orders = [o for o in (self.drawing.saved_orders or []) if o is not entry]
+        self.saved_changed = True
+        self.fill_saved()
 
     def _key(self, item):
         return item if self.mode == 'paint' else id(item)
@@ -752,3 +992,23 @@ class LineOrderDialog(QDialog):
     def done(self, result):
         self.play_timer.stop()
         super().done(result)
+
+
+def _inside(poly, x, y):
+    """Is (x, y) inside the polygon `poly` (ray casting)?"""
+    inside = False
+    n = len(poly)
+    for i in range(n):
+        x1, y1 = poly[i]; x2, y2 = poly[(i + 1) % n]
+        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / ((y2 - y1) or 1e-12) + x1:
+            inside = not inside
+    return inside
+
+
+def _mostly_inside(poly, points, share=.6):
+    """True when most of a line's points are inside the loop."""
+    if not points:
+        return False
+    step = max(1, len(points) // 40)
+    sample = points[::step]
+    return sum(1 for x, y in sample if _inside(poly, x, y)) >= share * len(sample)

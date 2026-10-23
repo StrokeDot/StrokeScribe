@@ -67,6 +67,43 @@ def part_labels(drawing, source, support, gw, gh):
     return _merge_crumbs(_split_pieces(raw), sup)
 
 
+def apply_circles(labels, circles):
+    """Parts circled in the Line order window (Painting): everything inside a circle becomes
+    one part of its own, cut out of whatever parts it covers (a shoulder no longer pulls
+    the wall behind it along). circles: [[(x, y), ...] as fractions of the picture], in
+    order; a place inside two circles belongs to the first. Returns (labels, circle ids)."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+    if not circles:
+        return labels, []
+    gh, gw = labels.shape
+    out = labels.copy()
+    taken = np.zeros(labels.shape, bool)
+    base = int(labels.max()) + 1
+    ids = []
+    for k, poly in enumerate(circles):
+        if len(poly) < 3:
+            continue
+        mask = Image.new('L', (gw, gh), 0)
+        ImageDraw.Draw(mask).polygon([(x * gw, y * gh) for x, y in poly], fill=1)
+        inside = (np.asarray(mask) > 0) & (labels > 0) & ~taken
+        if not inside.any():
+            continue
+        rid = base + k
+        out[inside] = rid
+        taken |= inside
+        ids.append(rid)
+    return out, ids
+
+
+def labels_for(drawing, source, support, gw, gh, circles=None):
+    """The parts Painter paints, with the circled parts cut in: (labels, circle ids)."""
+    labels = part_labels(drawing, source, support, gw, gh)
+    if circles is None:
+        circles = getattr(drawing, 'paint_circles', None)
+    return apply_circles(labels, circles)
+
+
 def _split_pieces(raw):
     """Each connected piece of a part is painted on its own."""
     import cv2
@@ -170,7 +207,7 @@ def build_painter_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
     from adaptive_hand import PaintPlan, Segment, _reveal_faint_with_neighbours, pil_image
     source = pil_image(image)
     gw, gh, origin, support, faint = _grid(drawing, image, source)
-    grid = part_labels(drawing, source, support, gw, gh)
+    grid, circled = labels_for(drawing, source, support, gw, gh)
     labels = [int(v) for v in grid.ravel()]
     maximum = max(.72, gw * max(.02, min(.5, float(brush_width))) / 2)
     spacing = max(.2, min(.9, float(stroke_spacing)))
@@ -203,7 +240,7 @@ def build_painter_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
                       rid, clock + duration * f)
         clock += duration; cursor = point
 
-    for rid in part_order(grid, origin, getattr(drawing, 'paint_part_order', None)):
+    for rid in part_order(grid, origin, getattr(drawing, 'paint_part_order', None) or circled):
         mask = grid == rid
         for stroke in shape_strokes(mask, gap):
             # Start each stroke at its end nearer to the hand.
@@ -228,17 +265,18 @@ def build_painter_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
                      origin, clock, [], int(grid.max()))
 
 
-def parts_for_window(drawing, image):
-    """What the Line order window (Painting) needs: (grid labels, default order, centres).
+def parts_for_window(drawing, image, circles=None):
+    """What the Line order window (Painting) needs: (grid labels, default order, centres, circle ids).
 
-    grid: numpy array of part ids (0 = nothing), the same parts Painter paints."""
+    grid: numpy array of part ids (0 = nothing), the same parts Painter paints;
+    circles: the circled parts to cut in (None: the element's own)."""
     from adaptive_hand import pil_image
     source = pil_image(image)
     gw, gh, origin, support, faint = _grid(drawing, image, source)
-    grid = part_labels(drawing, source, support, gw, gh)
+    grid, circled = labels_for(drawing, source, support, gw, gh, circles)
     import numpy as np
     centres = {}
     for rid in [int(i) for i in np.unique(grid) if i > 0]:
         ys, xs = np.nonzero(grid == rid)
         centres[rid] = (float(xs.mean()) + .5, float(ys.mean()) + .5, int(len(xs)))
-    return grid, part_order(grid, origin), centres
+    return grid, part_order(grid, origin), centres, circled

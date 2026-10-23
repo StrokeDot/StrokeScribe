@@ -21,6 +21,12 @@ A small local desktop tool for short SVG drawing overlays. Built from original a
 - **Move in**: an element that comes in with an effect has one *Move in* clip on the timeline. Moving in the whole picture has no painting or colour hold any more (only the move, then its pause); *Only the lines* is Move in + Paint.
 - **Pre-render** sits next to the play buttons under the preview.
 
+## Line order: Circle, take out of a trace, saved orders (v0.5.3-experimental.99)
+
+- **Circle** (Line order window): draw a loop around what should come first — everything inside becomes group 1, the next loop group 2, and so on; what is not circled comes after. On the **Painting** tab a loop cuts its own part out of the picture, so only what is inside is painted together (the middle man's shoulder no longer brings the wall with it). On the **Drawing** tab a line belongs to a loop when most of it is inside. Ctrl+click in a loop removes it; *Start over* clears the loops.
+- **Trace the order:** Ctrl+click a numbered line or part to take it out of the trace again.
+- **Saved orders:** *Save order* keeps the current order (lines or parts, with their circles) under a name; the list switches between **Default** and your saved orders. They are saved with the project and are not lost with Ctrl+Z.
+
 ## Ink on the page, Colour and Light (v0.5.3-experimental.98)
 
 - **Ink on the page** (Image panel, with an on/off switch): the picture becomes ink with transparency. Its own paper tone (white, grey or a whole room) becomes see-through and its lines become ink, so no square shows and the page's grain shows through the lines, on any page in StrokeScribe or in Filmora with the normal blend mode. **Edges:** *Soft edges* (the border fades) or *Oval fade* (everything around the middle fades, like an old book illustration), with *Edge fade*, *Paper removal*, *Ink strength* and *Ink colour* (dark grey like printed text, black, sepia, or the picture's own colours).

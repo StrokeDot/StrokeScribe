@@ -13,10 +13,12 @@ def extras_key(extras):
     """What matters of the drawing's extras (painting order, AI parts) for 'did it change'."""
     if not extras:
         return None
-    return (tuple(extras.get('paint_part_order') or ()), extras.get('ai_parts_digest'))
+    return (tuple(extras.get('paint_part_order') or ()), extras.get('ai_parts_digest'),
+            repr(extras.get('paint_circles') or ()))
 
 
-EXTRA_NAMES = ('paint_part_order', 'ai_parts_image', 'ai_parts_digest', 'ai_parts_count')
+# Saved orders are not undone: Ctrl+Z never throws a saved order away.
+EXTRA_NAMES = ('paint_part_order', 'ai_parts_image', 'ai_parts_digest', 'ai_parts_count', 'paint_circles')
 
 
 def changed_settings(before, after):
