@@ -1,0 +1,35 @@
+name: Play probe
+on:
+  push:
+    branches: [probe-play]
+permissions:
+  contents: write
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          architecture: x64
+          cache: pip
+      - run: 'python -m pip install --only-binary=:all: -r requirements.txt'
+      - name: Probe
+        shell: bash
+        run: python tools/play_probe.py ../probe-out 2>&1 | tee ../probe-out-log.txt || true
+      - name: Publish (branch probe-play-results)
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ../probe-out && cp ../probe-out-log.txt ../probe-out/ || true
+          cd ../probe-out
+          git init -q && git checkout -q -b probe-play-results
+          git config user.name ci && git config user.email ci@example.invalid
+          git add -A && git commit -qm "Play probe for ${{ github.sha }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" probe-play-results
