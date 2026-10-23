@@ -623,6 +623,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # picture at once; the brush route is planned on Play, a scrub or Pre-render.
             self._plan_deferred=True
             return 'deferred'
+        self._plan_deferred=False                 # planned now (here or in the background)
         quiet=getattr(self,'_quiet_plan',False)
         self._quiet_plan=False
         if quiet and self.canvas.frame is not None:
