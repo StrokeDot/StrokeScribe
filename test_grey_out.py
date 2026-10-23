@@ -50,7 +50,10 @@ class GreyOutTests(unittest.TestCase):
     def test_effect_greys_out_drawing_and_painting(self):
         w = self.w
         w.entrance.setCurrentText('Fade in')
-        self.assertEqual(self.label(), 'Move-in time (s)')
+        self.assertEqual(self.label(), 'Draw time (s)')
+        self.assertFalse(w.duration.isEnabled())                         # exp.100: Move-in time is used
+        self.assertTrue(w.move_time.isEnabled())
+        self.assertFalse(w.draw_on.isChecked()); self.assertTrue(w.move_in_on.isChecked())
         self.assertFalse(w.pen_ease.isEnabled())
         self.assertIn('Not used now', w.pen_ease.toolTip())
         self.assertFalse(w.reveal_mode.isEnabled())                      # the whole picture fades in
@@ -60,6 +63,8 @@ class GreyOutTests(unittest.TestCase):
         self.assertTrue(w.color_fade.isEnabled())
         w.entrance.setCurrentIndex(0)                                    # back to the hand
         self.assertEqual(self.label(), 'Draw time (s)')
+        self.assertTrue(w.duration.isEnabled())
+        self.assertTrue(w.draw_on.isChecked()); self.assertFalse(w.move_in_on.isChecked())
         self.assertTrue(w.pen_ease.isEnabled())
         self.assertNotIn('Not used now', w.pen_ease.toolTip())
 
@@ -82,3 +87,57 @@ class GreyOutTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipIf(SKIP, 'needs Qt')
+class DrawingSwitchTests(unittest.TestCase):
+    """exp.100: Animation -> Drawing has an on/off switch; off = Move in."""
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        from app import Window
+        from engine import import_svg
+        self.w = Window()
+        self.w.set_drawing(import_svg(HERE / 'samples' / 'drawing.svg'))
+
+    def tearDown(self):
+        self.w.close()
+
+    def test_drawing_is_on_by_default(self):
+        w = self.w
+        self.assertTrue(w.draw_on.isChecked())
+        self.assertEqual(w.entrance.currentIndex(), 0)
+        self.assertTrue(w.section_drawing.switch.isChecked())
+        self.assertFalse(w.section_move_in.switch.isChecked())
+
+    def test_switching_drawing_off_uses_move_in(self):
+        w = self.w
+        w.section_drawing.switch.click()                     # Drawing off
+        self.assertFalse(w.draw_on.isChecked())
+        self.assertTrue(w.move_in_on.isChecked())
+        self.assertEqual(w.entrance.currentText(), 'Fade in')
+        self.assertTrue(w.section_move_in.expanded)
+        w.entrance.setCurrentText('Slide in from the left')
+        w.section_move_in.switch.click()                     # Move in off = Drawing on
+        self.assertTrue(w.draw_on.isChecked())
+        self.assertEqual(w.entrance.currentIndex(), 0)
+        w.section_drawing.switch.click()                     # off again: the last effect comes back
+        self.assertEqual(w.entrance.currentText(), 'Slide in from the left')
+
+    def test_move_in_time_is_the_draw_time(self):
+        w = self.w
+        w.move_time.setValue(6.5)
+        self.assertAlmostEqual(w.duration.value(), 6.5)
+        w.duration.setValue(3)
+        self.assertAlmostEqual(w.move_time.value(), 3)
+
+    def test_project_values_show_on_the_switches(self):
+        w = self.w
+        w.entrance.blockSignals(True); w.entrance.setCurrentText('Zoom in'); w.entrance.blockSignals(False)
+        w.update_applicable()                                # as after a project, undo or element switch
+        self.assertFalse(w.draw_on.isChecked())
+        self.assertTrue(w.move_in_on.isChecked())
+

@@ -418,6 +418,11 @@ class LineOrderDialog(QDialog):
         self.picture = OrderPicture(self)
         self.picture.clicked.connect(self.picture_clicked)
         self.picture.boxed.connect(self.picture_boxed)
+        self.mode_note = QLabel(''); self.mode_note.setWordWrap(True); self.mode_note.setObjectName('notice')
+        self.mode_note.setStyleSheet('QLabel { background: rgba(124, 92, 255, 40); border: 1px solid #7C5CFF;'
+                                     ' border-radius: 6px; padding: 6px 8px; }')
+        self.mode_note.hide()
+        left.addWidget(self.mode_note)
         left.addWidget(self.picture, 1)
         self.hint = QLabel(''); self.hint.setWordWrap(True); self.hint.setObjectName('caption')
         left.addWidget(self.hint)
@@ -558,8 +563,8 @@ class LineOrderDialog(QDialog):
         if self.grid is not None:
             return True
         w = self.window_
-        if w.reveal_mode.currentText() != getattr(w, 'PAINTER_TEXT', ''):
-            return 'The painting order works with the Painter paint mode. Choose Painter in Paint mode first.'
+        # Any paint mode opens the parts (exp.100: before, a mode other than Painter
+        # quietly kept the Drawing tab, with only a small note under the picture).
         image = w.options().get('final_image')
         if image is None or image.isNull():
             return 'This element has no colours to paint.'
@@ -571,6 +576,18 @@ class LineOrderDialog(QDialog):
         self.parts = [r for r in chosen if r in known] + [r for r in self.default_parts if r not in set(chosen)]
         self.colours = image
         return True
+
+    def uses_painter(self):
+        w = self.window_
+        return w.reveal_mode.currentText() == getattr(w, 'PAINTER_TEXT', None)
+
+    def paint_mode_note(self):
+        """Said above the parts when the element does not paint with Painter."""
+        if self.uses_painter():
+            return ''
+        return (f'This element paints with {self.window_.reveal_mode.currentText()}, which chooses its own '
+                'order. The order you set here is painted by Painter: when you change it and press '
+                '"Use this order", this element switches to Painter.')
 
     def set_mode(self, mode):
         self.play_timer.stop(); self.picture.shown = None; self.play_button.setText('Play order')
@@ -587,7 +604,11 @@ class LineOrderDialog(QDialog):
         self.mode = mode
         for key, b in self.tab_buttons.items():
             b.setChecked(key == mode)
+            b.setObjectName('primary' if key == mode else '')       # the open tab is the purple one
+            b.style().unpolish(b); b.style().polish(b)
         painting = mode == 'paint'
+        note = self.paint_mode_note() if painting else ''
+        self.mode_note.setText(note); self.mode_note.setVisible(bool(note))
         self.list_title.setText('PARTS (painting order)' if painting else 'LINES (drawing order)')
         self.line_tools.setVisible(not painting); self.line_tools_title.setVisible(not painting)
         self.hint.setText('Click a part to select it, click it again to unselect it. Drag a box to select '

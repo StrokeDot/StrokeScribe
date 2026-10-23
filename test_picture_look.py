@@ -119,6 +119,39 @@ class LookAppTests(unittest.TestCase):
         finally:
             w.close()
 
+    def test_adjusting_the_look_does_not_plan_the_brushes(self):
+        """exp.100: Ink / Colour / Light changes show the finished picture at once; the
+        brush route is planned on Play (or a scrub, or Pre-render), not on every change."""
+        from unittest import mock
+        from PySide6.QtGui import QColor, QImage
+        from app import Window
+        from engine import import_svg
+        w = Window()
+        try:
+            w.show()
+            w.set_drawing(import_svg(HERE / 'samples' / 'drawing.svg'))
+            colours = QImage(400, 300, QImage.Format.Format_ARGB32_Premultiplied)
+            colours.fill(QColor(200, 60, 40))
+            w.final_image = colours
+            w.use_color.setEnabled(True); w.use_color.setChecked(True)
+            w.refresh()
+            with mock.patch.object(w, 'show_busy_now') as busy:
+                w.section_ink.switch.click()                         # the picture changes
+                self.assertFalse(busy.called)                        # no "Preparing brush route"
+                self.assertTrue(w._plan_deferred)
+                self.assertIsNotNone(w.canvas.frame)
+                parts = dict(w.stage_parts(w.options()))
+                done = (parts['draw'] + parts['paint']) / sum(parts.values())
+                self.assertGreaterEqual(w.position, done - 1e-6)    # the finished picture
+                w.ink_removal.setValue(80)
+                w._soon_timer.timeout.emit()                         # a slider: same, a moment later
+                self.assertFalse(busy.called)
+            w.position = .3
+            w.refresh()                                              # a scrub: plan now
+            self.assertFalse(w._plan_deferred)
+        finally:
+            w.close()
+
 
 if __name__ == '__main__':
     unittest.main()

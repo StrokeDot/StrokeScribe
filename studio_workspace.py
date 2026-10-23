@@ -23,10 +23,31 @@ from version import APP_VERSION, DISPLAY_NAME
 from theme import stylesheet as theme_stylesheet, colors as theme_colors
 
 
+def _jump_slider_class():
+    from PySide6.QtWidgets import QSlider, QStyle, QStyleOptionSlider
+
+    class JumpSlider(QSlider):
+        """A slider that jumps to where you click on its track (then drags from there),
+        instead of moving one step towards the click."""
+
+        def mousePressEvent(self, event):
+            if event.button() == Qt.MouseButton.LeftButton:
+                option = QStyleOptionSlider(); self.initStyleOption(option)
+                handle = self.style().subControlRect(QStyle.ComplexControl.CC_Slider, option,
+                                                     QStyle.SubControl.SC_SliderHandle, self)
+                if not handle.contains(event.position().toPoint()):
+                    span = max(1, self.width() - handle.width())
+                    x = int(event.position().x() - handle.width() / 2)
+                    self.setValue(QStyle.sliderValueFromPosition(self.minimum(), self.maximum(), x, span,
+                                                                 self.invertedAppearance()))
+            super().mousePressEvent(event)
+    return JumpSlider
+
+
 def linked_slider(spin, low, high, scale=1):
-    """A horizontal slider kept in step with a spin box (the spin box owns the value)."""
-    from PySide6.QtWidgets import QSlider
-    slider = QSlider(Qt.Orientation.Horizontal)
+    """A horizontal slider kept in step with a spin box (the spin box owns the value).
+    Click anywhere on the track to jump there, or drag."""
+    slider = _jump_slider_class()(Qt.Orientation.Horizontal)
     slider.setRange(round(low * scale), round(high * scale))
     slider.setValue(round(spin.value() * scale))
     slider.setMinimumWidth(30)
@@ -945,14 +966,16 @@ def build_rails(w, tabs, inspector):
 
     def rail_frame():
         frame = QFrame(); frame.setObjectName('iconRail')
-        frame.setFixedWidth(52)
-        column = QVBoxLayout(frame); column.setContentsMargins(3, 8, 3, 8); column.setSpacing(4)
+        # Room around the buttons, so the purple square of the open panel does not
+        # touch the window edge (exp.100).
+        frame.setFixedWidth(60)
+        column = QVBoxLayout(frame); column.setContentsMargins(7, 10, 7, 10); column.setSpacing(6)
         return frame, column
 
     def rail_button(name, text):
         button = QToolButton(); button.setObjectName('railButton')
         button.setText(text)
-        button.setIcon(icon(name, RAIL_ICON, RAIL_ACTIVE))    # the open panel's icon in the accent colour
+        button.setIcon(icon(name, RAIL_ICON, '#FFFFFF'))      # the open panel: white on purple
         button.setIconSize(QSize(18, 18))
         button.setCheckable(True)
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
@@ -1312,8 +1335,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # side panel is collapsed (they are how a closed panel is reopened).
     w.workspace_row=QWidget()
     w.workspace_row_layout=QHBoxLayout(w.workspace_row)
-    w.workspace_row_layout.setContentsMargins(0,0,0,0)
-    w.workspace_row_layout.setSpacing(2)
+    w.workspace_row_layout.setContentsMargins(4,0,4,0)    # the rails keep off the window edges
+    w.workspace_row_layout.setSpacing(4)
     w.workspace_row_layout.addWidget(split,1)
     w.vertical_splitter.addWidget(w.workspace_row)
     outer.addWidget(w.vertical_splitter,1)
@@ -1374,21 +1397,21 @@ def build_workspace(w, Canvas, BRAND_ICON):
     card_text.addWidget(w.edit_handwriting_button)
     card_l.addLayout(card_text)
     src_l.addWidget(w.source_card)
-    # "Source settings" (collapsible): transform and appearance of the artwork.
-    w.source_settings_toggle=QPushButton('▾  Source settings')
-    w.source_settings_toggle.setObjectName('subtle');w.source_settings_toggle.setCheckable(True)
-    w.source_settings_toggle.setChecked(True)
-    src_l.addWidget(w.source_settings_toggle)
+    # Image panel sections (exp.100), each closed until you open it, like Filmora:
+    # Transform, Appearance, Ink on the page, Colour, Light, Original image, Image to drawing.
+    from ui_sections import Section
+    # The old "Source settings" fold is gone (kept hidden for older code).
+    w.source_settings_toggle=QPushButton('Source settings',source_page);w.source_settings_toggle.setCheckable(True)
+    w.source_settings_toggle.setChecked(True);w.source_settings_toggle.hide()
     w.source_settings=QWidget();w.source_settings.setMinimumWidth(0)
-    ss_l=QVBoxLayout(w.source_settings);ss_l.setContentsMargins(0,0,0,0);ss_l.setSpacing(8)
-    w.source_settings_toggle.toggled.connect(lambda opened: (w.source_settings.setVisible(opened),
-        w.source_settings_toggle.setText(('▾' if opened else '▸')+'  Source settings')))
+    ss_l=QVBoxLayout(w.source_settings);ss_l.setContentsMargins(0,0,0,0);ss_l.setSpacing(4)
     src_l.addWidget(w.source_settings)
     # Transform (imported artwork) — filled with the shared placement group.
-    w.source_transform_heading=label('TRANSFORM')
-    ss_l.addWidget(w.source_transform_heading)
+    w.section_transform=Section('Transform',tip='Size and position of the picture on the page.')
+    w.source_transform_heading=w.section_transform
+    ss_l.addWidget(w.section_transform)
     w.source_transform_slot=QVBoxLayout();w.source_transform_slot.setSpacing(6)
-    ss_l.addLayout(w.source_transform_slot)
+    w.section_transform.body.addLayout(w.source_transform_slot)
     # Image settings use the same compact vertical field rhythm as lettering.
     # Unlike a wrapped QFormLayout, these groups cannot impose a wide label
     # column on the Source viewport when its splitter is dragged narrower.
@@ -1455,17 +1478,23 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.image_controls.hide()
     # Appearance and matching-colour fields are built with the Animation
     # controls further down; their places in Source are reserved here.
-    w.source_appearance_heading=label('APPEARANCE')
-    ss_l.addWidget(w.source_appearance_heading)
+    w.section_appearance=Section('Appearance',tip='Blend mode, opacity and paper cleanup.')
+    w.source_appearance_heading=w.section_appearance
+    ss_l.addWidget(w.section_appearance)
     w.source_appearance_slot=QVBoxLayout();w.source_appearance_slot.setSpacing(6)
-    ss_l.addLayout(w.source_appearance_slot)
-    w.source_colors_heading=label('MATCHING COLORS')
-    src_l.addWidget(w.source_colors_heading)
+    w.section_appearance.body.addLayout(w.source_appearance_slot)
+    # Ink on the page, Colour, Light (build_look_sections).
+    w.source_look_slot=QVBoxLayout();w.source_look_slot.setSpacing(4)
+    ss_l.addLayout(w.source_look_slot)
+    w.section_colors=Section('Matching colours',tip='The coloured picture that is painted after the lines.')
+    w.source_colors_heading=w.section_colors
+    src_l.addWidget(w.section_colors)
     w.source_colors_slot=QVBoxLayout();w.source_colors_slot.setSpacing(6)
-    src_l.addLayout(w.source_colors_slot)
-    w.image_drawing_heading=label('IMAGE TO DRAWING')
-    src_l.addWidget(w.image_drawing_heading)
-    src_l.addWidget(w.image_controls)
+    w.section_colors.body.addLayout(w.source_colors_slot)
+    w.section_image_drawing=Section('Image to drawing',tip='How the picture is turned into lines.')
+    w.image_drawing_heading=w.section_image_drawing
+    src_l.addWidget(w.section_image_drawing)
+    w.section_image_drawing.body.addWidget(w.image_controls)
     w.source_note_slot=QVBoxLayout()
     src_l.addLayout(w.source_note_slot)
     src_l.addStretch(1)
@@ -1739,7 +1768,14 @@ def build_workspace(w, Canvas, BRAND_ICON):
     animation_l.setSpacing(10)
     from ui_sections import Section
     # Filmora-style sections: click a header to open it; optional parts have a switch.
-    w.section_drawing=Section('Drawing',expanded=True)
+    # Drawing on / off (exp.100): on = the hand draws the element (the default);
+    # off = the element comes in with a Move in effect instead (the section below).
+    # Both switches are views of the stored "Comes in" setting (w.entrance).
+    w.draw_on=QCheckBox('Drawing',animation);w.draw_on.hide();w.draw_on.setChecked(True)
+    w.draw_on.setToolTip('On: the hand draws this element. Off: it comes in with a Move in effect.')
+    w.move_in_on=QCheckBox('Move in',animation);w.move_in_on.hide()
+    w.move_in_on.setToolTip('On: this element comes in with an effect (Fade, Slide…) instead of being drawn.')
+    w.section_drawing=Section('Drawing',switch=w.draw_on,tip='The hand draws the lines.')
     animation_l.addWidget(w.section_drawing)
     a=form_layout();w.section_drawing.body.addLayout(a)
     w.duration=w.number(.2,120,4,.1);a.addRow('Draw time (s)',w.duration)
@@ -1775,24 +1811,24 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # combined minimum width could force the entire Inspector form outside the
     # scroll viewport after image-only fields appeared.
     # One row each, so both fields keep a usable width in the narrowest panel.
-    w.placement_form.addRow('Position X',w.picture_x)
-    w.placement_form.addRow('Position Y',w.picture_y)
+    # Slider plus number, like Scale (exp.100): drag, click the track, or type.
+    w.position_sliders={}
+    for title,box in (('Position X',w.picture_x),('Position Y',w.picture_y)):
+        holder=QWidget();holder.setMinimumWidth(0)
+        row=QHBoxLayout(holder);row.setContentsMargins(0,0,0,0);row.setSpacing(8)
+        row.addWidget(box)
+        slider=linked_slider(box,-100,100)
+        slider.setToolTip(box.toolTip())
+        row.addWidget(slider,1)
+        w.position_sliders[title]=slider
+        w.placement_form.addRow(title,holder)
+    w.x_slider,w.y_slider=w.position_sliders['Position X'],w.position_sliders['Position Y']
     w.placement_form.addRow('',w.picture_center)
     w.source_transform_slot.addWidget(w.placement_box)    # moved by kind on select
     w.pen_ease=QComboBox()
     w.pen_ease.addItems(['Constant speed','Natural (ease in and out)'])
     w.pen_ease.setToolTip('Natural: every line starts and ends a little slower, like a real hand.')
     a.addRow('Pen movement',w.pen_ease)
-    from frame_render import ENTRANCES
-    w.entrance=QComboBox(); w.entrance.addItems(list(ENTRANCES))
-    w.entrance.setToolTip('How this element appears: drawn by the hand, or with an effect (no hand) '
-                          'during its animation time.')
-    a.addRow('Comes in',w.entrance)
-    import move_in
-    w.entrance_part=QComboBox(); w.entrance_part.addItems(list(move_in.PARTS))
-    w.entrance_part.setToolTip('What comes in with the effect: the whole picture, or only the lines '
-                               '(then the painting hand paints the colours as usual).')
-    a.addRow('Moves in',w.entrance_part)
     w.pause_after=w.number(0,60,0,.5)
     w.pause_after.setToolTip('Seconds the finished element stays on screen before it goes out or the '
                              'camera moves on (works with or without colours).')
@@ -1806,6 +1842,23 @@ def build_workspace(w, Canvas, BRAND_ICON):
                                     'and paint (or from the voiceover length, if one is loaded).')
     w.auto_timing_button.clicked.connect(lambda checked=False: w.auto_timing())
     w.auto_timing_button.hide()          # removed from the panel (kept for File projects/tests)
+    w.section_move_in=Section('Move in',switch=w.move_in_on,
+                              tip='The element comes in with an effect instead of being drawn by the hand.')
+    animation_l.addWidget(w.section_move_in)
+    mi=form_layout();w.section_move_in.body.addLayout(mi);w.move_in_form=mi
+    from frame_render import ENTRANCES
+    w.entrance=QComboBox(); w.entrance.addItems(list(ENTRANCES))
+    w.entrance.setToolTip('The effect this element comes in with (no drawing hand).')
+    w.entrance.view().setRowHidden(0,True)           # "Draw with the hand" is the Drawing switch
+    mi.addRow('Comes in',w.entrance)
+    import move_in
+    w.entrance_part=QComboBox(); w.entrance_part.addItems(list(move_in.PARTS))
+    w.entrance_part.setToolTip('What comes in with the effect: the whole picture, or only the lines '
+                               '(then the painting hand paints the colours as usual).')
+    mi.addRow('Moves in',w.entrance_part)
+    w.move_time=w.number(.2,120,4,.1)
+    w.move_time.setToolTip('How long the element takes to come in with its effect.')
+    mi.addRow('Move-in time (s)',w.move_time)
     w.section_painting=Section('Colour & painting',tip='How the colours are painted after the lines.')
     animation_l.addWidget(w.section_painting)
     w.load_color_button=QPushButton('Load matching colored PNG…')
@@ -1960,7 +2013,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
 
     # 1. The drawing hand: one label column, like the Animation panel.
     from ui_sections import Section
-    w.section_draw_hand=Section('Drawing hand',expanded=True,tip='The hand that draws the lines.')
+    w.section_draw_hand=Section('Drawing hand',tip='The hand that draws the lines.')
     hand_l.addWidget(w.section_draw_hand)
     picture('draw',w.section_draw_hand.body)
     w.hand_name=caption('Hand: none')
@@ -2431,6 +2484,25 @@ def build_workspace(w, Canvas, BRAND_ICON):
             w._last_erase=w.erase_mode.currentText()
             w.erase_mode.setCurrentText('Off')
     w.erase_on.toggled.connect(erase_switched)
+    # Drawing / Move in switches -> the stored "Comes in" (w.entrance).
+    def draw_switched(on):
+        if on:
+            if w.entrance.currentIndex()!=0:
+                w._last_entrance=w.entrance.currentText()
+                w.entrance.setCurrentIndex(0)
+        elif w.entrance.currentIndex()==0:
+            w.entrance.setCurrentText(getattr(w,'_last_entrance',None) or 'Fade in')
+            w.section_move_in.set_expanded(True)
+        w.sync_entrance_switches()
+    w.draw_on.toggled.connect(draw_switched)
+    w.move_in_on.toggled.connect(lambda on: w.draw_on.setChecked(not on))
+    # Move-in time is the element's animation time (the same value as Draw time).
+    def same_time(src,dst):
+        if abs(dst.value()-src.value())>1e-9:
+            dst.setValue(src.value())
+    w.move_time.valueChanged.connect(lambda v: same_time(w.move_time,w.duration))
+    w.duration.valueChanged.connect(lambda v: same_time(w.duration,w.move_time))
+    w.move_time.setValue(w.duration.value())
     w.move_hand.toggled.connect(w.refresh)
     for widget in (w.move_hand_size,w.move_hand_gx,w.move_hand_gy):
         widget.valueChanged.connect(w.schedule_refresh)
@@ -2623,14 +2695,16 @@ class UndoKeys(QObject):
 
     def __init__(self, window):
         super().__init__(window)
-        self.window = window
+        self.main = window
 
     def eventFilter(self, obj, event):
         from PySide6.QtCore import QEvent
         from PySide6.QtGui import QKeySequence
         if event.type() not in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
             return False
-        if not isinstance(obj, QWidget) or obj.window() is not self.window:
+        # QWidget.window(obj), not obj.window(): some widgets keep the main window in an
+        # attribute called `window`, which hides the method (a crash on Ctrl+Z there).
+        if not isinstance(obj, QWidget) or QWidget.window(obj) is not self.main:
             return False
         undo = event.matches(QKeySequence.StandardKey.Undo)
         redo = (event.matches(QKeySequence.StandardKey.Redo) or
@@ -2648,7 +2722,7 @@ class UndoKeys(QObject):
         if event.type() == QEvent.Type.ShortcutOverride:
             event.accept()                               # the key comes to us as a key press
             return True
-        (self.window.undo if undo else self.window.redo)()
+        (self.main.undo if undo else self.main.redo)()
         return True
 
 
@@ -2691,7 +2765,7 @@ def build_look_sections(w):
                   'see-through, so no square shows; the page shows through the lines.')
     w.section_ink=Section('Ink on the page',switch=ink_on,
                           tip='Make the picture look printed on the page (no square around it).')
-    w.source_appearance_slot.addWidget(w.section_ink)
+    w.source_look_slot.addWidget(w.section_ink)
     f=form_layout();w.section_ink.body.addLayout(f)
     w.ink_edges=QComboBox();w.ink_edges.addItems(list(picture_look.EDGES))
     w.ink_edges.setToolTip('Soft edges: the border fades out. Oval fade: everything around the middle fades, '
@@ -2709,25 +2783,27 @@ def build_look_sections(w):
     # Colour, like Filmora.
     colour_on=switch('look_colour_on','Colour','Temperature, tint and saturation of the picture.')
     w.section_look_colour=Section('Colour',switch=colour_on)
-    w.source_appearance_slot.addWidget(w.section_look_colour)
+    w.source_look_slot.addWidget(w.section_look_colour)
     f=form_layout();w.section_look_colour.body.addLayout(f)
     for key,text in picture_look.COLOUR:
         row(f,key,text)
     # Light, like Filmora.
     light_on=switch('look_light_on','Light','Exposure, brightness, contrast, highlights, shadows, whites and blacks.')
     w.section_look_light=Section('Light',switch=light_on)
-    w.source_appearance_slot.addWidget(w.section_look_light)
+    w.source_look_slot.addWidget(w.section_look_light)
     f=form_layout();w.section_look_light.body.addLayout(f)
     for key,text in picture_look.LIGHT:
         row(f,key,text)
     # Any change: the picture again (sliders at most every 40 ms).
+    # No "Preparing brush route" while adjusting (exp.100): the finished picture shows at
+    # once and the brushes are planned on Play, a scrub or Pre-render.
     for key,widget in w.look_widgets.items():
         if isinstance(widget,QCheckBox):
-            widget.toggled.connect(lambda checked: w.refresh())
+            widget.toggled.connect(lambda checked: w.look_changed())
         elif isinstance(widget,QComboBox):
-            widget.currentIndexChanged.connect(lambda index: w.refresh())
+            widget.currentIndexChanged.connect(lambda index: w.look_changed())
         else:
-            widget.valueChanged.connect(lambda value: w.schedule_refresh())
+            widget.valueChanged.connect(lambda value: w.look_changed(slider=True))
     # Turning a group on opens it.
     for section in (w.section_ink,w.section_look_colour,w.section_look_light):
         section.switch.source.toggled.connect(lambda on,sec=section: on and sec.set_expanded(True))

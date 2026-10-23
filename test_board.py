@@ -116,6 +116,19 @@ class BoardWindowTests(unittest.TestCase):
         self.w.close(); self.app.processEvents()
         self.tmp.cleanup()
 
+    def test_one_resolution_for_every_element(self):
+        """exp.100: switching elements keeps the video's resolution (a page at 1920 x 1080
+        and the picture on it at 2560 x 1440 did not line up)."""
+        w = self.w
+        w.res.setCurrentIndex(0)
+        w.select_scene(0); self.app.processEvents()
+        w.res.setCurrentIndex(1)
+        chosen = w.res.currentText()
+        w.select_scene(1); self.app.processEvents()
+        self.assertEqual(w.res.currentText(), chosen)
+        w.select_scene(0); self.app.processEvents()
+        self.assertEqual(w.res.currentText(), chosen)
+
     def test_board_view_move_resize_and_edit(self):
         w = self.w
         w.preview_scope.setCurrentIndex(2)

@@ -59,6 +59,9 @@ class SourceModeConsistencyTests(unittest.TestCase):
     def assert_inside_source_viewport(self, widget, name, scroll=None):
         self.scroll=scroll or self.source
         self.assertFalse(widget.isHidden(), name+" unexpectedly hidden")
+        from ui_sections import reveal
+        reveal(widget)                     # panel sections start closed (exp.100)
+        APP.processEvents()
         self.scroll.ensureWidgetVisible(widget, 0, 0)
         APP.processEvents()
         point=widget.mapTo(self.scroll.viewport(), QPoint(0,0))

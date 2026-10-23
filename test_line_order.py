@@ -138,15 +138,25 @@ class WindowTests(unittest.TestCase):
         p.fillRect(240, 200, 30, 30, QColor(240, 220, 30)); p.end()
         w.final_image = colours
         w.use_color.setEnabled(True); w.use_color.setChecked(True)
+        w.reveal_mode.setCurrentText('Adaptive Hand Painting')
         dialog = w.open_line_order()
         dialog.set_mode('paint')
-        self.assertEqual(dialog.mode, 'draw')                              # not Painter: explained, stays on Drawing
-        self.assertIn('Painter', dialog.hint.text())
-        dialog.reject(); self.app.processEvents()
-        w.reveal_mode.setCurrentText(w.PAINTER_TEXT)
+        # exp.100: any paint mode opens the parts, with a clear note (it used to stay on Drawing).
+        self.assertEqual(dialog.mode, 'paint')
+        self.assertTrue(dialog.tab_buttons['paint'].isChecked())
+        self.assertFalse(dialog.tab_buttons['draw'].isChecked())
+        self.assertFalse(dialog.mode_note.isHidden())
+        self.assertIn('Painter', dialog.mode_note.text())
+        dialog.picture_clicked(len(dialog.parts) - 1)
+        dialog.move('start')
+        dialog.accept(); self.app.processEvents()
+        self.assertEqual(w.reveal_mode.currentText(), w.PAINTER_TEXT)     # the order is used, not ignored
+        self.assertIn('Painter', w.status.text())
+        del w.drawing.paint_part_order
         dialog = w.open_line_order()
         dialog.set_mode('paint')
         self.assertEqual(dialog.mode, 'paint')
+        self.assertTrue(dialog.mode_note.isHidden())                       # Painter: nothing to explain
         self.assertGreaterEqual(len(dialog.parts), 2)
         self.assertEqual(dialog.list.item(0).text(), 'Part 1')
         last = len(dialog.parts) - 1

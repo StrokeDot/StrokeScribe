@@ -126,6 +126,12 @@ class Section(QWidget):
         self.expanded = None
         self.set_expanded(expanded)
 
+    def setText(self, text):
+        self.title.setText(text)
+
+    def text(self):
+        return self.title.text()
+
     def attach_switch(self, source, tip=''):
         """Add the on/off switch for check box `source` (when it is made after the section)."""
         if self.switch is not None:

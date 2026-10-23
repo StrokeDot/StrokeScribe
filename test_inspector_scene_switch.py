@@ -141,6 +141,10 @@ class InspectorSceneSwitchGeometryTests(unittest.TestCase):
             for form in forms:
                 self.assertEqual(form.rowWrapPolicy(),
                                  QFormLayout.RowWrapPolicy.DontWrapRows)
+            from ui_sections import reveal
+            for widget in (w.duration,w.picture_center):
+                reveal(widget)                 # sections start closed (exp.100)
+            APP.processEvents()
             self.assertTrue(w.duration.isVisible())
             self.assertTrue(w.speed.isVisible())
             self.area_of(w.picture_center)
