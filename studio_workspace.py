@@ -1495,6 +1495,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.image_drawing_heading=w.section_image_drawing
     src_l.addWidget(w.section_image_drawing)
     w.section_image_drawing.body.addWidget(w.image_controls)
+    # No side margins inside these sections: the fields keep the width they had before
+    # they moved into sections (8 px more made the narrowest panel overflow).
+    for section in (w.section_transform,w.section_appearance,w.section_colors,w.section_image_drawing):
+        section.body.setContentsMargins(0,6,0,10)
     w.source_note_slot=QVBoxLayout()
     src_l.addLayout(w.source_note_slot)
     src_l.addStretch(1)
