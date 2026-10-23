@@ -275,8 +275,13 @@ def parts_for_window(drawing, image, circles=None):
     gw, gh, origin, support, faint = _grid(drawing, image, source)
     grid, circled = labels_for(drawing, source, support, gw, gh, circles)
     import numpy as np
+    import cv2
     centres = {}
     for rid in [int(i) for i in np.unique(grid) if i > 0]:
-        ys, xs = np.nonzero(grid == rid)
-        centres[rid] = (float(xs.mean()) + .5, float(ys.mean()) + .5, int(len(xs)))
+        mask = (grid == rid).astype(np.uint8)
+        # A point well inside the part (the farthest from its edge), not its average:
+        # the average of a wall around people falls on the people (exp.101).
+        depth = cv2.distanceTransform(np.pad(mask, 1), cv2.DIST_L2, 3)[1:-1, 1:-1]
+        y, x = np.unravel_index(int(depth.argmax()), depth.shape)
+        centres[rid] = (float(x) + .5, float(y) + .5, int(mask.sum()))
     return grid, part_order(grid, origin), centres, circled

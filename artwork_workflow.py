@@ -87,13 +87,13 @@ class ArtworkWorkflow:
             if hasattr(self,section): getattr(self,section).setVisible(imported)
         # Matching colors (SVG) / Change original image (image).
         self.source_colors_heading.setVisible(imported)
-        self.source_colors_heading.setText('MATCHING COLORS' if kind==SVG else 'ORIGINAL IMAGE')
+        self.source_colors_heading.setText('Matching colours' if kind==SVG else 'Original image')
         self.load_color_button.setVisible(imported)
         self.color_note.setVisible(imported)
         self.clean_color.setVisible(kind==SVG)
         self.use_color.setVisible(kind==SVG)
-        self.source_settings_toggle.setVisible(imported)
-        self.source_settings.setVisible(imported and self.source_settings_toggle.isChecked())
+        self.source_settings_toggle.setVisible(False)       # sections now (exp.100)
+        self.source_settings.setVisible(imported)
         if hasattr(self,'update_ink_swatch'):
             self.update_ink_swatch()
         # Image to drawing follows the existing image controls.

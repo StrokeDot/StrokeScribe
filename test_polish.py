@@ -33,14 +33,35 @@ class PolishTests(unittest.TestCase):
         self.w.close()
         self.app.processEvents()
 
-    def test_sections_start_closed_except_the_first(self):
+    def test_every_section_starts_closed(self):
+        """exp.100: every section closed by default, everywhere (Image, Animation, Hand)."""
+        from ui_sections import Section
         w = self.w
-        self.assertTrue(w.section_drawing.expanded)
-        self.assertFalse(w.section_painting.expanded)
-        self.assertFalse(w.section_out.expanded)
-        self.assertTrue(w.section_draw_hand.expanded)
-        self.assertFalse(w.section_paint_hand.expanded)
-        self.assertFalse(w.section_move_hand.expanded)
+        sections = w.findChildren(Section)
+        self.assertGreaterEqual(len(sections), 12)
+        for section in sections:
+            self.assertFalse(section.expanded, section.title.text() + ' starts open')
+        for name in ('section_drawing', 'section_move_in', 'section_painting', 'section_out',
+                     'section_draw_hand', 'section_paint_hand', 'section_move_hand', 'section_transform',
+                     'section_appearance', 'section_ink', 'section_look_colour', 'section_look_light',
+                     'section_colors', 'section_image_drawing'):
+            self.assertIn(getattr(w, name), sections)
+
+    def test_position_has_sliders_like_scale(self):
+        """exp.100: Position X and Y: a slider plus the number, like Scale; a click on
+        the track jumps there."""
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+        from ui_sections import reveal
+        w = self.w
+        w.show_right_panel('source'); reveal(w.picture_x); self.app.processEvents()
+        w.x_slider.setValue(30)
+        self.assertAlmostEqual(w.picture_x.value(), 30)
+        w.picture_y.setValue(-40)
+        self.assertEqual(w.y_slider.value(), -40)
+        QTest.mouseClick(w.x_slider, Qt.MouseButton.LeftButton, pos=QPoint(w.x_slider.width() - 3,
+                                                                            w.x_slider.height() // 2))
+        self.assertGreater(w.picture_x.value(), 80)                   # jumped near the right end
 
     def test_clicking_a_header_opens_and_closes_it(self):
         from PySide6.QtCore import Qt

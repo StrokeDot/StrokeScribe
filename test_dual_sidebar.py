@@ -109,6 +109,13 @@ class DualSidebarTests(unittest.TestCase):
         self.assertEqual(w.source_card_title.text(), 'SVG drawing')
         self.assertTrue(w.source_card_thumb.isVisible())
         self.assertFalse(w.edit_handwriting_button.isVisible())
+        # The panel's sections start closed (exp.100): open them to look inside.
+        self.assertFalse(w.section_appearance.expanded)
+        self.assertFalse(w.section_transform.expanded)
+        from ui_sections import reveal
+        for widget in (w.blend_mode, w.load_color_button):
+            reveal(widget)
+        APP.processEvents()
         self.assertTrue(w.blend_mode.isVisible())
         self.assertTrue(w.artwork_opacity.isVisible())
         self.assertFalse(w.paper_cleanup.isVisible())         # images only
@@ -283,6 +290,8 @@ class DualSidebarTests(unittest.TestCase):
         w.show_right_panel('hand')
         APP.processEvents()
         # Drawing hand size in %, kept in step with the stored Hand size.
+        self.assertFalse(w.section_draw_hand.expanded)       # closed until opened (exp.100)
+        w.section_draw_hand.set_expanded(True); APP.processEvents()
         self.assertTrue(w.hand_size_pct.isVisible())
         self.assertEqual(w.hand_size_pct.value(), 75)
         w.hand_size_pct.setValue(60)

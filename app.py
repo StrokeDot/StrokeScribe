@@ -616,7 +616,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from adaptive_hand import plan_ready, plan_for
         bw,sp=options.get('brush_width',.14),options.get('stroke_spacing',.55)
         if plan_ready(self.drawing,image,bw,sp):
+            self._plan_deferred=False
             return True
+        if getattr(self,'_look_preview',False) and not self.playing and not self.all_scenes():
+            # Adjusting Ink on the page / Colour / Light (exp.100): show the finished
+            # picture at once; the brush route is planned on Play, a scrub or Pre-render.
+            self._plan_deferred=True
+            return 'deferred'
+        self._plan_deferred=False                 # planned now (here or in the background)
         quiet=getattr(self,'_quiet_plan',False)
         self._quiet_plan=False
         if quiet and self.canvas.frame is not None:
@@ -628,7 +635,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         try:
             self.show_busy_now('Preparing brush route',
                                'Planning how the hand paints the colours…')
-            plan_for(self.drawing,image,bw,sp)
+            try:
+                plan_for(self.drawing,image,bw,sp)
+            except ValueError as exc:
+                # E.g. Ink on the page made the whole picture see-through: nothing to paint.
+                # Say so instead of stopping the preview (exp.100).
+                self.status.setText('Nothing to paint: '+str(exc)[:160])
         finally:
             self._preparing=False
             self.clear_busy()
@@ -1304,8 +1316,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.paint_form.setRowVisible(self.image_duration,image_source)
         self.paint_form.setRowVisible(self.image_animation,image_source)
         paint_only=image_source and self.image_animation.currentIndex()==1
-        self.duration.setEnabled(not paint_only)
-        self.speed.setEnabled(not paint_only)
+        self.speed.setEnabled(not paint_only)            # Draw time: update_applicable
         self.reveal_mode.setToolTip('Image sources use Adaptive Hand Painting or Zigzag sweep.'
                                     if image_source else '')
         self.output_summary.setText(f'{self.res.currentText()}  •  {self.fps.value()} fps')
@@ -1628,9 +1639,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                        # Older projects: one Left-handed switch for both hands.
                        'paint_left_handed':bool(settings.get('left_handed',False))},**settings)
         # Settings first (without a refresh storm), then the drawing.
+        # The video's own settings (resolution, frame rate, formats, background) are one
+        # for the whole project: switching elements keeps them (exp.100; elements could
+        # end up with different resolutions, e.g. a page at 1920 × 1080 and the picture
+        # on it at 2560 × 1440).
+        from scenes import GLOBAL_SETTINGS
+        keep=set(GLOBAL_SETTINGS) if getattr(self,'_entering_scene',False) else set()
         for name in self.PROJECT_SETTINGS:
             widget=getattr(self,name,None)
-            if widget is None or name not in settings: continue
+            if widget is None or name not in settings or name in keep: continue
             widget.blockSignals(True)
             set_widget_value(widget,settings[name])
             widget.blockSignals(False)
@@ -1652,7 +1669,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.update_sound_buttons()
         letter=data.get('letter',{})
         self.letter_ink_color=letter.get('ink',self.letter_ink_color)
-        self.background_color=settings.get('background_color') or getattr(self,'background_color',None)
+        if 'background_color' not in keep:
+            self.background_color=settings.get('background_color') or getattr(self,'background_color',None)
         old_bg=letter.get('background')
         self.letter_bg_color=None                 # one Background for all now (top of the preview)
         if old_bg and self.preview_background.currentIndex()==0:
@@ -2879,6 +2897,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                     elif hasattr(drawing,'paint_part_order'): del drawing.paint_part_order
                     if circles: drawing.paint_circles=circles
                     elif hasattr(drawing,'paint_circles'): del drawing.paint_circles
+                # A painting order is painted by Painter: use it, so the order is never
+                # set and then silently ignored (exp.100).
+                switched=False
+                if (paint or circles) and getattr(dialog,'parts_changed',False) and \
+                        self.reveal_mode.currentText()!=self.PAINTER_TEXT:
+                    i=self.reveal_mode.findText(self.PAINTER_TEXT)
+                    if i>=0:
+                        self.reveal_mode.setCurrentIndex(i); switched=True
                 lines=dialog.strokes
                 if [id(s) for s in lines]!=[id(s) for s in drawing.strokes]:
                     keep={id(lines[i]) for i in dialog.line_selection if i<len(lines)}
@@ -2887,6 +2913,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 elif paint_changed:
                     self.project_changes.mark_changed();self.note_change()
                     self.status.setText('Painting order changed.');self.refresh()
+                if switched:
+                    self.status.setText('Painting order changed. This element now paints with Painter, '
+                                        'which follows your order. Undo (Ctrl+Z) puts it back.')
             if getattr(dialog,'saved_changed',False):
                 self.project_changes.mark_changed()     # saved orders are kept even after Cancel
             self.line_order_dialog=None
@@ -3066,6 +3095,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         * Goes out Off: the out time and eraser settings do not apply; Fade/Pop/… out show
           no eraser, so only the out time applies."""
         if not hasattr(self,'entrance_part') or not hasattr(self,'timing_form'): return
+        self.sync_entrance_switches()
         effect=self.entrance.currentIndex()!=0
         lines_only=self.entrance_part.currentIndex()==1
         image=self.is_image_artwork() if hasattr(self,'is_image_artwork') else False
@@ -3079,14 +3109,17 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if not hasattr(widget,'_tip'): widget._tip=widget.toolTip()
             widget.setEnabled(on)
             widget.setToolTip(widget._tip if on else f'Not used now: {why}')
-        label=self.timing_form.labelForField(self.duration)
-        if label is not None:
-            label.setText('Move-in time (s)' if effect else 'Draw time (s)')
-        self.duration.setToolTip('How long the element takes to come in with its effect.' if effect
-                                 else 'How long the hand takes to draw the lines.')
-        able(self.pen_ease,not effect,'the element comes in with an effect, the hand does not draw it.')
+        if not hasattr(self.duration,'_tip'): self.duration._tip='How long the hand takes to draw the lines.'
+        paint_only=image and self.image_animation.currentIndex()==1
+        able(self.duration,not effect and not paint_only,
+             'Paint Only: no lines are drawn.' if paint_only and not effect else
+             'Drawing is off: the element comes in with Move in (see Move-in time).')
+        able(self.pen_ease,not effect,'Drawing is off: the element comes in with an effect, the hand does not draw it.')
+        if hasattr(self,'move_time'):
+            able(self.entrance,effect,'Drawing is on: the hand draws this element. Turn on Move in to choose an effect.')
+            able(self.move_time,effect,'Drawing is on: Draw time is used.')
         able(self.entrance_part,effect and colours,
-             'choose an effect in "Comes in" (and have colours) to pick what moves in.')
+             'turn on Move in (and have colours) to pick what moves in.')
         why='there are no colours to paint.' if not colours else \
             'the whole picture moves in with its colours (choose "Only the lines" in Moves in to paint them).'
         for widget in (self.reveal_mode,self.color_fade,self.image_duration,self.brush_width,
@@ -3104,6 +3137,22 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         able(self.erase_time,erase!='Off','"Goes out" is Off.')
         able(self.erase_size,rubbing,'only an eraser that rubs (Zigzag or Along the lines) has a size.')
         able(self.eraser,rubbing,'only an eraser that rubs (Zigzag or Along the lines) is shown.')
+
+    def sync_entrance_switches(self):
+        """The Drawing and Move in switches show the stored "Comes in" (after a project,
+        undo or element switch too): Drawing on = drawn by the hand."""
+        if not hasattr(self,'draw_on'): return
+        drawn=self.entrance.currentIndex()==0
+        if not drawn: self._last_entrance=self.entrance.currentText()
+        if hasattr(self,'move_time') and abs(self.move_time.value()-self.duration.value())>1e-9:
+            self.move_time.blockSignals(True); self.move_time.setValue(self.duration.value())
+            self.move_time.blockSignals(False)
+        for box,on in ((self.draw_on,drawn),(self.move_in_on,not drawn)):
+            if box.isChecked()!=on:
+                box.blockSignals(True); box.setChecked(on); box.blockSignals(False)
+        for section in ('section_drawing','section_move_in'):
+            sec=getattr(self,section,None)
+            if sec is not None and sec.switch is not None: sec.switch.update()
 
     def sync_hand_sides(self):
         """The Right | Left switches after a project, undo or element switch, and the
@@ -3127,6 +3176,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.move_hand_name.setText(f'Hand: {Path(path).stem} (file missing; using the built-in hand)')
         else:
             self.move_hand_name.setText('Hand: '+Path(path).stem)
+        if hasattr(self,'move_in_hand_name'):
+            self.move_in_hand_name.setText(self.move_hand_name.text().replace('Hand: ','')
+                                           .replace('built-in (placeholder)','Built-in hand'))
         self.move_hand_builtin.setEnabled(bool(path))
         self.update_entrance_controls()
         self.sync_hand_sides()
@@ -3631,13 +3683,22 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         playhead=getattr(self,'_playhead_only',False); self._playhead_only=False
         if self._preparing or getattr(self,'_suspend_refresh',False):
             return
+        look=getattr(self,'_look_preview',False)
+        if getattr(self,'_plan_deferred',False) and not look:
+            playhead=False                # Play / scrub after a look change: plan the brushes now
         if self.drawing and self.board_mode():
             self._view=None; self.clear_frames()
             self.show_board(); return
         view=getattr(self,'_view',None)
         if not playhead or view is None or view['token']!=self._view_token() or not self.drawing:
-            if not self.build_view(): return
+            try:
+                if not self.build_view(): return
+            finally:
+                self._look_preview=False
             view=self._view
+            if getattr(self,'_plan_deferred',False) and look:
+                self.position=self.finished_position(view)
+        self._look_preview=False
         try:
             frame=self.preview_frame(self.position,playing=self.playing)
         except Exception as exc:
@@ -3671,7 +3732,22 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         length=view['length']
         self.clock.setText(timecode(self.position*length))
         self.clock_total.setText(timecode(length))
-        if not self.playing: self.start_prerender()
+        if not self.playing and not getattr(self,'_plan_deferred',False): self.start_prerender()
+
+    def finished_position(self,view):
+        """Where the playhead shows the finished element (painted, before it goes out)."""
+        parts=dict(self.stage_parts(view.get('options') or self.options()))
+        whole=sum(parts.values())
+        if whole<=0: return 1.
+        done=parts.get('move',parts.get('draw',0))+parts.get('paint',0)
+        at=done+parts.get('hold',0)*.5
+        return max(0.,min(1.,at/whole, (whole-parts.get('erase',0))/whole))
+
+    def look_changed(self,slider=False):
+        """Ink on the page / Colour / Light changed: the finished picture, no brush planning."""
+        self._look_preview=True
+        if slider: self.schedule_refresh()
+        else: self.refresh()
 
     def build_view(self):
         """Options and timeline for the current state (after any change)."""
@@ -3703,8 +3779,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.stage_timeline.set_scenes(None,current=self.scene_index)
         self.stage_timeline.set_overlays(self.overlays,self.selected_overlay)
         self.stage_timeline.set_audio(self.timeline_audio())
-        self.stage_timeline.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() \
-            else {'paint','hold','erase'}
+        paint_only=self.is_image_artwork() and self.image_animation.currentIndex()==1
+        self.stage_timeline.editable={'paint','hold','erase'} if paint_only \
+            else {'draw','paint','hold','erase'}
         parts=dict(self.stage_parts(options))
         moving='move' in parts
         self.stage_timeline.update_state(parts['move' if moving else 'draw'],parts['paint'],parts['hold'],
@@ -3808,6 +3885,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def prerender_step(self):
         view=getattr(self,'_view',None)
         if (view is None or not self.isVisible() or self.playing or self.busy or self._preparing or not self.drawing
+                or getattr(self,'_plan_deferred',False)
                 or (self.builder and self.builder.isRunning()) or (self.worker and self.worker.isRunning())
                 or view['token']!=self._view_token()):
             return
@@ -3870,6 +3948,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             return
         if not self.drawing or self.board_mode(): return
         self.playing=False
+        if getattr(self,'_plan_deferred',False):
+            self._look_preview=False; self.refresh()          # plan the brushes first (with its card)
+            if getattr(self,'_plan_deferred',False): return
         if getattr(self,'_view',None) is None and not self.build_view(): return
         self._prerender_all=True; self._prerender_next=0
         from prerender_dialog import PrerenderDialog

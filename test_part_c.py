@@ -90,7 +90,8 @@ class WindowTests(unittest.TestCase):
         from PySide6.QtWidgets import QLabel
         w = Window(); w.show(); self.app.processEvents()
         try:
-            texts = [l.text() for l in w.findChildren(QLabel)]
+            texts = [l.text().upper() for l in w.findChildren(QLabel)]
+            # Section headers since exp.96 ("Drawing hand", "Painting hand").
             self.assertTrue(any('DRAWING HAND' in t for t in texts))
             self.assertTrue(any('PAINTING HAND' in t for t in texts))
             self.assertEqual(set(w.hand_pictures), {'draw', 'paint', 'move'})

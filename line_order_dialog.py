@@ -175,13 +175,17 @@ class OrderPicture(QWidget):
             p.setPen(QPen(ACCENT, 2, Qt.PenStyle.SolidLine))
             p.drawPolygon(pts)
             top = min(pts, key=lambda q: q.y())
-            self._tag(p, top.x(), top.y() - 10, k + 1)
+            # "Group 1", not "1": a loop's number is not a place in the order (exp.101).
+            self._tag(p, top.x(), top.y() - 10, f'Group {k + 1}', QColor(120, 70, 220))
 
-    def _tag(self, p, x, y, number):
+    def _tag(self, p, x, y, number, colour=None):
         font = QFont(); font.setBold(True); font.setPointSizeF(8.5); p.setFont(font)
-        label = QRectF(x - 13, y - 9, 26, 17)
-        p.setPen(Qt.PenStyle.NoPen); p.setBrush(ACCENT); p.drawRoundedRect(label, 5, 5)
-        p.setPen(QColor('white')); p.drawText(label, Qt.AlignmentFlag.AlignCenter, str(number))
+        text = str(number)
+        w = max(26, p.fontMetrics().horizontalAdvance(text) + 12)
+        label = QRectF(x - w / 2, y - 9, w, 17)
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(colour if colour is not None else ACCENT)
+        p.drawRoundedRect(label, 5, 5)
+        p.setPen(QColor('white')); p.drawText(label, Qt.AlignmentFlag.AlignCenter, text)
         p.setBrush(Qt.BrushStyle.NoBrush)
 
     def paint_lines(self, p):
@@ -214,10 +218,16 @@ class OrderPicture(QWidget):
         p.drawImage(r, d.colours)
         p.drawImage(r, self.overlay())
         gh, gw = d.grid.shape
-        for i in sorted(d.selected):
+        # Every part shows its place in the order (exp.101), so a saved order can be seen
+        # after it is opened again; the selected ones in orange.
+        shown = set(d.selected) | (set(range(len(d.parts))) if d.show_numbers.isChecked() else set())
+        for i in sorted(shown):
             rid = d.parts[i]
+            if rid not in d.centres:
+                continue
             cx, cy, _ = d.centres[rid]
-            self._tag(p, r.x() + cx / gw * r.width(), r.y() + cy / gh * r.height(), i + 1)
+            self._tag(p, r.x() + cx / gw * r.width(), r.y() + cy / gh * r.height(), i + 1,
+                      None if i in d.selected else QColor(60, 60, 72, 210))
 
     # ------------------------------------------------------------ mouse
     # ------------------------------------------------------------ tracing the order
@@ -418,13 +428,22 @@ class LineOrderDialog(QDialog):
         self.picture = OrderPicture(self)
         self.picture.clicked.connect(self.picture_clicked)
         self.picture.boxed.connect(self.picture_boxed)
+        self.mode_note = QLabel(''); self.mode_note.setWordWrap(True); self.mode_note.setObjectName('notice')
+        self.mode_note.setStyleSheet('QLabel { background: rgba(124, 92, 255, 40); border: 1px solid #7C5CFF;'
+                                     ' border-radius: 6px; padding: 6px 8px; }')
+        self.mode_note.hide()
+        left.addWidget(self.mode_note)
         left.addWidget(self.picture, 1)
         self.hint = QLabel(''); self.hint.setWordWrap(True); self.hint.setObjectName('caption')
         left.addWidget(self.hint)
         view = QHBoxLayout(); left.addLayout(view)
         self.colour_order = QCheckBox('Colour by order (blue = first, red = last)')
         self.colour_order.setChecked(True); self.colour_order.toggled.connect(self.picture.update)
-        view.addWidget(self.colour_order); view.addStretch(1)
+        view.addWidget(self.colour_order)
+        self.show_numbers = QCheckBox('Show the numbers')
+        self.show_numbers.setToolTip('Every part shows its place in the painting order.')
+        self.show_numbers.setChecked(True); self.show_numbers.toggled.connect(self.picture.update)
+        view.addWidget(self.show_numbers); view.addStretch(1)
         self.play_button = QPushButton('Play order')
         self.play_button.setToolTip('Show the order one by one. Click again to pause.')
         self.play_button.clicked.connect(lambda checked=False: self.toggle_play())
@@ -558,8 +577,8 @@ class LineOrderDialog(QDialog):
         if self.grid is not None:
             return True
         w = self.window_
-        if w.reveal_mode.currentText() != getattr(w, 'PAINTER_TEXT', ''):
-            return 'The painting order works with the Painter paint mode. Choose Painter in Paint mode first.'
+        # Any paint mode opens the parts (exp.100: before, a mode other than Painter
+        # quietly kept the Drawing tab, with only a small note under the picture).
         image = w.options().get('final_image')
         if image is None or image.isNull():
             return 'This element has no colours to paint.'
@@ -571,6 +590,18 @@ class LineOrderDialog(QDialog):
         self.parts = [r for r in chosen if r in known] + [r for r in self.default_parts if r not in set(chosen)]
         self.colours = image
         return True
+
+    def uses_painter(self):
+        w = self.window_
+        return w.reveal_mode.currentText() == getattr(w, 'PAINTER_TEXT', None)
+
+    def paint_mode_note(self):
+        """Said above the parts when the element does not paint with Painter."""
+        if self.uses_painter():
+            return ''
+        return (f'This element paints with {self.window_.reveal_mode.currentText()}, which chooses its own '
+                'order. The order you set here is painted by Painter: when you change it and press '
+                '"Use this order", this element switches to Painter.')
 
     def set_mode(self, mode):
         self.play_timer.stop(); self.picture.shown = None; self.play_button.setText('Play order')
@@ -587,7 +618,11 @@ class LineOrderDialog(QDialog):
         self.mode = mode
         for key, b in self.tab_buttons.items():
             b.setChecked(key == mode)
+            b.setObjectName('primary' if key == mode else '')       # the open tab is the purple one
+            b.style().unpolish(b); b.style().polish(b)
         painting = mode == 'paint'
+        note = self.paint_mode_note() if painting else ''
+        self.mode_note.setText(note); self.mode_note.setVisible(bool(note))
         self.list_title.setText('PARTS (painting order)' if painting else 'LINES (drawing order)')
         self.line_tools.setVisible(not painting); self.line_tools_title.setVisible(not painting)
         self.hint.setText('Click a part to select it, click it again to unselect it. Drag a box to select '
@@ -818,8 +853,9 @@ class LineOrderDialog(QDialog):
         place = {k: n for n, k in enumerate(self.traced)}
         first = sorted((x for x in items if self._key(x) in place), key=lambda x: place[self._key(x)])
         rest = sorted((x for x in items if self._key(x) not in place), key=lambda x: where.get(self._name(x), 0))
-        self._set_items(first + rest)
-        self.selected = set(range(len(first)))
+        ordered = self._with_pinned_first(first + rest)
+        self._set_items(ordered)
+        self.selected = {n for n, x in enumerate(ordered) if self._key(x) in place}
         self.fill()
 
     def _name(self, item):
@@ -875,6 +911,7 @@ class LineOrderDialog(QDialog):
             if base is None or {id(s) for s in base} != {id(s) for s in self.strokes}:
                 base = self.circle_base = list(self.strokes)
             self.strokes = groups + [s for s in base if id(s) not in used]
+            self.circle_keys = [id(s) for s in groups]
             self.selected = set(range(len(groups)))
         self.fill()
 
@@ -889,10 +926,29 @@ class LineOrderDialog(QDialog):
         self.saved.blockSignals(True)
         self.saved.clear()
         self.saved.addItem('Default')
-        for o in self.saved_orders():
+        current = 0
+        for n, o in enumerate(self.saved_orders(), 1):
             self.saved.addItem(o['name'])
+            if self.matches_saved(o):
+                current = n
+        # The order in use shows its name (exp.101: it always said "Default", so a saved
+        # order looked lost when the window was opened again).
+        self.saved.setCurrentIndex(current)
         self.saved.blockSignals(False)
-        self.forget.setEnabled(False)
+        self.forget.setEnabled(current > 0)
+
+    def matches_saved(self, entry):
+        if self.mode == 'paint':
+            circles = [[list(map(float, pt)) for pt in c] for c in (entry.get('circles') or [])]
+            mine = [[list(map(float, pt)) for pt in c] for c in self.circles['paint']]
+            return bool(entry.get('parts')) and [int(r) for r in entry['parts']] == [int(r) for r in self.parts] \
+                and circles == mine
+        lines = entry.get('lines') or []
+        seen, mine = {}, []
+        for st in self.strokes:
+            seen[st.name] = seen.get(st.name, 0) + 1
+            mine.append([st.name, seen[st.name], bool(getattr(st, 'reversed', False))])
+        return bool(lines) and [list(x) for x in lines] == mine
 
     def save_order(self):
         """Keep the current order of this tab under a name (saved with the project)."""
@@ -963,13 +1019,29 @@ class LineOrderDialog(QDialog):
     def _key(self, item):
         return item if self.mode == 'paint' else id(item)
 
+    def pinned(self):
+        """Keys of the circled groups: they stay first, before what is traced (exp.101: a
+        trace used to push the circled group behind everything traced)."""
+        if self.mode == 'paint':
+            return list(self.circled_ids)
+        return list(getattr(self, 'circle_keys', None) or [])
+
+    def _with_pinned_first(self, items):
+        pins = self.pinned()
+        if not pins:
+            return items
+        place = {k: n for n, k in enumerate(pins)}
+        first = sorted((x for x in items if self._key(x) in place), key=lambda x: place[self._key(x)])
+        return first + [x for x in items if self._key(x) not in place]
+
     def trace_add(self, index, flip=False):
-        """The item at `index` comes next in the order (after what was traced before)."""
+        """The item at `index` comes next in the order (after the circled groups and what
+        was traced before)."""
         items = list(self.items())
         if not 0 <= index < len(items):
             return
         item = items[index]
-        if self._key(item) in self.traced:
+        if self._key(item) in self.traced or self._key(item) in set(self.pinned()):
             return
         if flip and self.mode == 'draw' and self.trace_follow.isChecked():
             from history import edited_stroke
@@ -979,8 +1051,9 @@ class LineOrderDialog(QDialog):
         place = {k: n for n, k in enumerate(self.traced)}
         first = sorted((x for x in items if self._key(x) in place), key=lambda x: place[self._key(x)])
         rest = [x for x in items if self._key(x) not in place]
-        self._set_items(first + rest)
-        self.selected = set(range(len(first)))
+        ordered = self._with_pinned_first(first + rest)
+        self._set_items(ordered)
+        self.selected = {n for n, x in enumerate(ordered) if self._key(x) in place}
         self.fill()
 
     def painting_order(self):

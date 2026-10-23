@@ -171,6 +171,9 @@ class StudioTests(unittest.TestCase):
         APP.processEvents()
         self.assertEqual(w.import_button.text(),'Import SVG…')       # two fixed buttons now
         self.assertEqual(w.import_image_button.text(),'Import image…')
+        from ui_sections import reveal
+        self.assertFalse(w.section_image_drawing.expanded)       # closed until opened (exp.100)
+        reveal(w.image_controls); APP.processEvents()
         self.assertTrue(w.image_controls.isVisible())
         self.assertTrue(w.export.isEnabled())  # the current SVG is still available
         w.source_type.setCurrentIndex(0)

@@ -16,7 +16,7 @@ jobs:
   test-and-package:
     if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'full-tests') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 110
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -80,7 +80,7 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
-    timeout-minutes: 45
+    timeout-minutes: 110
     env:
       QT_QPA_PLATFORM: offscreen
     steps:

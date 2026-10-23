@@ -64,6 +64,18 @@ class UndoTests(unittest.TestCase):
         self.assertAlmostEqual(w.thickness.value(), before + 2)
         self.assertIn('Redone', w.status.text())
 
+    def test_keys_in_a_window_with_a_window_attribute_do_not_crash(self):
+        """exp.100: a dialog that keeps the main window as `self.window` hid
+        QWidget.window(), and Ctrl+Z there raised "'Window' object is not callable"."""
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+        from PySide6.QtWidgets import QDialog
+        dialog = QDialog(self.w)
+        dialog.window = self.w
+        event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+        self.assertFalse(self.w.undo_keys.eventFilter(dialog, event))
+        dialog.deleteLater()
+
     def test_each_element_keeps_its_history(self):
         w = self.w
         w.add_scene()                                    # element 2 (a copy)

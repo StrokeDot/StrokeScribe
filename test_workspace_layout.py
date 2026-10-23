@@ -124,6 +124,9 @@ class WorkspaceLayoutTests(unittest.TestCase):
         self.assertTrue(all(area.widgetResizable() for area in source + inspector))
         self.assertGreater(source[0].verticalScrollBar().maximum(), 0)
         w.show_right_panel('animation')
+        from ui_sections import Section
+        for section in w.inspector_tabs.currentWidget().findChildren(Section):
+            section.set_expanded(True)            # sections start closed (exp.100): open them
         APP.processEvents()
         active = w.inspector_tabs.currentWidget()
         self.assertIn(active, inspector)
@@ -153,6 +156,11 @@ class WorkspaceLayoutTests(unittest.TestCase):
                 aligned=(TABS['animation'],TABS['hand'],TABS['source'])
                 expected=(QFormLayout.RowWrapPolicy.DontWrapRows if index in aligned
                           else QFormLayout.RowWrapPolicy.WrapLongRows)
+                holder=form.parentWidget()
+                if any(sec.isAncestorOf(holder) or sec is holder
+                       for sec in (w.section_ink,w.section_look_colour,w.section_look_light)):
+                    # Ink / Colour / Light: the label above each slider row (exp.100).
+                    expected=QFormLayout.RowWrapPolicy.WrapAllRows
                 self.assertEqual(form.rowWrapPolicy(),expected)
         # The source and inspector must remain navigable at the minimum size.
         self.assertTrue(w.export.isEnabled())
