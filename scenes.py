@@ -400,13 +400,15 @@ def scenes_from_project(data):
     listed = data.get('scenes')
     main = {k: v for k, v in data.items() if k not in ('scenes', 'scene_index')}
     if not listed:
-        return [dict(state=main, transition=DEFAULT_TRANSITION, transition_seconds=DEFAULT_TRANSITION_SECONDS)]
+        return [dict(state=main, transition=DEFAULT_TRANSITION, transition_seconds=DEFAULT_TRANSITION_SECONDS,
+                     uid=data.get('scene_uid'), rev=data.get('scene_rev'))]
     out = []
     for item in listed:
         state = item.get('state') or main
         out.append(dict(state=state, transition=item.get('transition', DEFAULT_TRANSITION),
                         transition_seconds=float(item.get('transition_seconds', DEFAULT_TRANSITION_SECONDS)),
-                        name=item.get('name'), board=item.get('board')))
+                        name=item.get('name'), board=item.get('board'),
+                        uid=item.get('uid'), rev=item.get('rev')))
     return out
 
 
@@ -416,7 +418,10 @@ def scenes_to_project(main_state, scene_list, index):
     if len(scene_list) > 1:
         data['scenes'] = [dict(state=None if k == index else s['state'], transition=s['transition'],
                                transition_seconds=s['transition_seconds'], name=s.get('name'),
-                               board=s.get('board'))
+                               board=s.get('board'), uid=s.get('uid'), rev=s.get('rev'))
                           for k, s in enumerate(scene_list)]
         data['scene_index'] = index
+    elif scene_list:
+        # One element: its revision (ready frames found again next session).
+        data['scene_uid'], data['scene_rev'] = scene_list[0].get('uid'), scene_list[0].get('rev')
     return data

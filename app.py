@@ -1390,6 +1390,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def project_state(self):
         """Everything needed to reopen this project: the edited scene plus all scenes."""
         from scenes import scenes_to_project
+        self.settle_rev()
         self.store_scene(thumbnail=False)
         return scenes_to_project(self.scene_state(),self.scenes,self.scene_index)
 
@@ -1608,10 +1609,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             scene['thumb']=None
             if k==index: scene['state']=None          # lives in the editor
         self.scenes=scene_list; self.scene_index=index
+        self._rev_fp=None
         self._scene_cache={}
         if not self._restoring:
             self.project_undo=[];self.project_redo=[]   # another project: nothing of this one to undo
         self.apply_scene_state(main)
+        self.sync_workspace()
+        self.settle_rev()
         self.fill_scenes()
 
     def apply_scene_state(self,data):
@@ -1829,8 +1833,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.export_all_scenes.setText(f'Export all {len(self.scenes)} elements as one video' if many
                                        else 'Export all scenes as one video')
 
+    def settle_rev(self):
+        """Bring the edited element's revision up to date (before it is left or saved)."""
+        try:
+            if self.drawing is None or not (0<=self.scene_index<len(self.scenes)): return
+            self.__dict__.setdefault('_memo',{}).pop('edited_fp',None)    # what it shows now
+            self.current_rev()
+        except Exception:
+            pass
+
     def _leave_scene(self):
         """Save the edited scene into the list before editing another one."""
+        self.settle_rev()
         self.store_scene()
         self.scenes[self.scene_index]['state']=self.scene_state()
         self._scene_cache.pop(id(self.scenes[self.scene_index]['state']),None)
@@ -1844,6 +1858,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         # board already ask for "the current scene" (after a delete, the old number may
         # not exist any more).
         self.scene_index=k
+        self._rev_fp=None                          # its saved revision holds until it changes
         self._entering_scene=True                  # loading a scene is not new artwork
         try:
             if state is not None:
@@ -1864,6 +1879,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.update_history_controls()
         self._scene_cache={key:v for key,v in self._scene_cache.items()
                            if any(id(s['state'])==key for s in self.scenes)}
+        self.sync_workspace()
+        self.settle_rev()                  # as opened = as saved: its frames stay ready
         self.fill_scenes()
         self.refresh()
 
@@ -3631,10 +3648,54 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         memo['edited_fp']=fp
         return fp
 
+    # Ready frames are kept under a fingerprint of what they show. Since exp.103 an
+    # element's part of it is its "revision": a random name saved with the project
+    # that changes only when the element really changes. The same element therefore
+    # has the same fingerprint while it is edited and while it is not, after switching
+    # elements, after "This element" / "Whole video", and in the next session (so
+    # "Keep the render after closing" works). Before, it used numbers that only lived
+    # for one session and changed when an element was opened or left: the render
+    # turned red again for no reason.
+    @staticmethod
+    def new_rev():
+        import uuid
+        return uuid.uuid4().hex[:16]
+
+    def scene_rev(self,k):
+        scene=self.scenes[k]
+        if not scene.get('uid'): scene['uid']=self.new_rev()
+        if not scene.get('rev'): scene['rev']=self.new_rev()
+        return scene['uid'],scene['rev']
+
+    def current_rev(self):
+        """The edited element's revision: a new one whenever what it shows changes."""
+        uid,rev=self.scene_rev(self.scene_index)
+        fp=self.edited_fingerprint()
+        seen=getattr(self,'_rev_fp',None)
+        if seen is None:
+            self._rev_fp=fp                   # just opened: the revision it was saved with
+        elif seen!=fp:
+            self._rev_fp=fp
+            rev=self.scenes[self.scene_index]['rev']=self.new_rev()
+        return uid,rev
+
+    def hand_digest(self):
+        """The drawing hand by its pixels (stays the same from session to session)."""
+        hand=self.hand
+        if hand is None or hand.isNull(): return None
+        cached=getattr(self,'_hand_digest',None)
+        if cached and cached[0]==hand.cacheKey(): return cached[1]
+        import hashlib
+        from PySide6.QtGui import QImage
+        image=hand.convertToFormat(QImage.Format.Format_ARGB32)
+        digest=hashlib.sha1(bytes(image.constBits())[:image.sizeInBytes()]).hexdigest()[:16]
+        self._hand_digest=(hand.cacheKey(),digest)
+        return digest
+
     def element_fingerprint(self,k):
-        if k==self.scene_index: return self.edited_fingerprint()
-        return ('stored',self._token(self.scenes[k]['state']),
-                self.hand.cacheKey() if self.hand is not None else None)
+        uid,rev=self.current_rev() if k==self.scene_index else self.scene_rev(k)
+        return ('el',uid,rev,self.hand_digest(),self.preview_background.currentText(),
+                repr(getattr(self,'background_color',None)))
 
     def segment_fingerprint(self,where,k):
         """The fingerprint of one segment of the current view (see preview_cache)."""
@@ -3645,12 +3706,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             base=None
             if view.get('page'):
                 base=(tuple(self.element_fingerprint(i) for i in range(self.scene_index)),board)
-            return ('one',self.scene_index,self.edited_fingerprint(),base,size)
+            return ('one',self.element_fingerprint(self.scene_index),base,size)
         if where=='scene':
             base=None
             if self.drawn_over(k):
                 base=(tuple(self.element_fingerprint(i) for i in range(k)),board)
-            return ('scene',k,self.element_fingerprint(k),base,size)
+            return ('scene',self.element_fingerprint(k),base,size)
         s=self.scenes[k]
         return ('join',k,s['transition'],s['transition_seconds'],
                 tuple(self.element_fingerprint(i) for i in range(min(k+2,len(self.scenes)))),board,size)
@@ -3867,6 +3928,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         index,count=self.frame_index(fraction)
         segment,local,frames,where,k=self.segment_at(index)
         cached=self.segment_cache.get(segment,local,self.PREVIEW_WIDTH)
+        stats=getattr(self,'_play_stats',None)
+        if stats is not None: stats['ready' if cached is not None else 'drawn']+=1
         if cached is not None:
             return cached
         cost=getattr(self,'_play_cost',0.)
@@ -3951,7 +4014,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 return
             self.prerender_timer.start(1)
             return
-        self.segment_cache.put(segment,local,self.PREVIEW_WIDTH,frame,disk=self._prerender_all)
+        from prerender_dialog import keep_render
+        # Kept on disk too when the render is to be kept after closing (exp.103), not only
+        # with the Pre-render button.
+        self.segment_cache.put(segment,local,self.PREVIEW_WIDTH,frame,disk=self._prerender_all or keep_render())
         if self._prerender_all:
             self.update_prerender_button()
         else:
@@ -4054,7 +4120,29 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self.board_mode(): self.preview_scope.setCurrentIndex(1)
         if self.position>=1: self.slider.setValue(0)
         self.playing=not self.playing; self.last=time.perf_counter(); self.sync_workspace()
+        if self.playing: self.start_play_stats()
+        else: self.log_play_stats()
         self.sync_preview_sound()
+
+    # Play statistics in the log (exp.103): how many frames came ready-made and how long
+    # each step took, so a lagging playback can be explained from the user's log.
+    def start_play_stats(self):
+        self._play_stats=dict(ticks=0,ready=0,drawn=0,ms=0.,worst=0.,late=0,last=time.perf_counter(),
+                              start=self.position)
+
+    def log_play_stats(self):
+        stats=getattr(self,'_play_stats',None)
+        self._play_stats=None
+        if not stats or stats['ticks']<10: return
+        import applog
+        view=getattr(self,'_view',None) or {}
+        applog.info('Play (%s): %d steps, frames ready-made %d, drawn while playing %d; '
+                    'per step %.1f ms on average, slowest %.0f ms; %d steps came late (over 50 ms apart); '
+                    'memory for frames %.0f MB'
+                    % ('whole video' if view.get('all') else 'this element',stats['ticks'],stats['ready'],
+                       stats['drawn'],stats['ms']/stats['ticks'],stats['worst'],stats['late'],
+                       self.segment_cache.memory_budget/1024**2))
+
     def sync_preview_sound(self):
         """Start the soundtrack at the playhead when playing; stop it otherwise."""
         wants=self.sound_on.isChecked() or self.audio_path
@@ -4082,9 +4170,17 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         length=view['length'] if view is not None and view['token']==self._view_token() else self.timeline_length()
         now=time.perf_counter(); self.position=min(1,self.position+(now-self.last)/max(1e-3,length)); self.last=now
         self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False)
+        stats=getattr(self,'_play_stats',None)
+        began=time.perf_counter()
         self._playhead_only=True; self.refresh()
+        if stats is not None:
+            spent=(time.perf_counter()-began)*1000
+            stats['ticks']+=1; stats['ms']+=spent; stats['worst']=max(stats['worst'],spent)
+            if (began-stats['last'])*1000>50: stats['late']+=1
+            stats['last']=began
         if self.position>=1:
             self.playing=False; self.sync_workspace()
+            self.log_play_stats()
             if self.preview_sound is not None: self.preview_sound.stop()
     def save(self):
         if not self.drawing or (self.builder and self.builder.isRunning()) or (self.worker and self.worker.isRunning()): return
