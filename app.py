@@ -634,7 +634,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         try:
             self.show_busy_now('Preparing brush route',
                                'Planning how the hand paints the colours…')
-            plan_for(self.drawing,image,bw,sp)
+            try:
+                plan_for(self.drawing,image,bw,sp)
+            except ValueError as exc:
+                # E.g. Ink on the page made the whole picture see-through: nothing to paint.
+                # Say so instead of stopping the preview (exp.100).
+                self.status.setText('Nothing to paint: '+str(exc)[:160])
         finally:
             self._preparing=False
             self.clear_busy()

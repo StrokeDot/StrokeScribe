@@ -130,8 +130,12 @@ class LookAppTests(unittest.TestCase):
         try:
             w.show()
             w.set_drawing(import_svg(HERE / 'samples' / 'drawing.svg'))
+            from PySide6.QtGui import QPainter
             colours = QImage(400, 300, QImage.Format.Format_ARGB32_Premultiplied)
-            colours.fill(QColor(200, 60, 40))
+            colours.fill(QColor(235, 230, 220))                  # paper with dark ink on it,
+            p = QPainter(colours)                                # so Ink on the page keeps some
+            p.fillRect(60, 60, 120, 160, QColor(30, 30, 30)); p.fillRect(220, 90, 120, 120, QColor(80, 40, 30))
+            p.end()
             w.final_image = colours
             w.use_color.setEnabled(True); w.use_color.setChecked(True)
             w.refresh()

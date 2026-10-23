@@ -968,8 +968,8 @@ def build_rails(w, tabs, inspector):
         frame = QFrame(); frame.setObjectName('iconRail')
         # Room around the buttons, so the purple square of the open panel does not
         # touch the window edge (exp.100).
-        frame.setFixedWidth(60)
-        column = QVBoxLayout(frame); column.setContentsMargins(7, 10, 7, 10); column.setSpacing(6)
+        frame.setFixedWidth(54)
+        column = QVBoxLayout(frame); column.setContentsMargins(5, 10, 5, 10); column.setSpacing(6)
         return frame, column
 
     def rail_button(name, text):
@@ -1335,8 +1335,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # side panel is collapsed (they are how a closed panel is reopened).
     w.workspace_row=QWidget()
     w.workspace_row_layout=QHBoxLayout(w.workspace_row)
-    w.workspace_row_layout.setContentsMargins(4,0,4,0)    # the rails keep off the window edges
-    w.workspace_row_layout.setSpacing(4)
+    w.workspace_row_layout.setContentsMargins(3,0,3,0)    # the rails keep off the window edges
+    w.workspace_row_layout.setSpacing(2)
     w.workspace_row_layout.addWidget(split,1)
     w.vertical_splitter.addWidget(w.workspace_row)
     outer.addWidget(w.vertical_splitter,1)
