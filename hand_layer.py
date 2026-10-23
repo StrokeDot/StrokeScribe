@@ -44,8 +44,9 @@ def paint(painter, rect, hand):
         hands.append((QRectF(rect), hand))
 
 
-def draw_captured(frame, hands, factor=1.0):
-    """Paint the last captured hand onto `frame`, mapped through the artwork scale.
+def draw_captured(frame, hands, factor=1.0, offset=(0., 0.)):
+    """Paint the last captured hand onto `frame`, mapped through the artwork scale and
+    moved by the picture's position on the page (`offset`, fractions of the frame).
 
     Only one hand is ever visible; the last placement recorded for the frame
     is the one the renderer showed on top.
@@ -55,7 +56,8 @@ def draw_captured(frame, hands, factor=1.0):
     rect, hand = hands[-1]
     w, h = frame.width(), frame.height()
     cx, cy = w / 2, h / 2
-    mapped = QRectF(cx + (rect.x() - cx) * factor, cy + (rect.y() - cy) * factor,
+    ox, oy = round(float(offset[0]) * w), round(float(offset[1]) * h)
+    mapped = QRectF(cx + (rect.x() - cx) * factor + ox, cy + (rect.y() - cy) * factor + oy,
                     rect.width() * factor, rect.height() * factor)
     painter = QPainter(frame)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)

@@ -124,6 +124,37 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(counts(compose_frame(d, .6, dict(o, entrance='Fade')))[1].sum(), 0)   # slides only
         self.assertEqual(counts(compose_frame(d, .6, dict(o, move_hand=None)))[1].sum(), 0)
 
+    def test_picture_and_hand_in_step_in_separate_layers(self):
+        """exp.102: the whole video draws the picture ("art") and the hand in two passes.
+        The art pass moved the picture without the hand's timing, so in the whole video
+        the hand and the picture were out of step."""
+        import numpy as np
+        from frame_render import compose_frame
+        d = self.drawing()
+        o = self.options(entrance='Slide from bottom', move_hand=self.green_hand(), move_hand_grip=(.5, 0.),
+                         move_hand_size=.1)
+        for f in (.2, .4, .6):
+            together = counts(compose_frame(d, f, o))[2] & ~counts(compose_frame(d, f, o))[1]
+            art_only = counts(compose_frame(d, f, dict(o, layers='art')))[2]
+            rows_together, rows_art = np.nonzero(together.any(1))[0], np.nonzero(art_only.any(1))[0]
+            self.assertEqual(rows_together.min(), rows_art.min())     # the picture is at the same place
+
+    def test_hand_is_not_cut_when_the_picture_is_moved_on_the_page(self):
+        """exp.102: with Position X / Y the hand was cut by a straight edge where the moved
+        frame ended (seen on the pictures placed with an offset)."""
+        from PySide6.QtGui import QColor, QImage
+        from frame_render import compose_frame
+        d = self.drawing()
+        big = QImage(240, 400, QImage.Format.Format_ARGB32_Premultiplied); big.fill(QColor(20, 220, 20))
+        o = self.options(hand=big, hand_scale=.9, offset=(-.3, -.2))
+        green = counts(compose_frame(d, .5, o))[1]
+        h, w = green.shape
+        self.assertGreater(green.sum(), 0)
+        # Hand pixels beyond the moved frame's edge (it ends at 70% across, 80% down).
+        self.assertTrue(green[:, int(w * .72):].any() or green[int(h * .82):, :].any())
+        hand_only = counts(compose_frame(d, .5, dict(o, layers='hand')))[1]
+        self.assertEqual(hand_only.sum(), green.sum())             # the hand layer: the same hand
+
     def test_settings_give_the_hand(self):
         from export_job import options_from_settings
         d = self.drawing()
