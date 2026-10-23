@@ -38,6 +38,12 @@ class LookMathTests(unittest.TestCase):
         self.assertGreater(out[30, 45, 3], .9)               # the lines: ink
         self.assertTrue(np.allclose(out[30, 45, :3], np.array([41, 41, 44]) / 255.))
 
+    def test_a_picture_that_is_all_paper_disappears(self):
+        import picture_look as pl
+        flat = np.ones((20, 30, 4), np.float32); flat[..., :3] = .62
+        out = pl.adjust_array(flat, {'ink_on': True, 'ink_edges': 'No fading'})
+        self.assertLess(out[..., 3].max(), .05)
+
     def test_edges(self):
         import picture_look as pl
         soft = pl.adjust_array(scene(), {'ink_on': True, 'ink_edges': 'Soft edges', 'ink_edge_size': 30})

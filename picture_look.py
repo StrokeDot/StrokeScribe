@@ -76,7 +76,9 @@ def ink(rgba, removal=50., strength=100., colour_rgb=(41, 41, 44), edges='soft',
     values = lum[seen] if seen.any() else lum.ravel()
     # The picture's own paper: the bright end of its tones. More removal = a darker tone counts as paper.
     white = np.percentile(values, 99. - .6 * float(removal))
-    black = np.percentile(values, 1.)
+    # The darkest ink: at least a little darker than the paper, so a picture that is all
+    # paper (one even tone) comes out see-through, not as one block of ink.
+    black = min(float(np.percentile(values, 1.)), float(white) - .2)
     t = np.clip((lum - black) / max(1e-3, white - black), 0, 1)
     amount = (1 - t) * (float(strength) / 100.)
     h, w = lum.shape
