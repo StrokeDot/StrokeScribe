@@ -17,13 +17,33 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Linux: the tests split over 4 machines running at the same time (each a
+        # few minutes); these decide the merge. Windows: all of them on one machine,
+        # about twice as slow; it reports problems but does not hold the merge.
         include:
           - os: windows-latest
             python: '3.14'
+            shard: '1/1'
+            blocking: false
           - os: ubuntu-latest
             python: '3.12'
-    name: quick (${{ matrix.os }})
+            shard: '1/4'
+            blocking: true
+          - os: ubuntu-latest
+            python: '3.12'
+            shard: '2/4'
+            blocking: true
+          - os: ubuntu-latest
+            python: '3.12'
+            shard: '3/4'
+            blocking: true
+          - os: ubuntu-latest
+            python: '3.12'
+            shard: '4/4'
+            blocking: true
+    name: quick (${{ matrix.os }} ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ !matrix.blocking }}
     timeout-minutes: 80      # Windows runs the same tests about twice as slowly
     env:
       QT_QPA_PLATFORM: offscreen
@@ -49,7 +69,7 @@ jobs:
           else
             changed=""
           fi
-          tests=$(python tools/select_tests.py $changed)
+          tests=$(python tools/select_tests.py --shard ${{ matrix.shard }} $changed)
           echo "Running: $tests"
           echo "tests=$tests" >> "$GITHUB_OUTPUT"
       - name: Quick tests
@@ -68,7 +88,7 @@ jobs:
         shell: bash
         run: |
           {
-            echo "### Quick checks failed on ${{ matrix.os }}"
+            echo "### Quick checks failed on ${{ matrix.os }} (part ${{ matrix.shard }})"
             echo '```text'
             if grep -qE '^(FAIL|ERROR):' quick-tests.log; then
               awk '/^(FAIL|ERROR):/{p=1} p' quick-tests.log | grep -v 'DeprecationWarning' | head -n 160 || true

@@ -69,5 +69,17 @@ def select(changed, root=ROOT):
     return out
 
 
+def shard(names, part, parts):
+    """Part `part` (1..parts) of the modules, dealt round-robin so the slow core
+    modules (first in the list) are spread over the parts."""
+    return [n for i, n in enumerate(names) if i % parts == part - 1]
+
+
 if __name__ == '__main__':
-    print(' '.join(select(sys.argv[1:])))
+    args = sys.argv[1:]
+    if args[:1] == ['--shard']:
+        part, parts = (int(x) for x in args[1].split('/'))
+        names = shard(select(args[2:]), part, parts)
+        print(' '.join(names) or 'test_select_tests')       # never an empty run
+    else:
+        print(' '.join(select(args)))
