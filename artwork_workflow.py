@@ -82,6 +82,9 @@ class ArtworkWorkflow:
             form.setRowVisible(field,imported)
         for field in (self.paper_cleanup,self.paper_tolerance,self.paper_softness):
             form.setRowVisible(field,kind==IMAGE)
+        # Ink on the page, Colour, Light: for an imported picture.
+        for section in ('section_ink','section_look_colour','section_look_light'):
+            if hasattr(self,section): getattr(self,section).setVisible(imported)
         # Matching colors (SVG) / Change original image (image).
         self.source_colors_heading.setVisible(imported)
         self.source_colors_heading.setText('MATCHING COLORS' if kind==SVG else 'ORIGINAL IMAGE')

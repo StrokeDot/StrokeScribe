@@ -92,6 +92,10 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
                        fade_duration=float(s.get('image_duration', 8)),
                        reveal_mode=reveal if reveal in ('adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag', 'painter') else 'adaptive',
                        duration=0. if paint_only else options['duration'])
+    # Colour / Light / Ink on the page (picture_look): the painted picture, everywhere.
+    import picture_look
+    if options.get('final_image') is not None:
+        options['final_image'] = picture_look.adjusted(options['final_image'], s)
     return options
 
 
