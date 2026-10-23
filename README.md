@@ -21,6 +21,12 @@ A small local desktop tool for short SVG drawing overlays. Built from original a
 - **Move in**: an element that comes in with an effect has one *Move in* clip on the timeline. Moving in the whole picture has no painting or colour hold any more (only the move, then its pause); *Only the lines* is Move in + Paint.
 - **Pre-render** sits next to the play buttons under the preview.
 
+## Ink on the page, Colour and Light (v0.5.3-experimental.98)
+
+- **Ink on the page** (Image panel, with an on/off switch): the picture becomes ink with transparency. Its own paper tone (white, grey or a whole room) becomes see-through and its lines become ink, so no square shows and the page's grain shows through the lines, on any page in StrokeScribe or in Filmora with the normal blend mode. **Edges:** *Soft edges* (the border fades) or *Oval fade* (everything around the middle fades, like an old book illustration), with *Edge fade*, *Paper removal*, *Ink strength* and *Ink colour* (dark grey like printed text, black, sepia, or the picture's own colours).
+- **Colour** (Temperature, Tint, Saturation) and **Light** (Exposure, Brightness, Contrast, Highlight, Shadow, White, Black), like Filmora's panels: a switch per section and a reset button on every row.
+- They apply in the preview, the pre-render and the export. Older projects look the same (all off).
+
 ## Pre-render like Filmora (v0.5.3-experimental.97)
 
 - **Render bar over the timeline:** red where the preview is not ready yet, green where it is. Change something and only that part turns red.

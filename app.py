@@ -876,7 +876,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # historical full-opacity, no-cleanup defaults when switching.
             for name,default in (('artwork_opacity',100),('paper_cleanup',False),
                                  ('paper_tolerance',22),('paper_softness',8),('move_hand',False),
-                                 ('entrance_part','The whole picture')):
+                                 ('entrance_part','The whole picture'),
+                                 *__import__('picture_look').DEFAULTS.items()):
                 if name not in settings:
                     widget=getattr(self,name,None)
                     if widget is not None:
@@ -1372,7 +1373,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                       'image_style','image_animation_style','clean_faint',
                       'erase_mode','erase_time','erase_size','eraser',
                       'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export','export_layers','clean_color','export_done_sound',
-                      'move_hand','move_hand_size','move_hand_gx','move_hand_gy')
+                      'move_hand','move_hand_size','move_hand_gx','move_hand_gy',
+                      'ink_on','ink_edges','ink_edge_size','ink_removal','ink_strength','ink_colour','look_colour_on','look_temperature','look_tint','look_saturation','look_light_on','look_exposure','look_brightness','look_contrast','look_highlights','look_shadows','look_whites','look_blacks')
 
     def project_state(self):
         """Everything needed to reopen this project: the edited scene plus all scenes."""
@@ -1621,6 +1623,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                        'paper_tolerance':22,'paper_softness':8,
                        # Older projects: slides came in without a hand.
                        'move_hand':False,'entrance_part':'The whole picture',
+                       # Older projects: no Colour / Light / Ink on the page.
+                       **__import__('picture_look').DEFAULTS,
                        # Older projects: one Left-handed switch for both hands.
                        'paint_left_handed':bool(settings.get('left_handed',False))},**settings)
         # Settings first (without a refresh storm), then the drawing.
@@ -3499,7 +3503,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             image_mode=image_source)
         if not image_source and getattr(self.drawing,'svg_has_fill',False) and self.use_color.isChecked() and not self.color_path:
             from svg_appearance import render_appearance
-            options['final_image']=render_appearance(self.drawing,max(options['width'],options['height']))
+            import picture_look
+            options['final_image']=picture_look.adjusted(
+                render_appearance(self.drawing,max(options['width'],options['height'])),settings)
         options['overlays']=list(getattr(self,'overlays',[]))
         return options
 

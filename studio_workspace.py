@@ -1853,6 +1853,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.paper_softness=w.number(0,50,8,1)
     blend_form.addRow('Edge softness',w.paper_softness)
     w.source_appearance_slot.addLayout(blend_form)
+    build_look_sections(w)
     w.appearance_form=blend_form
     a2=form_layout();w.section_painting.body.addLayout(a2)
     w.reveal_mode=PaintModeCombo(lambda: w.open_paint_mode_picker())
@@ -2649,3 +2650,84 @@ class UndoKeys(QObject):
             return True
         (self.window.undo if undo else self.window.redo)()
         return True
+
+
+def build_look_sections(w):
+    """Image panel: Ink on the page, Colour and Light (picture_look), Filmora-style:
+    a section per group with an on/off switch, and slider rows with a reset button."""
+    from PySide6.QtCore import QSize
+    from PySide6.QtWidgets import QToolButton
+    import picture_look
+    from ui_icons import icon
+    from ui_sections import Section
+    w.look_widgets={}
+
+    def switch(key,text,tip):
+        box=QCheckBox(text);box.hide();box.setToolTip(tip)    # its switch is on the section header
+        box.setChecked(bool(picture_look.DEFAULTS[key]))
+        setattr(w,key,box);w.look_widgets[key]=box
+        return box
+
+    def row(form,key,text,low=-100,high=100,suffix='',tip=''):
+        default=float(picture_look.DEFAULTS[key])
+        spin=w.number(low,high,default,1);spin.setDecimals(0)
+        if suffix: spin.setSuffix(suffix)
+        if tip: spin.setToolTip(tip)
+        setattr(w,key,spin);w.look_widgets[key]=spin
+        slider=linked_slider(spin,low,high)
+        reset=QToolButton();reset.setObjectName('panelClose')
+        reset.setIcon(icon('reset',RAIL_ICON,RAIL_ACTIVE));reset.setIconSize(QSize(14,14))
+        reset.setToolTip(f'Back to {default:g}')
+        reset.clicked.connect(lambda checked=False: spin.setValue(default))
+        box=QWidget();box.setMinimumWidth(0)
+        line=QHBoxLayout(box);line.setContentsMargins(0,0,0,0);line.setSpacing(6)
+        spin.setMaximumWidth(78)
+        line.addWidget(slider,1);line.addWidget(spin);line.addWidget(reset)
+        form.addRow(text,box)
+        return spin
+
+    # Ink on the page: the paper of the picture becomes see-through, its lines ink.
+    ink_on=switch('ink_on','Ink on the page','The picture becomes ink on the page: its own paper becomes '
+                  'see-through, so no square shows; the page shows through the lines.')
+    w.section_ink=Section('Ink on the page',switch=ink_on,
+                          tip='Make the picture look printed on the page (no square around it).')
+    w.source_appearance_slot.addWidget(w.section_ink)
+    f=form_layout();w.section_ink.body.addLayout(f)
+    w.ink_edges=QComboBox();w.ink_edges.addItems(list(picture_look.EDGES))
+    w.ink_edges.setToolTip('Soft edges: the border fades out. Oval fade: everything around the middle fades, '
+                           'like an old book illustration.')
+    w.look_widgets['ink_edges']=w.ink_edges
+    f.addRow('Edges',w.ink_edges)
+    row(f,'ink_edge_size','Edge fade',0,60,'%','How far the fading reaches in from the border.')
+    row(f,'ink_removal','Paper removal',0,100,'','More: more of the picture\'s own paper tone becomes '
+        'see-through (a grey background disappears too).')
+    row(f,'ink_strength','Ink strength',10,200,'%','How dark the ink is.')
+    w.ink_colour=QComboBox();w.ink_colour.addItems(list(picture_look.INK_COLOURS))
+    w.ink_colour.setToolTip('The colour of the ink. "The picture\'s own colours" keeps its colours, as ink.')
+    w.look_widgets['ink_colour']=w.ink_colour
+    f.addRow('Ink colour',w.ink_colour)
+    # Colour, like Filmora.
+    colour_on=switch('look_colour_on','Colour','Temperature, tint and saturation of the picture.')
+    w.section_look_colour=Section('Colour',switch=colour_on)
+    w.source_appearance_slot.addWidget(w.section_look_colour)
+    f=form_layout();w.section_look_colour.body.addLayout(f)
+    for key,text in picture_look.COLOUR:
+        row(f,key,text)
+    # Light, like Filmora.
+    light_on=switch('look_light_on','Light','Exposure, brightness, contrast, highlights, shadows, whites and blacks.')
+    w.section_look_light=Section('Light',switch=light_on)
+    w.source_appearance_slot.addWidget(w.section_look_light)
+    f=form_layout();w.section_look_light.body.addLayout(f)
+    for key,text in picture_look.LIGHT:
+        row(f,key,text)
+    # Any change: the picture again (sliders at most every 40 ms).
+    for key,widget in w.look_widgets.items():
+        if isinstance(widget,QCheckBox):
+            widget.toggled.connect(lambda checked: w.refresh())
+        elif isinstance(widget,QComboBox):
+            widget.currentIndexChanged.connect(lambda index: w.refresh())
+        else:
+            widget.valueChanged.connect(lambda value: w.schedule_refresh())
+    # Turning a group on opens it.
+    for section in (w.section_ink,w.section_look_colour,w.section_look_light):
+        section.switch.source.toggled.connect(lambda on,sec=section: on and sec.set_expanded(True))

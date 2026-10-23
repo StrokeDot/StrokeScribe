@@ -49,6 +49,8 @@ _PATHS = {
                   '<path d="M15 7.5L6 16.5 5 20l3.5-1 9-9"/>',
     'image': '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="15.5" cy="8.5" r="1.8"/>'
              '<path d="M3 17l5.5-5.5 4.5 4.5 2.5-2.5L21 19"/>',
+    # A curved arrow back: reset a setting.
+    'reset': '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4v4h4"/>',
 }
 
 NAMES = tuple(_PATHS)
