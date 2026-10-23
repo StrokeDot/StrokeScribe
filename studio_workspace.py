@@ -155,25 +155,6 @@ def scroll_view(content):
     content.setMinimumWidth(0)
     content.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
     scroll.setWidget(content)
-    # When a section opens and the page just becomes taller than the panel, the scroll
-    # bar appears but Qt can leave the page at its old, wider width (exp.100: 10 px of
-    # the page under the scroll bar). Fit the page to the visible width again then.
-    from PySide6.QtCore import QObject, QEvent, QTimer
-
-    def refit():
-        page=scroll.widget()
-        if page is not None and page.width()>scroll.viewport().width():
-            page.resize(scroll.viewport().width(),page.height())
-
-    class _Refit(QObject):
-        def eventFilter(self, obj, event):
-            if event.type() in (QEvent.Type.Show, QEvent.Type.Hide, QEvent.Type.Resize):
-                QTimer.singleShot(0, refit)
-            return False
-    scroll._refit=_Refit(scroll)
-    scroll.verticalScrollBar().installEventFilter(scroll._refit)
-    scroll.viewport().installEventFilter(scroll._refit)
-    scroll.verticalScrollBar().rangeChanged.connect(lambda *a: QTimer.singleShot(0, refit))
     return scroll
 
 
