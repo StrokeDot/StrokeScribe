@@ -154,6 +154,46 @@ class WindowTests(unittest.TestCase):
             fresh = w.render_segment(where, k, local, frames, w.PREVIEW_WIDTH)
             self.assertEqual(cached.convertToFormat(fresh.format()), fresh, (i, where, k))
 
+    def test_switching_elements_and_views_keeps_the_render(self):
+        """exp.103: opening another element, or This element / Whole video, used to turn
+        the ready frames red (their names lived for one session and changed when an
+        element was opened or left)."""
+        w = self.w
+        ready, total = self.prerender_everything()
+        self.assertEqual(ready, total)
+        w.select_scene(0); APP.processEvents()
+        w.select_scene(1); APP.processEvents()
+        w.preview_scope.setCurrentIndex(0); APP.processEvents()
+        w.preview_scope.setCurrentIndex(1); APP.processEvents()
+        w.refresh(); APP.processEvents()
+        self.assertEqual(w.ready_frames(), (total, total))
+        w.thickness.setValue(2.5); APP.processEvents()               # a real change still counts
+        self.assertEqual(self.ready_in(1)[0], 0)
+
+    def test_kept_render_is_found_in_the_next_session(self):
+        from prerender_dialog import keep_render, set_keep_render
+        from projects import save
+        from app import Window
+        w = self.w
+        before = keep_render()
+        set_keep_render(True)
+        try:
+            ready, total = self.prerender_everything()
+            self.assertEqual(ready, total)
+            path = Path(self.tmp.name) / 'kept.strokescribe'
+            save(path, w.project_state())
+            w.segment_cache.forget_memory()
+            other = Window(); other.show()
+            try:
+                self.assertTrue(other.open_project(str(path)))
+                other.preview_scope.setCurrentIndex(1); APP.processEvents()
+                other.refresh(); APP.processEvents()
+                self.assertEqual(other.ready_frames(), (total, total))   # straight from the disk
+            finally:
+                other.playing = False; other.close()
+        finally:
+            set_keep_render(before)
+
     def test_a_stale_held_button_does_not_stop_prerender_forever(self):
         from unittest import mock
         from PySide6.QtCore import Qt
