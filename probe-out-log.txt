@@ -1,0 +1,12 @@
+[0;93m2026-10-23 11:48:37.090082096 [W:onnxruntime:Default, device_discovery.cc:95 GetPciBusId] Skipping pci_bus_id for PCI path at "/sys/devices/LNXSYSTM:00/LNXSYBUS:00/ACPI0004:00/MSFT1000:00/5620e0c7-8062-4dce-aeb7-520c7ef76171" because filename "5620e0c7-8062-4dce-aeb7-520c7ef76171" did not match expected pattern of [0-9a-f]+:[0-9a-f]+:[0-9a-f]+[.][0-9a-f]+[m
+elements so far: 2, portrait is element 2, drawn over the page: True
+ink off element view, hand pixels at [0.2, 0.4, 0.6, 0.8]: 0 box=None; 0 box=None; 0 box=None; 0 box=None
+ink on  element view, hand pixels at [0.2, 0.4, 0.6, 0.8]: 0 box=None; 0 box=None; 0 box=None; 0 box=None
+ink off whole video, hand pixels: 0 box=None; 0 box=None; 0 box=None; 0 box=None
+ink on  whole video, hand pixels: 0 box=None; 0 box=None; 0 box=None; 0 box=None
+diary is element 3
+move-in f=0.1: element: picture (191, 482, 768, 539) hand None (hand top - picture bottom = None) | whole: picture (191, 482, 768, 539) hand None (hand top - picture bottom = None)
+move-in f=0.25: element: picture (191, 248, 768, 539) hand None (hand top - picture bottom = None) | whole: picture (191, 248, 768, 539) hand None (hand top - picture bottom = None)
+move-in f=0.4: element: picture (191, 125, 768, 528) hand (446, 486, 781, 539) (hand top - picture bottom = -42) | whole: picture (191, 125, 768, 528) hand (446, 486, 781, 539) (hand top - picture bottom = -42)
+move-in f=0.55: element: picture (191, 77, 768, 480) hand (446, 438, 781, 539) (hand top - picture bottom = -42) | whole: picture (191, 77, 768, 480) hand (446, 438, 781, 539) (hand top - picture bottom = -42)
+move-in f=0.7: element: picture (191, 68, 768, 471) hand (446, 429, 781, 539) (hand top - picture bottom = -42) | whole: picture (191, 68, 768, 471) hand (446, 429, 781, 539) (hand top - picture bottom = -42)
