@@ -79,11 +79,16 @@ def _core(drawing, fraction, opts, camera_path=None):
         else:
             frame = render(drawing, fraction, big_w, big_h, opts.get('thickness', 1.),
                            opts.get('hand'), opts.get('hand_scale', .18), opts.get('anchor', (.1, .1)))
+    from hand_layer import draw_captured
+    # The hand goes on after the picture is scaled AND moved to its place on the page
+    # (exp.102): moved with the picture, it was cut where the moved frame ended (a
+    # straight edge through the arm when Position X / Y was not 0).
     if layers == 'hand':
-        hand_only = scale_animation_frame(_blank(frame), scale, hands)
+        hand_only = _blank(frame)
         if ghost > 0:
-            hand_only = _ghosted(scale_animation_frame(frame, scale, None), hand_only, ghost)
-        frame = hand_only
+            hand_only = _ghosted(shift(scale_animation_frame(frame, scale, None), dx, dy), hand_only, ghost)
+        frame = draw_captured(hand_only, hands, scale, (dx, dy))
+        return crop(frame, width, height, zoom, cx, cy)
     elif items and seconds is not None:
         # Overlays go over the drawing and under the hand.
         import overlays
@@ -100,10 +105,10 @@ def _core(drawing, fraction, opts, camera_path=None):
             frame = draw_captured(frame, moved, scale)
         return crop(frame, width, height, zoom, cx, cy)
     elif layers == 'art':
-        frame = scale_animation_frame(frame, scale, None)
+        frame = shift(scale_animation_frame(frame, scale, None), dx, dy)
     else:
-        frame = scale_animation_frame(frame, scale, hands)
-    frame = shift(frame, dx, dy)
+        frame = shift(scale_animation_frame(frame, scale, None), dx, dy)
+        frame = draw_captured(frame, hands, scale, (dx, dy))
     return crop(frame, width, height, zoom, cx, cy)
 
 
@@ -233,9 +238,13 @@ def _entering(drawing, fraction, opts, kind, lines_only=False):
     plain = timeline_seconds(drawing, dict(opts, pause=0))
     length = move_seconds(opts)
     p = min(1., fraction * plain / max(.05, length))
-    side = move_in.carried(opts, kind)
-    pp = move_in.picture_progress(p, side)
     layers = opts.get('layers', 'all')
+    # The picture moves the same way in every layer (exp.102: the "art" layer of the whole
+    # video moved it without the hand's timing, so picture and hand were out of step).
+    side = move_in.carried(dict(opts, layers='all'), kind)
+    pp = move_in.picture_progress(p, side)
+    if layers == 'art':
+        side = None                                  # the hand itself is not drawn here
     art = finished_picture(drawing, dict(opts, layers='art'), lines_only)
     frame = effect_frame(art, kind, pp)
     if layers == 'hand':            # Hand only: nothing of the picture (a faint copy in the preview)
