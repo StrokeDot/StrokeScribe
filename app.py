@@ -2871,10 +2871,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         def done(result):
             if result and drawing is self.drawing:
                 paint=dialog.painting_order()
-                paint_changed=paint!=getattr(drawing,'paint_part_order',None)
+                circles=dialog.painting_circles()
+                paint_changed=(paint!=getattr(drawing,'paint_part_order',None) or
+                               circles!=getattr(drawing,'paint_circles',None) or getattr(dialog,'saved_changed',False))
                 if paint_changed:
                     if paint: drawing.paint_part_order=paint
                     elif hasattr(drawing,'paint_part_order'): del drawing.paint_part_order
+                    if circles: drawing.paint_circles=circles
+                    elif hasattr(drawing,'paint_circles'): del drawing.paint_circles
                 lines=dialog.strokes
                 if [id(s) for s in lines]!=[id(s) for s in drawing.strokes]:
                     keep={id(lines[i]) for i in dialog.line_selection if i<len(lines)}
@@ -2883,6 +2887,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 elif paint_changed:
                     self.project_changes.mark_changed();self.note_change()
                     self.status.setText('Painting order changed.');self.refresh()
+            if getattr(dialog,'saved_changed',False):
+                self.project_changes.mark_changed()     # saved orders are kept even after Cancel
             self.line_order_dialog=None
             dialog.deleteLater()
         dialog.finished.connect(done)
@@ -3567,7 +3573,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             repr(getattr(self,'overlays',[])),getattr(d,'pen_ease',None),
             # How the colours are painted: the painting order (Line order → Painting)
             # and the AI parts. Without them, playback reused frames painted the old way.
-            tuple(getattr(d,'paint_part_order',None) or ()),getattr(d,'ai_parts_digest',None))
+            tuple(getattr(d,'paint_part_order',None) or ()),getattr(d,'ai_parts_digest',None),
+            repr(getattr(d,'paint_circles',None) or ()))
         memo['edited_fp']=fp
         return fp
 
