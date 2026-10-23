@@ -72,6 +72,34 @@ class PrerenderWindowTests(unittest.TestCase):
         self.assertIsNone(w.prerender_dialog)                       # closed by itself when done
         self.assertEqual(w.prerender_button.text(), 'Pre-render')
 
+    def test_a_frame_that_fails_is_skipped_not_stuck(self):
+        """exp.101: one frame raising an error stopped pre-render on "Rendering frame 1"
+        for ever, without a word. Now it is said, skipped, and the rest is made."""
+        from unittest import mock
+        w = self.w
+        real = w.render_segment
+        calls = {'n': 0}
+
+        def flaky(*args, **kwargs):
+            calls['n'] += 1
+            if calls['n'] == 1:
+                raise ValueError('The color image has no nontransparent pixels.')
+            return real(*args, **kwargs)
+        with mock.patch.object(w, 'render_segment', side_effect=flaky):
+            w.prerender_whole()
+            dialog = w.prerender_dialog
+            w.prerender_step()
+            self.assertTrue(w._prerender_all)                        # still going
+            self.assertFalse(dialog.problem.isHidden())
+            self.assertIn('could not be made', dialog.problem.text())
+            for _ in range(w.frame_index(1.)[1] + 10):
+                w.prerender_step()
+                if not w._prerender_all:
+                    break
+        self.assertFalse(w._prerender_all)                           # finished
+        ready, total = w.ready_frames()
+        self.assertEqual(ready, total - 1)                           # all but the one that failed
+
     def test_cancel_stops(self):
         w = self.w
         w.prerender_whole()

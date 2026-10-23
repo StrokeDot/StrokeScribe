@@ -41,6 +41,9 @@ class PrerenderDialog(QDialog):
         outer.addWidget(self.bar)
         self.frames = QLabel('Getting ready…'); outer.addWidget(self.frames)
         self.left = QLabel(''); outer.addWidget(self.left)
+        self.problem = QLabel(''); self.problem.setWordWrap(True)
+        self.problem.setStyleSheet('color: #F2A65A;'); self.problem.hide()
+        outer.addWidget(self.problem)
         self.keep = QCheckBox('Keep the render after closing StrokeScribe')
         self.keep.setToolTip('Off (recommended): the ready frames are deleted when StrokeScribe closes, so '
                              'they take no disk space. On: they stay, and playback is smooth at once next time.')
@@ -53,6 +56,10 @@ class PrerenderDialog(QDialog):
         self.setMinimumWidth(460)
         self.setWindowModality(Qt.WindowModality.WindowModal)
 
+    def show_problem(self, text):
+        """Frames that could not be made (they are skipped; the rest goes on)."""
+        self.problem.setText(text); self.problem.show()
+
     def show_progress(self, ready, total):
         """`ready` of `total` frames are ready (frames that were ready before count too)."""
         if self.first_ready is None:
@@ -63,5 +70,8 @@ class PrerenderDialog(QDialog):
         spent = time.monotonic() - self.started
         if made >= 3 and spent > .5:
             self.left.setText('Estimated time left: ' + clock(spent / made * max(0, total - ready)))
+        elif made == 0 and spent > 4:
+            self.left.setText('The first frames take longest: the brushes of every element are '
+                              'being planned. It speeds up after that.')
         else:
             self.left.setText('Estimated time left: working it out…')

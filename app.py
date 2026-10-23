@@ -3203,6 +3203,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.update_move_hand_label()
         self.note_change()
         self.refresh()
+        self.show_hand_pictures()
 
     # ------------------------------------------------------------ AI parts (Painter)
     PAINTER_TEXT='Painter — real parts, strokes follow the shape'
@@ -3710,7 +3711,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.canvas.art_frame=None; self.canvas.hand_frame=None
         self.canvas.blend_mode='Normal'
         self.canvas.artwork_opacity=100
-        if not view['all'] and not view.get('page'):
+        if not view['all'] and not view.get('page') and not self.playing:
+            # Paused: the blend mode shown exactly (two extra layers). While playing, the
+            # ready-made frame alone (exp.101: drawing both layers on every tick made Play
+            # slow even after Pre-render).
             opts=view['options']
             mode=opts.get('blend_mode','Normal')
             opacity=opts.get('artwork_opacity',100)
@@ -3770,6 +3774,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 import applog; applog.error('Preview could not be updated',exc)
                 self.status.setText('Preview could not be updated: '+str(exc)[:220]); return False
             self.show_whole_timeline(segments,lengths,joins,options)
+            self.show_hand_pictures(options)                # the Hand tab pictures, also here
             total=sum(lengths)+sum(joins)
             self.schedule_render_bar()
             self._view=dict(all=True,length=total,ratio=ratio,token=self._view_token(),
@@ -3811,7 +3816,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             paint=options.get('painting_hand') if self.show_paint_hand.isChecked() else None
             if paint is None and self.show_paint_hand.isChecked() and self.paint_hand.currentIndex()==0:
                 paint=draw
-            move=options.get('move_hand')
+            # The chosen move-in hand, also while its switch is off (exp.101: an uploaded
+            # hand did not show here).
+            import move_in
+            move=move_in.move_hand({'move_hand':True,'move_hand_path':getattr(self,'move_hand_path',None),
+                                    'move_hand_gx':self.move_hand_gx.value(),'move_hand_gy':self.move_hand_gy.value(),
+                                    'left_handed':self.left_handed.isChecked()})[0] \
+                if hasattr(self,'move_hand_gx') else options.get('move_hand')
             for key,image in (('draw',draw),('paint',paint),('move',move)):
                 label=pictures.get(key)
                 if label is None: continue
@@ -3919,7 +3930,25 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         i,segment,local,frames,where,k=target
         try:
             frame=self.render_segment(where,k,local,frames,self.PREVIEW_WIDTH)
-        except Exception:
+        except Exception as exc:
+            # exp.101: an error here used to stop pre-render silently ("Rendering frame 1"
+            # for ever). Say what happened, skip the frame and go on.
+            import applog
+            failures=getattr(self,'_prerender_failures',0)+1
+            self._prerender_failures=failures
+            if failures<=3: applog.error(f'Pre-render: frame {i+1} could not be made',exc)
+            label=f'element {k+1}' if where=='scene' else (f'the move after element {k+1}' if where=='join' else 'this element')
+            self.status.setText(f'Pre-render skipped a frame of {label}: {str(exc)[:160]}')
+            dialog=getattr(self,'prerender_dialog',None)
+            if dialog is not None and hasattr(dialog,'show_problem'):
+                dialog.show_problem(f'Some frames of {label} could not be made: {str(exc)[:200]}')
+            self._prerender_next+=1
+            if self._prerender_all and failures>200:
+                self._prerender_all=False
+                self.update_prerender_button()
+                self.status.setText(f'Pre-render stopped: frames of {label} cannot be made ({str(exc)[:160]}).')
+                return
+            self.prerender_timer.start(1)
             return
         self.segment_cache.put(segment,local,self.PREVIEW_WIDTH,frame,disk=self._prerender_all)
         if self._prerender_all:
@@ -3951,7 +3980,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self._look_preview=False; self.refresh()          # plan the brushes first (with its card)
             if getattr(self,'_plan_deferred',False): return
         if getattr(self,'_view',None) is None and not self.build_view(): return
-        self._prerender_all=True; self._prerender_next=0
+        self._prerender_all=True; self._prerender_next=0; self._prerender_failures=0
         from prerender_dialog import PrerenderDialog
         dialog=PrerenderDialog(self)
         def closed(result):

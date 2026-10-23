@@ -150,3 +150,18 @@ class DrawingSwitchTests(unittest.TestCase):
             choose.assert_called_once()
         self.assertEqual(w.move_in_hand_name.text(), 'Built-in hand')
 
+    def test_an_uploaded_move_in_hand_shows_in_the_hand_tab(self):
+        """exp.101: the uploaded hand worked in the animation but its picture stayed empty."""
+        import tempfile
+        from PySide6.QtGui import QColor, QImage
+        w = self.w
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'my hand.png'
+            hand = QImage(60, 90, QImage.Format.Format_ARGB32); hand.fill(QColor(200, 150, 110))
+            hand.save(str(path))
+            w.set_move_hand(str(path))
+            label = w.hand_pictures['move']
+            self.assertIsNotNone(label.pixmap())
+            self.assertFalse(label.pixmap().isNull())
+            self.assertIn('my hand', w.move_in_hand_name.text())
+
