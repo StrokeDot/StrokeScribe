@@ -1,0 +1,609 @@
+test_brush_paint_reveal_optional_hand_and_export (test_prototype.PrototypeTests.test_brush_paint_reveal_optional_hand_and_export) ... ok
+test_clean_contour_mode_and_artwork_clipping (test_prototype.PrototypeTests.test_clean_contour_mode_and_artwork_clipping) ... ok
+test_color_reveal_png_and_export (test_prototype.PrototypeTests.test_color_reveal_png_and_export) ... ok
+test_continuous_brush_starts_at_last_reordered_stroke (test_prototype.PrototypeTests.test_continuous_brush_starts_at_last_reordered_stroke) ... ok
+test_exports_and_cancel (test_prototype.PrototypeTests.test_exports_and_cancel) ... ok
+test_geometry_direction_and_pen_lift (test_prototype.PrototypeTests.test_geometry_direction_and_pen_lift) ... ok
+test_guided_painting_from_final_stroke (test_prototype.PrototypeTests.test_guided_painting_from_final_stroke) ... ok
+test_sample_alpha_and_progress (test_prototype.PrototypeTests.test_sample_alpha_and_progress) ... ok
+test_text_and_hand (test_prototype.PrototypeTests.test_text_and_hand) ... ok
+test_ui (test_prototype.PrototypeTests.test_ui) ... Qt: QFontDatabase: Cannot find font directory C:/hostedtoolcache/windows/Python/3.14.9/x64/Lib/site-packages/PySide6/lib/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+ok
+test_alpha_colors_hand_and_no_final_snap (test_adaptive.AdaptiveTests.test_alpha_colors_hand_and_no_final_snap) ... ok
+test_brush_and_hand_share_clock_no_travel_paint (test_adaptive.AdaptiveTests.test_brush_and_hand_share_clock_no_travel_paint) ... ok
+test_faster_export_keeps_every_frame_pixel_identical (test_adaptive.AdaptiveTests.test_faster_export_keeps_every_frame_pixel_identical) ... ok
+test_final_frame_uses_high_quality_premultiplied_resize (test_adaptive.AdaptiveTests.test_final_frame_uses_high_quality_premultiplied_resize) ... ok
+test_hand_never_blinks_out_during_painting (test_adaptive.AdaptiveTests.test_hand_never_blinks_out_during_painting) ... ok
+test_hand_skips_nearly_invisible_leftover_pixels (test_adaptive.AdaptiveTests.test_hand_skips_nearly_invisible_leftover_pixels) ... ok
+test_headset_trace_with_representative_alpha_only (test_adaptive.AdaptiveTests.test_headset_trace_with_representative_alpha_only) ... ok
+test_preview_export_and_legacy_draw (test_adaptive.AdaptiveTests.test_preview_export_and_legacy_draw) ... ok
+test_regions_infill_and_coverage (test_adaptive.AdaptiveTests.test_regions_infill_and_coverage) ... ok
+test_reordered_endpoint_and_cached_geometry (test_adaptive.AdaptiveTests.test_reordered_endpoint_and_cached_geometry) ... ok
+test_short_vertical_flicks_follow_original_adaptive_regions (test_adaptive.AdaptiveTests.test_short_vertical_flicks_follow_original_adaptive_regions) ... ok
+test_short_vertical_paint_is_selected_by_the_renderer (test_adaptive.AdaptiveTests.test_short_vertical_paint_is_selected_by_the_renderer) ... ok
+test_svg_contours_retire_locally_during_clean_and_adaptive_painting (test_adaptive.AdaptiveTests.test_svg_contours_retire_locally_during_clean_and_adaptive_painting) ... ok
+test_background_builder_prepares_route (test_image_source.ImageSourceTests.test_background_builder_prepares_route) ... ok
+test_coverage_reordering_and_travel (test_image_source.ImageSourceTests.test_coverage_reordering_and_travel) ... ok
+test_drawing_hand_lifts (test_image_source.ImageSourceTests.test_drawing_hand_lifts) ... ok
+test_export_preview_and_alpha (test_image_source.ImageSourceTests.test_export_preview_and_alpha) ... ok
+test_formats_and_original_pixels (test_image_source.ImageSourceTests.test_formats_and_original_pixels) ... ok
+test_import_selector_preserves_actual_artwork_and_image_modes (test_image_source.ImageSourceTests.test_import_selector_preserves_actual_artwork_and_image_modes) ... ok
+test_modes_contours_and_regions (test_image_source.ImageSourceTests.test_modes_contours_and_regions) ... ok
+test_mp4_export_on_chosen_background (test_webm.CompressedExportTests.test_mp4_export_on_chosen_background) ... skipped 'FFmpeg and ffprobe are required to validate alpha'
+test_png_only_export_keeps_frames (test_webm.CompressedExportTests.test_png_only_export_keeps_frames) ... skipped 'FFmpeg and ffprobe are required to validate alpha'
+test_successful_video_export_removes_only_temporary_pngs (test_webm.CompressedExportTests.test_successful_video_export_removes_only_temporary_pngs) ... skipped 'FFmpeg and ffprobe are required to validate alpha'
+test_webm_alpha_codec_and_real_decoded_alpha (test_webm.CompressedExportTests.test_webm_alpha_codec_and_real_decoded_alpha) ... skipped 'FFmpeg and ffprobe are required to validate alpha'
+test_builtin_hand_loaded_with_default_calibration (test_studio.StudioTests.test_builtin_hand_loaded_with_default_calibration) ... ok
+test_export_panel_additions (test_studio.StudioTests.test_export_panel_additions) ... ok
+test_image_and_export_controls_preserved (test_studio.StudioTests.test_image_and_export_controls_preserved) ... ok
+test_line_list_starts_collapsed_and_canvas_click_toggles_highlight (test_studio.StudioTests.test_line_list_starts_collapsed_and_canvas_click_toggles_highlight) ... ok
+test_preview_background_does_not_change_frame (test_studio.StudioTests.test_preview_background_does_not_change_frame) ... ok
+test_render_at_playhead_not_changed_by_ui (test_studio.StudioTests.test_render_at_playhead_not_changed_by_ui) ... ok
+test_retired_paint_modes_are_not_offered (test_studio.StudioTests.test_retired_paint_modes_are_not_offered) ... ok
+test_source_inspector_and_export_navigation (test_studio.StudioTests.test_source_inspector_and_export_navigation) ... ok
+test_stage_timeline_tracks_drawing_paint_and_hold (test_studio.StudioTests.test_stage_timeline_tracks_drawing_paint_and_hold) ... ok
+test_three_part_workspace_and_visible_timeline (test_studio.StudioTests.test_three_part_workspace_and_visible_timeline) ... ok
+test_timeline_keyboard_and_export_busy_guard (test_studio.StudioTests.test_timeline_keyboard_and_export_busy_guard) ... ok
+test_default_sidebars_and_timeline_survive_window_resizing (test_workspace_layout.WorkspaceLayoutTests.test_default_sidebars_and_timeline_survive_window_resizing) ... ok
+test_independent_collapse_expands_the_preview_and_restores_width (test_workspace_layout.WorkspaceLayoutTests.test_independent_collapse_expands_the_preview_and_restores_width) ... ok
+test_narrow_inspector_controls_remain_inside_viewport (test_workspace_layout.WorkspaceLayoutTests.test_narrow_inspector_controls_remain_inside_viewport) ... ok
+test_rails_open_pages_and_collapse_both_sides (test_workspace_layout.WorkspaceLayoutTests.test_rails_open_pages_and_collapse_both_sides) ... ok
+test_sidebar_widths_and_collapse_survive_reopening_window (test_workspace_layout.WorkspaceLayoutTests.test_sidebar_widths_and_collapse_survive_reopening_window) ... ok
+test_source_and_inspector_scroll_independently_without_horizontal_overflow (test_workspace_layout.WorkspaceLayoutTests.test_source_and_inspector_scroll_independently_without_horizontal_overflow) ... ok
+test_all_mounted_source_and_inspector_dropdowns_have_usable_geometry (test_ui_control_regression.VisibleControlRegression.test_all_mounted_source_and_inspector_dropdowns_have_usable_geometry) ... ok
+test_combos_remain_measurable_at_multiple_desktop_sizes (test_ui_control_regression.VisibleControlRegression.test_combos_remain_measurable_at_multiple_desktop_sizes) ... VISIBLE_CONTROL_GEOMETRY image_animation_style width=132 height=30 visible=True enabled=True value='Artist (layered)'
+VISIBLE_CONTROL_GEOMETRY image_style width=132 height=30 visible=True enabled=True value='Clean drawing'
+VISIBLE_CONTROL_GEOMETRY image_detail width=132 height=30 visible=True enabled=True value='Medium'
+VISIBLE_CONTROL_GEOMETRY reveal_mode width=160 height=30 visible=True enabled=False value='Adaptive Hand Painting'
+VISIBLE_CONTROL_GEOMETRY pen_ease width=155 height=30 visible=True enabled=True value='Constant speed'
+VISIBLE_CONTROL_GEOMETRY image_animation_style width=192 height=30 visible=True enabled=True value='Artist (layered)'
+VISIBLE_CONTROL_GEOMETRY image_style width=192 height=30 visible=True enabled=True value='Clean drawing'
+VISIBLE_CONTROL_GEOMETRY image_detail width=192 height=30 visible=True enabled=True value='Medium'
+VISIBLE_CONTROL_GEOMETRY reveal_mode width=220 height=30 visible=True enabled=False value='Adaptive Hand Painting'
+VISIBLE_CONTROL_GEOMETRY pen_ease width=215 height=30 visible=True enabled=True value='Constant speed'
+VISIBLE_CONTROL_GEOMETRY image_animation_style width=192 height=30 visible=True enabled=True value='Artist (layered)'
+VISIBLE_CONTROL_GEOMETRY image_style width=192 height=30 visible=True enabled=True value='Clean drawing'
+VISIBLE_CONTROL_GEOMETRY image_detail width=192 height=30 visible=True enabled=True value='Medium'
+VISIBLE_CONTROL_GEOMETRY reveal_mode width=220 height=30 visible=True enabled=False value='Adaptive Hand Painting'
+VISIBLE_CONTROL_GEOMETRY pen_ease width=215 height=30 visible=True enabled=True value='Constant speed'
+VISIBLE_CONTROL_GEOMETRY image_animation_style width=192 height=30 visible=True enabled=True value='Artist (layered)'
+VISIBLE_CONTROL_GEOMETRY image_style width=192 height=30 visible=True enabled=True value='Clean drawing'
+VISIBLE_CONTROL_GEOMETRY image_detail width=192 height=30 visible=True enabled=True value='Medium'
+VISIBLE_CONTROL_GEOMETRY reveal_mode width=220 height=30 visible=True enabled=False value='Adaptive Hand Painting'
+VISIBLE_CONTROL_GEOMETRY pen_ease width=215 height=30 visible=True enabled=True value='Constant speed'
+ok
+test_popup_items_are_clickable_and_change_value (test_ui_control_regression.VisibleControlRegression.test_popup_items_are_clickable_and_change_value) ... VISIBLE_CONTROL_GEOMETRY image_animation_style width=192 height=30 visible=True enabled=True value='Artist (layered)'
+Qt: This plugin does not support raise()
+Qt: This plugin does not support grabbing the keyboard
+VISIBLE_CONTROL_GEOMETRY image_style width=192 height=30 visible=True enabled=True value='Clean drawing'
+Qt: This plugin does not support raise()
+Qt: This plugin does not support grabbing the keyboard
+VISIBLE_CONTROL_GEOMETRY image_detail width=192 height=30 visible=True enabled=True value='Medium'
+Qt: This plugin does not support raise()
+Qt: This plugin does not support grabbing the keyboard
+VISIBLE_CONTROL_GEOMETRY pen_ease width=215 height=30 visible=True enabled=True value='Constant speed'
+Qt: This plugin does not support raise()
+Qt: This plugin does not support grabbing the keyboard
+ok
+test_source_and_inspector_controls_have_real_geometry (test_ui_control_regression.VisibleControlRegression.test_source_and_inspector_controls_have_real_geometry) ... VISIBLE_CONTROL_GEOMETRY image_animation_style width=192 height=30 visible=True enabled=True value='Artist (layered)'
+VISIBLE_CONTROL_GEOMETRY image_style width=192 height=30 visible=True enabled=True value='Clean drawing'
+VISIBLE_CONTROL_GEOMETRY image_detail width=192 height=30 visible=True enabled=True value='Medium'
+VISIBLE_CONTROL_GEOMETRY font_select width=248 height=30 visible=True enabled=True value='Built-in single-line pen'
+VISIBLE_CONTROL_GEOMETRY reveal_mode width=220 height=30 visible=True enabled=False value='Adaptive Hand Painting'
+VISIBLE_CONTROL_GEOMETRY pen_ease width=215 height=30 visible=True enabled=True value='Constant speed'
+VISIBLE_CONTROL_GEOMETRY entrance width=226 height=30 visible=True enabled=False value='Draw with the hand'
+VISIBLE_CONTROL_GEOMETRY erase_mode width=225 height=30 visible=True enabled=True value='Off'
+VISIBLE_CONTROL_GEOMETRY camera width=164 height=30 visible=True enabled=True value='Off'
+ok
+test_values_persist_with_existing_project_settings (test_ui_control_regression.VisibleControlRegression.test_values_persist_with_existing_project_settings) ... ok
+test_both_source_modes_fit_at_small_and_large_sidebar_widths (test_source_mode_consistency.SourceModeConsistencyTests.test_both_source_modes_fit_at_small_and_large_sidebar_widths) ... ok
+test_image_mode_labels_and_fields_are_near_and_clickable (test_source_mode_consistency.SourceModeConsistencyTests.test_image_mode_labels_and_fields_are_near_and_clickable) ... Qt: This plugin does not support raise()
+Qt: This plugin does not support grabbing the keyboard
+Qt: This plugin does not support raise()
+Qt: This plugin does not support grabbing the keyboard
+Qt: This plugin does not support raise()
+Qt: This plugin does not support grabbing the keyboard
+ok
+test_switching_modes_does_not_change_existing_settings (test_source_mode_consistency.SourceModeConsistencyTests.test_switching_modes_does_not_change_existing_settings) ... ok
+test_font_to_image_switch_never_clips_spinner_arrows (test_inspector_scene_switch.InspectorSceneSwitchGeometryTests.test_font_to_image_switch_never_clips_spinner_arrows) ... ok
+test_inspector_form_uses_stable_row_layout_on_image_switch (test_inspector_scene_switch.InspectorSceneSwitchGeometryTests.test_inspector_form_uses_stable_row_layout_on_image_switch) ... ok
+test_spinbox_up_down_arrows_receive_real_mouse_clicks (test_inspector_scene_switch.InspectorSceneSwitchGeometryTests.test_spinbox_up_down_arrows_receive_real_mouse_clicks) ... ok
+test_export_and_preview_scale (test_font_features.FontAndScaleTests.test_export_and_preview_scale) ... ok
+test_font_centerline_lettering (test_font_features.FontAndScaleTests.test_font_centerline_lettering) ... ok
+test_install_includes_original_font_license (test_font_features.FontAndScaleTests.test_install_includes_original_font_license) ... ok
+test_letter_color_and_background_match_export (test_font_features.FontAndScaleTests.test_letter_color_and_background_match_export) ... ok
+test_scale_transparent_artwork (test_font_features.FontAndScaleTests.test_scale_transparent_artwork) ... ok
+test_ten_handwriting_choices (test_font_features.FontAndScaleTests.test_ten_handwriting_choices) ... ok
+test_full_glyphs_are_opaque_and_legible_not_broken_fragments (test_reported_fixes.ReportedBugTests.test_full_glyphs_are_opaque_and_legible_not_broken_fragments) ... ok
+test_pen_lifts_keep_model_and_built_in_pen_unchanged (test_reported_fixes.ReportedBugTests.test_pen_lifts_keep_model_and_built_in_pen_unchanged) ... ok
+test_single_active_stroke_and_no_ink_during_pen_lift (test_reported_fixes.ReportedBugTests.test_single_active_stroke_and_no_ink_during_pen_lift) ... ok
+test_workspace_project_header_and_history (test_reported_fixes.ReportedBugTests.test_workspace_project_header_and_history) ... ok
+test_drawing_zero_future_hidden_and_pen_lift (test_contour_transitions.ContourTransitionTests.test_drawing_zero_future_hidden_and_pen_lift) ... ok
+test_final_exact_color_alpha_and_no_last_frame_pop (test_contour_transitions.ContourTransitionTests.test_final_exact_color_alpha_and_no_last_frame_pop) ... ok
+test_forward_reverse_and_scrub_determinism (test_contour_transitions.ContourTransitionTests.test_forward_reverse_and_scrub_determinism) ... ok
+test_hand_uses_mask_tip_and_hides_for_cleanup (test_contour_transitions.ContourTransitionTests.test_hand_uses_mask_tip_and_hides_for_cleanup) ... ok
+test_image_controls_and_empty_initial_canvas (test_contour_transitions.ContourTransitionTests.test_image_controls_and_empty_initial_canvas) ... ok
+test_legacy_dispatch_and_svg_isolation (test_contour_transitions.ContourTransitionTests.test_legacy_dispatch_and_svg_isolation) ... ok
+test_lifecycle_and_paint_boundary (test_contour_transitions.ContourTransitionTests.test_lifecycle_and_paint_boundary) ... ok
+test_paint_erases_by_coverage_not_source_alpha (test_contour_transitions.ContourTransitionTests.test_paint_erases_by_coverage_not_source_alpha) ... ok
+test_preview_export_and_setting_snapshot (test_contour_transitions.ContourTransitionTests.test_preview_export_and_setting_snapshot) ... ok
+test_retirement_is_single_ordered_and_gated (test_contour_transitions.ContourTransitionTests.test_retirement_is_single_ordered_and_gated) ... ok
+test_brush_control_is_debounced_and_render_errors_do_not_escape (test_image_animation.ImageAnimationTests.test_brush_control_is_debounced_and_render_errors_do_not_escape) ... Preview could not be updated
+Traceback (most recent call last):
+  File "D:\a\StrokeScribe\StrokeScribe\app.py", line 3848, in refresh
+    frame=self.preview_frame(self.position,playing=self.playing)
+  File "D:\a\StrokeScribe\StrokeScribe\app.py", line 4010, in preview_frame
+    return self.render_view(fraction,self.PREVIEW_WIDTH)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\a\StrokeScribe\StrokeScribe\app.py", line 4000, in render_view
+    return compose_frame(self.drawing,fraction,options,camera)
+  File "D:\a\StrokeScribe\StrokeScribe\frame_render.py", line 340, in compose_frame
+    return _compose_raw_frame(drawing,fraction,options,camera_path)
+  File "D:\a\StrokeScribe\StrokeScribe\frame_render.py", line 296, in _compose_raw_frame
+    frame = _core(drawing, base_fraction, opts, camera_path)
+  File "D:\a\StrokeScribe\StrokeScribe\frame_render.py", line 78, in _core
+    frame = render_color_timeline(drawing, fraction, **opts)
+  File "D:\a\StrokeScribe\StrokeScribe\color_reveal.py", line 297, in render_color_timeline
+    return paint_frame(drawing,final_image,width,height,paint_progress,
+                       thickness,brush_width,stroke_spacing,
+                       painting_hand,hand_scale,anchor,False,
+                       display_image=display_image)
+  File "C:\hostedtoolcache\windows\Python\3.14.9\x64\Lib\unittest\mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.14.9\x64\Lib\unittest\mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.14.9\x64\Lib\unittest\mock.py", line 1241, in _execute_mock_call
+    raise effect
+  File "D:\a\StrokeScribe\StrokeScribe\app.py", line 1777, in store_scene
+    scene['thumb']=make_thumb(self.drawing,self.options())
+                   ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\a\StrokeScribe\StrokeScribe\scenes.py", line 181, in thumbnail
+    return compose_frame(drawing, 1., opts)
+  File "D:\a\StrokeScribe\StrokeScribe\frame_render.py", line 340, in compose_frame
+    return _compose_raw_frame(drawing,fraction,options,camera_path)
+  File "D:\a\StrokeScribe\StrokeScribe\frame_render.py", line 296, in _compose_raw_frame
+    frame = _core(drawing, base_fraction, opts, camera_path)
+  File "D:\a\StrokeScribe\StrokeScribe\frame_render.py", line 78, in _core
+    frame = render_color_timeline(drawing, fraction, **opts)
+  File "D:\a\StrokeScribe\StrokeScribe\color_reveal.py", line 297, in render_color_timeline
+    return paint_frame(drawing,final_image,width,height,paint_progress,
+                       thickness,brush_width,stroke_spacing,
+                       painting_hand,hand_scale,anchor,False,
+                       display_image=display_image)
+  File "C:\hostedtoolcache\windows\Python\3.14.9\x64\Lib\unittest\mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.14.9\x64\Lib\unittest\mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.14.9\x64\Lib\unittest\mock.py", line 1241, in _execute_mock_call
+    raise effect
+  File "D:\a\StrokeScribe\StrokeScribe\app.py", line 1777, in store_scene
+    scene['thumb']=make_thumb(self.drawing,self.options())
+                   ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\a\StrokeScribe\StrokeScribe\scenes.py", line 181, in thumbnail
+    return compose_frame(drawing, 1., opts)
+  File "D:\a\StrokeScribe\StrokeScribe\frame_render.py", line 340, in compose_frame
+    return _compose_raw_frame(drawing,fraction,options,camera_path)
+  File "D:\a\StrokeScribe\StrokeScribe\frame_render.py", line 296, in _compose_raw_frame
+    frame = _core(drawing, base_fraction, opts, camera_path)
+  File "D:\a\StrokeScribe\StrokeScribe\frame_render.py", line 78, in _core
+    frame = render_color_timeline(drawing, fraction, **opts)
+  File "D:\a\StrokeScribe\StrokeScribe\color_reveal.py", line 297, in render_color_timeline
+    return paint_frame(drawing,final_image,width,height,paint_progress,
+                       thickness,brush_width,stroke_spacing,
+                       painting_hand,hand_scale,anchor,False,
+                       display_image=display_image)
+  File "C:\hostedtoolcache\windows\Python\3.14.9\x64\Lib\unittest\mock.py", line 1176, in __call__
+    return self._mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.14.9\x64\Lib\unittest\mock.py", line 1180, in _mock_call
+    return self._execute_mock_call(*args, **kwargs)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.14.9\x64\Lib\unittest\mock.py", line 1241, in _execute_mock_call
+    raise effect
+RuntimeError: controlled preview failure
+ok
+test_draw_then_paint_erases_ink_during_painting_not_after (test_image_animation.ImageAnimationTests.test_draw_then_paint_erases_ink_during_painting_not_after) ... ok
+test_hand_does_not_resize_when_artwork_zoom_changes (test_image_animation.ImageAnimationTests.test_hand_does_not_resize_when_artwork_zoom_changes) ... ok
+test_modes_are_two_not_a_three_stage_cleanup (test_image_animation.ImageAnimationTests.test_modes_are_two_not_a_three_stage_cleanup) ... ok
+test_paint_only_is_never_overlaid_with_black_tracing (test_image_animation.ImageAnimationTests.test_paint_only_is_never_overlaid_with_black_tracing) ... ok
+test_preview_and_export_use_same_mode_and_hand_scale (test_image_animation.ImageAnimationTests.test_preview_and_export_use_same_mode_and_hand_scale) ... ok
+test_all_svg_paint_modes_retire_guides_while_painting (test_svg_guide_cleanup.SVGGuideCoverageTests.test_all_svg_paint_modes_retire_guides_while_painting) ... ok
+test_empty_mask_does_not_erase_svg_guides (test_svg_guide_cleanup.SVGGuideCoverageTests.test_empty_mask_does_not_erase_svg_guides) ... ok
+test_guide_just_outside_png_edge_retires_with_painted_neighbourhood (test_svg_guide_cleanup.SVGGuideCoverageTests.test_guide_just_outside_png_edge_retires_with_painted_neighbourhood) ... ok
+test_misaligned_svg_guide_uses_nearest_painted_source_support (test_svg_guide_cleanup.SVGGuideCoverageTests.test_misaligned_svg_guide_uses_nearest_painted_source_support) ... ok
+test_advice_for_low_disk (test_setup.PreflightTests.test_advice_for_low_disk) ... ok
+test_checklist_has_libraries_model_and_no_ai_downloads (test_setup.PreflightTests.test_checklist_has_libraries_model_and_no_ai_downloads) ... ok
+test_ffmpeg_missing_and_encoder_check (test_setup.PreflightTests.test_ffmpeg_missing_and_encoder_check) ... ok
+test_levels_set_line_art_detail (test_setup.PreflightTests.test_levels_set_line_art_detail) ... ok
+test_settings_saved_and_loaded (test_setup.PreflightTests.test_settings_saved_and_loaded) ... ok
+test_main_window_applies_level_and_gear_opens_setup (test_setup.SetupWindowTests.test_main_window_applies_level_and_gear_opens_setup) ... ok
+test_window_lists_items_and_applies_level (test_setup.SetupWindowTests.test_window_lists_items_and_applies_level) ... ok
+test_line_art_is_the_only_image_method (test_lineart.LineArtReconstructionTests.test_line_art_is_the_only_image_method) ... ok
+test_reconstruct_line_art_mode (test_lineart.LineArtReconstructionTests.test_reconstruct_line_art_mode) ... ok
+test_link_joins_broken_line_but_not_unrelated_ends (test_lineart.LineArtTests.test_link_joins_broken_line_but_not_unrelated_ends) ... ok
+test_model_file_ships_and_runs (test_lineart.LineArtTests.test_model_file_ships_and_runs) ... ok
+test_outline_first_closed_and_inner_ring_found (test_lineart.LineArtTests.test_outline_first_closed_and_inner_ring_found) ... ok
+test_repeatable_and_fast (test_lineart.LineArtTests.test_repeatable_and_fast) ... ok
+test_sketch_detection (test_lineart.LineArtTests.test_sketch_detection) ... ok
+test_small_object_on_large_canvas_keeps_detail (test_lineart.LineArtTests.test_small_object_on_large_canvas_keeps_detail) ... ok
+test_texture_grain_is_not_drawn (test_lineart.LineArtTests.test_texture_grain_is_not_drawn) ... ok
+test_thick_dark_line_becomes_one_centre_stroke (test_lineart.LineArtTests.test_thick_dark_line_becomes_one_centre_stroke) ... ok
+test_thinning_gives_one_pixel_lines (test_lineart.LineArtTests.test_thinning_gives_one_pixel_lines) ... ok
+test_clean_has_far_fewer_longer_strokes_than_detailed (test_svg_export.CleanStyleTests.test_clean_has_far_fewer_longer_strokes_than_detailed) ... ok
+test_clean_keeps_structure_of_illustrations (test_svg_export.CleanStyleTests.test_clean_keeps_structure_of_illustrations) ... ok
+test_styles_and_details_validated (test_svg_export.CleanStyleTests.test_styles_and_details_validated) ... ok
+test_adaptive_curve_tracks_bezier_geometry_and_preserves_fill_warning (test_svg_export.RoundTripTests.test_adaptive_curve_tracks_bezier_geometry_and_preserves_fill_warning) ... ok
+test_app_has_style_choice_and_svg_export (test_svg_export.RoundTripTests.test_app_has_style_choice_and_svg_export) ... ok
+test_common_svg_public_doctype_imports_without_external_entity_resolution (test_svg_export.RoundTripTests.test_common_svg_public_doctype_imports_without_external_entity_resolution) ... ok
+test_dense_curved_svg_imports_without_point_overflow (test_svg_export.RoundTripTests.test_dense_curved_svg_imports_without_point_overflow) ... ok
+test_exported_svg_reimports_with_exact_frame_and_order (test_svg_export.RoundTripTests.test_exported_svg_reimports_with_exact_frame_and_order) ... ok
+test_long_straight_svg_edges_need_only_endpoints (test_svg_export.RoundTripTests.test_long_straight_svg_edges_need_only_endpoints) ... ok
+test_svg_rejects_custom_entity_declarations_and_internal_dtd (test_svg_export.RoundTripTests.test_svg_rejects_custom_entity_declarations_and_internal_dtd) ... ok
+test_document_is_valid_ordered_and_named (test_svg_export.SvgExportTests.test_document_is_valid_ordered_and_named) ... ok
+test_export_writes_matching_pair_aligned_to_visible_area (test_svg_export.SvgExportTests.test_export_writes_matching_pair_aligned_to_visible_area) ... ok
+test_path_data_is_smooth_cubic_and_closes_loops (test_svg_export.SvgExportTests.test_path_data_is_smooth_cubic_and_closes_loops) ... ok
+test_artist_is_default_and_export_keeps_layer_colours (test_artist.ArtistAppTests.test_artist_is_default_and_export_keeps_layer_colours) ... ok
+test_reconstruct_artist_strokes_have_layer_colours_and_pace (test_artist.ArtistAppTests.test_reconstruct_artist_strokes_have_layer_colours_and_pace) ... ok
+test_timing_honours_pace (test_artist.ArtistAppTests.test_timing_honours_pace) ... ok
+test_guides_fast_detail_slower_accents_quick (test_artist.ArtistPlanTests.test_guides_fast_detail_slower_accents_quick) ... ok
+test_layers_in_order_guides_lines_accents (test_artist.ArtistPlanTests.test_layers_in_order_guides_lines_accents) ... ok
+test_main_lines_match_clean_drawing (test_artist.ArtistPlanTests.test_main_lines_match_clean_drawing) ... ok
+test_short_stroke_paint_plan_covers_all_visible_pixels (test_zigzag.ShortStrokeTests.test_short_stroke_paint_plan_covers_all_visible_pixels) ... ok
+test_short_vertical_strokes_alternate_and_stay_compact (test_zigzag.ShortStrokeTests.test_short_vertical_strokes_alternate_and_stay_compact) ... ok
+test_every_visible_cell_is_painted_and_nothing_else (test_zigzag.ZigzagPlanTests.test_every_visible_cell_is_painted_and_nothing_else) ... ok
+test_one_continuous_route_with_few_lifts (test_zigzag.ZigzagPlanTests.test_one_continuous_route_with_few_lifts) ... ok
+test_separate_pieces_and_repeatable (test_zigzag.ZigzagPlanTests.test_separate_pieces_and_repeatable) ... ok
+test_starts_near_where_the_drawing_ended (test_zigzag.ZigzagPlanTests.test_starts_near_where_the_drawing_ended) ... ok
+test_strokes_zigzag_across_the_shape (test_zigzag.ZigzagPlanTests.test_strokes_zigzag_across_the_shape) ... ok
+test_timing_rules_match_adaptive (test_zigzag.ZigzagPlanTests.test_timing_rules_match_adaptive) ... ok
+test_plan_for_and_timeline_use_zigzag (test_zigzag.ZigzagRenderTests.test_plan_for_and_timeline_use_zigzag) ... ok
+test_hand_is_not_cut_when_artwork_is_smaller (test_ui_theme.HandLayerTests.test_hand_is_not_cut_when_artwork_is_smaller) ... ok
+test_without_capture_hand_is_painted_directly (test_ui_theme.HandLayerTests.test_without_capture_hand_is_painted_directly) ... ok
+test_dark_is_default_and_light_can_be_chosen (test_ui_theme.ThemeAndBusyTests.test_dark_is_default_and_light_can_be_chosen) ... ok
+test_missing_brush_plan_is_prepared_behind_loading_card (test_ui_theme.ThemeAndBusyTests.test_missing_brush_plan_is_prepared_behind_loading_card) ... ok
+test_timecode_display (test_ui_theme.ThemeAndBusyTests.test_timecode_display) ... ok
+test_timeline_is_locked_while_preparing (test_ui_theme.ThemeAndBusyTests.test_timeline_is_locked_while_preparing) ... ok
+test_create_a_sound (test_ai.CreateImageWindowTests.test_create_a_sound) ... ok
+test_created_pictures_are_kept_in_library (test_ai.CreateImageWindowTests.test_created_pictures_are_kept_in_library) ... ok
+test_main_window_traces_a_line_drawing (test_ai.CreateImageWindowTests.test_main_window_traces_a_line_drawing) ... ok
+test_window_guides_through_setup (test_ai.CreateImageWindowTests.test_window_guides_through_setup) ... ok
+test_download_resumes_and_checks_size (test_ai.DownloadTests.test_download_resumes_and_checks_size) ... ok
+test_line_drawing_becomes_one_stroke_per_line (test_ai.LineGuideTests.test_line_drawing_becomes_one_stroke_per_line) ... ok
+test_shifted_ai_drawing_is_lined_up (test_ai.LineGuideTests.test_shifted_ai_drawing_is_lined_up) ... ok
+test_registry_is_consistent (test_ai.ModelChoiceTests.test_registry_is_consistent) ... ok
+test_settings_and_paths (test_ai.ModelChoiceTests.test_settings_and_paths) ... ok
+test_sound_model (test_ai.ModelChoiceTests.test_sound_model) ... ok
+test_versions_follow_the_graphics_card (test_ai.ModelChoiceTests.test_versions_follow_the_graphics_card) ... ok
+test_workflows_are_complete_graphs (test_ai.ModelChoiceTests.test_workflows_are_complete_graphs) ... ok
+test_cancel_is_quick_and_resumes (test_ai.ParallelDownloadTests.test_cancel_is_quick_and_resumes) ... ok
+test_cut_piece_is_fetched_again (test_ai.ParallelDownloadTests.test_cut_piece_is_fetched_again) ... ok
+test_old_single_download_continues (test_ai.ParallelDownloadTests.test_old_single_download_continues) ... ok
+test_pieces_over_several_connections (test_ai.ParallelDownloadTests.test_pieces_over_several_connections) ... ok
+test_slow_piece_is_shared (test_ai.ParallelDownloadTests.test_slow_piece_is_shared) ... ok
+test_recorded_pencil_sound_is_used (test_projects_sound_batch.SoundTests.test_recorded_pencil_sound_is_used) ... ok
+test_sounds_only_while_the_pen_moves_and_none_built_in (test_projects_sound_batch.SoundTests.test_sounds_only_while_the_pen_moves_and_none_built_in) ... ok
+test_wav_file (test_projects_sound_batch.SoundTests.test_wav_file) ... ok
+test_batch_export_with_sound (test_projects_sound_batch.StudioFeatureTests.test_batch_export_with_sound) ... skipped 'needs FFmpeg'
+test_batch_window (test_projects_sound_batch.StudioFeatureTests.test_batch_window) ... ok
+test_camera_path_and_crop (test_projects_sound_batch.StudioFeatureTests.test_camera_path_and_crop) ... ok
+test_choose_sound_recording (test_projects_sound_batch.StudioFeatureTests.test_choose_sound_recording) ... ok
+test_image_project_round_trip_and_bad_files (test_projects_sound_batch.StudioFeatureTests.test_image_project_round_trip_and_bad_files) ... ok
+test_soundtrack_follows_the_animation (test_projects_sound_batch.StudioFeatureTests.test_soundtrack_follows_the_animation) ... ok
+test_svg_project_round_trip (test_projects_sound_batch.StudioFeatureTests.test_svg_project_round_trip) ... ok
+test_window_options_match_settings_function (test_projects_sound_batch.StudioFeatureTests.test_window_options_match_settings_function) ... ok
+test_colliding_existing_suffix_reuses_identical_hand_and_retains_tip (test_library.LibraryTests.test_colliding_existing_suffix_reuses_identical_hand_and_retains_tip) ... ok
+test_copies_are_safe_and_organised (test_library.LibraryTests.test_copies_are_safe_and_organised) ... ok
+test_delete_is_recoverable_and_hand_tips_are_kept (test_library.LibraryTests.test_delete_is_recoverable_and_hand_tips_are_kept) ... ok
+test_move_conflicting_names_keeps_both_images_and_indexes (test_library.LibraryTests.test_move_conflicting_names_keeps_both_images_and_indexes) ... ok
+test_move_interrupted_copy_never_discards_original (test_library.LibraryTests.test_move_interrupted_copy_never_discards_original) ... ok
+test_move_library_folder (test_library.LibraryTests.test_move_library_folder) ... ok
+test_move_same_contents_preserves_destination_and_source_metadata (test_library.LibraryTests.test_move_same_contents_preserves_destination_and_source_metadata) ... ok
+test_colliding_existing_suffix_reuses_identical_hand_and_retains_tip (test_library.LibraryWindowTests.test_colliding_existing_suffix_reuses_identical_hand_and_retains_tip) ... ok
+test_copies_are_safe_and_organised (test_library.LibraryWindowTests.test_copies_are_safe_and_organised) ... ok
+test_delete_is_recoverable_and_hand_tips_are_kept (test_library.LibraryWindowTests.test_delete_is_recoverable_and_hand_tips_are_kept) ... ok
+test_imported_image_is_kept_in_the_library (test_library.LibraryWindowTests.test_imported_image_is_kept_in_the_library) ... ok
+test_library_window_lists_and_uses_items (test_library.LibraryWindowTests.test_library_window_lists_and_uses_items) ... ok
+test_loading_a_hand_keeps_a_copy_and_finds_the_tip (test_library.LibraryWindowTests.test_loading_a_hand_keeps_a_copy_and_finds_the_tip) ... ok
+test_move_conflicting_names_keeps_both_images_and_indexes (test_library.LibraryWindowTests.test_move_conflicting_names_keeps_both_images_and_indexes) ... ok
+test_move_interrupted_copy_never_discards_original (test_library.LibraryWindowTests.test_move_interrupted_copy_never_discards_original) ... ok
+test_move_library_folder (test_library.LibraryWindowTests.test_move_library_folder) ... ok
+test_move_same_contents_preserves_destination_and_source_metadata (test_library.LibraryWindowTests.test_move_same_contents_preserves_destination_and_source_metadata) ... ok
+test_built_in_hand_in_any_orientation (test_library.PenTipTests.test_built_in_hand_in_any_orientation) ... ok
+test_simple_drawn_hand_and_empty_image (test_library.PenTipTests.test_simple_drawn_hand_and_empty_image) ... ok
+test_both_styles_erase_everything_gradually (test_eraser.EraserTests.test_both_styles_erase_everything_gradually) ... ok
+test_eraser_is_shown_and_followed_by_the_pen_track (test_eraser.EraserTests.test_eraser_is_shown_and_followed_by_the_pen_track) ... ok
+test_export_ends_blank_and_has_rubbing_sound (test_eraser.EraserTests.test_export_ends_blank_and_has_rubbing_sound) ... ok
+test_lettering_background_survives_erasing (test_eraser.EraserTests.test_lettering_background_survives_erasing) ... ok
+test_settings_and_window (test_eraser.EraserTests.test_settings_and_window) ... ok
+test_timeline_gets_an_erase_stage (test_eraser.EraserTests.test_timeline_gets_an_erase_stage) ... ok
+test_duration_and_mix (test_media.AudioTrackTests.test_duration_and_mix) ... skipped 'needs FFmpeg'
+test_textures_look_different (test_media.BackgroundTests.test_textures_look_different) ... ok
+test_busier_drawings_get_more_time (test_media.TimingTests.test_busier_drawings_get_more_time) ... ok
+test_fit_keeps_proportions_and_limits (test_media.TimingTests.test_fit_keeps_proportions_and_limits) ... ok
+test_audio_in_the_library (test_media.WindowMediaTests.test_audio_in_the_library) ... ok
+test_auto_timing_buttons (test_media.WindowMediaTests.test_auto_timing_buttons) ... ok
+test_camera_follow_in_preview (test_media.WindowMediaTests.test_camera_follow_in_preview) ... ok
+test_settings_carry_camera_and_audio (test_media.WindowMediaTests.test_settings_carry_camera_and_audio) ... ok
+test_voiceover_fit_save_and_export (test_media.WindowMediaTests.test_voiceover_fit_save_and_export) ... skipped 'needs FFmpeg'
+test_undo_redo (test_editing.HistoryTests.test_undo_redo) ... ok
+test_image_drawing_pause (test_editing.TimingTests.test_image_drawing_pause) ... ok
+test_natural_is_clearly_different (test_editing.TimingTests.test_natural_is_clearly_different) ... ok
+test_natural_is_visible_with_many_tiny_strokes (test_editing.TimingTests.test_natural_is_visible_with_many_tiny_strokes) ... ok
+test_natural_pen_eases_each_line (test_editing.TimingTests.test_natural_pen_eases_each_line) ... ok
+test_pause_holds_the_ink (test_editing.TimingTests.test_pause_holds_the_ink) ... ok
+test_plain_drawings_are_unchanged (test_editing.TimingTests.test_plain_drawings_are_unchanged) ... ok
+test_slow_line_takes_longer (test_editing.TimingTests.test_slow_line_takes_longer) ... ok
+test_click_a_line_on_the_preview (test_editing.WindowEditingTests.test_click_a_line_on_the_preview) ... ok
+test_delete_reverse_and_drag (test_editing.WindowEditingTests.test_delete_reverse_and_drag) ... ok
+test_every_setting_can_be_undone (test_editing.WindowEditingTests.test_every_setting_can_be_undone) ... ok
+test_pace_pause_and_pen_ease (test_editing.WindowEditingTests.test_pace_pause_and_pen_ease) ... ok
+test_builtin_tools_have_their_tip_where_the_tool_is (test_tools.AssetTests.test_builtin_tools_have_their_tip_where_the_tool_is) ... ok
+test_hand_only_and_drawing_only (test_tools.LayerTests.test_hand_only_and_drawing_only) ... ok
+test_mute_button_and_hand_only_setting (test_tools.LayerTests.test_mute_button_and_hand_only_setting) ... ok
+test_builtin_pencil_and_brush_in_the_window_and_projects (test_tools.PaintingHandTests.test_builtin_pencil_and_brush_in_the_window_and_projects) ... ok
+test_library_painting_hand_survives_in_the_project (test_tools.PaintingHandTests.test_library_painting_hand_survives_in_the_project) ... ok
+test_painting_hand_choices (test_tools.PaintingHandTests.test_painting_hand_choices) ... ok
+test_tool_tip_lands_on_the_pen_tip (test_tools.PaintingHandTests.test_tool_tip_lands_on_the_pen_tip) ... ok
+test_cancel (test_speed.ParallelExportTests.test_cancel) ... ok
+test_same_frames_on_one_or_several_cores (test_speed.ParallelExportTests.test_same_frames_on_one_or_several_cores) ... ok
+test_speed (test_speed.ParallelExportTests.test_speed)
+Not a strict test (shared CI machines vary): prints the speed-up. ... ok
+test_choice (test_speed.WorkerCountTests.test_choice) ... ok
+test_export_all_scenes_with_sound (test_scenes.SceneWindowTests.test_export_all_scenes_with_sound) ... skipped 'needs FFmpeg'
+test_preview_all_scenes (test_scenes.SceneWindowTests.test_preview_all_scenes) ... Adding a scene after scene 1
+Editing element 2 of 2
+ok
+test_scenes_keep_their_own_drawing_and_settings (test_scenes.SceneWindowTests.test_scenes_keep_their_own_drawing_and_settings) ... Adding a scene after scene 1
+Editing element 2 of 2
+Editing element 1 of 2
+Editing element 2 of 2
+Editing element 1 of 2
+Deleting scene 2 of 2
+Editing element 1 of 1
+ok
+test_transition_frames (test_scenes.SceneWindowTests.test_transition_frames) ... ok
+test_locate (test_scenes.TimingTests.test_locate) ... ok
+test_project_round_trip (test_scenes.TimingTests.test_project_round_trip) ... ok
+test_update_worker_never_mutates_running_python_packages (test_updater.UpdateWindowTests.test_update_worker_never_mutates_running_python_packages) ... ok
+test_window (test_updater.UpdateWindowTests.test_window) ... ok
+test_github_answers (test_updater.UpdaterTests.test_github_answers) ... ok
+test_key_check (test_updater.UpdaterTests.test_key_check) ... ok
+test_new_packages_are_rejected_in_place_for_full_installer (test_updater.UpdaterTests.test_new_packages_are_rejected_in_place_for_full_installer) ... ok
+test_real_github_check_and_download (test_updater.UpdaterTests.test_real_github_check_and_download) ... skipped 'needs a GitHub token (CI)'
+test_update_keeps_your_things_and_can_go_back (test_updater.UpdaterTests.test_update_keeps_your_things_and_can_go_back) ... ok
+test_versions (test_updater.UpdaterTests.test_versions) ... ok
+test_wrong_zip_is_refused (test_updater.UpdaterTests.test_wrong_zip_is_refused) ... ok
+test_check_mark_images (test_menus.AssetTests.test_check_mark_images) ... ok
+test_brush_width_change_has_no_loading_card (test_menus.MenuTests.test_brush_width_change_has_no_loading_card) ... ok
+test_menu_bar (test_menus.MenuTests.test_menu_bar) ... ok
+test_fake_checkerboard_becomes_transparent (test_png_cleanup.CleanupTests.test_fake_checkerboard_becomes_transparent) ... ok
+test_image_import_clean_option (test_png_cleanup.CleanupTests.test_image_import_clean_option) ... ok
+test_real_pictures_are_left_alone (test_png_cleanup.CleanupTests.test_real_pictures_are_left_alone) ... ok
+test_solid_colour_pictures_are_kept (test_png_cleanup.CleanupTests.test_solid_colour_pictures_are_kept) ... ok
+test_white_sheet_and_faint_leftovers (test_png_cleanup.CleanupTests.test_white_sheet_and_faint_leftovers) ... ok
+test_matching_png_is_cleaned_and_sound_tab (test_png_cleanup.WindowTests.test_matching_png_is_cleaned_and_sound_tab) ... ok
+test_backup_pending_and_clear (test_timeline_autosave.AutosaveTests.test_backup_pending_and_clear) ... ok
+test_recent_projects_newest_first_without_missing_files (test_timeline_autosave.AutosaveTests.test_recent_projects_newest_first_without_missing_files) ... ok
+test_notes_for_version (test_timeline_autosave.WhatsNewTests.test_notes_for_version) ... ok
+test_audio_lane_add_move_remove (test_timeline_autosave.WindowTests.test_audio_lane_add_move_remove) ... ok
+test_dragging_clip_edges_changes_times (test_timeline_autosave.WindowTests.test_dragging_clip_edges_changes_times) ... ok
+test_export_finished_sound_option_and_autosave (test_timeline_autosave.WindowTests.test_export_finished_sound_option_and_autosave) ... ok
+test_layout_has_draggable_divider_above_timeline (test_timeline_autosave.WindowTests.test_layout_has_draggable_divider_above_timeline) ... ok
+test_update_banner (test_timeline_autosave.WindowTests.test_update_banner) ... ok
+test_same_page_has_no_move (test_pages_playback.PlainTests.test_same_page_has_no_move) ... ok
+test_position_moves_the_picture_and_eraser (test_pages_playback.RenderTests.test_position_moves_the_picture_and_eraser) ... ok
+test_add_picture_on_same_page (test_pages_playback.WindowTests.test_add_picture_on_same_page) ... Editing element 2 of 2
+ok
+test_drag_on_preview_moves_picture (test_pages_playback.WindowTests.test_drag_on_preview_moves_picture) ... ok
+test_playback_uses_ready_frames (test_pages_playback.WindowTests.test_playback_uses_ready_frames) ... ok
+test_project_colour_picture_is_cleaned (test_pages_playback.WindowTests.test_project_colour_picture_is_cleaned) ... ok
+test_board_view_move_resize_and_edit (test_board.BoardWindowTests.test_board_view_move_resize_and_edit) ... Adding a scene after scene 1
+Editing element 2 of 2
+Editing element 1 of 2
+ok
+test_one_resolution_for_every_element (test_board.BoardWindowTests.test_one_resolution_for_every_element)
+exp.100: switching elements keeps the video's resolution (a page at 1920 x 1080 ... Adding a scene after scene 1
+Editing element 2 of 2
+Editing element 1 of 2
+Editing element 2 of 2
+Editing element 1 of 2
+ok
+test_small_frame_inside_and_show_everything_export (test_board.BoardWindowTests.test_small_frame_inside_and_show_everything_export) ... Adding a scene after scene 1
+Editing element 2 of 2
+ok
+test_camera_moves (test_board.MathTests.test_camera_moves) ... ok
+test_default_frames_follow_the_transitions (test_board.MathTests.test_default_frames_follow_the_transitions) ... ok
+test_timeline_with_show_everything (test_board.MathTests.test_timeline_with_show_everything) ... ok
+test_zoom_draws_bigger_not_stretched (test_board.WorldTests.test_zoom_draws_bigger_not_stretched) ... ok
+test_in_the_animation_frame (test_overlays.PaintTests.test_in_the_animation_frame) ... ok
+test_text_and_picture_drawn_at_their_time (test_overlays.PaintTests.test_text_and_picture_drawn_at_their_time) ... ok
+test_effects (test_overlays.TimingTests.test_effects) ... ok
+test_add_move_resize_undo_save (test_overlays.WindowTests.test_add_move_resize_undo_save) ... ok
+test_title_shows_in_the_preview (test_overlays.WindowTests.test_title_shows_in_the_preview) ... ok
+test_errors_are_written_with_details (test_fixes_52.LogTests.test_errors_are_written_with_details) ... ok
+test_delete_scenes_one_after_another (test_fixes_52.WindowTests.test_delete_scenes_one_after_another) ... ok
+test_wheel_scrolls_the_panel_not_the_list (test_fixes_52.WindowTests.test_wheel_scrolls_the_panel_not_the_list) ... ok
+test_background_choices (test_part_a.PlainTests.test_background_choices) ... ok
+test_background_png_and_videos (test_part_a.PlainTests.test_background_png_and_videos) ... skipped 'needs Qt and FFmpeg'
+test_fonts (test_part_a.PlainTests.test_fonts) ... ok
+test_left_handed_mirrors_hand_and_tip (test_part_a.QtTests.test_left_handed_mirrors_hand_and_tip) ... ok
+test_window_background_and_controls (test_part_a.QtTests.test_window_background_and_controls) ... ok
+test_comes_in_with_an_effect (test_part_b.RenderTests.test_comes_in_with_an_effect) ... ok
+test_pause_and_goes_out (test_part_b.RenderTests.test_pause_and_goes_out) ... ok
+test_element_cards_and_editor (test_part_b.WindowTests.test_element_cards_and_editor) ... ok
+test_pan_back_does_not_land_on_an_earlier_element (test_one_timeline.BoardTests.test_pan_back_does_not_land_on_an_earlier_element) ... ok
+test_letter_detail_keeps_the_writing_steady_and_sharp (test_one_timeline.FontTests.test_letter_detail_keeps_the_writing_steady_and_sharp) ... ok
+test_hand_tab_pictures (test_one_timeline.WindowTests.test_hand_tab_pictures) ... ok
+test_new_element_and_one_timeline (test_one_timeline.WindowTests.test_new_element_and_one_timeline) ... ok
+test_same_options_same_key (test_part_c.CacheKeyTests.test_same_options_same_key) ... ok
+test_down_strokes_go_down_upright_and_slanted (test_part_c.FontTests.test_down_strokes_go_down_upright_and_slanted) ... ok
+test_natural_pen_changes_font_timing (test_part_c.FontTests.test_natural_pen_changes_font_timing) ... ok
+test_round_letters_are_few_lines (test_part_c.FontTests.test_round_letters_are_few_lines) ... ok
+test_hand_tab_and_letter_detail (test_part_c.WindowTests.test_hand_tab_and_letter_detail) ... ok
+test_modes_in_the_menu (test_part_d.BandTests.test_modes_in_the_menu) ... ok
+test_top_to_bottom_and_left_to_right (test_part_d.BandTests.test_top_to_bottom_and_left_to_right) ... ok
+test_free_spots (test_part_d.PageTests.test_free_spots) ... ok
+test_pictures_on_one_page_then_a_new_page (test_part_d.PageTests.test_pictures_on_one_page_then_a_new_page) ... ok
+test_tabs_keep_prompt_and_result (test_part_e.CreateImageTests.test_tabs_keep_prompt_and_result) ... ok
+test_image_modes_keep_blank_start_and_exact_source_finish (test_stability_baseline.StableRenderingContract.test_image_modes_keep_blank_start_and_exact_source_finish) ... ok
+test_svg_guide_and_source_pixels_remain_distinct (test_stability_baseline.StableRenderingContract.test_svg_guide_and_source_pixels_remain_distinct) ... ok
+test_change_during_pending_history_is_not_missed (test_project_lifecycle.TrackerTests.test_change_during_pending_history_is_not_missed) ... ok
+test_setting_edit_marks_dirty_and_save_clears (test_project_lifecycle.TrackerTests.test_setting_edit_marks_dirty_and_save_clears) ... ok
+test_cancelled_ai_replacement_never_starts_image_builder (test_project_lifecycle.WindowLifecycleTests.test_cancelled_ai_replacement_never_starts_image_builder) ... ok
+test_cancelled_library_replacement_keeps_current_artwork (test_project_lifecycle.WindowLifecycleTests.test_cancelled_library_replacement_keeps_current_artwork) ... ok
+test_cancelled_open_preserves_edit_and_recovery (test_project_lifecycle.WindowLifecycleTests.test_cancelled_open_preserves_edit_and_recovery) ... ok
+test_cancelled_restart_does_not_launch_new_app (test_project_lifecycle.WindowLifecycleTests.test_cancelled_restart_does_not_launch_new_app) ... ok
+test_discard_closes_and_clears_autosave (test_project_lifecycle.WindowLifecycleTests.test_discard_closes_and_clears_autosave) ... ok
+test_failed_open_restores_original_project_state (test_project_lifecycle.WindowLifecycleTests.test_failed_open_restores_original_project_state) ... ok
+test_rejecting_crash_restore_does_not_silently_delete_backup (test_project_lifecycle.WindowLifecycleTests.test_rejecting_crash_restore_does_not_silently_delete_backup) ... ok
+test_save_cancel_and_failed_save_keep_project_open (test_project_lifecycle.WindowLifecycleTests.test_save_cancel_and_failed_save_keep_project_open) ... ok
+test_scene_and_overlay_edits_mark_dirty (test_project_lifecycle.WindowLifecycleTests.test_scene_and_overlay_edits_mark_dirty) ... ok
+test_scene_reorder_and_transition_are_persisted_dirty (test_project_lifecycle.WindowLifecycleTests.test_scene_reorder_and_transition_are_persisted_dirty) ... ok
+test_setting_change_is_dirty_before_history_debounce (test_project_lifecycle.WindowLifecycleTests.test_setting_change_is_dirty_before_history_debounce) ... ok
+test_successful_save_marks_clean (test_project_lifecycle.WindowLifecycleTests.test_successful_save_marks_clean) ... ok
+test_unsaved_setting_change_is_autosaved_before_history_timer (test_project_lifecycle.WindowLifecycleTests.test_unsaved_setting_change_is_autosaved_before_history_timer) ... ok
+test_comfy_preflights_before_removing_old_engine (test_archive_safety.ArchiveSafetyTests.test_comfy_preflights_before_removing_old_engine) ... ok
+test_count_and_expanded_size_limits (test_archive_safety.ArchiveSafetyTests.test_count_and_expanded_size_limits) ... ok
+test_duplicates_case_collisions_and_symlink_entries_are_rejected (test_archive_safety.ArchiveSafetyTests.test_duplicates_case_collisions_and_symlink_entries_are_rejected) ... C:\hostedtoolcache\windows\Python\3.14.9\x64\Lib\zipfile\__init__.py:1755: UserWarning: Duplicate name: 'src/a.py'
+  return self._open_to_write(zinfo, force_zip64=force_zip64)
+ok
+test_path_traversal_drive_names_and_windows_aliases_are_rejected (test_archive_safety.ArchiveSafetyTests.test_path_traversal_drive_names_and_windows_aliases_are_rejected) ... ok
+test_symlink_escape_is_rejected (test_archive_safety.ArchiveSafetyTests.test_symlink_escape_is_rejected) ... ok
+test_updater_validates_before_changing_any_app_file (test_archive_safety.ArchiveSafetyTests.test_updater_validates_before_changing_any_app_file) ... ok
+test_valid_relative_member_paths (test_archive_safety.ArchiveSafetyTests.test_valid_relative_member_paths) ... ok
+test_bad_version_does_not_update_any_active_files (test_update_transaction.TransactionTests.test_bad_version_does_not_update_any_active_files) ... ok
+test_dependency_change_refuses_before_modifying_installed_app (test_update_transaction.TransactionTests.test_dependency_change_refuses_before_modifying_installed_app) ... ok
+test_existing_rollback_backup_survives_failed_update (test_update_transaction.TransactionTests.test_existing_rollback_backup_survives_failed_update) ... ok
+test_failed_staging_write_does_not_touch_installed_app (test_update_transaction.TransactionTests.test_failed_staging_write_does_not_touch_installed_app) ... ok
+test_identical_files_are_not_rewritten (test_update_transaction.TransactionTests.test_identical_files_are_not_rewritten) ... ok
+test_interrupted_process_is_restored_from_startup_journal (test_update_transaction.TransactionTests.test_interrupted_process_is_restored_from_startup_journal) ... ok
+test_invalid_manual_rollback_metadata_never_touches_outside_files (test_update_transaction.TransactionTests.test_invalid_manual_rollback_metadata_never_touches_outside_files) ... ok
+test_journal_and_backup_are_flushed_before_live_file_replacement (test_update_transaction.TransactionTests.test_journal_and_backup_are_flushed_before_live_file_replacement) ... ok
+test_launcher_recovers_interrupted_update_before_loading_ui (test_update_transaction.TransactionTests.test_launcher_recovers_interrupted_update_before_loading_ui) ... ok
+test_manual_rollback_failure_midway_restores_new_version_and_backup (test_update_transaction.TransactionTests.test_manual_rollback_failure_midway_restores_new_version_and_backup) ... ok
+test_manual_rollback_power_loss_recovers_new_version_at_startup (test_update_transaction.TransactionTests.test_manual_rollback_power_loss_recovers_new_version_at_startup) ... ok
+test_manual_rollback_refuses_while_recovery_journal_is_active (test_update_transaction.TransactionTests.test_manual_rollback_refuses_while_recovery_journal_is_active) ... ok
+test_midway_file_replace_exception_auto_restores_old_app (test_update_transaction.TransactionTests.test_midway_file_replace_exception_auto_restores_old_app) ... ok
+test_power_loss_after_backup_rotation_preserves_old_install_and_rollback (test_update_transaction.TransactionTests.test_power_loss_after_backup_rotation_preserves_old_install_and_rollback) ... ok
+test_power_loss_after_manual_rollback_backup_rotation_can_recover (test_update_transaction.TransactionTests.test_power_loss_after_manual_rollback_backup_rotation_can_recover) ... ok
+test_power_loss_after_new_backup_installed_can_still_recover (test_update_transaction.TransactionTests.test_power_loss_after_new_backup_installed_can_still_recover) ... ok
+test_second_failed_attempt_retains_previous_backup (test_update_transaction.TransactionTests.test_second_failed_attempt_retains_previous_backup) ... ok
+test_stage_has_no_effect_on_active_application (test_update_transaction.TransactionTests.test_stage_has_no_effect_on_active_application) ... ok
+test_successful_commit_can_be_rolled_back (test_update_transaction.TransactionTests.test_successful_commit_can_be_rolled_back) ... ok
+test_truncated_zip_does_not_change_installed_app (test_update_transaction.TransactionTests.test_truncated_zip_does_not_change_installed_app) ... ok
+test_installing_worker_disables_cancel_and_close_is_blocked (test_updater_ui_safety.DialogSafetyTests.test_installing_worker_disables_cancel_and_close_is_blocked) ... ok
+test_rejected_restart_keeps_dialog_open (test_updater_ui_safety.DialogSafetyTests.test_rejected_restart_keeps_dialog_open) ... ok
+test_rollback_cancel_does_not_change_app_and_success_shows_restart (test_updater_ui_safety.DialogSafetyTests.test_rollback_cancel_does_not_change_app_and_success_shows_restart) ... ok
+test_rollback_confirmation_names_restored_version (test_updater_ui_safety.DialogSafetyTests.test_rollback_confirmation_names_restored_version) ... ok
+test_running_worker_cannot_destroy_dialog_and_requests_cancel (test_updater_ui_safety.DialogSafetyTests.test_running_worker_cannot_destroy_dialog_and_requests_cancel) ... ok
+test_worker_cancel_status_is_not_reported_as_failure (test_updater_ui_safety.DialogSafetyTests.test_worker_cancel_status_is_not_reported_as_failure) ... ok
+test_cancellation_does_not_overwrite_existing_good_update_file (test_updater_ui_safety.DownloadCancellationTests.test_cancellation_does_not_overwrite_existing_good_update_file) ... ok
+test_completed_download_replaces_old_file_atomically (test_updater_ui_safety.DownloadCancellationTests.test_completed_download_replaces_old_file_atomically) ... ok
+test_cancelled_unsaved_restart_never_launches_new_process (test_updater_ui_safety.RestartSafetyTests.test_cancelled_unsaved_restart_never_launches_new_process) ... ok
+test_failed_new_process_launch_keeps_original_window_open (test_updater_ui_safety.RestartSafetyTests.test_failed_new_process_launch_keeps_original_window_open) ... ok
+test_cancel_is_refused_when_commit_is_in_progress (test_updater_ui_safety.WorkerCancellationTests.test_cancel_is_refused_when_commit_is_in_progress) ... ok
+test_request_cancel_prevents_commit_and_removes_staging (test_updater_ui_safety.WorkerCancellationTests.test_request_cancel_prevents_commit_and_removes_staging) ... ok
+test_cancelled_extraction_preserves_previous_engine (test_ai_install_safety.EngineInstallSafetyTests.test_cancelled_extraction_preserves_previous_engine) ... ok
+test_detection_does_not_delete_backup_while_new_engine_is_present (test_ai_install_safety.EngineInstallSafetyTests.test_detection_does_not_delete_backup_while_new_engine_is_present) ... ok
+test_engine_detection_recovers_power_cut_before_launch (test_ai_install_safety.EngineInstallSafetyTests.test_engine_detection_recovers_power_cut_before_launch) ... ok
+test_failed_atomic_folder_swap_restores_previous_engine (test_ai_install_safety.EngineInstallSafetyTests.test_failed_atomic_folder_swap_restores_previous_engine) ... ok
+test_interrupted_folder_swap_is_recoverable_next_launch (test_ai_install_safety.EngineInstallSafetyTests.test_interrupted_folder_swap_is_recoverable_next_launch) ... ok
+test_invalid_archive_preserves_engine (test_ai_install_safety.EngineInstallSafetyTests.test_invalid_archive_preserves_engine) ... ok
+test_recovery_check_never_discards_older_engine_when_current_exists (test_ai_install_safety.EngineInstallSafetyTests.test_recovery_check_never_discards_older_engine_when_current_exists) ... ok
+test_replacement_refuses_unresolved_backup_without_touching_either_engine (test_ai_install_safety.EngineInstallSafetyTests.test_replacement_refuses_unresolved_backup_without_touching_either_engine) ... ok
+test_successful_extraction_preserves_old_until_new_is_ready (test_ai_install_safety.EngineInstallSafetyTests.test_successful_extraction_preserves_old_until_new_is_ready) ... ok
+test_installer_forwards_cancellation_to_archive_extraction (test_ai_install_safety.InstallerCancellationTests.test_installer_forwards_cancellation_to_archive_extraction) ... ok
+test_silent_subprocess_cancels_promptly_without_leaking_process (test_ai_install_safety.InstallerCancellationTests.test_silent_subprocess_cancels_promptly_without_leaking_process) ... ok
+test_cached_correct_size_wrong_hash_is_not_trusted (test_ai_install_safety.ModelIntegrityTests.test_cached_correct_size_wrong_hash_is_not_trusted) ... ok
+test_incorrect_sha256_never_promotes_model_file (test_ai_install_safety.ModelIntegrityTests.test_incorrect_sha256_never_promotes_model_file) ... ok
+test_matching_sha256_accepts_model_file (test_ai_install_safety.ModelIntegrityTests.test_matching_sha256_accepts_model_file) ... ok
+test_model_registry_checksum_must_match_for_installed_file (test_ai_install_safety.ModelIntegrityTests.test_model_registry_checksum_must_match_for_installed_file) ... ok
+test_existing_setting_is_respected_for_manual_debugging (test_preview_environment.PreviewEnvironmentTests.test_existing_setting_is_respected_for_manual_debugging) ... ok
+test_offscreen_preview_sets_unattended_discard_only_for_preview (test_preview_environment.PreviewEnvironmentTests.test_offscreen_preview_sets_unattended_discard_only_for_preview) ... ok
+test_real_desktop_never_enables_automatic_discard (test_preview_environment.PreviewEnvironmentTests.test_real_desktop_never_enables_automatic_discard) ... ok
+test_intermediate_scene_transition_keeps_canvas_transparency (test_render_pipeline_smoke.CompleteRenderPipelineTests.test_intermediate_scene_transition_keeps_canvas_transparency) ... skipped 'real video export needs FFmpeg and ffprobe'
+test_real_svg_scene_move_audio_and_both_video_encoders (test_render_pipeline_smoke.CompleteRenderPipelineTests.test_real_svg_scene_move_audio_and_both_video_encoders) ... skipped 'real video export needs FFmpeg and ffprobe'
+test_clean_projects_never_prompt_or_save (test_project_leave_decisions.LeaveDecisionTests.test_clean_projects_never_prompt_or_save) ... ok
+test_discard_is_explicit_and_does_not_call_save (test_project_leave_decisions.LeaveDecisionTests.test_discard_is_explicit_and_does_not_call_save) ... ok
+test_headless_test_optin_never_prompts (test_project_leave_decisions.LeaveDecisionTests.test_headless_test_optin_never_prompts) ... ok
+test_successful_save_allows_leave_but_failed_or_cancelled_save_blocks (test_project_leave_decisions.LeaveDecisionTests.test_successful_save_allows_leave_but_failed_or_cancelled_save_blocks) ... ok
+test_unexpected_response_fails_closed (test_project_leave_decisions.LeaveDecisionTests.test_unexpected_response_fails_closed) ... ok
+test_user_can_cancel_close_or_project_replacement (test_project_leave_decisions.LeaveDecisionTests.test_user_can_cancel_close_or_project_replacement) ... ok
+test_failed_download_never_touches_current_model (test_live_model_updates.LiveModelUpdateTests.test_failed_download_never_touches_current_model) ... ok
+test_failed_second_rename_restores_previous_weights (test_live_model_updates.LiveModelUpdateTests.test_failed_second_rename_restores_previous_weights) ... ok
+test_installed_model_has_one_card_and_detects_official_difference (test_live_model_updates.LiveModelUpdateTests.test_installed_model_has_one_card_and_detects_official_difference) ... ok
+test_mismatched_publisher_revision_refuses_update_before_download (test_live_model_updates.LiveModelUpdateTests.test_mismatched_publisher_revision_refuses_update_before_download) ... ok
+test_model_without_file_is_not_falsely_marked_installed (test_live_model_updates.LiveModelUpdateTests.test_model_without_file_is_not_falsely_marked_installed) ... ok
+test_network_unavailable_does_not_invent_an_update (test_live_model_updates.LiveModelUpdateTests.test_network_unavailable_does_not_invent_an_update) ... ok
+test_power_cut_restore_variant_before_inventory_scan (test_live_model_updates.LiveModelUpdateTests.test_power_cut_restore_variant_before_inventory_scan) ... ok
+test_publisher_metadata_requires_sha256_and_expected_size (test_live_model_updates.LiveModelUpdateTests.test_publisher_metadata_requires_sha256_and_expected_size) ... ok
+test_unverified_model_is_never_updateable (test_live_model_updates.LiveModelUpdateTests.test_unverified_model_is_never_updateable) ... ok
+test_verified_update_keeps_previous_model_and_updates_registry_readiness (test_live_model_updates.LiveModelUpdateTests.test_verified_update_keeps_previous_model_and_updates_registry_readiness) ... ok
+test_escape_closes_drawer_preserving_result_and_prompt (test_image_generator_updates.DrawerTests.test_escape_closes_drawer_preserving_result_and_prompt) ... FAIL
+test_header_triggers_real_background_check_and_keep_open (test_image_generator_updates.DrawerTests.test_header_triggers_real_background_check_and_keep_open) ... ok
+test_image_only_panel_and_compact_layout (test_image_generator_updates.DrawerTests.test_image_only_panel_and_compact_layout) ... ok
+test_model_manager_still_selects_real_model (test_image_generator_updates.DrawerTests.test_model_manager_still_selects_real_model) ... ok
+test_one_card_per_real_model_no_demo_duplicates (test_image_generator_updates.DrawerTests.test_one_card_per_real_model_no_demo_duplicates) ... ok
+test_title_bar_close_closes_dialog_not_just_panel (test_image_generator_updates.DrawerTests.test_title_bar_close_closes_dialog_not_just_panel) ... ok
+test_unverified_model_never_shows_update_button (test_image_generator_updates.DrawerTests.test_unverified_model_never_shows_update_button) ... ok
+test_update_button_starts_real_verified_update_worker (test_image_generator_updates.DrawerTests.test_update_button_starts_real_verified_update_worker) ... ok
+test_injected_models_are_unique_and_actions_use_real_ids (test_image_generator_updates.PanelTests.test_injected_models_are_unique_and_actions_use_real_ids) ... ok
+test_unknown_check_is_not_no_updates_and_optional_is_not_upgrade (test_generator_polish.PlainStatusTests.test_unknown_check_is_not_no_updates_and_optional_is_not_upgrade) ... ok
+test_busy_motion_updates_at_display_rate_without_inventing_progress (test_generator_polish.SmoothGeneratorTests.test_busy_motion_updates_at_display_rate_without_inventing_progress) ... ok
+test_close_waits_for_slow_ai_worker_cancellation (test_generator_polish.SmoothGeneratorTests.test_close_waits_for_slow_ai_worker_cancellation) ... ok
+test_escape_does_not_dismiss_running_ai_or_model_workers (test_generator_polish.SmoothGeneratorTests.test_escape_does_not_dismiss_running_ai_or_model_workers) ... ok
+test_finished_result_cannot_be_overwritten_by_pending_progress (test_generator_polish.SmoothGeneratorTests.test_finished_result_cannot_be_overwritten_by_pending_progress) ... ok
+test_model_thread_reference_waits_for_native_cleanup (test_generator_polish.SmoothGeneratorTests.test_model_thread_reference_waits_for_native_cleanup) ... ok
+test_new_model_check_waits_for_previous_native_cleanup (test_generator_polish.SmoothGeneratorTests.test_new_model_check_waits_for_previous_native_cleanup) ... ok
+test_panel_reverses_without_jump_and_x_finishes_closing (test_generator_polish.SmoothGeneratorTests.test_panel_reverses_without_jump_and_x_finishes_closing) ... ok
+test_placeholder_has_icon_heading_and_explanation_after_reset (test_generator_polish.SmoothGeneratorTests.test_placeholder_has_icon_heading_and_explanation_after_reset) ... ok
+test_banner_cancel_does_not_start_update_or_discard_dirty_project (test_generator_polish.UpdateBeforeSaveTests.test_banner_cancel_does_not_start_update_or_discard_dirty_project) ... ok
+test_online_and_zip_update_cancel_before_starting_any_worker (test_generator_polish.UpdateBeforeSaveTests.test_online_and_zip_update_cancel_before_starting_any_worker) ... ok
+test_save_cancel_and_failed_save_block_update_and_success_marks_clean (test_generator_polish.UpdateBeforeSaveTests.test_save_cancel_and_failed_save_block_update_and_success_marks_clean) ... ok
+test_existing_supported_images_above_16_megapixels_remain_supported (test_artwork_assets.ArtworkAssetsTests.test_existing_supported_images_above_16_megapixels_remain_supported) ... ok
+test_materialization_does_not_trust_provenance_paths (test_artwork_assets.ArtworkAssetsTests.test_materialization_does_not_trust_provenance_paths) ... ok
+test_pair_survives_original_files_removed (test_artwork_assets.ArtworkAssetsTests.test_pair_survives_original_files_removed) ... ok
+test_source_pixel_budget_is_checked_before_decoding (test_artwork_assets.ArtworkAssetsTests.test_source_pixel_budget_is_checked_before_decoding) ... ok
+test_unsafe_extension_and_malformed_base64_rejected (test_artwork_assets.ArtworkAssetsTests.test_unsafe_extension_and_malformed_base64_rejected) ... ok
+test_cancelled_async_import_cannot_replace_current_artwork (test_artwork_workflow.PlacementTests.test_cancelled_async_import_cannot_replace_current_artwork) ... ok
+test_default_add_retains_existing_artwork_and_has_no_leave_prompt (test_artwork_workflow.PlacementTests.test_default_add_retains_existing_artwork_and_has_no_leave_prompt) ... ok
+test_invalid_import_never_adds_a_scene_shell (test_artwork_workflow.PlacementTests.test_invalid_import_never_adds_a_scene_shell) ... ok
+test_new_project_after_saving_is_empty_and_clean (test_artwork_workflow.PlacementTests.test_new_project_after_saving_is_empty_and_clean) ... ok
+test_new_project_cancel_and_failed_save_preserve_work (test_artwork_workflow.PlacementTests.test_new_project_cancel_and_failed_save_preserve_work) ... ok
+test_replace_selected_keeps_other_element_and_project_identity (test_artwork_workflow.PlacementTests.test_replace_selected_keeps_other_element_and_project_identity) ... ok
+test_same_page_add_preserves_join_direction_and_planned_position (test_artwork_workflow.PlacementTests.test_same_page_add_preserves_join_direction_and_planned_position) ... ok
+test_letterboxed_portrait_guide_preserves_proportions (test_artwork_pairing.GuideFramingTests.test_letterboxed_portrait_guide_preserves_proportions) ... ok
+test_add_ai_element_does_not_erase_result_kind_or_original (test_artwork_pairing.PairingTests.test_add_ai_element_does_not_erase_result_kind_or_original) ... ok
+test_explicit_drawing_only_suppresses_paint_but_paint_only_still_works (test_artwork_pairing.PairingTests.test_explicit_drawing_only_suppresses_paint_but_paint_only_still_works) ... ok
+test_invalid_library_pair_is_reported_without_mutating_artwork (test_artwork_pairing.PairingTests.test_invalid_library_pair_is_reported_without_mutating_artwork) ... ok
+test_library_pairing_survives_original_deletion_and_library_move (test_artwork_pairing.PairingTests.test_library_pairing_survives_original_deletion_and_library_move) ... ok
+test_library_retention_preference_applies_to_svg_and_paired_raster (test_artwork_pairing.PairingTests.test_library_retention_preference_applies_to_svg_and_paired_raster) ... ok
+test_new_text_after_filled_svg_keeps_previous_art_and_has_no_stale_paint (test_artwork_pairing.PairingTests.test_new_text_after_filled_svg_keeps_previous_art_and_has_no_stale_paint) ... ok
+test_saved_pair_is_self_contained_and_old_project_still_loads (test_artwork_pairing.PairingTests.test_saved_pair_is_self_contained_and_old_project_still_loads) ... ok
+test_black_fill_and_compound_hole_survive_project_roundtrip (test_artwork_svg.SvgAppearanceTests.test_black_fill_and_compound_hole_survive_project_roundtrip) ... ok
+test_external_resources_and_huge_intrinsic_dimensions_rejected (test_artwork_svg.SvgAppearanceTests.test_external_resources_and_huge_intrinsic_dimensions_rejected) ... ok
+test_inherited_fill_opacity_and_outline_only_detection (test_artwork_svg.SvgAppearanceTests.test_inherited_fill_opacity_and_outline_only_detection) ... ok
+test_repeated_large_appearance_renders_obey_cache_budget (test_artwork_svg.SvgAppearanceTests.test_repeated_large_appearance_renders_obey_cache_budget) ... ok
+test_saved_native_svg_rebuilds_same_final_image_and_drawing_only (test_artwork_svg.SvgAppearanceTests.test_saved_native_svg_rebuilds_same_final_image_and_drawing_only) ... ok
+test_saved_svg_cannot_bypass_external_resource_validation (test_artwork_svg.SvgAppearanceTests.test_saved_svg_cannot_bypass_external_resource_validation) ... ok
+test_unequal_viewport_aspect_preserves_circle_geometry (test_artwork_svg.SvgAppearanceTests.test_unequal_viewport_aspect_preserves_circle_geometry) ... ok
+test_viewbox_offset_and_group_transform_align_in_viewport_coordinates (test_artwork_svg.SvgAppearanceTests.test_viewbox_offset_and_group_transform_align_in_viewport_coordinates) ... ok
+test_visible_stroke_border_is_not_cropped_from_native_filled_art (test_artwork_svg.SvgAppearanceTests.test_visible_stroke_border_is_not_cropped_from_native_filled_art) ... ok
+test_all_raster_entry_points_draw_then_paint_original_and_export_identically (test_artwork_rendering.RenderWorkflowTests.test_all_raster_entry_points_draw_then_paint_original_and_export_identically) ... ok
+test_native_svg_fill_survives_window_project_restore_and_has_exact_final_hole (test_artwork_rendering.RenderWorkflowTests.test_native_svg_fill_survives_window_project_restore_and_has_exact_final_hole) ... ok
+test_board_finished_art_uses_per_element_blend (test_blend_modes.BlendTests.test_board_finished_art_uses_per_element_blend) ... ok
+test_changing_blend_mode_updates_live_monitor (test_blend_modes.BlendTests.test_changing_blend_mode_updates_live_monitor) ... ok
+test_monitor_composites_against_contrasting_background (test_blend_modes.BlendTests.test_monitor_composites_against_contrasting_background) ... ok
+test_multiply_hides_white_paper_over_existing_background (test_blend_modes.BlendTests.test_multiply_hides_white_paper_over_existing_background) ... ok
+test_normal_is_default_and_modes_are_supported (test_blend_modes.BlendTests.test_normal_is_default_and_modes_are_supported) ... ok
+test_screen_retains_light_detail_over_existing_background (test_blend_modes.BlendTests.test_screen_retains_light_detail_over_existing_background) ... ok
+test_transparent_base_does_not_fake_white_removal (test_blend_modes.BlendTests.test_transparent_base_does_not_fake_white_removal) ... ok
+test_ui_setting_maps_to_export_and_project_reload (test_blend_modes.BlendTests.test_ui_setting_maps_to_export_and_project_reload) ... ok
+test_board_applies_each_saved_element_opacity_separately (test_artwork_compositing.AppearanceCompositingTests.test_board_applies_each_saved_element_opacity_separately) ... ok
+test_element_editor_mirrors_settings_and_undoes_on_cancel (test_artwork_compositing.AppearanceCompositingTests.test_element_editor_mirrors_settings_and_undoes_on_cancel) ... ok
+test_element_editor_preview_preserves_hand_over_blended_canvas (test_artwork_compositing.AppearanceCompositingTests.test_element_editor_preview_preserves_hand_over_blended_canvas) ... 
