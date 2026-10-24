@@ -146,7 +146,9 @@ class SegmentCache:
             self._disk = OrderedDict()
             self._disk_bytes = 0
             try:
-                files = sorted(self.folder.glob('*.*'), key=lambda p: p.stat().st_mtime)
+                # Only ready frames: nothing else in the folder is ever counted or deleted.
+                files = sorted((p for p in self.folder.glob('*.*') if p.suffix.lower() in ('.raw', '.png', '.jpg')),
+                               key=lambda p: p.stat().st_mtime)
                 for path in files:
                     size = path.stat().st_size
                     self._disk[path.stem] = (path, size)

@@ -193,11 +193,11 @@ class WindowTests(unittest.TestCase):
         w = self.w
         tl = w.stage_timeline
         total = tl.total()
-        right = tl._x(total)
         tl.set_zoom(4.)
         self.app.processEvents()
         self.assertTrue(tl.hbar.isVisible())
-        self.assertGreater(tl._x(total) - tl._x(0), (right - tl._x(0)) * 3.5)   # four times wider
+        self.assertAlmostEqual(tl._span(), total / 4, places=3)              # a quarter of the video shown
+        self.assertAlmostEqual(tl._x(total) - tl._x(0), tl._width() * 4, delta=2)
         tl.set_zoom(1.)
         self.assertFalse(tl.hbar.isVisible())
         for k in range(len(w.scenes)):
@@ -213,7 +213,8 @@ class WindowTests(unittest.TestCase):
         from app import Window
         from projects import save
         w = self.w
-        path = Path(self.tmp.name) / 'two.strokescribe'
+        folder = Path(tempfile.mkdtemp())                              # not the frames folder
+        path = folder / 'two.strokescribe'
         save(path, w.project_state())
         other = Window(); other.show()
         problems = []
