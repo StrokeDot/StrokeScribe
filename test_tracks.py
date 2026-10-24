@@ -200,6 +200,7 @@ class WindowTests(unittest.TestCase):
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtTest import QTest
         w = self.w
+        w.place_element(1, 5., 0)                # its own start: the timeline shows the camera row
         w.preview_scope.setCurrentIndex(1); self.app.processEvents()
         tl = w.stage_timeline
         self.assertTrue(tl.moves)
