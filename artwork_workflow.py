@@ -236,6 +236,7 @@ class ArtworkWorkflow:
                     scene['transition_seconds']=current['transition_seconds']
                     current['transition']='Same page'
                 self.scene_index+=1;self.scenes.insert(self.scene_index,scene)
+                self.fresh_element_settings()        # exp.112: from zero, not the element before
             if placement!='replace':
                 self.overlays=[];self.selected_overlay=None
             self.image_result=result

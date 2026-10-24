@@ -81,6 +81,25 @@ class WindowTests(unittest.TestCase):
         self.w.playing = False
         self.w.close(); self.app.processEvents()
 
+    def test_a_new_element_starts_from_default_settings(self):
+        """exp.112: a new element does not take the settings of the element before it;
+        the video's own settings (resolution, frame rate) stay one for the project."""
+        w = self.w
+        fresh_duration = w._fresh_settings['duration']
+        w.duration.setValue(fresh_duration + 5)
+        w.artwork_opacity.setValue(40)
+        w.fps.setValue(24)
+        self.assertTrue(w.new_element('file', path=str(HERE / 'samples' / 'arthur-headset-traced.svg')))
+        self.app.processEvents()
+        self.assertAlmostEqual(w.duration.value(), fresh_duration)
+        self.assertAlmostEqual(w.artwork_opacity.value(), 100)
+        self.assertEqual(w.fps.value(), 24)
+        w.artwork_opacity.setValue(40)
+        self.assertTrue(w.new_element('text', text='Hello'))
+        self.assertAlmostEqual(w.artwork_opacity.value(), 100)
+        w.select_scene(0); self.app.processEvents()
+        self.assertAlmostEqual(w.duration.value(), fresh_duration + 5)     # element 1 keeps its own
+
     def test_new_element_and_one_timeline(self):
         w = self.w
         first = w.drawing
