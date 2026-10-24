@@ -187,6 +187,8 @@ class StageTimeline(QFrame):
     overlay_dropped=Signal(str,float)   # a picture file dropped on the overlay tracks, at seconds
     element_clicked=Signal(int)         # whole video: an element's block was clicked
     element_edit=Signal(int)            # whole video: an element's block was double-clicked
+    element_placed=Signal(int,float,int)   # whole video: an element dragged to a new start / track
+    element_reset=Signal(int)           # whole video: back to "after the element before it", Track 1
 
     stage_source_edit=Signal(str,int)   # Draw/Paint source editor, exact clicked element
 
@@ -207,6 +209,9 @@ class StageTimeline(QFrame):
         self.setAcceptDrops(True)
         self.locked=False          # True while a drawing is being prepared
         self.scene_segments=None   # whole video: [(label, seconds, 'scene'|'join', parts)]
+        self.items=None            # whole video on tracks: [(k, label, start, seconds, track, parts)]
+        self.moves=None            # whole video: camera moves [(k, label, start, seconds)]
+        self._ghost=None           # an element being dragged: (k, start, track)
         self.current_scene=0
         self.offset=0.             # whole video: where the edited element starts (seconds)
         self.audio=None            # {'start', 'seconds', 'name', 'envelope'} or None
@@ -234,7 +239,7 @@ class StageTimeline(QFrame):
         self.progress=max(0.,min(1.,float(progress)))
         self.update()
 
-    def set_scenes(self, segments, current=0):
+    def set_scenes(self, segments, current=0, items=None, moves=None):
         """Whole video: every element in a row, each with its own Draw / Paint / Hold / Out
         parts inside it (None: back to the parts of one element only).
 
@@ -250,7 +255,72 @@ class StageTimeline(QFrame):
                     if k==current: break
                     k+=1
                 self.offset+=secs
+        # Whole video on tracks (exp.104): each element at its own start, on its own track,
+        # the camera moves on the Camera row. Without explicit items: one after another.
+        if self.scene_segments and items is None:
+            items,moves=[],[]; t=0.; k=0
+            for label,secs,kind,parts in self.scene_segments:
+                if kind=='scene':
+                    items.append((k,label,t,secs,0,parts)); k+=1
+                else:
+                    moves.append((k-1,label,t,secs))
+                t+=secs
+        self.items=[tuple(i) for i in items] if (self.scene_segments and items) else None
+        self.moves=[tuple(m) for m in (moves or ())] if self.items else None
+        if self.items:
+            mine=[i for i in self.items if i[0]==current]
+            if mine: self.offset=mine[0][2]
+        self._fit_height()
         self.update()
+
+    # ------------------------------------------------------------ tracks (whole video)
+    CAM_H=14.
+
+    def lanes(self):
+        """Track rows shown: the tracks in use plus an empty one on top to drag onto."""
+        if not self.items: return 0
+        return max(i[4] for i in self.items)+2
+
+    def _fit_height(self):
+        n=self.lanes()
+        stack=(self.CAM_H+4+(self.CLIP_H+3)*n) if n else (self.CLIP_H+4)
+        need=int(22+6+stack+(self.LANE_H+3)*self.tracks()+self.AUDIO_H+10)
+        self.setMinimumHeight(max(104,need)); self.setMaximumHeight(max(140,need+20))
+
+    def _track_rect(self, track):
+        top=22.+6.+self.CAM_H+4.
+        i=self.lanes()-1-int(track)
+        return QRectF(self.LEFT,top+i*(self.CLIP_H+3),self._width(),self.CLIP_H)
+
+    def _camera_rect(self):
+        return QRectF(self.LEFT,22.+6.,self._width(),self.CAM_H)
+
+    def _item_rect(self, item, start=None, track=None):
+        k,label,s0,secs,t0,parts=item
+        start=s0 if start is None else start
+        lane=self._track_rect(t0 if track is None else track)
+        x0,x1=self._x(start),self._x(start+secs)
+        return QRectF(x0+1.5,lane.top()+3,max(1.,x1-x0-3),lane.height()-6)
+
+    def _item_at(self, pos):
+        for item in reversed(self.items or ()):
+            if self._item_rect(item).adjusted(-1,-3,1,3).contains(pos):
+                return item
+        return None
+
+    def _snap(self, k, start, px_per_sec):
+        """Start times snap to 0, the playhead and the other elements' starts and ends."""
+        secs=next(i[3] for i in self.items if i[0]==k)
+        points=[0.,self.progress*self.total()]
+        for i in self.items:
+            if i[0]!=k: points+= [i[2],i[2]+i[3]]
+        best=start
+        limit=8./max(1e-6,px_per_sec)
+        for p in points:
+            for edge,value in ((start,p),(start+secs,p-secs)):
+                if abs(edge-p)<limit and abs(edge-p)<abs(start-best)+limit:
+                    best=value; limit=abs(edge-p)
+        return max(0.,best)
 
     def element_length(self):
         """Seconds of the edited element (its own parts)."""
@@ -258,6 +328,10 @@ class StageTimeline(QFrame):
 
     def _blocks(self):
         """Whole video: [(element number or None for a camera move, start, seconds, segment)]."""
+        if self.items:
+            out=[(k,start,secs,(label,secs,'scene',parts)) for k,label,start,secs,_,parts in self.items]
+            out+=[(None,start,secs,(label,secs,'join',())) for _,label,start,secs in self.moves or ()]
+            return out
         out=[]; t=0.; k=0
         for seg in self.scene_segments or ():
             if seg[2]=='scene':
@@ -269,6 +343,9 @@ class StageTimeline(QFrame):
 
     def _block_at(self, pos):
         if not self.scene_segments: return None
+        if self.items:
+            item=self._item_at(pos)
+            return item[0] if item else None
         _,clips,_=self._rows()
         if not (clips.top()-2<=pos.y()<=clips.bottom()+2): return None
         for k,start,secs,_ in self._blocks():
@@ -288,8 +365,7 @@ class StageTimeline(QFrame):
     def set_overlays(self, items, selected=None):
         self.overlays=list(items or ())
         self.selected_overlay=selected
-        need=int(22+6+self.CLIP_H+4+(self.LANE_H+3)*max(1,self.tracks())+self.AUDIO_H+10)
-        self.setMinimumHeight(max(104,need)); self.setMaximumHeight(max(140,need+20))
+        self._fit_height()
         self.update()
 
     LEFT=12.
@@ -297,14 +373,26 @@ class StageTimeline(QFrame):
 
     # ------------------------------------------------------------ geometry
     def total(self):
+        if self.items:
+            ends=[i[2]+i[3] for i in self.items]+[m[2]+m[3] for m in self.moves or ()]
+            return max(ends) if ends else 0.
         if self.scene_segments:
             return sum(s[1] for s in self.scene_segments)
         return self.element_length()
 
+    def _stack_bottom(self):
+        if self.items: return self._track_rect(0).bottom()
+        return 22.+6.+self.CLIP_H
+
     def _rows(self):
+        """(ruler height, the edited element's clip row, the audio row)."""
         ruler_h=22.; top=ruler_h+6.
-        clips=QRectF(self.LEFT,top,self._width(),self.CLIP_H)
-        y=clips.bottom()+4
+        if self.items:
+            mine=[i for i in self.items if i[0]==self.current_scene]
+            clips=self._track_rect(mine[0][4] if mine else 0)
+        else:
+            clips=QRectF(self.LEFT,top,self._width(),self.CLIP_H)
+        y=self._stack_bottom()+4
         n=self.tracks()
         lane_top=y
         y+=(self.LANE_H+3)*n if n else 0
@@ -312,8 +400,7 @@ class StageTimeline(QFrame):
         return ruler_h,clips,audio
 
     def _lane(self, track):
-        _,clips,_=self._rows()
-        return QRectF(self.LEFT,clips.bottom()+4+(self.LANE_H+3)*track,self._width(),self.LANE_H)
+        return QRectF(self.LEFT,self._stack_bottom()+4+(self.LANE_H+3)*track,self._width(),self.LANE_H)
 
     def _overlay_rect(self, item):
         lane=self._lane(int(item.get('track',0)))
@@ -354,6 +441,19 @@ class StageTimeline(QFrame):
         if self.locked:return None
         _,clips,_=self._rows()
         if not clips.top()+3<=pos.y()<=clips.bottom()-3:return None
+        if self.items:
+            item=self._item_at(pos)
+            if item is None: return None
+            index,_,start,seconds,_,parts=item
+            rect=self._item_rect(item)
+            if not rect.top()<=pos.y()<=rect.bottom(): return None
+            parts=[(key,value) for key,value in (parts or ()) if value>0] or [('draw',seconds)]
+            total=sum(value for _,value in parts); x=rect.left()
+            for key,value in parts:
+                right=x+rect.width()*value/total
+                if x<=pos.x()<right:return (key,index) if key in ('draw','paint') else None
+                x=right
+            return None
         if self.scene_segments:
             for index,start,seconds,segment in self._blocks():
                 if index is None or seconds<=0:continue
@@ -410,7 +510,7 @@ class StageTimeline(QFrame):
         total=self._view_total()
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(QColor(c['track']))
-        p.drawRoundedRect(clips,9,9)
+        if not self.items: p.drawRoundedRect(clips,9,9)
         small=QFont(self.font());small.setPointSizeF(8.)
         p.setFont(small)
         if total<=0:
@@ -451,7 +551,10 @@ class StageTimeline(QFrame):
                 ('Paint',self.paint_seconds,c['paint']),
                 ('Hold',self.hold_seconds,c['hold']),
                 ('Out',self.erase_seconds,c.get('erase','#D9667E'))]
-        if self.scene_segments:
+        if self.items:
+            self._paint_tracks(p,c,small)
+            stages=[]
+        elif self.scene_segments:
             self._paint_whole(p,c,clips,small)
             stages=[]
         x=left
@@ -594,6 +697,78 @@ class StageTimeline(QFrame):
                 p.drawText(rect.adjusted(8,0,-8,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,text)
         p.restore(); p.setFont(small)
 
+    def _paint_tracks(self, p, c, small):
+        """Whole video on tracks: the Camera row with its moves, then one row per track
+        (the top row is empty: drag an element there to put it on a new track)."""
+        colours={'draw':c['draw'],'paint':c['paint'],'hold':c['hold'],'erase':c.get('erase','#D9667E'),
+                 'move':c['draw']}
+        cam=self._camera_rect()
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(cam,5,5)
+        for t in range(self.lanes()):
+            p.drawRoundedRect(self._track_rect(t),9,9)
+        p.setFont(small)
+        p.setPen(QColor(c['dim']))
+        p.drawText(cam.adjusted(6,0,0,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,'Camera')
+        p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
+        for k,label,start,secs in self.moves or ():
+            x0,x1=self._x(start),self._x(start+secs)
+            r=QRectF(x0+1,cam.top()+2,max(2.,x1-x0-2),cam.height()-4)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['border_strong'])); p.drawRoundedRect(r,4,4)
+            if r.width()>=40:
+                p.setPen(QColor(c['text'])); p.drawText(r,Qt.AlignmentFlag.AlignCenter,label)
+        for t in range(self.lanes()):
+            lane=self._track_rect(t)
+            p.setPen(QColor(c['dim']))
+            p.drawText(QRectF(lane.right()-70,lane.top(),64,lane.height()),
+                       Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignRight,f'Track {t+1}')
+        bold=QFont(self.font()); bold.setPointSizeF(8.5); bold.setBold(True)
+        for item in self.items:
+            k,label,start,secs,track,parts=item
+            if secs<=0: continue
+            rect=self._item_rect(item)
+            current=k==self.current_scene
+            dragged=self._ghost is not None and self._ghost[0]==k
+            parts=[(key,v) for key,v in (parts or ()) if v>0] or [('draw',secs)]
+            whole=sum(v for _,v in parts) or 1.
+            path=QPainterPath(); path.addRoundedRect(rect,7,7)
+            p.save(); p.setClipPath(path,Qt.ClipOperation.IntersectClip)
+            x=rect.left()
+            for key,v in parts:
+                w=rect.width()*v/whole
+                fill=QColor(colours.get(key,c['draw'])); fill.setAlpha(80 if dragged else 225 if current else 120)
+                p.fillRect(QRectF(x,rect.top(),w,rect.height()),fill)
+                if x>rect.left():
+                    p.setPen(QPen(QColor(0,0,0,70),1)); p.drawLine(QPointF(x,rect.top()),QPointF(x,rect.bottom()))
+                x+=w
+            p.restore()
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.setPen(QPen(QColor('white') if current else QColor(c['border_strong']),2 if current else 1))
+            p.drawRoundedRect(rect,7,7)
+            if current:
+                p.setPen(QPen(QColor(255,255,255,170),1.4))
+                for key,ex,_ in self._edges():
+                    if key in self.editable and ex-rect.left()>=14:
+                        gx=ex-5
+                        p.drawLine(QPointF(gx,rect.center().y()-6),QPointF(gx,rect.center().y()+6))
+                        p.drawLine(QPointF(gx-3,rect.center().y()-6),QPointF(gx-3,rect.center().y()+6))
+            if rect.width()>=30:
+                p.setFont(bold); p.setPen(QColor(c['clip_text'] if current else c['text']))
+                text=label if rect.width()<110 else f'{label}  {secs:.1f}s'
+                text=p.fontMetrics().elidedText(text,Qt.TextElideMode.ElideRight,int(rect.width()-16))
+                p.drawText(rect.adjusted(8,0,-8,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,text)
+                p.setFont(small)
+        if self._ghost is not None:
+            k,start,track=self._ghost
+            item=next((i for i in self.items if i[0]==k),None)
+            if item is not None:
+                r=self._item_rect(item,start,track)
+                p.setBrush(QColor(255,255,255,40)); p.setPen(QPen(QColor('white'),1.5,Qt.PenStyle.DashLine))
+                p.drawRoundedRect(r,7,7)
+                p.setPen(QColor('white'))
+                p.drawText(r.adjusted(8,0,-8,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
+                           f'{item[1]}  {start:.1f}s, Track {track+1}')
+        p.restore(); p.setFont(small)
+
     def set_locked(self, locked):
         self.locked=bool(locked)
         self.setCursor(Qt.CursorShape.BusyCursor if self.locked else Qt.CursorShape.PointingHandCursor)
@@ -629,7 +804,17 @@ class StageTimeline(QFrame):
                 menu.exec(event.globalPosition().toPoint())
                 event.accept();return
             source=self.source_at(pos)
-            if source is not None:self.source_menu(source[1],event.globalPosition().toPoint())
+            item=self._item_at(pos) if self.items else None
+            if item is not None:
+                from PySide6.QtWidgets import QMenu
+                k=item[0]
+                menu=QMenu(self)
+                menu.addAction('Edit Drawing Source…',lambda:self.stage_source_edit.emit('draw',k))
+                menu.addAction('Edit Painting Source…',lambda:self.stage_source_edit.emit('paint',k))
+                menu.addSeparator()
+                menu.addAction('Start right after the element before it (Track 1)',lambda:self.element_reset.emit(k))
+                menu.exec(event.globalPosition().toPoint())
+            elif source is not None:self.source_menu(source[1],event.globalPosition().toPoint())
             event.accept(); return
         if event.button()!=Qt.MouseButton.LeftButton or self.total()<=0:
             return super().mousePressEvent(event)
@@ -650,6 +835,13 @@ class StageTimeline(QFrame):
         if rect is not None and rect.contains(pos):
             self._drag=('audio',pos.x(),self.audio['start'],self._width()/self.total())
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept(); return
+        item=self._item_at(pos) if self.items else None
+        if item is not None:
+            # Whole video on tracks: drag an element along its track or to another track
+            # (a click without moving works on it, as before).
+            self._frozen=self.total()
+            self._drag=('block',item[0],pos.x(),pos.y(),item[2],item[4],self._width()/max(1e-6,self.total()),False)
             event.accept(); return
         k=self._block_at(pos)
         self._drag=('seek',)
@@ -680,6 +872,19 @@ class StageTimeline(QFrame):
                 self.overlay_changed.emit(item.get('id'),round(start,2),round(length,2),track)
                 self.setToolTip(f'{item.get("name","")}: {start:.1f} s → {start+length:.1f} s')
                 event.accept(); return
+            if kind=='block':
+                _,k,x0,y0,start0,track0,px_per_sec,moved=self._drag
+                if not moved and abs(pos.x()-x0)<5 and abs(pos.y()-y0)<5:
+                    event.accept(); return
+                start=self._snap(k,start0+(pos.x()-x0)/px_per_sec,px_per_sec)
+                track=track0
+                for t in range(self.lanes()):
+                    lane=self._track_rect(t)
+                    if lane.top()-2<=pos.y()<=lane.bottom()+2: track=t
+                self._drag=self._drag[:7]+(True,)
+                self._ghost=(k,round(start,2),track)
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                self.update(); event.accept(); return
             if kind=='edge':
                 _,key,start,px_per_sec=self._drag
                 seconds=max(.1,(pos.x()-self.LEFT)/px_per_sec-start)
@@ -726,6 +931,19 @@ class StageTimeline(QFrame):
         super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self,event):
+        if self._drag and self._drag[0]=='block':
+            _,k,x0,y0,start0,track0,px_per_sec,moved=self._drag
+            self._frozen=None
+            ghost=self._ghost; self._ghost=None
+            self._drag=None
+            if moved and ghost is not None:
+                if (abs(ghost[1]-start0)>1e-3 or ghost[2]!=track0):
+                    self.element_placed.emit(k,float(ghost[1]),int(ghost[2]))
+            else:
+                self._seek(event.position().x())
+                if k!=self.current_scene: self.element_clicked.emit(k)
+            self.update(); self.setCursor(Qt.CursorShape.PointingHandCursor)
+            event.accept(); return
         if self._drag and self._drag[0]=='overlay':
             self._frozen=None
             self.overlay_done.emit(self._drag[1].get('id'))
@@ -2460,6 +2678,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.overlay_dropped.connect(lambda path,seconds: w.add_overlay_picture(path,at=seconds))
     w.stage_timeline.element_clicked.connect(lambda k: w.timeline_element_clicked(k))
     w.stage_timeline.element_edit.connect(lambda k: w.edit_element(k))
+    w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))
+    w.stage_timeline.element_reset.connect(lambda k: w.reset_element_time(k))
     w.stage_timeline.stage_source_edit.connect(w.edit_stage_source)
     w.vertical_splitter.addWidget(timeline)
     w.vertical_splitter.setStretchFactor(0,1)

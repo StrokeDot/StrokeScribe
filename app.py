@@ -2302,7 +2302,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.canvas.frame=image; self.canvas.highlight=[]; self.canvas.update()
         segments,lengths,joins=self.whole_segments(960,round(960*aspect))
         self.show_whole_timeline(segments,lengths,joins,self.options())
-        total=sum(lengths)+sum(joins)
+        total=self.timeline_layout(960,round(960*aspect)).total
         self.clock.setText(timecode(self.position*total)); self.clock_total.setText(timecode(total))
 
     def board_point(self,x,y):
@@ -2440,6 +2440,50 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 ('hold',(float(options.get('hold_duration',0)) if colour else 0.)+float(options.get('pause',0) or 0)),
                 ('erase',float(erase['seconds']) if erase else 0.)]
 
+    def timeline_layout(self,width=960,height=540):
+        """When every element plays in the whole video (timeline_model): its own start and
+        track, or right after the element before it (exp.104)."""
+        from timeline_model import layout
+        lengths,joins=self.scene_timeline(width,height)
+        memo=self.__dict__.setdefault('_memo',{})
+        key=('layout',tuple(lengths),tuple(joins),tuple((s.get('start'),s.get('track')) for s in self.scenes))
+        if key not in memo:
+            memo[key]=layout(lengths,joins,[s.get('start') for s in self.scenes],
+                             [s.get('track') or 0 for s in self.scenes])
+        return memo[key]
+
+    def timeline_items(self,width=960,height=540):
+        """(items, moves) for the timeline: [(k, label, start, seconds, track, parts)], [(k, label, start, seconds)]."""
+        lay=self.timeline_layout(width,height)
+        items=[]
+        for it in lay.items:
+            parts=self.stage_parts(self.preview_scene(it.k,width,height)[1])
+            whole=sum(v for _,v in parts)
+            if whole>0 and abs(whole-it.length)>1e-3:
+                parts=[(key,v*it.length/whole) for key,v in parts]
+            items.append((it.k,f'{it.k+1} · {self.scene_label(it.k)}',it.start,it.length,it.track,parts))
+        moves=[(m.k,self.scenes[m.k]['transition'],m.start,m.length) for m in lay.moves]
+        return items,moves
+
+    def place_element(self,k,start,track):
+        """Whole video: element k dragged to its own start and track (one undo step)."""
+        if not 0<=k<len(self.scenes): return
+        self.record_structure('move in time')
+        scene=self.scenes[k]
+        scene['start']=round(max(0.,float(start)),2); scene['track']=max(0,int(track))
+        self.project_changes.mark_changed()
+        self.status.setText(f'Element {k+1} starts at {scene["start"]:.1f} s on Track {scene["track"]+1}. '
+                            'Right-click it on the timeline to put it back after the element before it.')
+        self.fill_scenes(); self.refresh()
+
+    def reset_element_time(self,k):
+        if not 0<=k<len(self.scenes): return
+        self.record_structure('move in time')
+        self.scenes[k].pop('start',None); self.scenes[k].pop('track',None)
+        self.project_changes.mark_changed()
+        self.status.setText(f'Element {k+1} starts right after the element before it again, on Track 1.')
+        self.fill_scenes(); self.refresh()
+
     def whole_segments(self,width=960,height=540):
         """The whole video for the timeline: elements (with their parts) and camera moves."""
         lengths,joins=self.scene_timeline(width,height)
@@ -2456,7 +2500,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def show_whole_timeline(self,segments,lengths,joins,options):
         """Whole video on the timeline; the edited element keeps its edges, pictures and audio."""
         tl=self.stage_timeline
-        tl.set_scenes(segments,current=self.scene_index)
+        items,moves=self.timeline_items()
+        tl.set_scenes(segments,current=self.scene_index,items=items,moves=moves)
         tl.set_overlays(self.overlays,self.selected_overlay)
         tl.set_audio(self.timeline_audio())
         tl.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() else {'paint','hold','erase'}
@@ -2472,8 +2517,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def element_start(self,k=None):
         """Whole video: the second where element k starts."""
         k=self.scene_index if k is None else k
-        lengths,joins=self.scene_timeline()
-        return sum(lengths[:k])+sum(joins[:k])
+        return self.timeline_layout().items[k].start
 
     def timeline_element_clicked(self,k):
         """Whole video: a click on another element's block works on that element (the
@@ -2503,9 +2547,27 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         over the board, as in the export."""
         import board
         lengths,joins=self.scene_timeline(width,height)
+        lay=self.timeline_layout(width,height)
+        if not lay.sequential:
+            from timeline_model import state_at
+            state=state_at(lay,(self.position if fraction is None else fraction)*lay.total)
+            k=state.current if state.kind=='page' else state.move
+            return self.timeline_frame(state,width,height),k,lengths,joins
         total=sum(lengths)+sum(joins)
         where,k,f=board.locate(lengths,joins,(self.position if fraction is None else fraction)*total)
         return self.whole_frame_at(where,k,f,width,height),k,lengths,joins
+
+    def timeline_frame(self,state,width,height):
+        """Whole video with elements on tracks: one moment (timeline_render)."""
+        import timeline_render
+        world=self.preview_world(width,height)
+        elements=[]
+        for k in range(len(self.scenes)):
+            drawing,options,_,camera=self.preview_scene(k,width,height)
+            elements.append(dict(drawing=drawing,options=options,camera=camera,
+                                 transition=self.scenes[k]['transition'],
+                                 move_seconds=self.scenes[k]['transition_seconds']))
+        return timeline_render.compose(world,self.timeline_layout(width,height),state,elements,width,height)
 
     def whole_frame_at(self,where,k,f,width,height):
         """Whole video: element k at its own fraction f, or the move after element k."""
@@ -3414,8 +3476,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def timeline_length(self):
         from frame_render import timeline_seconds
         if self.all_scenes():
-            lengths,joins=self.scene_timeline()
-            return sum(lengths)+sum(joins)
+            return self.timeline_layout().total
         return timeline_seconds(self.drawing,self.options())
     def change_image_animation(self,*args):
         # Direct painting has to retain its color source; never let the user
@@ -3723,6 +3784,22 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         count=max(1,round(view['length']*self.PREVIEW_FPS))
         if not view['all']:
             return self.segment_fingerprint('one',self.scene_index),index,count,'one',self.scene_index
+        lay=self.timeline_layout()
+        if not lay.sequential:
+            # Elements on tracks: frames are kept per stretch of time in which nothing starts
+            # or ends; the stretch's fingerprint says who is drawn there and since when.
+            import math
+            from timeline_model import interval_at, state_at, describe
+            seconds=max(0,min(count,index))/count*view['length']
+            a,b=interval_at(lay,seconds)
+            first=math.ceil(a/view['length']*count-1e-9)
+            last=max(first,math.ceil(b/view['length']*count-1e-9)-1) if b<view['length']-1e-9 else count
+            state=state_at(lay,(first/count)*view['length'])
+            involved=sorted({k for k,_ in state.active}|set(state.finished)|{state.current})
+            fp=('tl',describe(lay,state,a),tuple(self.element_fingerprint(i) for i in involved),
+                tuple((s['transition'],s['transition_seconds']) for s in self.scenes),
+                repr([s.get('board') for s in self.scenes]),(view.get('width'),view.get('height')))
+            return fp,index-first,last-first+1,'tl',first
         import board
         seconds=max(0,min(count,index))/count*view['length']
         where,k,f=board.locate(view['lengths'],view['joins'],seconds)
@@ -3736,6 +3813,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         f=local/frames
         if where=='one':
             return self.render_view(f,width)
+        if where=='tl':
+            from timeline_model import state_at
+            count=max(1,round(self._view['length']*self.PREVIEW_FPS))
+            seconds=(k+local)/count*self._view['length']
+            height=round(width*self._view['ratio'])
+            return self.timeline_frame(state_at(self.timeline_layout(),seconds),width,height)
         height=round(width*self._view['ratio'])
         return self.whole_frame_at(where,k,f,width,height)
 
@@ -3837,7 +3920,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self.status.setText('Preview could not be updated: '+str(exc)[:220]); return False
             self.show_whole_timeline(segments,lengths,joins,options)
             self.show_hand_pictures(options)                # the Hand tab pictures, also here
-            total=sum(lengths)+sum(joins)
+            total=self.timeline_layout(width,height).total
             self.schedule_render_bar()
             self._view=dict(all=True,length=total,ratio=ratio,token=self._view_token(),
                             lengths=list(lengths),joins=list(joins),width=width,height=height)
@@ -4192,7 +4275,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if len(self.scenes)>1 and self.export_all_scenes.isChecked():
             self._leave_scene()
             scene_list=[dict(state=copy.deepcopy(s['state']),transition=s['transition'],
-                             transition_seconds=s['transition_seconds'],board=s.get('board')) for s in self.scenes]
+                             transition_seconds=s['transition_seconds'],board=s.get('board'),
+                             start=s.get('start'),track=s.get('track') or 0) for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
             self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand)
         else:
