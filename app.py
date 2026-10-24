@@ -498,6 +498,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.canvas.on_double=self.preview_double
         from menus import build_menus
         build_menus(self)
+        # exp.112: a new element starts from these settings (as a fresh StrokeScribe has
+        # them), not from the element that was being edited.
+        from projects import widget_value
+        self._fresh_settings={name:widget_value(getattr(self,name)) for name in self.PROJECT_SETTINGS
+                              if getattr(self,name,None) is not None}
         self.watch_settings()
         self.update_sound_buttons()
         self.latest_version=None
@@ -2123,7 +2128,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if text is None:
                 text,ok=QInputDialog.getMultiLineText(self,'New element: text','Text to write by hand:','')
                 if not ok or not text.strip():return False
-            if self.drawing:(self.add_picture if same_spot else self.add_scene)()
+            if self.drawing:
+                (self.add_picture if same_spot else self.add_scene)()
+                spot=(self.artwork_size.value(),self.picture_x.value(),self.picture_y.value())
+                self.fresh_element_settings()            # exp.112: its own settings, from zero
+                if same_spot:
+                    for control,value in zip((self.artwork_size,self.picture_x,self.picture_y),spot):
+                        control.setValue(value)
             self.scenes[self.scene_index]['name']=text.strip().splitlines()[0][:30]
             self.text.setPlainText(text);self.letter()
         elif how=='copy' and self.drawing:
@@ -3764,6 +3775,30 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def image_paint_method(self):
         mode=REVEAL_MODES[self.reveal_mode.currentIndex()]
         return mode if mode in ('adaptive','zigzag','rows','columns','short_zigzag','painter') else 'adaptive'
+
+    # Kept for a new element: the video's own settings (one for the whole project), your
+    # hands and tools, the project's sound, and how pictures are turned into drawings.
+    KEEP_FOR_NEW_ELEMENT=('showhand','left_handed','paint_left_handed','show_paint_hand','handsize','ax','ay',
+                          'paint_hand','paint_hand_size','move_hand','move_hand_size','move_hand_gx','move_hand_gy',
+                          'eraser','export_layers','export_done_sound','sound_preview','audio_volume','audio_offset',
+                          'image_detail','image_style','image_animation_style','clean_faint')
+
+    def fresh_element_settings(self):
+        """exp.112: a new element starts from the default settings, not a copy of the element
+        before it (its animation, timing, look, transform, move in, exit...)."""
+        from projects import set_widget_value
+        from scenes import GLOBAL_SETTINGS
+        keep=set(GLOBAL_SETTINGS)|set(self.KEEP_FOR_NEW_ELEMENT)
+        for name,value in getattr(self,'_fresh_settings',{}).items():
+            if name in keep: continue
+            widget=getattr(self,name,None)
+            if widget is None: continue
+            widget.blockSignals(True)
+            try: set_widget_value(widget,value)
+            finally: widget.blockSignals(False)
+        for name in ('sync_entrance_switches','update_applicable'):
+            try: getattr(self,name)()
+            except Exception: pass
 
     def settings_state(self):
         from projects import widget_value
