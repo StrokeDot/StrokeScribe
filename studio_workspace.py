@@ -64,7 +64,18 @@ def linked_slider(spin, low, high, scale=1):
 
     slider.valueChanged.connect(from_slider)
     spin.valueChanged.connect(from_spin)
+    spin.setProperty('compact', True)       # exp.111: a small number box beside its slider
     return slider
+
+
+def compact_width(spin):
+    """Just wide enough for the longest number this box can show (and its arrows)."""
+    from PySide6.QtGui import QFont, QFontMetrics
+    font = QFont(spin.font()); font.setPointSizeF(8.5)
+    fm = QFontMetrics(font)
+    texts = [spin.textFromValue(v) for v in (spin.minimum(), spin.maximum())]
+    widest = max(fm.horizontalAdvance(spin.prefix() + t + spin.suffix()) for t in texts)
+    return widest + 6 + 16 + 10
 
 
 def label(text, kind='section'):
@@ -190,6 +201,7 @@ class StageTimeline(QFrame):
     element_placed=Signal(int,float,int)   # whole video: an element dragged to a new start / track
     element_reset=Signal(int)           # whole video: back to "after the element before it", Track 1
     track_toggled=Signal(int,str)       # whole video: a track's 'mute' or 'hide' button
+    move_clicked=Signal(int)            # whole video: a camera move clicked (the move after element k)
     element_flag=Signal(int,str)        # whole video: one element's 'mute' or 'hide' (right-click menu)
 
     stage_source_edit=Signal(str,int)   # Draw/Paint source editor, exact clicked element
@@ -490,6 +502,20 @@ class StageTimeline(QFrame):
 
     def _camera_rect(self):
         return QRectF(self.LEFT,22.+6.,self._width(),self.CAM_H)
+
+    def _move_chip(self, start, secs):
+        """The camera move's chip on the Camera row (at least 22 px wide, so it can be clicked)."""
+        cam=self._camera_rect()
+        x0,x1=self._x(start),self._x(start+secs)
+        if x1-x0<22: mid=(x0+x1)/2; x0,x1=mid-11,mid+11
+        return QRectF(x0+1,cam.top()+1,x1-x0-2,cam.height()-2)
+
+    def _move_at(self, pos):
+        if not self.items or pos.x()<self.LEFT: return None
+        for k,label,start,secs in self.moves or ():
+            if self._move_chip(start,secs).adjusted(0,-2,0,2).contains(pos):
+                return k
+        return None
 
     def _item_rect(self, item, start=None, track=None):
         k,label,s0,secs,t0,parts=item
@@ -922,11 +948,12 @@ class StageTimeline(QFrame):
         p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
         for k,label,start,secs in self.moves or ():
             # A camera move: a camera drawn as a picture (not a word, so no font can cut it).
-            x0,x1=self._x(start),self._x(start+secs)
-            r=QRectF(x0+1,cam.top()+1,max(2.,x1-x0-2),cam.height()-2)
-            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['border_strong'])); p.drawRoundedRect(r,4,4)
-            if r.width()>=16:
-                self._draw_icon(p,'camera',r.center(),c['text'],12)
+            # exp.111: click it to change how and how long the camera moves.
+            r=self._move_chip(start,secs)
+            lit=getattr(self,'_hover',None)==('move',k)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['accent'] if lit else c['border_strong']))
+            p.drawRoundedRect(r,4,4)
+            self._draw_icon(p,'camera',r.center(),'#FFFFFF' if lit else c['text'],12)
         p.restore()
         p.save(); p.setClipRect(QRectF(0,area.top(),self.LEFT,area.height()))
         self._paint_headers(p,c,small)
@@ -1065,6 +1092,10 @@ class StageTimeline(QFrame):
                     if which=='fit': self.zoom=1.; self.view_start=0.; self._update_bars(); self.update()
                     else: self.set_zoom(self.zoom*(1.5 if which=='in' else 1/1.5))
                     event.accept(); return
+        move=self._move_at(pos) if event.button()==Qt.MouseButton.LeftButton else None
+        if move is not None:
+            self.move_clicked.emit(move)
+            event.accept(); return
         if self.items and pos.x()<self.LEFT and not self._tracks_area().contains(pos):
             event.accept(); return
         if self.items and pos.x()<self.LEFT:
@@ -1160,8 +1191,16 @@ class StageTimeline(QFrame):
             self.setToolTip(tip)
             self.setCursor(Qt.CursorShape.PointingHandCursor if hover else Qt.CursorShape.ArrowCursor)
             return super().mouseMoveEvent(event)
+        move=self._move_at(pos)
+        if move is not None:
+            if getattr(self,'_hover',None)!=('move',move):
+                self._hover=('move',move); self.update()
+            label,start,secs=next((m[1],m[2],m[3]) for m in self.moves if m[0]==move)
+            self.setToolTip(f'Camera: {label}, {secs:.1f} s. Click to change it.')
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            return super().mouseMoveEvent(event)
         if getattr(self,'_hover',None) is not None:
-            self._hover=None; self.update()
+            self._hover=None; self.update(); self.setToolTip('')
         # Hover: show what can be grabbed.
         item,part=self._overlay_at(pos)
         if item is not None:
@@ -1881,6 +1920,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     card_text.addWidget(w.edit_handwriting_button)
     card_l.addLayout(card_text)
     src_l.addWidget(w.source_card)
+    # exp.111: one button back to the picture as it came in.
+    w.restore_original_button=QPushButton('↺  Restore original')
+    w.restore_original_button.setObjectName('subtle')
+    w.restore_original_button.setToolTip('Back to the picture as it came in: size, position, blend, opacity, '
+                                         'ink on the page, colour and light. Ctrl+Z undoes it.')
+    w.restore_original_button.clicked.connect(lambda checked=False: w.restore_original_look())
+    src_l.addWidget(w.restore_original_button)
     # Image panel sections (exp.100), each closed until you open it, like Filmora:
     # Transform, Appearance, Ink on the page, Colour, Light, Original image, Image to drawing.
     from ui_sections import Section
@@ -2464,9 +2510,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     a2.addRow('Stroke spacing',w.stroke_spacing)
     w.color_hold=w.number(0,30,.6,.1);a2.addRow('Hold (s)',w.color_hold)
     # "Goes out" on / off: a switch for the Goes out list (Off, or the last way chosen).
-    w.erase_on=QCheckBox('Goes out at the end',animation);w.erase_on.hide()
+    w.erase_on=QCheckBox('Exit',animation);w.erase_on.hide()
     w.erase_on.setToolTip('The element goes away at the end (eraser or an effect).')
-    w.section_out=Section('Goes out at the end',switch=w.erase_on,
+    w.section_out=Section('Exit (at the end)',switch=w.erase_on,
                           tip='How the element goes away at the end: an eraser, or an effect.')
     animation_l.addWidget(w.section_out)
     a3=form_layout();w.section_out.body.addLayout(a3)
@@ -2485,6 +2531,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.eraser.setToolTip('What is shown rubbing: the built-in eraser, or the same hand as for drawing.')
     a3.addRow('Eraser shown',w.eraser)
     animation_l.addWidget(w.lines_box)
+    # exp.111: the order of the work: 1 Drawing, 2 Colour & painting, 3 Line order,
+    # then Move in, and Exit (at the end) last.
+    for widget in (w.section_drawing,w.section_painting,w.lines_box,w.section_move_in,w.section_out):
+        animation_l.removeWidget(widget)
+    for widget in (w.section_drawing,w.section_painting,w.lines_box,w.section_move_in,w.section_out):
+        animation_l.addWidget(widget)
     animation_l.addStretch(1)
     tabs.addTab(scroll_view(animation),'Animation')
 
@@ -2950,6 +3002,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.overlay_action.connect(lambda oid,action: w.overlay_action(oid,action))
     w.stage_timeline.overlay_dropped.connect(lambda path,seconds: w.add_overlay_picture(path,at=seconds))
     w.stage_timeline.element_clicked.connect(lambda k: w.timeline_element_clicked(k))
+    w.stage_timeline.move_clicked.connect(lambda k: w.edit_camera_move(k))
     w.stage_timeline.element_edit.connect(lambda k: w.edit_element(k))
     w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))
     w.stage_timeline.element_reset.connect(lambda k: w.reset_element_time(k))
@@ -3103,10 +3156,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # Position X and Y have their own rows now (experimental.81): they fill the
     # row like every other field, keeping the explicit 84px minimum.
     for field in (w.picture_x,w.picture_y):
-        policy=field.sizePolicy()
-        policy.setHorizontalPolicy(QSizePolicy.Policy.Expanding)
-        field.setSizePolicy(policy)
-        field.setMinimumWidth(84)
+        field.setMinimumWidth(0)               # exp.111: compact, sized below
     # Ink on the page / Colour / Light: each slider row (slider, number, reset) is too wide
     # to sit beside its label in the narrowest Image panel (exp.100: 287 px for 260).
     # The label goes above the row, and the number box is a little narrower.
@@ -3121,6 +3171,16 @@ def build_workspace(w, Canvas, BRAND_ICON):
                     heading.setMinimumWidth(0); heading.setMaximumWidth(16777215)
         for spin in section.findChildren(_Spin):
             spin.setMinimumWidth(64)
+    # exp.111: the number boxes beside sliders are small (more room for the slider), and
+    # plain number boxes do not stretch across the whole panel.
+    for spin in w.findChildren(_Spin):
+        if spin.property('compact'):
+            spin.setMinimumWidth(0); spin.setMaximumWidth(16777215)
+            spin.setFixedWidth(compact_width(spin))
+            policy=spin.sizePolicy(); policy.setHorizontalPolicy(QSizePolicy.Policy.Fixed)
+            spin.setSizePolicy(policy)
+        elif spin.window() is w:
+            spin.setMaximumWidth(max(spin.minimumWidth(),132))
     # In a QScrollArea with widgetResizable=True, a Preferred-size panel
     # still reports its full QVBoxLayout minimumSizeHint as a hard width.
     # On Linux this stayed at 269px when the Inspector viewport was 262px.
@@ -3278,7 +3338,6 @@ def build_look_sections(w):
         reset.clicked.connect(lambda checked=False: spin.setValue(default))
         box=QWidget();box.setMinimumWidth(0)
         line=QHBoxLayout(box);line.setContentsMargins(0,0,0,0);line.setSpacing(6)
-        spin.setMaximumWidth(78)
         line.addWidget(slider,1);line.addWidget(spin);line.addWidget(reset)
         form.addRow(text,box)
         return spin
