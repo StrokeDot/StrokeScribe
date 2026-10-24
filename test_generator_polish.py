@@ -1,0 +1,239 @@
+"""Approved .62 follow-up: visible UI behavior and save-before-install safety."""
+import os
+import tempfile
+import time
+import unittest
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+os.environ.setdefault('QT_QPA_PLATFORM','offscreen')
+from PySide6.QtCore import Qt, QEvent, QAbstractAnimation
+from PySide6.QtGui import QPixmap, QColor
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QMessageBox
+import test_image_generator_updates as drawer_fixtures
+from model_updates_live import ModelState
+from image_generator_updates import UpdatePanel
+from update_dialog import UpdateDialog
+APP=QApplication.instance() or QApplication([])
+
+def close_window_fixture(fixture):
+    # Window registers a strong application-log callback. Unregister only
+    # this disposable fixture before destroying Qt children with APP alive.
+    import applog
+    fixture.tearDown()
+    applog._on_error[:]=[callback for callback in applog._on_error
+                        if getattr(callback,'__self__',None) is not fixture.w]
+    destroyed=[]
+    fixture.w.destroyed.connect(lambda:destroyed.append(True))
+    fixture.w.deleteLater()
+    APP.sendPostedEvents(None,QEvent.Type.DeferredDelete)
+    APP.processEvents()
+    if not destroyed:
+        raise AssertionError('Disposable project window was not destroyed')
+
+class SmoothGeneratorTests(unittest.TestCase):
+    setUp=drawer_fixtures.DrawerTests.setUp
+    cleanup=drawer_fixtures.DrawerTests.cleanup
+    wait_scan=drawer_fixtures.DrawerTests.wait_scan
+
+    def test_panel_reverses_without_jump_and_x_finishes_closing(self):
+        d=self.dialog
+        d.resize(1500,900);d.show();APP.processEvents()
+        d.open_updates()
+        self.assertEqual(d.drawer_motion.state(),QAbstractAnimation.State.Running)
+        d.drawer_motion.setCurrentTime(85)
+        partial=d.updates_panel.width()
+        self.assertGreater(partial,0)
+        self.assertLess(partial,400,'Panel should not jump directly to its final width')
+        d.close_updates()
+        self.assertEqual(d.updates_panel.width(),partial,'Closing must continue from the visible width')
+        self.assertEqual(d.drawer_motion.state(),QAbstractAnimation.State.Running)
+        d.drawer_motion.setCurrentTime(35)
+        self.assertTrue(d.updates_panel.isVisible(),'Closing needs a visible transition')
+        closing_width=d.updates_panel.width()
+        d.open_updates()
+        self.assertEqual(d.updates_panel.width(),closing_width,'Reopening must not reset the width')
+        self.assertEqual(d.drawer_motion.state(),QAbstractAnimation.State.Running)
+        d.drawer_motion.setCurrentTime(d.drawer_motion.duration())
+        self.wait_scan()
+        self.assertEqual(d.updates_panel.width(),400)
+        d.updates_panel.close_button.click()
+        d.drawer_motion.setCurrentTime(d.drawer_motion.duration())
+        self.assertFalse(d.updates_panel.isVisible())
+        self.assertFalse(d.check_updates_button.isChecked())
+
+    def test_close_waits_for_slow_ai_worker_cancellation(self):
+        # A slow inference/download thread must outlive neither its dialog nor
+        # its Qt children. Do not block the UI with a three-second wait.
+        d = self.dialog
+        d.show()
+        APP.processEvents()
+        worker = MagicMock()
+        worker.isRunning.return_value = True
+        d.worker = worker
+        d.close()
+        APP.processEvents()
+        worker.cancel.assert_called_once()
+        worker.wait.assert_not_called()
+        self.assertTrue(d.isVisible(), 'Closing must be rejected while AI still runs')
+        self.assertIn('Stopping', d.status.text())
+        worker.isRunning.return_value = False
+        d.close()
+        APP.processEvents()
+        self.assertFalse(d.isVisible(), 'Closing should work after cancellation finishes')
+
+    def test_escape_does_not_dismiss_running_ai_or_model_workers(self):
+        d = self.dialog
+        d.show()
+        APP.processEvents()
+        ai_worker = MagicMock()
+        ai_worker.isRunning.return_value = True
+        d.worker = ai_worker
+        d.reject()  # Same route as Escape when the drawer is closed.
+        ai_worker.cancel.assert_called_once()
+        self.assertTrue(d.isVisible(), 'Escape must not dismiss active AI generation')
+        ai_worker.isRunning.return_value = False
+
+        model_worker = MagicMock()
+        model_worker.isRunning.return_value = True
+        d.live_update_worker = model_worker
+        d.reject()
+        model_worker.cancel.assert_called_once()
+        self.assertTrue(d.isVisible(), 'Escape must not dismiss active model updates')
+        model_worker.isRunning.return_value = False
+        d.reject()
+        APP.processEvents()
+        self.assertFalse(d.isVisible())
+
+    def test_model_thread_reference_waits_for_native_cleanup(self):
+        # finished() can arrive before QThread.wait() reports that all native
+        # thread-local cleanup completed. Retain the worker until it is safe.
+        d = self.dialog
+        w = MagicMock()
+        w.wait.side_effect = (False, True)
+        d.live_update_worker = w
+        with patch('create_image_dialog.QTimer.singleShot') as retry:
+            d.on_live_model_finished()
+            self.assertIs(d.live_update_worker, w)
+            retry.assert_called_once()
+            d.on_live_model_finished()
+        self.assertIsNone(d.live_update_worker)
+        self.assertEqual(w.wait.call_count, 2)
+
+    def test_new_model_check_waits_for_previous_native_cleanup(self):
+        d = self.dialog
+        previous = MagicMock()
+        previous.isRunning.return_value = False
+        previous.wait.return_value = False
+        d.live_update_worker = previous
+        try:
+            # No new QThread should even be constructed while the last one is
+            # between isRunning() becoming false and native thread teardown.
+            with patch('create_image_dialog.ModelUpdateWorker') as construct:
+                d.check_live_model_updates()
+                construct.assert_not_called()
+            another = MagicMock()
+            d._run_live_model_worker(another, 'scan')
+            another.start.assert_not_called()
+            self.assertIs(d.live_update_worker, previous)
+        finally:
+            d.live_update_worker = None
+
+    def test_placeholder_has_icon_heading_and_explanation_after_reset(self):
+        d=self.dialog
+        d.show();d.show_result()
+        text=' '.join(x.text() for x in d.preview.findChildren(QLabel))
+        self.assertIn('The result appears here.',text)
+        self.assertIn('Generate an image from your prompt',text)
+        self.assertTrue(d.preview.findChild(QLabel,'resultPlaceholderIcon') is not None)
+
+    def test_busy_motion_updates_at_display_rate_without_inventing_progress(self):
+        d=self.dialog
+        self.assertLessEqual(d.work_timer.interval(),17)
+        d.on_progress(70,'Creating… 70%')
+        self.assertEqual(d.progress_motion.state(),QAbstractAnimation.State.Running)
+        d.progress_motion.setCurrentTime(70)
+        self.assertGreater(d.progress.value(),0)
+        self.assertLess(d.progress.value(),70,'Progress should animate toward the actual report')
+        d.progress_motion.setCurrentTime(d.progress_motion.duration())
+        self.assertEqual(d.progress.value(),70)
+        self.assertEqual(d.work['percent'],70)
+        d.on_progress(-1,'Loading the model…')
+        self.assertEqual(d.progress.maximum(),0)
+
+    def test_finished_result_cannot_be_overwritten_by_pending_progress(self):
+        d=self.dialog
+        image=Path(self.tmp.name)/'made.png'
+        pix=QPixmap(120,90);pix.fill(QColor('#7954dc'));pix.save(str(image))
+        d.on_progress(70,'Creating… 70%')
+        with patch('create_image_dialog.keep_in_library',return_value=None):
+            d.on_result(str(image))
+        self.assertEqual(d.progress.value(),100)
+        QTest.qWait(320)
+        self.assertEqual(d.progress.value(),100,'Completion must stop stale progress motion')
+
+class PlainStatusTests(unittest.TestCase):
+    def test_unknown_check_is_not_no_updates_and_optional_is_not_upgrade(self):
+        states=[
+            ModelState('one','Installed model','Publisher','Image generation','bf16','BF16',
+                       'unverified','Connection unavailable',True),
+            ModelState('two','Large model','Publisher','Image generation','q4','GGUF Q4',
+                       'not_installed','Not installed',False),
+        ]
+        panel=UpdatePanel(items=states)
+        try:
+            text=' '.join(x.text() for x in panel.findChildren(QLabel))
+            self.assertIn('Couldn’t check for updates',text)
+            self.assertIn('Your installed model is unchanged',text)
+            self.assertIn('Optional model',text)
+            self.assertIn('not a required update',text)
+            self.assertNotIn('Publisher check unavailable',text)
+        finally:panel.close()
+
+class UpdateBeforeSaveTests(unittest.TestCase):
+    def test_online_and_zip_update_cancel_before_starting_any_worker(self):
+        class Parent(QDialog):
+            def confirm_before_app_update(self): return False
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,{'STROKESCRIBE_CONFIG_DIR':tmp}):
+            parent=Parent();d=UpdateDialog(parent,latest='0.5.3-experimental.999',auto_check=False)
+            try:
+                with patch.object(d,'_start') as start,patch('updater.zip_version',return_value='0.5.3-experimental.999'):
+                    d.update_online()
+                    d.update_from_zip('sample.zip')
+                    self.assertEqual(start.call_count,0,'Cancel must prevent all installation workers')
+            finally:d.close();parent.close()
+
+    def test_save_cancel_and_failed_save_block_update_and_success_marks_clean(self):
+        from test_project_lifecycle import WindowLifecycleTests
+        fixture=WindowLifecycleTests()
+        fixture.setUp()
+        w=fixture.w
+        try:
+            self.assertTrue(callable(getattr(w,'confirm_before_app_update',None)),
+                            'Window must offer Save before installing, not only before restarting')
+            w.duration.setValue(w.duration.value()+.5)
+            for choice in (QMessageBox.StandardButton.Cancel,QMessageBox.StandardButton.Save):
+                with patch.object(QMessageBox,'exec',return_value=int(choice)),patch.object(w,'save_project',return_value=None):
+                    self.assertFalse(w.confirm_before_app_update())
+            with patch.object(QMessageBox,'exec',return_value=int(QMessageBox.StandardButton.Save)),\
+                 patch.object(w,'project_path',str(Path(fixture.tmp.name)/'saved.strokescribe'),create=True):
+                self.assertTrue(w.confirm_before_app_update())
+            self.assertFalse(w.has_unsaved_changes())
+        finally:close_window_fixture(fixture)
+
+    def test_banner_cancel_does_not_start_update_or_discard_dirty_project(self):
+        from test_project_lifecycle import WindowLifecycleTests
+        fixture=WindowLifecycleTests();fixture.setUp()
+        w=fixture.w
+        try:
+            w.duration.setValue(w.duration.value()+.5)
+            w.update_found('0.5.3-experimental.999')
+            with patch.object(QMessageBox,'exec',return_value=int(QMessageBox.StandardButton.Cancel)),\
+                 patch('update_dialog.UpdateWorker') as worker:
+                w.banner_update_clicked()
+                worker.assert_not_called()
+            self.assertTrue(w.has_unsaved_changes())
+            self.assertTrue(w.isVisible())
+        finally:close_window_fixture(fixture)
+
+if __name__=='__main__':unittest.main(verbosity=2)

@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   build-versioned-zip:
+    if: ${{ github.ref != 'refs/heads/fix/svg-guide-coverage-experimental12' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out prototype source
@@ -49,3 +50,20 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "StrokeScribe Prototype v${VERSION}" \
             --notes "Official StrokeScribe Prototype v${VERSION} for Windows. Includes image reconstruction, adaptive painting, StrokeScribe Studio and compact transparent VP9 WebM export. Extract the ZIP, run Setup.cmd once, then Launch-headset.cmd or Launch.cmd. See BUILD_INFO.txt for the precise GitHub revision. This is editable Python source, not a standalone EXE. The original v0.5.0 and v0.5.1 releases remain available."
+
+  approved-experimental-installer:
+    # This workflow is registered on main, so its manual Run workflow control
+    # can select the experimental branch. The installer workflow remains the
+    # only authority that tests, builds and publishes an installer.
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/fix/svg-guide-coverage-experimental12' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Start manually approved installer validation and publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_REF: ${{ github.ref_name }}
+        run: gh workflow run windows-installer.yml --ref "$RELEASE_REF" -f publish=true

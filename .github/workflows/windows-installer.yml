@@ -1,0 +1,193 @@
+name: Windows installer (tested, manually approved)
+# Release path only: validates the full suite on Linux and Windows for the
+# exact commit, builds the installer, and publishes when approved. Pull
+# requests are covered by Quick checks and the Full test suite instead.
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish tested installer to GitHub Releases? (approved branches only)'
+        type: boolean
+        required: true
+        default: false
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions:
+  contents: read
+jobs:
+  validate-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    outputs:
+      tested_sha: ${{ steps.proof.outputs.sha }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 ffmpeg
+      - run: |
+          python -m pip install --only-binary=:all: -r requirements.txt
+      - name: Verify syntax
+        run: python -m compileall -q .
+      - name: Full Linux regression suite
+        run: python -X faulthandler -c "import applog,runpy,logging,sys; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_prototype test_adaptive test_image_source test_webm test_studio test_workspace_layout test_ui_control_regression test_source_mode_consistency test_inspector_scene_switch test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_live_model_updates test_image_generator_updates test_generator_polish test_artwork_assets test_artwork_workflow test_artwork_pairing test_artwork_svg test_artwork_rendering test_blend_modes test_artwork_compositing test_pre_ui_combined test_select_tests test_element_kinds test_dual_sidebar test_segment_cache test_move_in test_adaptive_parts test_scene_colors test_paint_picker_hands test_painter_mode test_ai_parts test_line_order test_undo_everywhere test_grey_out test_polish test_prerender_window test_picture_look test_order_circles test_tracks test_home test_ai_resources test_ai_diagnostics test_ai_resource_events test_release_policy
+      - name: Record exact validated commit
+        id: proof
+        shell: bash
+        run: echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+  validate-windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    outputs:
+      tested_sha: ${{ steps.proof.outputs.sha }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - run: python -m pip install --upgrade pip
+      - run: |
+          python -m pip install --only-binary=:all: -r requirements.txt
+      - name: Install FFmpeg and FFprobe if missing, then require both
+        shell: pwsh
+        run: |
+          if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue) -or
+              !(Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            # Chocolatey's public feed sometimes returns 503/504 on Actions.
+            # Retry, then obtain a complete FFmpeg + FFprobe Windows build.
+            for ($attempt = 1; $attempt -le 2; $attempt++) {
+              choco install ffmpeg -y --no-progress
+              if ((Get-Command ffmpeg -ErrorAction SilentlyContinue) -and
+                  (Get-Command ffprobe -ErrorAction SilentlyContinue)) { break }
+              if ($attempt -lt 2) { Start-Sleep -Seconds 8 }
+            }
+            if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue) -or
+                !(Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+              Write-Warning "Chocolatey unavailable. Fetching Windows FFmpeg build from Gyan."
+              $zip = Join-Path $env:RUNNER_TEMP 'strokescribe-ffmpeg.zip'
+              $folder = Join-Path $env:RUNNER_TEMP 'strokescribe-ffmpeg'
+              Invoke-WebRequest 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile $zip
+              Expand-Archive -LiteralPath $zip -DestinationPath $folder -Force
+              $probe = Get-ChildItem -Path $folder -Recurse -Filter ffprobe.exe |
+                Select-Object -First 1
+              if ($null -eq $probe -or
+                  !(Test-Path (Join-Path $probe.DirectoryName 'ffmpeg.exe'))) {
+                throw "Trusted FFmpeg archive did not contain both ffmpeg.exe and ffprobe.exe."
+              }
+              $bin = $probe.DirectoryName
+              $env:PATH = "$bin;$env:PATH"
+              Add-Content -Path $env:GITHUB_PATH -Value $bin
+            }
+          }
+          if (!(Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            Write-Error "FFmpeg is required: refusing to skip the end-to-end video tests."
+            exit 1
+          }
+          if (!(Get-Command ffprobe -ErrorAction SilentlyContinue)) {
+            Write-Error "FFprobe is required: refusing to skip the end-to-end video tests."
+            exit 1
+          }
+          ffmpeg -version
+          ffprobe -version
+      - name: Verify syntax
+        run: python -m compileall -q .
+      - name: Full Windows regression suite
+        run: python -X faulthandler -c "import applog,runpy,logging,sys; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_prototype test_adaptive test_image_source test_webm test_studio test_workspace_layout test_ui_control_regression test_source_mode_consistency test_inspector_scene_switch test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_live_model_updates test_image_generator_updates test_generator_polish test_artwork_assets test_artwork_workflow test_artwork_pairing test_artwork_svg test_artwork_rendering test_blend_modes test_artwork_compositing test_pre_ui_combined test_select_tests test_element_kinds test_dual_sidebar test_segment_cache test_move_in test_adaptive_parts test_scene_colors test_paint_picker_hands test_painter_mode test_ai_parts test_line_order test_undo_everywhere test_grey_out test_polish test_prerender_window test_picture_look test_order_circles test_tracks test_home test_ai_resources test_ai_diagnostics test_ai_resource_events test_release_policy
+      - name: Record exact validated commit
+        id: proof
+        shell: bash
+        run: echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+  installer:
+    needs: [validate-linux, validate-windows]
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Version
+        shell: bash
+        run: echo "VERSION=$(python -c 'import version; print(version.APP_VERSION)')" >> "$GITHUB_ENV"
+      - name: App files and private Python with packages
+        run: python tools/build_windows_installer.py
+      - name: Build the installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) { choco install innosetup -y --no-progress; }
+          & $iscc "/DAppVersion=$env:VERSION" installer\StrokeScribe.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem dist
+      - name: Install, start and uninstall it (like a user would)
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\StrokeScribe-Setup-*.exe | Select-Object -First 1
+          $dir = "$env:RUNNER_TEMP\StrokeScribeTest"
+          Start-Process $setup.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=$dir" -Wait
+          if (!(Test-Path "$dir\runtime\pythonw.exe")) { Write-Error "not installed"; exit 1 }
+          if (!(Test-Path "$dir\startup.py")) { Write-Error "app files missing"; exit 1 }
+          New-Item -ItemType Directory -Force "$dir\test-output" | Out-Null
+          $env:STROKESCRIBE_STARTUP_TEST = "1"
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $p = Start-Process "$dir\runtime\python.exe" -ArgumentList "`"$dir\startup.py`"" -WorkingDirectory $dir -PassThru -Wait
+          Get-Content "$dir\startup.log"
+          if (!(Select-String -Path "$dir\startup.log" -Pattern "Ready:" -Quiet)) { Write-Error "did not start"; exit 1 }
+          & "$dir\runtime\python.exe" -c "import sys; sys.path.insert(0, r'$dir'); import updater, websocket, ai_resources, ai_activity, ai_diagnostics; print('updater sees', updater.current_version(r'$dir'))"
+          Start-Process "$dir\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES" -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path "$dir\runtime") { Write-Error "uninstall left files"; exit 1 }
+          Write-Output "Installed, started and uninstalled OK"
+      - name: Keep tested Windows installer as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StrokeScribe-validated-installer
+          path: dist/StrokeScribe-Setup-*.exe
+          if-no-files-found: error
+  publish:
+    needs: [validate-linux, validate-windows, installer]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish == true && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/fix/svg-guide-coverage-experimental12') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: StrokeScribe-validated-installer
+          path: dist
+      - name: Verify explicit authorization and exact tested commit
+        shell: bash
+        env:
+          TESTED_LINUX: ${{ needs.validate-linux.outputs.tested_sha }}
+          TESTED_WINDOWS: ${{ needs.validate-windows.outputs.tested_sha }}
+          PUBLISH_REQUESTED: ${{ inputs.publish }}
+        run: |
+          python tools/release_policy.py --event "$GITHUB_EVENT_NAME" --ref "$GITHUB_REF" \
+            --publish "$PUBLISH_REQUESTED" --sha "$GITHUB_SHA" \
+            --linux-sha "$TESTED_LINUX" --windows-sha "$TESTED_WINDOWS"
+      - name: Publish a new, immutable version tag (never overwrite an existing release)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(python -c 'import version; print(version.APP_VERSION)')
+          tag="installer-${version}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; refusing to overwrite a previously published build."
+            exit 1
+          fi
+          file=$(find dist -type f -name 'StrokeScribe-Setup-*.exe' | head -1)
+          test -n "$file"
+          gh release create "$tag" "$file" --prerelease --target "$GITHUB_SHA" \
+            --title "StrokeScribe ${version} (Windows installer)" \
+            --notes "Verified Windows installer built from $GITHUB_SHA after Linux and Windows tests passed."

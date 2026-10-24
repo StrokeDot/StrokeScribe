@@ -19,7 +19,8 @@ def original_frame(drawing, image, width, height):
     frame.fill(Qt.GlobalColor.transparent)
     painter=QPainter(frame)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    painter.drawImage(artwork_rect(drawing,image,width,height),image)
+    from source_render import draw_source
+    draw_source(painter,artwork_rect(drawing,image,width,height),image)
     painter.end()
     return frame
 
@@ -75,10 +76,11 @@ def _contour_erase_mask(drawing,image,width,height,rect,progress,plan):
 
 
 def paint_frame(drawing,image,width,height,progress,thickness,brush_width,
-                stroke_spacing,painting_hand,hand_scale,anchor,show_outlines):
+                stroke_spacing,painting_hand,hand_scale,anchor,show_outlines,display_image=None):
     """One uninterrupted painting phase: colors appear and guides retire together."""
     from color_reveal import artwork_rect, draw_hand
     from engine import render
+    visible=display_image if display_image is not None else image
     progress=max(0.,min(1.,float(progress)))
     if progress<=0:
         if show_outlines:
@@ -88,11 +90,11 @@ def paint_frame(drawing,image,width,height,progress,thickness,brush_width,
         return empty
     # Plan.mask(.98) is complete; no extra line-erasing time is added.
     if progress>=.98:
-        return original_frame(drawing,image,width,height)
+        return original_frame(drawing,visible,width,height)
     rect=artwork_rect(drawing,image,width,height)
     mask,tip=adaptive_paint_mask(drawing,image,width,height,rect,progress,
                                  brush_width,stroke_spacing)
-    result=original_frame(drawing,image,width,height)
+    result=original_frame(drawing,visible,width,height)
     p=QPainter(result)
     p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
     p.drawImage(0,0,mask)

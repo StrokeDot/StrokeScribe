@@ -1,12 +1,22 @@
-name: Image source reconstruction review
+name: Full test suite (image source review)
+# The whole suite on Linux and Windows. Runs by hand, or on a pull request
+# with the `full-tests` label (added before merging). Every push still gets
+# the Quick checks workflow.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 permissions:
   contents: read
+  pull-requests: write
 jobs:
   test-and-package:
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'full-tests') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 110
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -17,10 +27,42 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 ffmpeg
       - run: pip install -r requirements.txt
       - run: python -m compileall -q .
-      - run: python -m unittest -v test_prototype test_adaptive test_image_source test_webm test_studio test_ai_redraw test_font_features test_reported_fixes test_ollama_reliability test_ai_performance test_ai_profiles test_contour_transitions test_image_animation
-      - run: python benchmark_ai_profiles.py
+      - name: Full test suite
+        id: tests
+        continue-on-error: true
+        env:
+          STROKESCRIBE_TEST_TOKEN: ${{ github.token }}
+          STROKESCRIBE_TEST_BRANCH: ${{ github.head_ref || github.ref_name }}
+        shell: bash
+        run: |
+          set -o pipefail
+          python -X faulthandler -c "import applog,runpy,logging,sys; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_prototype test_adaptive test_image_source test_webm test_studio test_workspace_layout test_ui_control_regression test_source_mode_consistency test_inspector_scene_switch test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_live_model_updates test_image_generator_updates test_generator_polish test_artwork_assets test_artwork_workflow test_artwork_pairing test_artwork_svg test_artwork_rendering test_blend_modes test_artwork_compositing test_pre_ui_combined test_select_tests test_element_kinds test_dual_sidebar test_segment_cache test_move_in test_adaptive_parts test_scene_colors test_paint_picker_hands test_painter_mode test_ai_parts test_line_order test_undo_everywhere test_grey_out test_polish test_prerender_window test_picture_look test_order_circles test_tracks test_home 2>&1 | tee full-tests.log
+      - name: Report failing test output to pull request
+        if: steps.tests.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo '### Full test suite failures (image source workflow)'
+            echo 'Failures and errors only:'
+            echo '```text'
+            if grep -qE '^(FAIL|ERROR):' full-tests.log; then
+              awk '/^(FAIL|ERROR):/{p=1} p' full-tests.log | grep -v 'DeprecationWarning' | head -n 160 || true
+            else
+              echo 'No unittest summary (the test process may have crashed). Last 60 lines:'
+              tail -n 60 full-tests.log || true
+            fi
+            echo '```'
+          } > diagnostic-comment.md
+          gh pr comment "$PR_NUMBER" --body-file diagnostic-comment.md
+      - name: Stop workflow if tests failed
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
       - run: python render_image_samples.py
-      - run: python render_studio_preview.py
+      - name: Generate Studio visual previews with bounded runtime
+        run: timeout --signal=TERM --kill-after=20s 1200s python -u render_studio_preview.py
       - run: python render_contour_samples.py
       - run: python package_prototype.py
       - uses: actions/upload-artifact@v4
@@ -33,9 +75,12 @@ jobs:
             dist/*.zip
 
   windows-python-314:
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'full-tests') }}
     name: Windows Python 3.14 installation + tests
     runs-on: windows-latest
-    timeout-minutes: 25
+    permissions:
+      contents: write
+    timeout-minutes: 110
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
@@ -50,4 +95,26 @@ jobs:
           python -m pip install --only-binary=:all: -r requirements.txt
           python -c "import sys, numpy, cv2; from PySide6.QtWidgets import QApplication; print(sys.version, numpy.__version__, cv2.__version__)"
       - name: Test image reconstruction and existing modes on Windows
-        run: python -m unittest -v test_prototype test_adaptive test_image_source test_webm test_studio test_ai_redraw test_font_features test_reported_fixes test_ollama_reliability test_ai_performance test_ai_profiles test_contour_transitions test_image_animation
+        id: wintests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python -X faulthandler -c "import applog,runpy,logging,sys; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_prototype test_adaptive test_image_source test_webm test_studio test_workspace_layout test_ui_control_regression test_source_mode_consistency test_inspector_scene_switch test_font_features test_reported_fixes test_contour_transitions test_image_animation test_svg_guide_cleanup test_setup test_lineart test_svg_export test_artist test_zigzag test_ui_theme test_ai test_projects_sound_batch test_library test_eraser test_media test_editing test_tools test_speed test_scenes test_updater test_menus test_png_cleanup test_timeline_autosave test_pages_playback test_board test_overlays test_fixes_52 test_part_a test_part_b test_one_timeline test_part_c test_part_d test_part_e test_stability_baseline test_project_lifecycle test_archive_safety test_update_transaction test_updater_ui_safety test_ai_install_safety test_preview_environment test_render_pipeline_smoke test_project_leave_decisions test_live_model_updates test_image_generator_updates test_generator_polish test_artwork_assets test_artwork_workflow test_artwork_pairing test_artwork_svg test_artwork_rendering test_blend_modes test_artwork_compositing test_pre_ui_combined test_select_tests test_element_kinds test_dual_sidebar test_segment_cache test_move_in test_adaptive_parts test_scene_colors test_paint_picker_hands test_painter_mode test_ai_parts test_line_order test_undo_everywhere test_grey_out test_polish test_prerender_window test_picture_look test_order_circles test_tracks test_home 2>&1 | tee win-tests.log
+      - name: Publish the Windows test log (branch win-test-log)
+        if: always() && steps.wintests.outcome != 'skipped'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ../winlog && cp win-tests.log ../winlog/win-tests.log
+          cd ../winlog
+          git init -q && git checkout -q -b win-test-log
+          git config user.name ci && git config user.email ci@example.invalid
+          git add win-tests.log && git commit -qm "Windows tests for ${{ github.sha }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" win-test-log
+      - name: Stop if Windows tests failed
+        if: steps.wintests.outcome == 'failure'
+        shell: bash
+        run: exit 1
