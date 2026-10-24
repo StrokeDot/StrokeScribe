@@ -220,9 +220,87 @@ def _fit(audio, samples):
     return np.vstack([audio, np.zeros((samples - len(audio), audio.shape[1]), np.int16)])
 
 
+def on_tracks(scenes):
+    """True when an element has its own start or a track above Track 1 (timeline_model)."""
+    return any(s.get('start') is not None or (s.get('track') or 0) for s in scenes)
+
+
+def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False):
+    """The whole video when elements are on tracks: every frame is one moment of the
+    timeline (timeline_render.compose), at the export size. The sounds of each element
+    start with it; voiceovers too."""
+    import board
+    import timeline_render
+    from export_job import encode_outputs, formats_from_settings
+    from frame_render import camera_for
+    from sound import RATE, soundtrack, write_wav
+    from timeline_model import layout, state_at
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=False)
+    overrides = {k: settings[k] for k in GLOBAL_SETTINGS if k in settings}
+    prepared = plan(scenes, hand, overrides)
+    fps = int(prepared[0]['options']['fps'])
+    width, height = prepared[0]['options']['width'], prepared[0]['options']['height']
+    aspect = height / width
+    world = board.World([dict(drawing=p['drawing'], options=p['options'], frame=p['frame'], key=('scene', k))
+                         for k, p in enumerate(prepared)], aspect)
+    lay = layout([p['seconds'] for p in prepared], [p['transition_seconds'] for p in prepared],
+                 [s.get('start') for s in scenes], [s.get('track') or 0 for s in scenes])
+    elements = []
+    for p in prepared:
+        options = {k: v for k, v in p['options'].items() if k not in ('audio', 'fps', 'workers')}
+        # compose_frame takes the hand size relative to the scaled artwork (like the preview).
+        options['hand_scale'] = float(options.get('hand_scale', .18)) / max(.25, float(options.get('artwork_scale', 1.)))
+        zoom = float(options.get('camera_zoom', 1.) or 1.)
+        camera = camera_for(p['drawing'], options, zoom) if zoom > 1.0001 else None
+        elements.append(dict(drawing=p['drawing'], options=options, camera=camera,
+                             transition=p['transition'], move_seconds=p['move_seconds']))
+    total = max(1, round(lay.total * fps))
+    for i in range(total):
+        image = timeline_render.compose(world, lay, state_at(lay, i / fps), elements, width, height)
+        if not image.save(str(folder / f'frame_{i:06d}.png'), 'PNG', 80):
+            raise OSError('Unable to save PNG frame.')
+        progress(i + 1, total)
+        if interrupted():
+            raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
+    seconds = total / fps
+    (folder / 'sequence.json').write_text(json.dumps(dict(
+        width=width, height=height, fps=fps, frames=total, duration=seconds,
+        scenes=[dict(first_frame=round(it.start * fps), frames=round(it.length * fps), track=it.track,
+                     board_frame=dict(zip(('cx', 'cy', 'w'), prepared[it.k]['frame'])))
+                for it in lay.items]), indent=2))
+    formats = formats_from_settings(settings)
+    effects = formats['sound_volume']
+    audio = None
+    if effects is not None or any(p['options'].get('audio') for p in prepared):
+        progress(0, 0)
+        track = np.zeros((round(seconds * RATE) + 1, 2), np.int32)
+        if effects is not None:
+            for it in lay.items:
+                opts = dict(prepared[it.k]['options']); opts.pop('audio', None)
+                path = soundtrack(prepared[it.k]['drawing'], opts, folder / f'_sound_{it.k}.wav', effects)
+                part = _read_wav(path).astype(np.int32); path.unlink()
+                at = round(it.start * RATE)
+                part = part[:max(0, len(track) - at)]
+                track[at:at + len(part)] += part
+        audio = write_wav(folder / 'soundtrack.wav', np.clip(track, -32768, 32767).astype(np.int16))
+        voices = [(it, prepared[it.k]['options']['audio']) for it in lay.items if prepared[it.k]['options'].get('audio')]
+        if voices:
+            from audio_track import mix
+            for n, (it, voice) in enumerate(voices):
+                target = folder / (f'_mix_{n}.wav' if n < len(voices) - 1 else 'soundtrack_mixed.wav')
+                mixed = mix(audio, voice['path'], voice['volume'], it.start + voice['offset'], seconds, target)
+                if audio.name.startswith('_mix_'):
+                    audio.unlink()
+                audio = mixed
+    return encode_outputs(folder, fps, audio=audio, progress=progress, interrupted=interrupted, **formats)
+
+
 def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False):
     """Render all scenes into one PNG sequence + videos. `settings`: the editor's settings
     (its output settings are used for every scene). Returns a summary text."""
+    if on_tracks(scenes):
+        return export_timeline(scenes, folder, settings, hand, progress, interrupted)
     from engine import export_frames
     from export_job import encode_outputs, formats_from_settings
     from sound import RATE, soundtrack, write_wav
@@ -408,7 +486,8 @@ def scenes_from_project(data):
         out.append(dict(state=state, transition=item.get('transition', DEFAULT_TRANSITION),
                         transition_seconds=float(item.get('transition_seconds', DEFAULT_TRANSITION_SECONDS)),
                         name=item.get('name'), board=item.get('board'),
-                        uid=item.get('uid'), rev=item.get('rev')))
+                        uid=item.get('uid'), rev=item.get('rev'),
+                        start=item.get('start'), track=item.get('track') or 0))
     return out
 
 
@@ -418,7 +497,8 @@ def scenes_to_project(main_state, scene_list, index):
     if len(scene_list) > 1:
         data['scenes'] = [dict(state=None if k == index else s['state'], transition=s['transition'],
                                transition_seconds=s['transition_seconds'], name=s.get('name'),
-                               board=s.get('board'), uid=s.get('uid'), rev=s.get('rev'))
+                               board=s.get('board'), uid=s.get('uid'), rev=s.get('rev'),
+                               start=s.get('start'), track=s.get('track') or 0)
                           for k, s in enumerate(scene_list)]
         data['scene_index'] = index
     elif scene_list:
