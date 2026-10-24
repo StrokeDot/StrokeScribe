@@ -1483,7 +1483,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import projects
         path=getattr(self,'project_path',None)
         if save_as or not path:
-            suggested=str(Path(path).parent if path else Path.home())+'/'+ \
+            if path:
+                folder=Path(path).parent
+            else:
+                import home_screen
+                folder=home_screen.projects_folder()
+                try: folder.mkdir(parents=True,exist_ok=True)
+                except OSError: folder=Path.home()
+            suggested=str(folder)+'/'+ \
                 ''.join(c if c.isalnum() or c in ' -_' else '_' for c in self.project_title).strip()+projects.SUFFIX
             path,_=QFileDialog.getSaveFileName(self,'Save project',suggested,'StrokeScribe project (*.strokescribe)')
             if not path: return None
@@ -1496,11 +1503,64 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.status.setText('Project saved: '+str(path))
         self.setWindowTitle(f'{Path(path).stem}  •  {DISPLAY_NAME}')
         self.remember_recent(path)
+        self.keep_home_preview(path)
         self.project_changes.mark_saved(state)
         self._autosaved_signature=None
         self._autosaved=self.history.current
         import autosave; autosave.clear()
         return path
+
+    def keep_home_preview(self,path):
+        """A small picture of the project for its card on the Home screen."""
+        try:
+            if not path or self.drawing is None or not self.drawing.strokes: return False
+            from scenes import thumbnail
+            import home_screen
+            return home_screen.store_preview(path,thumbnail(self.drawing,self.options(),width=home_screen.PREVIEW_W))
+        except Exception as exc:
+            import applog; applog.error('Home preview',exc)
+            return False
+
+    # ------------------------------------------------------------ Home screen
+    def show_home(self):
+        """The Home screen: new project, open, and every project as a card (exp.107)."""
+        if getattr(self,'home',None) is None:
+            import home_screen
+            from version import APP_VERSION
+            self.home=home_screen.HomeScreen(self.centralWidget(),version=APP_VERSION)
+            self.home.new_requested.connect(self.home_new)
+            self.home.open_requested.connect(self.home_open)
+            self.home.back_requested.connect(self.hide_home)
+            self.centralWidget().installEventFilter(self)
+        self.home.restyle()
+        self.home.set_can_go_back(bool(getattr(self,'project_path',None)) or
+                                  bool(self.drawing is not None and self.drawing.strokes))
+        self.home.setGeometry(self.centralWidget().rect())
+        self.home.refresh()
+        self.home.show(); self.home.raise_(); self.home.setFocus()
+        return self.home
+
+    def hide_home(self):
+        if getattr(self,'home',None) is not None:
+            self.home.hide()
+
+    def home_visible(self):
+        return getattr(self,'home',None) is not None and self.home.isVisible()
+
+    def home_new(self):
+        if self.new_project():
+            self.hide_home()
+
+    def home_open(self,path=''):
+        if self.open_project(path or None):
+            self.hide_home()
+
+    def eventFilter(self,obj,event):
+        from PySide6.QtCore import QEvent
+        home=getattr(self,'home',None)
+        if home is not None and obj is self.centralWidget() and event.type()==QEvent.Type.Resize:
+            home.setGeometry(obj.rect())
+        return super().eventFilter(obj,event)
 
     def remember_recent(self,path):
         try:
@@ -1562,6 +1622,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.project_path=info.get('project_path') or None
         self.project_changes.mark_changed()
         self.status.setText('Restored your work from the autosave. Save it (Ctrl+S) to keep it.')
+        self.hide_home()
         return True
 
     def open_project(self,path=None):
@@ -1596,6 +1657,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.setWindowTitle(f'{Path(path).stem}  •  {DISPLAY_NAME}')
         self.status.setText('Opened project: '+str(path))
         self.remember_recent(path)
+        QTimer.singleShot(400,lambda p=str(path): self.keep_home_preview(p) if self.project_path==p else None)
         self.project_changes.mark_saved(self.project_state())
         self._autosaved_signature=None
         import autosave; autosave.clear()

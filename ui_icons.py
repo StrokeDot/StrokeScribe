@@ -49,6 +49,23 @@ _PATHS = {
                   '<path d="M15 7.5L6 16.5 5 20l3.5-1 9-9"/>',
     'image': '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="15.5" cy="8.5" r="1.8"/>'
              '<path d="M3 17l5.5-5.5 4.5 4.5 2.5-2.5L21 19"/>',
+    # Track buttons (exp.107): sound on / off, shown / hidden, timeline zoom.
+    'volume': '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/>'
+              '<path d="M18.2 6.8a7.5 7.5 0 0 1 0 10.4"/>',
+    'volume-off': '<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
+    'eye': '<path d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/>'
+           '<circle cx="12" cy="12" r="2.8"/>',
+    'eye-off': '<path d="M9.9 5.7A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.6 3.3"/>'
+               '<path d="M6.4 7.1C3.9 8.8 2.5 12 2.5 12s3.5 6.5 9.5 6.5a9.3 9.3 0 0 0 4.4-1.1"/>'
+               '<path d="M9.9 10a2.8 2.8 0 0 0 4 4"/><path d="M3.5 3.5l17 17"/>',
+    'zoom-in': '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/><path d="M8.5 11h5M11 8.5v5"/>',
+    'zoom-out': '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/><path d="M8.5 11h5"/>',
+    'zoom-fit': '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/><path d="M9 12h6"/>',
+    'folder': '<path d="M3.5 7a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+    'plus': '<path d="M12 5v14M5 12h14"/>',
+    'open': '<path d="M3.5 7a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v1"/>'
+            '<path d="M3.5 7v10a2 2 0 0 0 2 2h12.3a2 2 0 0 0 1.9-1.4l1.8-5.6H8.2a2 2 0 0 0-1.9 1.4L3.5 19"/>',
+    'home': '<path d="M4 11l8-6.5 8 6.5"/><path d="M6 9.5V19h12V9.5"/><path d="M10 19v-5h4v5"/>',
     # A curved arrow back: reset a setting.
     'reset': '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4v4h4"/>',
 }

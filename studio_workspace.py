@@ -399,9 +399,7 @@ class StageTimeline(QFrame):
 
     def _zoom_rect(self, which):
         i=[k for k,_ in self.ZOOM_BUTTONS].index(which)
-        widths=(20.,20.,30.)
-        x=8.+sum(widths[:i])+4*i
-        return QRectF(x,2.,widths[i],17.)
+        return QRectF(8.+i*26.,0.,22.,20.)
 
     def _track_rect(self, track):
         top=22.+6.+self.CAM_H+4.-self.y_off
@@ -416,83 +414,79 @@ class StageTimeline(QFrame):
 
     def _icon_rect(self, track, which):
         lane=self._track_rect(track)
-        x=self.HEADER-(52. if which=='mute' else 28.)
-        return QRectF(x,lane.center().y()-9,20,18)
+        x=self.HEADER-(64. if which=='mute' else 38.)
+        return QRectF(x,lane.center().y()-12,24,24)
 
     def flag(self, track, which):
         return bool(self.track_flags.get(int(track),{}).get({'mute':'muted','hide':'hidden'}[which]))
 
+    _ICON_CACHE={}
+
+    @classmethod
+    def _icon(cls, name, colour, size=16):
+        key=(name,colour,size)
+        if key not in cls._ICON_CACHE:
+            from ui_icons import pixmap
+            cls._ICON_CACHE[key]=pixmap(name,colour,size)
+        return cls._ICON_CACHE[key]
+
+    def _draw_icon(self, p, name, centre, colour, size=16):
+        pm=self._icon(name,colour,size)
+        p.drawPixmap(QPointF(centre.x()-size/2,centre.y()-size/2),pm)
+
+    def _icon_button(self, p, c, rect, name, off=False, hover=False):
+        """A round icon button: quiet when on, red when switched off, lit when hovered."""
+        if off:
+            bg=QColor(229,72,77,46)
+        elif hover:
+            bg=QColor(c.get('raised_hover',c.get('raised','#2A2833')))
+        else:
+            bg=None
+        if bg is not None:
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(bg); p.drawRoundedRect(rect,6,6)
+        colour='#FF7A7E' if off else (c['text'] if hover else c['muted'])
+        self._draw_icon(p,name,rect.center(),colour,15)
+
     def _paint_headers(self, p, c, small):
-        """Left of the tracks: each track's name, its mute and hide buttons (like Filmora)."""
-        p.setFont(small)
+        """Left of the tracks: each track's name with its sound and hide buttons (like Filmora)."""
         used={i[4] for i in self.items or ()}
+        hover=getattr(self,'_hover',None)
+        name_font=QFont(self.font()); name_font.setPointSizeF(8.5); name_font.setWeight(QFont.Weight.DemiBold)
         for t in range(self.lanes()):
             lane=self._track_rect(t)
-            p.setPen(QColor(c['text'] if t in used else c['dim']))
-            p.drawText(QRectF(8,lane.top(),self.HEADER-62,lane.height()),
+            chip=QRectF(6,lane.top(),self.HEADER-12,lane.height())
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(c['track'])); p.drawRoundedRect(chip,8,8)
+            hidden=self.flag(t,'hide')
+            p.setFont(name_font)
+            p.setPen(QColor(c['text'] if t in used and not hidden else c['dim']))
+            p.drawText(QRectF(chip.left()+10,chip.top(),chip.width()-64,chip.height()),
                        Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,f'Track {t+1}')
             if t not in used: continue
-            for which in ('mute','hide'):
+            for which,on,off in (('mute','volume','volume-off'),('hide','eye','eye-off')):
                 r=self._icon_rect(t,which)
-                off=self.flag(t,which)
-                colour=QColor('#E5484D') if off else QColor(c['muted'])
-                p.setPen(QPen(colour,1.5)); p.setBrush(Qt.BrushStyle.NoBrush)
-                cx,cy=r.center().x(),r.center().y()
-                if which=='mute':                  # a speaker
-                    from PySide6.QtGui import QPolygonF
-                    p.setBrush(colour)
-                    p.drawPolygon(QPolygonF([QPointF(cx-7,cy-3),QPointF(cx-4,cy-3),QPointF(cx,cy-7),
-                                             QPointF(cx,cy+7),QPointF(cx-4,cy+3),QPointF(cx-7,cy+3)]))
-                    p.setBrush(Qt.BrushStyle.NoBrush)
-                    if not off:
-                        p.drawArc(QRectF(cx-3,cy-5,8,10),-50*16,100*16)
-                        p.drawArc(QRectF(cx-3,cy-8,13,16),-50*16,100*16)
-                else:                              # an eye
-                    path=QPainterPath(); path.moveTo(cx-8,cy)
-                    path.quadTo(cx,cy-8,cx+8,cy); path.quadTo(cx,cy+8,cx-8,cy)
-                    p.drawPath(path); p.setBrush(colour); p.drawEllipse(QPointF(cx,cy),2.5,2.5)
-                    p.setBrush(Qt.BrushStyle.NoBrush)
-                if off:
-                    p.setPen(QPen(colour,1.8)); p.drawLine(QPointF(cx-8,cy+7),QPointF(cx+8,cy-7))
+                is_off=self.flag(t,which)
+                self._icon_button(p,c,r,off if is_off else on,is_off,hover==('track',t,which))
+        p.setFont(small)
 
-    @staticmethod
-    def _mark_icon(p, centre, which):
-        """A small red crossed eye (hidden) or speaker (muted) on a clip."""
-        from PySide6.QtGui import QPolygonF
-        cx,cy=centre.x(),centre.y(); red=QColor('#FF6B6F')
-        p.save(); p.setPen(QPen(red,1.5)); p.setBrush(Qt.BrushStyle.NoBrush)
-        if which=='hide':
-            path=QPainterPath(); path.moveTo(cx-7,cy); path.quadTo(cx,cy-7,cx+7,cy); path.quadTo(cx,cy+7,cx-7,cy)
-            p.drawPath(path)
-        else:
-            p.setBrush(red)
-            p.drawPolygon(QPolygonF([QPointF(cx-6,cy-2.5),QPointF(cx-3,cy-2.5),QPointF(cx+1,cy-6),
-                                     QPointF(cx+1,cy+6),QPointF(cx-3,cy+2.5),QPointF(cx-6,cy+2.5)]))
-        p.setPen(QPen(red,1.8)); p.drawLine(QPointF(cx-7,cy+6),QPointF(cx+7,cy-6))
-        p.restore()
-
-    @staticmethod
-    def _camera_icon(p, centre, colour):
-        """A small camera: body, lens and the viewfinder bump."""
-        cx,cy=centre.x(),centre.y()
-        p.save(); p.setPen(QPen(colour,1.3)); p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRoundedRect(QRectF(cx-7,cy-4,14,9),2,2)
-        p.drawRect(QRectF(cx-3,cy-6,5,2))
-        p.drawEllipse(QPointF(cx,cy+.5),2.6,2.6)
+    def _mark_icon(self, p, centre, which):
+        """This element is hidden / muted on its own: a small red badge on its clip."""
+        r=QRectF(centre.x()-9,centre.y()-9,18,18)
+        p.save(); p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(20,20,26,190)); p.drawEllipse(r)
+        self._draw_icon(p,'eye-off' if which=='hide' else 'volume-off',r.center(),'#FF7A7E',12)
         p.restore()
 
     def _paint_fixed_header(self, p, c, small):
         """Top left: the zoom buttons over the track names, and the Camera row's name."""
         cam=self._camera_rect()
-        p.setFont(small); p.setPen(QColor(c['muted']))
-        self._camera_icon(p,QPointF(16,cam.center().y()),QColor(c['muted']))
-        p.drawText(QRectF(28,cam.top(),self.HEADER-32,cam.height()),
+        hover=getattr(self,'_hover',None)
+        p.setFont(small)
+        self._draw_icon(p,'camera',QPointF(18,cam.center().y()),c['muted'],14)
+        p.setPen(QColor(c['muted']))
+        p.drawText(QRectF(30,cam.top()-2,self.HEADER-34,cam.height()+4),
                    Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,'Camera')
-        for which,text in self.ZOOM_BUTTONS:
-            r=self._zoom_rect(which)
-            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['raised'] if 'raised' in c else c['track']))
-            p.drawRoundedRect(r,4,4)
-            p.setPen(QColor(c['text'])); p.drawText(r,Qt.AlignmentFlag.AlignCenter,text)
+        for which,name in (('out','zoom-out'),('in','zoom-in'),('fit','zoom-fit')):
+            self._icon_button(p,c,self._zoom_rect(which),name,False,hover==('zoom',which))
 
     def _camera_rect(self):
         return QRectF(self.LEFT,22.+6.,self._width(),self.CAM_H)
@@ -932,7 +926,7 @@ class StageTimeline(QFrame):
             r=QRectF(x0+1,cam.top()+1,max(2.,x1-x0-2),cam.height()-2)
             p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['border_strong'])); p.drawRoundedRect(r,4,4)
             if r.width()>=16:
-                self._camera_icon(p,r.center(),QColor(c['text']))
+                self._draw_icon(p,'camera',r.center(),c['text'],12)
         p.restore()
         p.save(); p.setClipRect(QRectF(0,area.top(),self.LEFT,area.height()))
         self._paint_headers(p,c,small)
@@ -1142,6 +1136,32 @@ class StageTimeline(QFrame):
             else:
                 self._seek(pos.x())
             event.accept(); return
+        # Hover over the track buttons and the zoom buttons: light them, say what they do.
+        if self.items and pos.x()<self.LEFT:
+            hover=None; tip=''
+            for which,name in self.ZOOM_BUTTONS:
+                if self._zoom_rect(which).contains(pos):
+                    hover=('zoom',which); tip={'out':'Zoom out (Ctrl + wheel)','in':'Zoom in (Ctrl + wheel)',
+                                               'fit':'Fit the whole video'}[which]
+            if hover is None and self._tracks_area().contains(pos):
+                used={i[4] for i in self.items}
+                for t in range(self.lanes()):
+                    if t not in used: continue
+                    for which in ('mute','hide'):
+                        if self._icon_rect(t,which).contains(pos):
+                            hover=('track',t,which)
+                            off=self.flag(t,which)
+                            tip=(f'Track {t+1}: sounds off. Click to turn them on.' if off else
+                                 f'Track {t+1}: mute its pencil and brush sounds') if which=='mute' else \
+                                (f'Track {t+1} is hidden. Click to show it.' if off else
+                                 f'Track {t+1}: hide it from the video')
+            if hover!=getattr(self,'_hover',None):
+                self._hover=hover; self.update()
+            self.setToolTip(tip)
+            self.setCursor(Qt.CursorShape.PointingHandCursor if hover else Qt.CursorShape.ArrowCursor)
+            return super().mouseMoveEvent(event)
+        if getattr(self,'_hover',None) is not None:
+            self._hover=None; self.update()
         # Hover: show what can be grabbed.
         item,part=self._overlay_at(pos)
         if item is not None:
