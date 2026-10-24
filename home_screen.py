@@ -265,7 +265,7 @@ def _widgets():
             side = QFrame(); side.setObjectName('homeSide'); side.setFixedWidth(280)
             s = QVBoxLayout(side); s.setContentsMargins(26, 30, 26, 24); s.setSpacing(10)
             from studio_workspace import wordmark_html
-            logo = QLabel(wordmark_html()); logo.setFont(QFont('Segoe UI', 20, QFont.Weight.Bold))
+            logo = QLabel(wordmark_html()); logo.setObjectName('homeLogo')
             logo.setTextFormat(Qt.TextFormat.RichText)
             s.addWidget(logo)
             tag = QLabel('Whiteboard animation studio'); tag.setObjectName('homeMuted')
@@ -291,7 +291,6 @@ def _widgets():
             m = QVBoxLayout(main); m.setContentsMargins(36, 30, 24, 0); m.setSpacing(14)
             head = QHBoxLayout()
             title = QLabel('Your projects'); title.setObjectName('homeTitle')
-            title.setFont(QFont('Segoe UI', 17, QFont.Weight.DemiBold))
             head.addWidget(title); head.addStretch(1)
             self.search = QLineEdit(); self.search.setPlaceholderText('Search projects')
             self.search.setClearButtonEnabled(True); self.search.setFixedWidth(240)
@@ -328,7 +327,8 @@ def _widgets():
                 f"QWidget#homeMain {{ background: {k['window']}; }}"
                 f"QLabel#homeMuted {{ color: {k['muted']}; }}"
                 f"QLabel#homeDim {{ color: {k['dim']}; font-size: 8pt; }}"
-                f"QLabel#homeTitle {{ color: {k['text']}; }}"
+                f"QLabel#homeTitle {{ color: {k['text']}; font-size: 20pt; font-weight: 600; }}"
+                f"QLabel#homeLogo {{ font-size: 22pt; font-weight: 700; }}"
                 f"QPushButton#homeSide {{ text-align: left; padding: 8px 14px; border-radius: 9px;"
                 f" background: {k['raised']}; border: 1px solid {k['border']}; color: {k['text']}; }}"
                 f"QPushButton#homeSide:hover {{ background: {k['raised_hover']}; border-color: {k['border_strong']}; }}"
@@ -345,7 +345,9 @@ def _widgets():
             self.cards.append(self._card(None))
             for info in projects:
                 self.cards.append(self._card(info))
-            self.folder_label.setText('New projects are saved in\n' + str(projects_folder()))
+            folder = projects_folder()
+            self.folder_label.setText(f'New projects are saved in\n{folder.parent.name} › {folder.name}')
+            self.folder_label.setToolTip(str(folder))
             self._projects = projects
             self._filter(self.search.text())
 
