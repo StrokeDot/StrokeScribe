@@ -1532,6 +1532,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.home.open_requested.connect(self.home_open)
             self.home.back_requested.connect(self.hide_home)
             self.centralWidget().installEventFilter(self)
+        self.home.hand=getattr(self,'hand',None)
         self.home.restyle()
         self.home.set_can_go_back(bool(getattr(self,'project_path',None)) or
                                   bool(self.drawing is not None and self.drawing.strokes))
@@ -1546,6 +1547,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def home_visible(self):
         return getattr(self,'home',None) is not None and self.home.isVisible()
+
+    def quit_app(self):
+        """File > Exit: close StrokeScribe even from inside a project."""
+        self._quitting=True
+        if not self.close():
+            self._quitting=False
 
     def home_new(self):
         if self.new_project():
@@ -4572,6 +4579,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self.worker and self.worker.isRunning():
             self.cancel_export(); QMessageBox.information(self,'Export running','Please wait for the current export to stop before closing.'); event.ignore()
         else:
+            if (getattr(self,'close_to_home',False) and not getattr(self,'_quitting',False)
+                    and not getattr(self,'_restart_preconfirmed',False) and not self.home_visible()):
+                # exp.109: X in a project goes back to Home (the project stays open behind it);
+                # X on Home, or File > Exit, closes StrokeScribe.
+                event.ignore()
+                self.show_home()
+                return
             if not getattr(self, '_restart_preconfirmed', False) and not self.confirm_leave_project('close StrokeScribe'):
                 event.ignore()
                 return

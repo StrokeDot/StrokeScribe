@@ -100,7 +100,7 @@ def build_menus(w):
     file.addSeparator()
     file.addAction('Update StrokeScribe…', lambda: w.open_updates())
     file.addSeparator()
-    file.addAction('Exit', w.close)
+    file.addAction('Exit', w.quit_app)
 
     # ---------------------------------------------------------------- Edit
     edit = bar.addMenu('&Edit'); w.menus['edit'] = edit

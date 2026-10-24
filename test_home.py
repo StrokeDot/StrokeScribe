@@ -105,6 +105,38 @@ class HomeTests(unittest.TestCase):
         self.w.resize(1500, 900); self.app.processEvents()
         self.assertEqual(home.geometry(), self.w.centralWidget().rect())
 
+    def test_x_in_a_project_goes_back_home(self):
+        self.save_as('Keep open.strokescribe')
+        self.w.close_to_home = True
+        self.w.close(); self.app.processEvents()
+        self.assertTrue(self.w.isVisible())
+        self.assertTrue(self.w.home_visible())
+        self.w.close_to_home = False                 # let tearDown close it
+
+    def test_exit_closes_even_from_a_project(self):
+        self.w.close_to_home = True
+        with mock.patch.object(type(self.w), 'confirm_leave_project', return_value=True):
+            self.w.quit_app()
+        self.app.processEvents()
+        self.assertFalse(self.w.isVisible())
+
+    def test_projects_without_a_preview_get_one(self):
+        import home_screen
+        path = self.save_as('Old one.strokescribe')
+        home_screen.preview_path(path).unlink()
+        self.assertTrue(home_screen.needs_preview(path))
+        self.assertTrue(home_screen.make_preview(path, self.w.hand))
+        self.assertFalse(home_screen.needs_preview(path))
+        home_screen.preview_path(path).unlink()
+        home = self.w.show_home()
+        from PySide6.QtTest import QTest
+        for _ in range(60):
+            QTest.qWait(50)
+            if not home_screen.needs_preview(path):
+                break
+        card = [c for c in home.cards if not c.new and c.info['name'] == 'Old one'][0]
+        self.assertIsNotNone(card.preview)
+
     def test_menu_has_home(self):
         texts = [a.text() for a in self.w.menus['file'].actions()]
         self.assertIn('Home', texts)
