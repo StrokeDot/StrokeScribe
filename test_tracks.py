@@ -209,8 +209,10 @@ class WindowTests(unittest.TestCase):
         got = []
         tl.move_clicked.connect(got.append)
         r = tl._move_chip(start, secs)
-        QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
-                         QPoint(int(r.center().x()), int(r.center().y())))
+        from unittest import mock
+        with mock.patch.object(type(w), 'edit_camera_move'):           # no dialog in the test
+            QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                             QPoint(int(r.center().x()), int(r.center().y())))
         self.assertEqual(got, [k])
         w.set_camera_move(k, 'Pan up', 2.5)
         self.assertEqual((w.scenes[k]['transition'], w.scenes[k]['transition_seconds']), ('Pan up', 2.5))
