@@ -1392,7 +1392,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from scenes import scenes_to_project
         self.settle_rev()
         self.store_scene(thumbnail=False)
-        return scenes_to_project(self.scene_state(),self.scenes,self.scene_index)
+        data=scenes_to_project(self.scene_state(),self.scenes,self.scene_index)
+        flags={str(t):f for t,f in getattr(self,'track_flags',{}).items() if f.get('muted') or f.get('hidden')}
+        if flags: data['track_flags']=flags
+        return data
 
     def scene_state(self):
         """Everything needed to reopen the scene being edited."""
@@ -1604,7 +1607,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from scenes import scenes_from_project
         scene_list=scenes_from_project(data)
         index=max(0,min(len(scene_list)-1,int(data.get('scene_index',0) or 0)))
-        main={k:v for k,v in data.items() if k not in ('scenes','scene_index')}
+        main={k:v for k,v in data.items() if k not in ('scenes','scene_index','track_flags')}
+        self.track_flags={int(t):dict(f) for t,f in (data.get('track_flags') or {}).items()}
         for k,scene in enumerate(scene_list):
             scene['thumb']=None
             if k==index: scene['state']=None          # lives in the editor
@@ -2447,9 +2451,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         lengths,joins=self.scene_timeline(width,height)
         memo=self.__dict__.setdefault('_memo',{})
         key=('layout',tuple(lengths),tuple(joins),tuple((s.get('start'),s.get('track')) for s in self.scenes))
+        key=key+(repr(sorted(getattr(self,'track_flags',{}).items())),)
         if key not in memo:
-            memo[key]=layout(lengths,joins,[s.get('start') for s in self.scenes],
-                             [s.get('track') or 0 for s in self.scenes])
+            lay=layout(lengths,joins,[s.get('start') for s in self.scenes],
+                       [s.get('track') or 0 for s in self.scenes])
+            if self.hidden_elements(): lay.sequential=False    # drawn moment by moment, without them
+            memo[key]=lay
         return memo[key]
 
     def timeline_items(self,width=960,height=540):
@@ -2476,6 +2483,27 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                             'Right-click it on the timeline to put it back after the element before it.')
         self.fill_scenes(); self.refresh()
 
+    def toggle_track(self,track,which):
+        """A track's mute (its pencil / brush sounds) or hide (not in the video) button."""
+        flags=self.__dict__.setdefault('track_flags',{})
+        key={'mute':'muted','hide':'hidden'}[which]
+        entry=flags.setdefault(int(track),{})
+        entry[key]=not entry.get(key,False)
+        self.project_changes.mark_changed()
+        word={'muted':('muted','sounds on'),'hidden':('hidden from the video','shown')}[key]
+        self.status.setText(f'Track {track+1} {word[0] if entry[key] else word[1]}.')
+        self.__dict__.setdefault('_memo',{}).clear()
+        self.refresh()
+
+    def track_flag(self,scene,key):
+        return (getattr(self,'track_flags',{}) or {}).get(scene.get('track') or 0,{}).get(key,False)
+
+    def hidden_elements(self):
+        """Elements on hidden tracks (not drawn in the whole video or the export)."""
+        flags=getattr(self,'track_flags',{}) or {}
+        hidden={t for t,f in flags.items() if f.get('hidden')}
+        return {k for k,s in enumerate(self.scenes) if (s.get('track') or 0) in hidden}
+
     def reset_element_time(self,k):
         if not 0<=k<len(self.scenes): return
         self.record_structure('move in time')
@@ -2501,7 +2529,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """Whole video on the timeline; the edited element keeps its edges, pictures and audio."""
         tl=self.stage_timeline
         items,moves=self.timeline_items()
-        tl.set_scenes(segments,current=self.scene_index,items=items,moves=moves)
+        tl.set_scenes(segments,current=self.scene_index,items=items,moves=moves,
+                      flags=getattr(self,'track_flags',{}))
         tl.set_overlays(self.overlays,self.selected_overlay)
         tl.set_audio(self.timeline_audio())
         tl.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() else {'paint','hold','erase'}
@@ -2567,6 +2596,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             elements.append(dict(drawing=drawing,options=options,camera=camera,
                                  transition=self.scenes[k]['transition'],
                                  move_seconds=self.scenes[k]['transition_seconds']))
+        hidden=self.hidden_elements()
+        if hidden:
+            from dataclasses import replace
+            active=[(k,f) for k,f in state.active if k not in hidden]
+            state=replace(state,active=active,finished=[k for k in state.finished if k not in hidden],
+                          top=active[-1][0] if active else -1)
         return timeline_render.compose(world,self.timeline_layout(width,height),state,elements,width,height)
 
     def whole_frame_at(self,where,k,f,width,height):
@@ -3797,6 +3832,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             state=state_at(lay,(first/count)*view['length'])
             involved=sorted({k for k,_ in state.active}|set(state.finished)|{state.current})
             fp=('tl',describe(lay,state,a),tuple(self.element_fingerprint(i) for i in involved),
+                tuple(sorted(self.hidden_elements())),
                 tuple((s['transition'],s['transition_seconds']) for s in self.scenes),
                 repr([s.get('board') for s in self.scenes]),(view.get('width'),view.get('height')))
             return fp,index-first,last-first+1,'tl',first
@@ -4276,7 +4312,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self._leave_scene()
             scene_list=[dict(state=copy.deepcopy(s['state']),transition=s['transition'],
                              transition_seconds=s['transition_seconds'],board=s.get('board'),
-                             start=s.get('start'),track=s.get('track') or 0) for s in self.scenes]
+                             start=s.get('start'),track=s.get('track') or 0,
+                             hidden=bool(self.track_flag(s,'hidden')),muted=bool(self.track_flag(s,'muted')))
+                        for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
             self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand)
         else:

@@ -145,6 +145,33 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(got[0][0], other[0])
         self.assertEqual(got[0][2], other[4] + 1)                      # onto the next track
 
+    def test_track_headers_mute_and_hide(self):
+        """exp.105: each track has its name, a mute and a hide button on the left."""
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+        from timeline_model import state_at
+        w = self.w
+        w.place_element(1, 0., 1)
+        tl = w.stage_timeline
+        self.assertGreaterEqual(tl.LEFT, tl.HEADER)                    # room for the headers
+        got = []
+        tl.track_toggled.connect(lambda t, which: got.append((t, which)))
+        r = tl._icon_rect(1, 'hide')
+        QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                         QPoint(int(r.center().x()), int(r.center().y())))
+        self.assertEqual(got, [(1, 'hide')])
+        self.assertEqual(w.hidden_elements(), {1})                     # the click hid Track 2
+        self.assertTrue(w.stage_timeline.flag(1, 'hide'))
+        state = state_at(w.timeline_layout(), .5)
+        self.assertIn(1, [k for k, _ in state.active])
+        shown = w.timeline_frame(state, 320, 180)
+        w.toggle_track(1, 'hide')
+        self.assertEqual(w.hidden_elements(), set())
+        self.assertNotEqual(shown, w.timeline_frame(state, 320, 180))  # it is drawn again
+        w.toggle_track(0, 'mute')
+        data = json.loads(json.dumps(w.project_state()))
+        self.assertEqual(data['track_flags'], {'0': {'muted': True}})
+
     @unittest.skipUnless(shutil.which('ffmpeg'), 'needs FFmpeg')
     def test_export_with_tracks(self):
         import scenes

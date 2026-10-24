@@ -222,7 +222,8 @@ def _fit(audio, samples):
 
 def on_tracks(scenes):
     """True when an element has its own start or a track above Track 1 (timeline_model)."""
-    return any(s.get('start') is not None or (s.get('track') or 0) for s in scenes)
+    return any(s.get('start') is not None or (s.get('track') or 0) or s.get('hidden') or s.get('muted')
+               for s in scenes)
 
 
 def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False):
@@ -256,8 +257,15 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
         elements.append(dict(drawing=p['drawing'], options=options, camera=camera,
                              transition=p['transition'], move_seconds=p['move_seconds']))
     total = max(1, round(lay.total * fps))
+    hidden = {k for k, s in enumerate(scenes) if s.get('hidden')}       # their track is hidden
+    from dataclasses import replace
     for i in range(total):
-        image = timeline_render.compose(world, lay, state_at(lay, i / fps), elements, width, height)
+        state = state_at(lay, i / fps)
+        if hidden:
+            active = [(k, f) for k, f in state.active if k not in hidden]
+            state = replace(state, active=active, finished=[k for k in state.finished if k not in hidden],
+                            top=active[-1][0] if active else -1)
+        image = timeline_render.compose(world, lay, state, elements, width, height)
         if not image.save(str(folder / f'frame_{i:06d}.png'), 'PNG', 80):
             raise OSError('Unable to save PNG frame.')
         progress(i + 1, total)
@@ -277,6 +285,8 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
         track = np.zeros((round(seconds * RATE) + 1, 2), np.int32)
         if effects is not None:
             for it in lay.items:
+                if scenes[it.k].get('muted') or it.k in hidden:
+                    continue                           # its track is muted (or hidden)
                 opts = dict(prepared[it.k]['options']); opts.pop('audio', None)
                 path = soundtrack(prepared[it.k]['drawing'], opts, folder / f'_sound_{it.k}.wav', effects)
                 part = _read_wav(path).astype(np.int32); path.unlink()

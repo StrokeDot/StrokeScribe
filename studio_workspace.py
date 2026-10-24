@@ -189,6 +189,7 @@ class StageTimeline(QFrame):
     element_edit=Signal(int)            # whole video: an element's block was double-clicked
     element_placed=Signal(int,float,int)   # whole video: an element dragged to a new start / track
     element_reset=Signal(int)           # whole video: back to "after the element before it", Track 1
+    track_toggled=Signal(int,str)       # whole video: a track's 'mute' or 'hide' button
 
     stage_source_edit=Signal(str,int)   # Draw/Paint source editor, exact clicked element
 
@@ -239,7 +240,9 @@ class StageTimeline(QFrame):
         self.progress=max(0.,min(1.,float(progress)))
         self.update()
 
-    def set_scenes(self, segments, current=0, items=None, moves=None):
+    HEADER=118.                         # whole video: the track headers on the left (name, mute, hide)
+
+    def set_scenes(self, segments, current=0, items=None, moves=None, flags=None):
         """Whole video: every element in a row, each with its own Draw / Paint / Hold / Out
         parts inside it (None: back to the parts of one element only).
 
@@ -267,6 +270,8 @@ class StageTimeline(QFrame):
                 t+=secs
         self.items=[tuple(i) for i in items] if (self.scene_segments and items) else None
         self.moves=[tuple(m) for m in (moves or ())] if self.items else None
+        self.track_flags={int(k):dict(v) for k,v in (flags or {}).items()}
+        self.LEFT=self.HEADER if self.items else type(self).LEFT
         if self.items:
             mine=[i for i in self.items if i[0]==current]
             if mine: self.offset=mine[0][2]
@@ -291,6 +296,50 @@ class StageTimeline(QFrame):
         top=22.+6.+self.CAM_H+4.
         i=self.lanes()-1-int(track)
         return QRectF(self.LEFT,top+i*(self.CLIP_H+3),self._width(),self.CLIP_H)
+
+    def _icon_rect(self, track, which):
+        lane=self._track_rect(track)
+        x=self.HEADER-(52. if which=='mute' else 28.)
+        return QRectF(x,lane.center().y()-9,20,18)
+
+    def flag(self, track, which):
+        return bool(self.track_flags.get(int(track),{}).get({'mute':'muted','hide':'hidden'}[which]))
+
+    def _paint_headers(self, p, c, small):
+        """Left of the tracks: each track's name, its mute and hide buttons (like Filmora)."""
+        cam=self._camera_rect()
+        p.setFont(small); p.setPen(QColor(c['muted']))
+        p.drawText(QRectF(8,cam.top(),self.HEADER-12,cam.height()),
+                   Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,'Camera')
+        used={i[4] for i in self.items or ()}
+        for t in range(self.lanes()):
+            lane=self._track_rect(t)
+            p.setPen(QColor(c['text'] if t in used else c['dim']))
+            p.drawText(QRectF(8,lane.top(),self.HEADER-62,lane.height()),
+                       Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,f'Track {t+1}')
+            if t not in used: continue
+            for which in ('mute','hide'):
+                r=self._icon_rect(t,which)
+                off=self.flag(t,which)
+                colour=QColor('#E5484D') if off else QColor(c['muted'])
+                p.setPen(QPen(colour,1.5)); p.setBrush(Qt.BrushStyle.NoBrush)
+                cx,cy=r.center().x(),r.center().y()
+                if which=='mute':                  # a speaker
+                    from PySide6.QtGui import QPolygonF
+                    p.setBrush(colour)
+                    p.drawPolygon(QPolygonF([QPointF(cx-7,cy-3),QPointF(cx-4,cy-3),QPointF(cx,cy-7),
+                                             QPointF(cx,cy+7),QPointF(cx-4,cy+3),QPointF(cx-7,cy+3)]))
+                    p.setBrush(Qt.BrushStyle.NoBrush)
+                    if not off:
+                        p.drawArc(QRectF(cx-3,cy-5,8,10),-50*16,100*16)
+                        p.drawArc(QRectF(cx-3,cy-8,13,16),-50*16,100*16)
+                else:                              # an eye
+                    path=QPainterPath(); path.moveTo(cx-8,cy)
+                    path.quadTo(cx,cy-8,cx+8,cy); path.quadTo(cx,cy+8,cx-8,cy)
+                    p.drawPath(path); p.setBrush(colour); p.drawEllipse(QPointF(cx,cy),2.5,2.5)
+                    p.setBrush(Qt.BrushStyle.NoBrush)
+                if off:
+                    p.setPen(QPen(colour,1.8)); p.drawLine(QPointF(cx-8,cy+7),QPointF(cx+8,cy-7))
 
     def _camera_rect(self):
         return QRectF(self.LEFT,22.+6.,self._width(),self.CAM_H)
@@ -707,8 +756,6 @@ class StageTimeline(QFrame):
         for t in range(self.lanes()):
             p.drawRoundedRect(self._track_rect(t),9,9)
         p.setFont(small)
-        p.setPen(QColor(c['dim']))
-        p.drawText(cam.adjusted(6,0,0,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,'Camera')
         p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
         for k,label,start,secs in self.moves or ():
             x0,x1=self._x(start),self._x(start+secs)
@@ -716,11 +763,8 @@ class StageTimeline(QFrame):
             p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['border_strong'])); p.drawRoundedRect(r,4,4)
             if r.width()>=40:
                 p.setPen(QColor(c['text'])); p.drawText(r,Qt.AlignmentFlag.AlignCenter,label)
-        for t in range(self.lanes()):
-            lane=self._track_rect(t)
-            p.setPen(QColor(c['dim']))
-            p.drawText(QRectF(lane.right()-70,lane.top(),64,lane.height()),
-                       Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignRight,f'Track {t+1}')
+        p.restore(); self._paint_headers(p,c,small)
+        p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
         bold=QFont(self.font()); bold.setPointSizeF(8.5); bold.setBold(True)
         for item in self.items:
             k,label,start,secs,track,parts=item
@@ -732,6 +776,7 @@ class StageTimeline(QFrame):
             whole=sum(v for _,v in parts) or 1.
             path=QPainterPath(); path.addRoundedRect(rect,7,7)
             p.save(); p.setClipPath(path,Qt.ClipOperation.IntersectClip)
+            if self.flag(track,'hide'): p.setOpacity(.35)     # a hidden track: not in the video
             x=rect.left()
             for key,v in parts:
                 w=rect.width()*v/whole
@@ -835,6 +880,15 @@ class StageTimeline(QFrame):
         if rect is not None and rect.contains(pos):
             self._drag=('audio',pos.x(),self.audio['start'],self._width()/self.total())
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept(); return
+        if self.items and pos.x()<self.LEFT:
+            used={i[4] for i in self.items}
+            for t in range(self.lanes()):
+                if t not in used: continue
+                for which in ('mute','hide'):
+                    if self._icon_rect(t,which).adjusted(-3,-3,3,3).contains(pos):
+                        self.track_toggled.emit(t,which)
+                        event.accept(); return
             event.accept(); return
         item=self._item_at(pos) if self.items else None
         if item is not None:
@@ -2680,6 +2734,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.element_edit.connect(lambda k: w.edit_element(k))
     w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))
     w.stage_timeline.element_reset.connect(lambda k: w.reset_element_time(k))
+    w.stage_timeline.track_toggled.connect(lambda t,which: w.toggle_track(t,which))
     w.stage_timeline.stage_source_edit.connect(w.edit_stage_source)
     w.vertical_splitter.addWidget(timeline)
     w.vertical_splitter.setStretchFactor(0,1)
