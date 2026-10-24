@@ -195,6 +195,48 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(w.scene_index, len(w.scenes) - 1)
         self.assertTrue(menu.called)
 
+    def test_camera_moves_can_be_clicked_and_changed(self):
+        """exp.111: a click on a camera move on the timeline changes how and how long it moves."""
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+        w = self.w
+        w.set_camera_move(0, 'Camera move', 1.2)  # setUp joins the two on the same page
+        w.place_element(1, 5., 0)                # its own start: the timeline shows the camera row
+        w.preview_scope.setCurrentIndex(1); w.refresh(); self.app.processEvents()
+        tl = w.stage_timeline
+        self.assertTrue(tl.moves)
+        k, _, start, secs = tl.moves[0]
+        got = []
+        tl.move_clicked.connect(got.append)
+        r = tl._move_chip(start, secs)
+        from unittest import mock
+        with mock.patch.object(type(w), 'edit_camera_move'):           # no dialog in the test
+            QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                             QPoint(int(r.center().x()), int(r.center().y())))
+        self.assertEqual(got, [k])
+        w.set_camera_move(k, 'Pan up', 2.5)
+        self.assertEqual((w.scenes[k]['transition'], w.scenes[k]['transition_seconds']), ('Pan up', 2.5))
+        w.undo(); self.app.processEvents()
+        self.assertEqual(w.scenes[k]['transition'], 'Camera move')
+
+    def test_animation_sections_in_working_order(self):
+        w = self.w
+        layout = w.section_drawing.parentWidget().layout()
+        order = [layout.indexOf(x) for x in (w.section_drawing, w.section_painting, w.lines_box,
+                                              w.section_move_in, w.section_out)]
+        self.assertEqual(order, sorted(order))
+
+    def test_number_boxes_beside_sliders_are_small(self):
+        w = self.w
+        self.assertLess(w.picture_x.width(), 90)
+        self.assertGreaterEqual(w.picture_x.width(), 50)
+
+    def test_restore_original(self):
+        w = self.w
+        w.picture_x.setValue(30); w.artwork_size.setValue(150)
+        w.restore_original_look()
+        self.assertEqual((w.picture_x.value(), w.artwork_size.value()), (0., 100.))
+
     def test_element_hide_and_mute_on_its_own(self):
         """exp.106: hide / mute one element (right-click), not only a whole track."""
         w = self.w

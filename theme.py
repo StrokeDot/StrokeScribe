@@ -212,6 +212,8 @@ QSplitter::handle:vertical {{ height: 6px; }}
 QSplitter::handle:hover {{ background: {c['accent']}; }}
 QDialog, QMessageBox {{ background: {c['panel']}; }}
 QAbstractSpinBox {{ padding-right: 28px; min-height: 22px; }}
+QAbstractSpinBox[compact="true"] {{ font-size: 8.5pt; padding: 3px 2px 3px 6px; padding-right: 18px; }}
+QAbstractSpinBox[compact="true"]::up-button, QAbstractSpinBox[compact="true"]::down-button {{ width: 15px; }}
 QAbstractSpinBox::up-button, QAbstractSpinBox::down-button {{
     subcontrol-origin: border; width: 22px; background: transparent; border: 0px; }}
 QAbstractSpinBox::up-button {{ subcontrol-position: top right; border-top-right-radius: 9px; }}

@@ -66,7 +66,9 @@ class SourceModeConsistencyTests(unittest.TestCase):
         APP.processEvents()
         point=widget.mapTo(self.scroll.viewport(), QPoint(0,0))
         viewport_width=self.scroll.viewport().width()
-        self.assertGreaterEqual(widget.width(), 84, name+" unusable width")
+        # exp.111: a number box beside its slider is sized to its longest number (compact).
+        self.assertGreaterEqual(widget.width(), 48 if widget.property('compact') else 84,
+                                name+" unusable width")
         self.assertGreaterEqual(point.x(), -2, name+" outside source left")
         self.assertLessEqual(point.x()+widget.width(), viewport_width+2,
                              name+" overflows and hides its right-hand arrow")

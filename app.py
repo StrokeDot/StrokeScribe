@@ -1022,11 +1022,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from frame_render import timeline_seconds
         return timeline_seconds(self.drawing,self.options()) if self.drawing else 4.
 
-    def playhead_seconds(self):
+    def playhead_seconds(self,clamp=True):
+        """The playhead in the edited element's own time (seconds)."""
         if self.all_scenes() or self.board_mode():
-            lengths,joins=self.scene_timeline()
-            at=self.position*(sum(lengths)+sum(joins))-self.element_start()
-            return max(0.,min(self.scene_seconds(),at))
+            # exp.111: the real length of the whole video (tracks overlap), as in select_scene.
+            lay=self.timeline_layout()
+            at=self.position*lay.total-self.element_start()
+            return max(0.,min(self.scene_seconds(),at)) if clamp else at
         return self.position*self.scene_seconds()
 
     def add_overlay(self,item):
@@ -1042,7 +1044,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.overlays.append(item)
         self.project_changes.mark_changed()
         self.selected_overlay=item['id']
-        if self.board_mode(): self.preview_scope.setCurrentIndex(1)
+        self.overlay_to_element_view()
         self.commit_history(); self.refresh()
         return item
 
@@ -1076,7 +1078,21 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def select_overlay(self,oid):
         self.selected_overlay=oid or None
+        self.overlay_to_element_view()
         self.refresh()
+
+    def overlay_to_element_view(self):
+        """exp.111: a text or picture on top belongs to its element; it is moved on the picture
+        in "This element" preview (Whole video shows the camera's view, where it cannot be
+        dragged), so a chosen overlay switches the preview there, at the same moment."""
+        if not self.selected_overlay or not (self.all_scenes() or self.board_mode()): return
+        at=self.playhead_seconds()
+        self.preview_scope.setCurrentIndex(0)
+        total=max(1e-6,self.scene_seconds())
+        self.position=max(0.,min(1.,at/total))
+        self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False)
+        self.status.setText('Showing this element: drag the text or picture on the preview to move it, '
+                            'drag its corner to resize. Preview → Whole video shows everything again.')
 
     def move_overlay_clip(self,oid,start,duration,track):
         item=self.find_overlay(oid)
@@ -1117,7 +1133,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import overlays
         if self.canvas.frame is None or not self.overlays: return None
         W,H=self.canvas.frame.width(),self.canvas.frame.height()
-        t=self.playhead_seconds()
+        t=self.playhead_seconds(clamp=False)
         order=sorted(self.overlays,key=lambda o: (o.get('id')!=self.selected_overlay,-int(o.get('track',0))))
         for item in order:
             if overlays.state_at(item,t) is None: continue
@@ -2599,6 +2615,74 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             items.append((it.k,f'{it.k+1} · {self.scene_label(it.k)}',it.start,it.length,it.track,parts))
         moves=[(m.k,self.scenes[m.k]['transition'],m.start,m.length) for m in lay.moves]
         return items,moves
+
+    def edit_camera_move(self,k):
+        """exp.111: a camera move clicked on the timeline: how it moves and for how long; the
+        Board places where the camera goes."""
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QComboBox, QDoubleSpinBox, QPushButton
+        from scenes import TRANSITIONS
+        if not 0<=k<len(self.scenes): return
+        scene=self.scenes[k]
+        last=k==len(self.scenes)-1
+        dialog=QDialog(self); dialog.setWindowTitle('Camera move')
+        form=QFormLayout(dialog)
+        name=(f'After element {k+1}: the camera goes to element {k+2}' if not last
+              else 'After the last element: the camera shows everything')
+        from PySide6.QtWidgets import QLabel
+        note=QLabel(name); note.setWordWrap(True); form.addRow(note)
+        kind=QComboBox(); kind.addItems(list(TRANSITIONS)); kind.setCurrentText(scene['transition'])
+        form.addRow('How',kind)
+        secs=QDoubleSpinBox(); secs.setRange(.2,6); secs.setSingleStep(.1); secs.setDecimals(1)
+        secs.setSuffix(' s'); secs.setValue(float(scene['transition_seconds']))
+        form.addRow('How long',secs)
+        place=QPushButton('Where the camera goes: arrange on the Board…')
+        place.setToolTip('The Board shows every page from above: drag a frame to move where the camera '
+                         'looks, mouse wheel to make it bigger or smaller.')
+        form.addRow(place)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        wants_board={'on':False}
+        place.clicked.connect(lambda: (wants_board.update(on=True),dialog.accept()))
+        if dialog.exec()!=QDialog.DialogCode.Accepted: return
+        self.set_camera_move(k,kind.currentText(),secs.value())
+        if wants_board['on']:
+            target=min(k+1,len(self.scenes)-1)
+            if target!=self.scene_index: self.select_scene(target)
+            self.preview_scope.setCurrentIndex(2)
+
+    def set_camera_move(self,k,kind,seconds):
+        """The camera move after element k (one undo step)."""
+        scene=self.scenes[k]
+        if (scene['transition'],float(scene['transition_seconds']))==(kind,float(seconds)): return
+        self.record_structure('camera move')
+        scene['transition']=kind; scene['transition_seconds']=float(seconds)
+        if k==self.scene_index:
+            for widget,value in ((self.scene_transition,kind),(self.scene_transition_time,float(seconds))):
+                widget.blockSignals(True)
+                if widget is self.scene_transition: widget.setCurrentText(value)
+                else: widget.setValue(value)
+                widget.blockSignals(False)
+        self.project_changes.mark_changed()
+        self._base_cache=OrderedDict()
+        self.fill_scenes(); self.refresh()
+        self.status.setText(f'Camera after element {k+1}: {kind}, {float(seconds):.1f} s.')
+
+    def restore_original_look(self):
+        """exp.111: one button puts the picture back as it came in: size, position, blend,
+        opacity, ink on the page, colour and light (one undo step)."""
+        import picture_look
+        changes=[(self.picture_x,0.),(self.picture_y,0.),(self.artwork_size,100.),(self.artwork_opacity,100.)]
+        for widget,value in changes:
+            widget.setValue(value)
+        self.blend_mode.setCurrentText('Normal')
+        for key,widget in getattr(self,'look_widgets',{}).items():
+            value=picture_look.DEFAULTS.get(key)
+            if value is None: continue
+            if hasattr(widget,'setChecked') and isinstance(value,bool): widget.setChecked(value)
+            elif hasattr(widget,'setValue'): widget.setValue(float(value))
+        self.commit_history()
+        self.status.setText('Picture restored to the original (Ctrl+Z brings your changes back).')
 
     def place_element(self,k,start,track):
         """Whole video: element k dragged to its own start and track (one undo step)."""
