@@ -69,6 +69,7 @@ def main():
         window.showNormal(); window.raise_(); window.activateWindow()
         if len(sys.argv)<=1:
             window.show_home()          # exp.107: start on Home, not in a project
+        window.close_to_home=True       # exp.109: X in a project goes back to Home
         def ready():
             stage(f'Ready: {len(window.drawing.strokes)} strokes loaded. Press Play in the StrokeScribe window.')
             faulthandler.cancel_dump_traceback_later()

@@ -61,6 +61,29 @@ def store_preview(project, image):
         return False
 
 
+def needs_preview(project):
+    """No preview yet, or the project was changed after its preview was made."""
+    try:
+        pic = preview_path(project)
+        return not pic.is_file() or pic.stat().st_mtime + 2 < Path(project).stat().st_mtime
+    except OSError:
+        return True
+
+
+def make_preview(project, hand=None):
+    """Read a project file and keep a preview of its first element (for projects saved
+    before exp.107, or changed elsewhere). True when a preview was made."""
+    import projects
+    from scenes import job_from_state, scenes_from_project, thumbnail
+    data = projects.load(project)
+    states = [s.get('state') for s in scenes_from_project(data) if s.get('state')]
+    state = states[0] if states else data
+    drawing, options, _ = job_from_state(state, hand)
+    if not drawing.strokes:
+        return False
+    return store_preview(project, thumbnail(drawing, options, width=PREVIEW_W))
+
+
 def list_projects():
     """Every project to show: recent ones and those in the projects folder, newest first.
     [{'path', 'name', 'modified', 'recent'}]"""
@@ -166,13 +189,17 @@ def _widgets():
             self.setMouseTracking(True)
             self.preview = None
             if info:
-                p = preview_path(info['path'])
-                if p.is_file():
-                    img = QImage(str(p))
-                    self.preview = None if img.isNull() else img
+                self.load_preview()
                 self.setToolTip(info['path'])
             else:
                 self.setToolTip('Start a new, empty project')
+
+        def load_preview(self):
+            p = preview_path(self.info['path'])
+            if p.is_file():
+                img = QImage(str(p))
+                self.preview = None if img.isNull() else img
+            self.update()
 
         def enterEvent(self, e):
             self.hover = True; self.update()
@@ -260,6 +287,9 @@ def _widgets():
             self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
             self.setAutoFillBackground(True)
             self.cards = []
+            self.failed = set()             # projects whose preview could not be made
+            self.hand = None                # the drawing hand (set by the window)
+            self._preview_token = None
             row = QHBoxLayout(self); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(0)
 
             side = QFrame(); side.setObjectName('homeSide'); side.setFixedWidth(280)
@@ -350,6 +380,38 @@ def _widgets():
             self.folder_label.setToolTip(str(folder))
             self._projects = projects
             self._filter(self.search.text())
+            self.fill_previews()
+
+        def fill_previews(self):
+            """Make the missing previews one by one, without freezing Home (exp.109)."""
+            from PySide6.QtCore import QTimer
+            todo = [c for c in self.cards if not c.new and c.info['path'] not in self.failed
+                    and needs_preview(c.info['path'])]
+            if not todo:
+                return
+            token = object(); self._preview_token = token
+
+            def step():
+                if self._preview_token is not token or not self.isVisible():
+                    return
+                left = [c for c in todo if c in self.cards and c.info['path'] not in self.failed
+                        and needs_preview(c.info['path'])]
+                if not left:
+                    return
+                card = left[0]
+                try:
+                    if make_preview(card.info['path'], self.hand):
+                        card.load_preview()
+                    else:
+                        self.failed.add(card.info['path'])
+                except Exception as exc:
+                    self.failed.add(card.info['path'])
+                    try:
+                        import applog; applog.error('Home preview ' + card.info['path'], exc)
+                    except Exception:
+                        pass
+                QTimer.singleShot(40, step)
+            QTimer.singleShot(60, step)
 
         def _card(self, info):
             card = Card(info, new=info is None)
