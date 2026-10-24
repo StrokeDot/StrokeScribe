@@ -172,6 +172,29 @@ class WindowTests(unittest.TestCase):
         data = json.loads(json.dumps(w.project_state()))
         self.assertEqual(data['track_flags'], {'0': {'muted': True}})
 
+    def test_choosing_an_element_puts_the_playhead_on_it(self):
+        """exp.110: with tracks the playhead used the sum of all elements as the video's
+        length, so choosing an element showed another one."""
+        w = self.w
+        w.place_element(1, 0., 1)
+        w.preview_scope.setCurrentIndex(1); self.app.processEvents()
+        w.select_scene(0); w.select_scene(1); self.app.processEvents()
+        lay = w.timeline_layout()
+        it = lay.items[1]
+        self.assertAlmostEqual(w.position * lay.total, it.start + it.length * .999, delta=.05)
+
+    def test_plus_card_after_the_last_element(self):
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        w = self.w
+        self.assertEqual(w.scene_list.count(), len(w.scenes) + 1)
+        self.assertEqual(w.scene_list.item(len(w.scenes)).data(Qt.ItemDataRole.UserRole), 'add')
+        w.select_scene(0); self.app.processEvents()
+        with mock.patch.object(type(w), 'add_element_menu') as menu:
+            w.strip_plus_clicked()
+        self.assertEqual(w.scene_index, len(w.scenes) - 1)
+        self.assertTrue(menu.called)
+
     def test_element_hide_and_mute_on_its_own(self):
         """exp.106: hide / mute one element (right-click), not only a whole track."""
         w = self.w

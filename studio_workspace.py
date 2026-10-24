@@ -2859,10 +2859,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.scene_list.setWrapping(False)
     w.scene_list.setViewMode(QListWidget.ViewMode.IconMode)
     w.scene_list.setMovement(QListWidget.Movement.Static)
-    w.scene_list.setIconSize(QSize(72,40))
-    w.scene_list.setGridSize(QSize(140,96))
+    w.scene_list.setIconSize(QSize(58,33))         # exp.110: smaller cards
+    w.scene_list.setGridSize(QSize(112,78))
     w.scene_list.setWordWrap(True)
-    w.scene_list.setFixedHeight(106)
+    w.scene_list.setFixedHeight(90)
     w.scene_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
     w.scene_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     w.scene_list.setToolTip('The elements of your video, in order (like VideoScribe). Click one to work on it; '
@@ -2870,6 +2870,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
                             'how it goes out and the move to the next one.')
     w.scene_list.currentRowChanged.connect(lambda row: w.select_scene(row))
     w.scene_list.itemDoubleClicked.connect(lambda item: w.edit_element(w.scene_list.row(item)))
+    def strip_menu_at():
+        item=w.scene_list.item(len(w.scenes))
+        if item is None: return w.add_element_menu(False,None)
+        rect=w.scene_list.visualItemRect(item)
+        from PySide6.QtWidgets import QMenu
+        w.add_element_menu(False,None,at=w.scene_list.viewport().mapToGlobal(rect.bottomLeft()))
+    w._strip_menu_at=strip_menu_at
     scene_row.addWidget(w.scene_list,1)
     scene_buttons=QVBoxLayout();scene_buttons.setSpacing(4)
     w.scene_add=QPushButton('+ Add element')

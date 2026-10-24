@@ -98,7 +98,7 @@ class SceneWindowTests(unittest.TestCase):
         w.scene_list.setCurrentRow(1)
         self.assertAlmostEqual(w.duration.value(), 1.5)
         self.assertEqual(len(w.drawing.strokes), headset)
-        self.assertEqual(w.scene_list.count(), 2)
+        self.assertEqual(w.scene_list.count(), 3)          # 2 elements + the "+" card (exp.110)
         # Save and reopen: both scenes, the edited one, and the transition.
         import projects
         saved = projects.save(self.dir / 'two', w.project_state())
