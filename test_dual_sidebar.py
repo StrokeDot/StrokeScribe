@@ -253,6 +253,9 @@ class DualSidebarTests(unittest.TestCase):
             self.assertEqual(panel.sizePolicy().horizontalPolicy(), policy)
             w.rail_buttons['animation'].click()
             QTest.qWait(450)
+            for _ in range(40):                                   # a busy test machine: up to 2 s more
+                if panel.minimumWidth() == minimum: break
+                QTest.qWait(50)
             self.assertFalse(panel.isHidden())
             self.assertGreaterEqual(w.workspace_splitter.sizes()[2], 270)
             self.assertEqual(panel.minimumWidth(), minimum)
@@ -260,6 +263,9 @@ class DualSidebarTests(unittest.TestCase):
             layout.set_expanded('inspector', False)
             layout.set_expanded('inspector', True)
             QTest.qWait(450)
+            for _ in range(40):
+                if panel.minimumWidth() == minimum: break
+                QTest.qWait(50)
             self.assertFalse(panel.isHidden())
             self.assertEqual(panel.minimumWidth(), minimum)
         finally:

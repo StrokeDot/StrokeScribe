@@ -216,8 +216,14 @@ class WindowTests(unittest.TestCase):
         path = Path(self.tmp.name) / 'two.strokescribe'
         save(path, w.project_state())
         other = Window(); other.show()
+        problems = []
+        from unittest import mock
+        from PySide6.QtWidgets import QMessageBox
         try:
-            self.assertTrue(other.open_project(str(path)))
+            with mock.patch.object(QMessageBox, 'warning', side_effect=lambda *a, **k: problems.append(a[2])):
+                opened = other.open_project(str(path))
+            self.assertEqual(problems, [])
+            self.assertTrue(opened)
             deadline = time.time() + 20
             while time.time() < deadline and any(s.get('thumb') is None for s in other.scenes):
                 self.app.processEvents(); time.sleep(.05)
