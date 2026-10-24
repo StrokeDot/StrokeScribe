@@ -237,6 +237,36 @@ class WindowTests(unittest.TestCase):
         w.restore_original_look()
         self.assertEqual((w.picture_x.value(), w.artwork_size.value()), (0., 100.))
 
+    def test_texts_in_the_whole_video(self):
+        """exp.113: a text stays in Whole video: it can be chosen and dragged there, and the
+        other elements' texts show on the timeline (a click goes to them)."""
+        import overlays
+        w = self.w
+        w.place_element(1, .5, 1)
+        w.preview_scope.setCurrentIndex(1); self.app.processEvents()
+        lay = w.timeline_layout()
+        it = lay.items[1]
+        w.position = (it.start + it.length * .5) / lay.total
+        w.refresh(); self.app.processEvents()
+        item = w.add_overlay(overlays.new_text())
+        self.app.processEvents()
+        self.assertEqual(w.preview_scope.currentIndex(), 1)                 # stays on the whole video
+        box = w.overlay_box()
+        self.assertIsNotNone(box)
+        x, y, bw, bh = box
+        self.assertIs(w.overlay_at(x + bw / 2, y + bh / 2), item)
+        before = item['x']
+        self.assertTrue(w.drag_picture('start', x + bw / 2, y + bh / 2))
+        w.drag_picture('move', .05, 0.); w.drag_picture('done', 0., 0.)
+        self.assertGreater(item['x'], before)
+        # Element 1 chosen: element 2's text shows on the timeline, and a click goes to it.
+        w.select_scene(0); self.app.processEvents()
+        others = w.stage_timeline.other_overlays
+        self.assertEqual([(k, o['id']) for k, o in others], [(1, item['id'])])
+        w.go_to_overlay(1, item['id']); self.app.processEvents()
+        self.assertEqual((w.scene_index, w.selected_overlay), (1, item['id']))
+        self.assertEqual(w.preview_scope.currentIndex(), 1)
+
     def test_element_hide_and_mute_on_its_own(self):
         """exp.106: hide / mute one element (right-click), not only a whole track."""
         w = self.w
