@@ -26,6 +26,7 @@ class SourceTimelineTests(WorkflowFixture):
         self.assertIsNone(t.source_at(QPointF(t._x(5.5),y)))
         t.set_scenes([('One',6,'scene',[('draw',2),('paint',3),('hold',1)]),
                       ('Move',1,'join',[]),('Two',4,'scene',[('draw',3),('paint',1)])],current=1)
+        y=t._rows()[1].center().y()          # whole video: the elements' track row (exp.104)
         self.assertEqual(t.source_at(QPointF(t._x(1),y)),('draw',0))
         self.assertEqual(t.source_at(QPointF(t._x(4),y)),('paint',0))
         self.assertIsNone(t.source_at(QPointF(t._x(6.5),y)))
