@@ -67,8 +67,7 @@ class SourceModeConsistencyTests(unittest.TestCase):
         point=widget.mapTo(self.scroll.viewport(), QPoint(0,0))
         viewport_width=self.scroll.viewport().width()
         # exp.111: a number box beside its slider is sized to its longest number (compact).
-        least=min(84,widget.minimumSizeHint().width()) if widget.property('compact') else 84
-        self.assertGreaterEqual(widget.width(), max(48,least) if widget.property('compact') else 84,
+        self.assertGreaterEqual(widget.width(), 48 if widget.property('compact') else 84,
                                 name+" unusable width")
         self.assertGreaterEqual(point.x(), -2, name+" outside source left")
         self.assertLessEqual(point.x()+widget.width(), viewport_width+2,

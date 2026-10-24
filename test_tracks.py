@@ -200,8 +200,9 @@ class WindowTests(unittest.TestCase):
         from PySide6.QtCore import QPoint, Qt
         from PySide6.QtTest import QTest
         w = self.w
+        w.set_camera_move(0, 'Camera move', 1.2)  # setUp joins the two on the same page
         w.place_element(1, 5., 0)                # its own start: the timeline shows the camera row
-        w.preview_scope.setCurrentIndex(1); self.app.processEvents()
+        w.preview_scope.setCurrentIndex(1); w.refresh(); self.app.processEvents()
         tl = w.stage_timeline
         self.assertTrue(tl.moves)
         k, _, start, secs = tl.moves[0]
@@ -214,7 +215,7 @@ class WindowTests(unittest.TestCase):
         w.set_camera_move(k, 'Pan up', 2.5)
         self.assertEqual((w.scenes[k]['transition'], w.scenes[k]['transition_seconds']), ('Pan up', 2.5))
         w.undo(); self.app.processEvents()
-        self.assertNotEqual(w.scenes[k]['transition_seconds'], 2.5)
+        self.assertEqual(w.scenes[k]['transition'], 'Camera move')
 
     def test_animation_sections_in_working_order(self):
         w = self.w
