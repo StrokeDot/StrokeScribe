@@ -172,6 +172,66 @@ class WindowTests(unittest.TestCase):
         data = json.loads(json.dumps(w.project_state()))
         self.assertEqual(data['track_flags'], {'0': {'muted': True}})
 
+    def test_element_hide_and_mute_on_its_own(self):
+        """exp.106: hide / mute one element (right-click), not only a whole track."""
+        w = self.w
+        w.toggle_element_flag(0, 'hide')
+        self.assertEqual(w.hidden_elements(), {0})
+        self.assertFalse(w.timeline_layout().sequential)               # drawn without it
+        self.assertTrue(w.stage_timeline.element_flags[0]['hidden'])
+        w.toggle_element_flag(0, 'mute')
+        data = json.loads(json.dumps(w.project_state()))
+        from scenes import scenes_from_project
+        back = scenes_from_project(data)
+        self.assertTrue(back[0]['hidden']); self.assertTrue(back[0]['muted'])
+        w.toggle_element_flag(0, 'hide')
+        self.assertEqual(w.hidden_elements(), set())
+
+    def test_zoom_and_scroll(self):
+        """exp.106: zoom the timeline in time (scroll bar along the bottom); many tracks
+        scroll up and down."""
+        w = self.w
+        tl = w.stage_timeline
+        total = tl.total()
+        tl.set_zoom(4.)
+        self.app.processEvents()
+        self.assertTrue(tl.hbar.isVisible())
+        self.assertAlmostEqual(tl._span(), total / 4, places=3)              # a quarter of the video shown
+        self.assertAlmostEqual(tl._x(total) - tl._x(0), tl._width() * 4, delta=2)
+        tl.set_zoom(1.)
+        self.assertFalse(tl.hbar.isVisible())
+        for k in range(len(w.scenes)):
+            w.place_element(k, 0., 4 + k)                              # tracks 5 and 6: tall
+        tl.resize(tl.width(), 180); self.app.processEvents()
+        self.assertTrue(tl.vbar.isVisible())
+        bottom = tl._track_rect(0)
+        self.assertLessEqual(bottom.bottom(), tl.height())               # Track 1 can be seen
+
+    def test_pictures_of_every_element_after_opening(self):
+        """exp.106: the element cards show their pictures as soon as the project opens."""
+        import time
+        from app import Window
+        from projects import save
+        w = self.w
+        folder = Path(tempfile.mkdtemp())                              # not the frames folder
+        path = folder / 'two.strokescribe'
+        save(path, w.project_state())
+        other = Window(); other.show()
+        problems = []
+        from unittest import mock
+        from PySide6.QtWidgets import QMessageBox
+        try:
+            with mock.patch.object(QMessageBox, 'warning', side_effect=lambda *a, **k: problems.append(a[2])):
+                opened = other.open_project(str(path))
+            self.assertEqual(problems, [])
+            self.assertTrue(opened)
+            deadline = time.time() + 20
+            while time.time() < deadline and any(s.get('thumb') is None for s in other.scenes):
+                self.app.processEvents(); time.sleep(.05)
+            self.assertTrue(all(s.get('thumb') is not None and not s['thumb'].isNull() for s in other.scenes))
+        finally:
+            other.playing = False; other.close()
+
     @unittest.skipUnless(shutil.which('ffmpeg'), 'needs FFmpeg')
     def test_export_with_tracks(self):
         import scenes
