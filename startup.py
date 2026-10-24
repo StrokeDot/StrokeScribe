@@ -67,6 +67,8 @@ def main():
             stage('Loading drawing: '+sys.argv[1])
             window.set_drawing(import_svg(Path(sys.argv[1])))
         window.showNormal(); window.raise_(); window.activateWindow()
+        if len(sys.argv)<=1:
+            window.show_home()          # exp.107: start on Home, not in a project
         def ready():
             stage(f'Ready: {len(window.drawing.strokes)} strokes loaded. Press Play in the StrokeScribe window.')
             faulthandler.cancel_dump_traceback_later()
