@@ -1903,6 +1903,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 item.setIcon(QIcon(QPixmap.fromImage(card)))
             item.setToolTip(f'Scene {k+1}: {self.scene_label(k)}')
             self.scene_list.addItem(item)
+        # exp.110: a "+" after the last element: add the next element there.
+        plus=QListWidgetItem('Add\nelement')
+        from ui_icons import icon as ui_icon
+        import theme
+        plus.setIcon(ui_icon('plus',theme.colors()['brand'],size=32))
+        plus.setToolTip('Add a new element after the last one')
+        plus.setData(Qt.ItemDataRole.UserRole,'add')
+        self.scene_list.addItem(plus)
         self.scene_list.setCurrentRow(self.scene_index)
         self.scene_list.blockSignals(False)
         self.update_element_panels()          # the Source card shows the fresh thumbnail
@@ -1982,7 +1990,31 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.fill_scenes()
         self.refresh()
 
+    def strip_plus_clicked(self):
+        """The "+" after the last element in the strip: a new element after the last one."""
+        self.scene_list.blockSignals(True)
+        # exp.110: a "+" after the last element: add the next element there.
+        plus=QListWidgetItem('Add\nelement')
+        from ui_icons import icon as ui_icon
+        import theme
+        plus.setIcon(ui_icon('plus',theme.colors()['brand'],size=32))
+        plus.setToolTip('Add a new element after the last one')
+        plus.setData(Qt.ItemDataRole.UserRole,'add')
+        self.scene_list.addItem(plus)
+        self.scene_list.setCurrentRow(self.scene_index)
+        self.scene_list.blockSignals(False)
+        if not self.drawing or (self.builder and self.builder.isRunning()): return
+        if self.scene_index!=len(self.scenes)-1:
+            self.select_scene(len(self.scenes)-1)
+            if self.scene_index!=len(self.scenes)-1: return
+        from PySide6.QtGui import QCursor
+        menu_at=getattr(self,'_strip_menu_at',None)
+        if menu_at is not None: menu_at()
+        else: self.add_element_menu(False,None)
+
     def select_scene(self,row):
+        if row==len(self.scenes) and row>0:
+            QTimer.singleShot(0,self.strip_plus_clicked); return
         if row<0 or row==self.scene_index or row>=len(self.scenes): return
         if (self.builder and self.builder.isRunning()) or not self.drawing:
             self.fill_scenes(); return
@@ -1993,9 +2025,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self.all_scenes():
             # Whole video: the playhead jumps to where this element ends (finished).
             try:
-                lengths,joins=self.scene_timeline()
-                total=max(1e-6,sum(lengths)+sum(joins))
-                self.position=max(0.,min(1.,(self.element_start()+lengths[row]*.999)/total))
+                # exp.110: the real length of the whole video (elements on tracks overlap), not
+                # the sum of every element: with tracks the playhead landed on another element.
+                lay=self.timeline_layout()
+                it=lay.items[row]
+                self.position=max(0.,min(1.,(it.start+it.length*.999)/max(1e-6,lay.total)))
                 self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False)
                 self.refresh()
             except Exception as exc:
@@ -2021,7 +2055,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.status.setText(f'Scene {self.scene_index+1} added as a copy. Import an SVG or image for it '
                             '(Import, Library or Create image); its settings are its own.')
 
-    def add_element_menu(self,same_spot=False,button=None):
+    def add_element_menu(self,same_spot=False,button=None,at=None):
         """'+ Add element' / '+ Same spot': what the new element is (like VideoScribe, it
         does not start as a copy of the one before)."""
         from PySide6.QtWidgets import QMenu
@@ -2034,7 +2068,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         menu.addAction('Create an image with AI…',lambda: self.new_element('ai',same_spot))
         menu.addSeparator()
         menu.addAction('Copy of this element',lambda: self.new_element('copy',same_spot))
-        where=button.mapToGlobal(button.rect().bottomLeft()) if button is not None else QCursor.pos()
+        where=at if at is not None else button.mapToGlobal(button.rect().bottomLeft()) if button is not None else QCursor.pos()
         menu.exec(where)
 
     def new_element(self,how,same_spot=False,path=None,text=None,item=None):
