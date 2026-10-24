@@ -1,0 +1,36 @@
+name: UI tour screenshots
+on:
+  push:
+    branches: [ui-tour]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  tour:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          architecture: x64
+          cache: pip
+      - run: 'python -m pip install --only-binary=:all: -r requirements.txt'
+      - name: Take the screenshots
+        shell: bash
+        run: python tools/home_tour.py ../ui-tour-out
+      - name: Publish (branch ui-tour-shots)
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd ../ui-tour-out
+          echo "${{ github.sha }}" > commit.txt
+          git init -q && git checkout -q -b ui-tour-shots
+          git config user.name ci && git config user.email ci@example.invalid
+          git add -A && git commit -qm "UI tour for ${{ github.sha }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" ui-tour-shots
