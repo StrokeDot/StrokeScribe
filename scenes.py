@@ -497,7 +497,8 @@ def scenes_from_project(data):
                         transition_seconds=float(item.get('transition_seconds', DEFAULT_TRANSITION_SECONDS)),
                         name=item.get('name'), board=item.get('board'),
                         uid=item.get('uid'), rev=item.get('rev'),
-                        start=item.get('start'), track=item.get('track') or 0))
+                        start=item.get('start'), track=item.get('track') or 0,
+                        hidden=bool(item.get('hidden')), muted=bool(item.get('muted'))))
     return out
 
 
@@ -508,7 +509,8 @@ def scenes_to_project(main_state, scene_list, index):
         data['scenes'] = [dict(state=None if k == index else s['state'], transition=s['transition'],
                                transition_seconds=s['transition_seconds'], name=s.get('name'),
                                board=s.get('board'), uid=s.get('uid'), rev=s.get('rev'),
-                               start=s.get('start'), track=s.get('track') or 0)
+                               start=s.get('start'), track=s.get('track') or 0,
+                               hidden=bool(s.get('hidden')), muted=bool(s.get('muted')))
                           for k, s in enumerate(scene_list)]
         data['scene_index'] = index
     elif scene_list:

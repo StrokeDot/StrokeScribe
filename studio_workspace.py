@@ -190,6 +190,7 @@ class StageTimeline(QFrame):
     element_placed=Signal(int,float,int)   # whole video: an element dragged to a new start / track
     element_reset=Signal(int)           # whole video: back to "after the element before it", Track 1
     track_toggled=Signal(int,str)       # whole video: a track's 'mute' or 'hide' button
+    element_flag=Signal(int,str)        # whole video: one element's 'mute' or 'hide' (right-click menu)
 
     stage_source_edit=Signal(str,int)   # Draw/Paint source editor, exact clicked element
 
@@ -221,6 +222,15 @@ class StageTimeline(QFrame):
         self.selected_overlay=None
         self._drag=None
         self._frozen=None          # time scale kept still while a clip edge is dragged
+        # Whole video (exp.106): zoom in time (Ctrl + wheel, the − / + buttons) with a scroll
+        # bar along the bottom, and the tracks scroll up and down when they do not fit.
+        from PySide6.QtWidgets import QScrollBar
+        self.zoom=1.; self.view_start=0.; self.y_off=0.; self._lanes_seen=0
+        self.element_flags={}      # k -> {'hidden', 'muted'} of single elements
+        self.hbar=QScrollBar(Qt.Orientation.Horizontal,self); self.hbar.hide()
+        self.hbar.valueChanged.connect(self._hbar_moved)
+        self.vbar=QScrollBar(Qt.Orientation.Vertical,self); self.vbar.hide()
+        self.vbar.valueChanged.connect(self._vbar_moved)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setToolTip('Click to move the playhead. Drag the right edge of a clip to change its length. '
                         'Drop a sound or music file on the lower row; drag it to move it.')
@@ -242,7 +252,7 @@ class StageTimeline(QFrame):
 
     HEADER=118.                         # whole video: the track headers on the left (name, mute, hide)
 
-    def set_scenes(self, segments, current=0, items=None, moves=None, flags=None):
+    def set_scenes(self, segments, current=0, items=None, moves=None, flags=None, element_flags=None):
         """Whole video: every element in a row, each with its own Draw / Paint / Hold / Out
         parts inside it (None: back to the parts of one element only).
 
@@ -271,7 +281,12 @@ class StageTimeline(QFrame):
         self.items=[tuple(i) for i in items] if (self.scene_segments and items) else None
         self.moves=[tuple(m) for m in (moves or ())] if self.items else None
         self.track_flags={int(k):dict(v) for k,v in (flags or {}).items()}
+        self.element_flags={int(k):dict(v) for k,v in (element_flags or {}).items()}
         self.LEFT=self.HEADER if self.items else type(self).LEFT
+        if not self.items:
+            self.zoom=1.; self.view_start=0.; self.y_off=0.
+        if self.lanes()!=self._lanes_seen:
+            self._lanes_seen=self.lanes(); self._scroll_to_bottom=True
         if self.items:
             mine=[i for i in self.items if i[0]==current]
             if mine: self.offset=mine[0][2]
@@ -286,16 +301,118 @@ class StageTimeline(QFrame):
         if not self.items: return 0
         return max(i[4] for i in self.items)+2
 
-    def _fit_height(self):
+    def _content_height(self):
         n=self.lanes()
         stack=(self.CAM_H+4+(self.CLIP_H+3)*n) if n else (self.CLIP_H+4)
-        need=int(22+6+stack+(self.LANE_H+3)*self.tracks()+self.AUDIO_H+10)
-        self.setMinimumHeight(max(104,need)); self.setMaximumHeight(max(140,need+20))
+        return int(22+6+stack+(self.LANE_H+3)*self.tracks()+self.AUDIO_H+10+(12 if self.items else 0))
+
+    def _fit_height(self):
+        need=self._content_height()
+        if self.items:
+            # Many tracks: the panel keeps a sensible height and the tracks scroll.
+            self.setMinimumHeight(min(max(104,need),230)); self.setMaximumHeight(max(140,need+20))
+        else:
+            self.setMinimumHeight(max(104,need)); self.setMaximumHeight(max(140,need+20))
+        self._update_bars()
+
+    # ---------------------------------------------- zoom and scrolling (whole video)
+    def _span(self):
+        total=self._view_total()
+        return total/max(1.,self.zoom) if total>0 else 0.
+
+    def _px_per_sec(self):
+        span=self._span()
+        return self._width()/span if span>0 else 1.
+
+    def _sec(self, x):
+        return self.view_start+(x-self.LEFT)/self._width()*self._span()
+
+    def set_zoom(self, zoom, anchor_x=None):
+        total=self.total()
+        if total<=0: return
+        anchor_x=self.LEFT+self._width()/2 if anchor_x is None else anchor_x
+        at=self._sec(anchor_x)
+        self.zoom=max(1.,min(40.,float(zoom)))
+        self.view_start=at-(anchor_x-self.LEFT)/self._width()*self._span()
+        self._clamp_view(); self._update_bars(); self.update()
+
+    def _clamp_view(self):
+        self.view_start=max(0.,min(max(0.,self.total()-self._span()),self.view_start))
+
+    def _hbar_moved(self, value):
+        if self._syncing_bars: return
+        room=max(0.,self.total()-self._span())
+        self.view_start=room*value/1000.; self.update()
+
+    def _vbar_moved(self, value):
+        if self._syncing_bars: return
+        self.y_off=float(value); self.update()
+
+    _syncing_bars=False
+
+    def _update_bars(self):
+        if not hasattr(self,'hbar'): return
+        self._syncing_bars=True
+        try:
+            zoomed=bool(self.items) and self.zoom>1.001
+            self.hbar.setVisible(zoomed)
+            if zoomed:
+                room=max(1e-6,self.total()-self._span())
+                self.hbar.setRange(0,1000); self.hbar.setPageStep(max(1,int(1000*self._span()/max(1e-6,room))))
+                self.hbar.setValue(int(1000*self.view_start/room))
+                self.hbar.setGeometry(int(self.LEFT),self.height()-11,int(self._width()),10)
+            over=self._content_height()-self.height() if self.items else 0
+            self.vbar.setVisible(over>0)
+            if over>0:
+                self.vbar.setRange(0,int(over)); self.vbar.setPageStep(max(1,self.height()))
+                if getattr(self,'_scroll_to_bottom',False):
+                    self.y_off=float(over); self._scroll_to_bottom=False
+                self.y_off=max(0.,min(float(over),self.y_off))
+                self.vbar.setValue(int(self.y_off))
+                top=int(22+6+self.CAM_H+4)
+                self.vbar.setGeometry(self.width()-11,top,10,self.height()-top-(12 if zoomed else 2))
+            else:
+                self.y_off=0.
+        finally:
+            self._syncing_bars=False
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_bars()
+
+    def wheelEvent(self, event):
+        if not self.items:
+            return super().wheelEvent(event)
+        steps=event.angleDelta().y()/120. or event.angleDelta().x()/120.
+        mods=event.modifiers()
+        if mods & Qt.KeyboardModifier.ControlModifier:
+            self.set_zoom(self.zoom*(1.25**steps),event.position().x())
+        elif mods & Qt.KeyboardModifier.ShiftModifier or event.angleDelta().x():
+            self.view_start-=steps*self._span()*.1; self._clamp_view(); self._update_bars(); self.update()
+        elif self.vbar.isVisible():
+            self.vbar.setValue(int(self.vbar.value()-steps*40))
+        else:
+            return super().wheelEvent(event)
+        event.accept()
+
+    ZOOM_BUTTONS=(('out','−'),('in','+'),('fit','Fit'))
+
+    def _zoom_rect(self, which):
+        i=[k for k,_ in self.ZOOM_BUTTONS].index(which)
+        widths=(20.,20.,30.)
+        x=8.+sum(widths[:i])+4*i
+        return QRectF(x,2.,widths[i],17.)
 
     def _track_rect(self, track):
-        top=22.+6.+self.CAM_H+4.
+        top=22.+6.+self.CAM_H+4.-self.y_off
         i=self.lanes()-1-int(track)
         return QRectF(self.LEFT,top+i*(self.CLIP_H+3),self._width(),self.CLIP_H)
+
+    def _tracks_area(self):
+        """Where tracks, pictures and the audio row are seen (below the Camera row)."""
+        top=22.+6.+self.CAM_H+2.
+        bottom=self.height()-(12. if self.hbar.isVisible() else 0.)
+        return QRectF(0,top,self.width(),max(0.,bottom-top))
 
     def _icon_rect(self, track, which):
         lane=self._track_rect(track)
@@ -307,10 +424,7 @@ class StageTimeline(QFrame):
 
     def _paint_headers(self, p, c, small):
         """Left of the tracks: each track's name, its mute and hide buttons (like Filmora)."""
-        cam=self._camera_rect()
-        p.setFont(small); p.setPen(QColor(c['muted']))
-        p.drawText(QRectF(8,cam.top(),self.HEADER-12,cam.height()),
-                   Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,'Camera')
+        p.setFont(small)
         used={i[4] for i in self.items or ()}
         for t in range(self.lanes()):
             lane=self._track_rect(t)
@@ -341,6 +455,45 @@ class StageTimeline(QFrame):
                 if off:
                     p.setPen(QPen(colour,1.8)); p.drawLine(QPointF(cx-8,cy+7),QPointF(cx+8,cy-7))
 
+    @staticmethod
+    def _mark_icon(p, centre, which):
+        """A small red crossed eye (hidden) or speaker (muted) on a clip."""
+        from PySide6.QtGui import QPolygonF
+        cx,cy=centre.x(),centre.y(); red=QColor('#FF6B6F')
+        p.save(); p.setPen(QPen(red,1.5)); p.setBrush(Qt.BrushStyle.NoBrush)
+        if which=='hide':
+            path=QPainterPath(); path.moveTo(cx-7,cy); path.quadTo(cx,cy-7,cx+7,cy); path.quadTo(cx,cy+7,cx-7,cy)
+            p.drawPath(path)
+        else:
+            p.setBrush(red)
+            p.drawPolygon(QPolygonF([QPointF(cx-6,cy-2.5),QPointF(cx-3,cy-2.5),QPointF(cx+1,cy-6),
+                                     QPointF(cx+1,cy+6),QPointF(cx-3,cy+2.5),QPointF(cx-6,cy+2.5)]))
+        p.setPen(QPen(red,1.8)); p.drawLine(QPointF(cx-7,cy+6),QPointF(cx+7,cy-6))
+        p.restore()
+
+    @staticmethod
+    def _camera_icon(p, centre, colour):
+        """A small camera: body, lens and the viewfinder bump."""
+        cx,cy=centre.x(),centre.y()
+        p.save(); p.setPen(QPen(colour,1.3)); p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(QRectF(cx-7,cy-4,14,9),2,2)
+        p.drawRect(QRectF(cx-3,cy-6,5,2))
+        p.drawEllipse(QPointF(cx,cy+.5),2.6,2.6)
+        p.restore()
+
+    def _paint_fixed_header(self, p, c, small):
+        """Top left: the zoom buttons over the track names, and the Camera row's name."""
+        cam=self._camera_rect()
+        p.setFont(small); p.setPen(QColor(c['muted']))
+        self._camera_icon(p,QPointF(16,cam.center().y()),QColor(c['muted']))
+        p.drawText(QRectF(28,cam.top(),self.HEADER-32,cam.height()),
+                   Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,'Camera')
+        for which,text in self.ZOOM_BUTTONS:
+            r=self._zoom_rect(which)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['raised'] if 'raised' in c else c['track']))
+            p.drawRoundedRect(r,4,4)
+            p.setPen(QColor(c['text'])); p.drawText(r,Qt.AlignmentFlag.AlignCenter,text)
+
     def _camera_rect(self):
         return QRectF(self.LEFT,22.+6.,self._width(),self.CAM_H)
 
@@ -352,6 +505,7 @@ class StageTimeline(QFrame):
         return QRectF(x0+1.5,lane.top()+3,max(1.,x1-x0-3),lane.height()-6)
 
     def _item_at(self, pos):
+        if self.items and not self._tracks_area().contains(pos): return None
         for item in reversed(self.items or ()):
             if self._item_rect(item).adjusted(-1,-3,1,3).contains(pos):
                 return item
@@ -445,7 +599,8 @@ class StageTimeline(QFrame):
         n=self.tracks()
         lane_top=y
         y+=(self.LANE_H+3)*n if n else 0
-        audio=QRectF(self.LEFT,y,self._width(),max(18.,min(self.AUDIO_H+10,self.height()-y-4)))
+        audio=QRectF(self.LEFT,y,self._width(),(self.AUDIO_H+10) if self.items else
+                     max(18.,min(self.AUDIO_H+10,self.height()-y-4)))
         return ruler_h,clips,audio
 
     def _lane(self, track):
@@ -474,8 +629,8 @@ class StageTimeline(QFrame):
         return self._frozen or self.total()
 
     def _x(self, seconds):
-        total=self._view_total()
-        return self.LEFT+self._width()*(seconds/total if total>0 else 0)
+        span=self._span()
+        return self.LEFT+self._width()*((seconds-self.view_start)/span if span>0 else 0)
 
     def _edges(self):
         """[(stage key, x of its right edge, seconds before it)] of the visible stage clips."""
@@ -568,20 +723,24 @@ class StageTimeline(QFrame):
             p.end()
             return
         # Ruler: major ticks with time labels, minor ticks between them.
-        steps=[.1,.2,.25,.5,1,2,5,10,15,30,60]
-        major=next((t for t in steps if width*t/total>=70),steps[-1])
+        steps=[.05,.1,.2,.25,.5,1,2,5,10,15,30,60]
+        span=self._span() or total
+        major=next((t for t in steps if width*t/span>=70),steps[-1])
         minor=major/5
-        n=int(total/minor+1e-6)
-        for i in range(n+1):
+        import math as _m
+        first=int(_m.floor(self.view_start/minor)); last=int(_m.ceil((self.view_start+span)/minor+1e-6))
+        for i in range(first,last+1):
             t=i*minor
-            x=left+width*t/total
+            if t<-1e-9 or t>total+1e-9: continue
+            x=self._x(t)
+            if x<left-1 or x>left+width+1: continue
             is_major=abs(t/major-round(t/major))<1e-6
             p.setPen(QPen(QColor(c['ruler'] if is_major else c['border_strong']),1))
             p.drawLine(QPointF(x,ruler_h-(9 if is_major else 4)),QPointF(x,ruler_h))
             if is_major and x<left+width-24:
                 p.setPen(QColor(c['muted']))
                 p.drawText(QRectF(x+3,1,60,14),Qt.AlignmentFlag.AlignLeft,
-                           f'{t:.0f}s' if major>=1 else f'{t:.1f}s')
+                           f'{t:.0f}s' if major>=1 else f'{t:.1f}s' if major>=.1 else f'{t:.2f}s')
         p.setPen(QPen(QColor(c['border']),1))
         p.drawLine(QPointF(left,ruler_h+.5),QPointF(left+width,ruler_h+.5))
         # Render bar under the ruler: red = preview frames not ready yet, green = ready.
@@ -602,6 +761,7 @@ class StageTimeline(QFrame):
                 ('Out',self.erase_seconds,c.get('erase','#D9667E'))]
         if self.items:
             self._paint_tracks(p,c,small)
+            self._paint_fixed_header(p,c,small)
             stages=[]
         elif self.scene_segments:
             self._paint_whole(p,c,clips,small)
@@ -634,6 +794,8 @@ class StageTimeline(QFrame):
             x+=part
         p.restore()
         # Overlay tracks: pictures and titles on top of the drawing.
+        if self.items:
+            p.save(); p.setClipRect(self._tracks_area())
         if self.overlays:
             for track in range(self.tracks()):
                 row=self._lane(track)
@@ -683,8 +845,12 @@ class StageTimeline(QFrame):
                 p.drawText(rect.adjusted(6,0,-4,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
                            '♪ '+self.audio.get('name',''))
                 p.restore()
+        if self.items:
+            p.restore()
         # Playhead: a line through the track with a marker on the ruler.
-        play_x=left+width*self.progress
+        play_x=self._x(self.progress*total)
+        if not left-1<=play_x<=left+width+1:
+            p.end(); return
         accent=QColor(c['accent'])
         p.setPen(QPen(accent,2))
         p.drawLine(QPointF(play_x,ruler_h-2),QPointF(play_x,lane.bottom()))
@@ -752,19 +918,26 @@ class StageTimeline(QFrame):
         colours={'draw':c['draw'],'paint':c['paint'],'hold':c['hold'],'erase':c.get('erase','#D9667E'),
                  'move':c['draw']}
         cam=self._camera_rect()
+        area=self._tracks_area()
         p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(cam,5,5)
+        p.save(); p.setClipRect(area)
         for t in range(self.lanes()):
             p.drawRoundedRect(self._track_rect(t),9,9)
+        p.restore()
         p.setFont(small)
         p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
         for k,label,start,secs in self.moves or ():
+            # A camera move: a camera drawn as a picture (not a word, so no font can cut it).
             x0,x1=self._x(start),self._x(start+secs)
-            r=QRectF(x0+1,cam.top()+2,max(2.,x1-x0-2),cam.height()-4)
+            r=QRectF(x0+1,cam.top()+1,max(2.,x1-x0-2),cam.height()-2)
             p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['border_strong'])); p.drawRoundedRect(r,4,4)
-            if r.width()>=40:
-                p.setPen(QColor(c['text'])); p.drawText(r,Qt.AlignmentFlag.AlignCenter,label)
-        p.restore(); self._paint_headers(p,c,small)
-        p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
+            if r.width()>=16:
+                self._camera_icon(p,r.center(),QColor(c['text']))
+        p.restore()
+        p.save(); p.setClipRect(QRectF(0,area.top(),self.LEFT,area.height()))
+        self._paint_headers(p,c,small)
+        p.restore()
+        p.save(); p.setClipRect(QRectF(self.LEFT,area.top(),self._width(),area.height()))
         bold=QFont(self.font()); bold.setPointSizeF(8.5); bold.setBold(True)
         for item in self.items:
             k,label,start,secs,track,parts=item
@@ -776,7 +949,8 @@ class StageTimeline(QFrame):
             whole=sum(v for _,v in parts) or 1.
             path=QPainterPath(); path.addRoundedRect(rect,7,7)
             p.save(); p.setClipPath(path,Qt.ClipOperation.IntersectClip)
-            if self.flag(track,'hide'): p.setOpacity(.35)     # a hidden track: not in the video
+            hidden=self.flag(track,'hide') or self.element_flags.get(k,{}).get('hidden')
+            if hidden: p.setOpacity(.35)                      # hidden: not in the video
             x=rect.left()
             for key,v in parts:
                 w=rect.width()*v/whole
@@ -796,6 +970,9 @@ class StageTimeline(QFrame):
                         gx=ex-5
                         p.drawLine(QPointF(gx,rect.center().y()-6),QPointF(gx,rect.center().y()+6))
                         p.drawLine(QPointF(gx-3,rect.center().y()-6),QPointF(gx-3,rect.center().y()+6))
+            marks=[w for w,key in (('hide','hidden'),('mute','muted')) if self.element_flags.get(k,{}).get(key)]
+            for n,which in enumerate(marks):           # this element hidden / muted on its own
+                self._mark_icon(p,QPointF(rect.right()-12-n*20,rect.center().y()),which)
             if rect.width()>=30:
                 p.setFont(bold); p.setPen(QColor(c['clip_text'] if current else c['text']))
                 text=label if rect.width()<110 else f'{label}  {secs:.1f}s'
@@ -821,7 +998,8 @@ class StageTimeline(QFrame):
 
     # ------------------------------------------------------------ mouse
     def _seek(self, x):
-        fraction=max(0.,min(1.,(x-self.LEFT)/self._width()))
+        total=self.total()
+        fraction=max(0.,min(1.,self._sec(x)/total)) if total>0 else 0.
         self.slider.setValue(round(1000*fraction))
 
     def mousePressEvent(self,event):
@@ -857,6 +1035,12 @@ class StageTimeline(QFrame):
                 menu.addAction('Edit Drawing Source…',lambda:self.stage_source_edit.emit('draw',k))
                 menu.addAction('Edit Painting Source…',lambda:self.stage_source_edit.emit('paint',k))
                 menu.addSeparator()
+                flags=self.element_flags.get(k,{})
+                menu.addAction('Show this element' if flags.get('hidden') else 'Hide this element',
+                               lambda:self.element_flag.emit(k,'hide'))
+                menu.addAction('Sounds on for this element' if flags.get('muted') else 'Mute this element',
+                               lambda:self.element_flag.emit(k,'mute'))
+                menu.addSeparator()
                 menu.addAction('Start right after the element before it (Track 1)',lambda:self.element_reset.emit(k))
                 menu.exec(event.globalPosition().toPoint())
             elif source is not None:self.source_menu(source[1],event.globalPosition().toPoint())
@@ -868,18 +1052,26 @@ class StageTimeline(QFrame):
             self.selected_overlay=item.get('id'); self.overlay_selected.emit(item.get('id'))
             self._frozen=self.total()
             self._drag=('overlay',item,part,pos.x(),pos.y(),float(item.get('start',0)),
-                        float(item.get('duration',3)),int(item.get('track',0)),self._width()/self.total())
+                        float(item.get('duration',3)),int(item.get('track',0)),self._px_per_sec())
             self.update(); event.accept(); return
         key=self._edge_at(pos)
         if key:
             start=next(t for k,_,t in self._edges() if k==key)
             self._frozen=self.total()
-            self._drag=('edge',key,start,self._width()/self.total())
+            self._drag=('edge',key,start,self._px_per_sec())
             event.accept(); return
         rect=self._audio_rect()
         if rect is not None and rect.contains(pos):
-            self._drag=('audio',pos.x(),self.audio['start'],self._width()/self.total())
+            self._drag=('audio',pos.x(),self.audio['start'],self._px_per_sec())
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept(); return
+        if self.items and pos.x()<self.LEFT and pos.y()<22:
+            for which,_ in self.ZOOM_BUTTONS:
+                if self._zoom_rect(which).adjusted(-2,-2,2,2).contains(pos):
+                    if which=='fit': self.zoom=1.; self.view_start=0.; self._update_bars(); self.update()
+                    else: self.set_zoom(self.zoom*(1.5 if which=='in' else 1/1.5))
+                    event.accept(); return
+        if self.items and pos.x()<self.LEFT and not self._tracks_area().contains(pos):
             event.accept(); return
         if self.items and pos.x()<self.LEFT:
             used={i[4] for i in self.items}
@@ -895,7 +1087,7 @@ class StageTimeline(QFrame):
             # Whole video on tracks: drag an element along its track or to another track
             # (a click without moving works on it, as before).
             self._frozen=self.total()
-            self._drag=('block',item[0],pos.x(),pos.y(),item[2],item[4],self._width()/max(1e-6,self.total()),False)
+            self._drag=('block',item[0],pos.x(),pos.y(),item[2],item[4],self._px_per_sec(),False)
             event.accept(); return
         k=self._block_at(pos)
         self._drag=('seek',)
@@ -941,7 +1133,7 @@ class StageTimeline(QFrame):
                 self.update(); event.accept(); return
             if kind=='edge':
                 _,key,start,px_per_sec=self._drag
-                seconds=max(.1,(pos.x()-self.LEFT)/px_per_sec-start)
+                seconds=max(.1,self._sec(pos.x())-start)
                 self.stage_dragged.emit(key,round(seconds,2))
                 self.setToolTip(f'{key.title()}: {seconds:.1f} s')
             elif kind=='audio':
@@ -1033,7 +1225,7 @@ class StageTimeline(QFrame):
         picture=self._audio_url(event,self.PICTURE_TYPES)
         if picture:
             x=event.position().x()
-            seconds=(x-self.LEFT)/self._width()*self.total()-self.offset
+            seconds=self._sec(x)-self.offset
             seconds=max(0.,min(self.element_length(),seconds))
             self.overlay_dropped.emit(picture,round(seconds,2))
             event.acceptProposedAction()
@@ -2735,6 +2927,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))
     w.stage_timeline.element_reset.connect(lambda k: w.reset_element_time(k))
     w.stage_timeline.track_toggled.connect(lambda t,which: w.toggle_track(t,which))
+    w.stage_timeline.element_flag.connect(lambda k,which: w.toggle_element_flag(k,which))
     w.stage_timeline.stage_source_edit.connect(w.edit_stage_source)
     w.vertical_splitter.addWidget(timeline)
     w.vertical_splitter.setStretchFactor(0,1)

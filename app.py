@@ -1621,6 +1621,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.sync_workspace()
         self.settle_rev()
         self.fill_scenes()
+        self.make_missing_thumbs()
 
     def apply_scene_state(self,data):
         from projects import drawing_from_dict, qimage_from_b64, set_widget_value
@@ -1781,6 +1782,30 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 scene['thumb']=make_thumb(self.drawing,self.options())
             except Exception:
                 scene['thumb']=None
+
+    def make_missing_thumbs(self):
+        """After a project opens: the pictures of the elements not edited yet, one by one in
+        the background of the window (exp.106: they only showed after being clicked)."""
+        pending=[k for k,s in enumerate(self.scenes) if s.get('thumb') is None and s.get('state') is not None]
+        if not pending: return
+        token=object(); self._thumb_token=token
+
+        def step():
+            if getattr(self,'_closed',False) or getattr(self,'_thumb_token',None) is not token: return
+            todo=[k for k,s in enumerate(self.scenes) if s.get('thumb') is None and s.get('state') is not None]
+            if not todo:
+                self.fill_scenes(); return
+            k=todo[0]
+            try:
+                from scenes import job_from_state, thumbnail
+                drawing,options,_=job_from_state(self.scenes[k]['state'],self.hand)
+                self.scenes[k]['thumb']=thumbnail(drawing,options)
+            except Exception as exc:
+                import applog; applog.error(f'Picture of element {k+1}',exc)
+                self.scenes[k]['thumb']=QImage()          # tried: not again
+            if len(todo)==1 or len(todo)%3==0: self.fill_scenes()
+            QTimer.singleShot(30,step)
+        QTimer.singleShot(50,step)
 
     def fill_scenes(self):
         """Rebuild the scene strip; ignore deferred calls after window close."""
@@ -2451,7 +2476,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         lengths,joins=self.scene_timeline(width,height)
         memo=self.__dict__.setdefault('_memo',{})
         key=('layout',tuple(lengths),tuple(joins),tuple((s.get('start'),s.get('track')) for s in self.scenes))
-        key=key+(repr(sorted(getattr(self,'track_flags',{}).items())),)
+        key=key+(repr(sorted(getattr(self,'track_flags',{}).items())),tuple(sorted(self.hidden_elements())))
         if key not in memo:
             lay=layout(lengths,joins,[s.get('start') for s in self.scenes],
                        [s.get('track') or 0 for s in self.scenes])
@@ -2496,13 +2521,27 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.refresh()
 
     def track_flag(self,scene,key):
-        return (getattr(self,'track_flags',{}) or {}).get(scene.get('track') or 0,{}).get(key,False)
+        """Hidden / muted: by its track, or the element on its own (exp.106)."""
+        return bool(scene.get(key)) or \
+            (getattr(self,'track_flags',{}) or {}).get(scene.get('track') or 0,{}).get(key,False)
+
+    def toggle_element_flag(self,k,which):
+        if not 0<=k<len(self.scenes): return
+        key={'mute':'muted','hide':'hidden'}[which]
+        scene=self.scenes[k]
+        scene[key]=not scene.get(key,False)
+        if not scene[key]: scene.pop(key,None)
+        self.project_changes.mark_changed()
+        word={'muted':('muted','sounds on'),'hidden':('hidden from the video','shown')}[key]
+        self.status.setText(f'Element {k+1} {word[0] if scene.get(key) else word[1]}.')
+        self.__dict__.setdefault('_memo',{}).clear()
+        self.refresh()
 
     def hidden_elements(self):
         """Elements on hidden tracks (not drawn in the whole video or the export)."""
         flags=getattr(self,'track_flags',{}) or {}
         hidden={t for t,f in flags.items() if f.get('hidden')}
-        return {k for k,s in enumerate(self.scenes) if (s.get('track') or 0) in hidden}
+        return {k for k,s in enumerate(self.scenes) if (s.get('track') or 0) in hidden or s.get('hidden')}
 
     def reset_element_time(self,k):
         if not 0<=k<len(self.scenes): return
@@ -2530,7 +2569,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         tl=self.stage_timeline
         items,moves=self.timeline_items()
         tl.set_scenes(segments,current=self.scene_index,items=items,moves=moves,
-                      flags=getattr(self,'track_flags',{}))
+                      flags=getattr(self,'track_flags',{}),
+                      element_flags={k:{key:True for key in ('hidden','muted') if s.get(key)}
+                                     for k,s in enumerate(self.scenes) if s.get('hidden') or s.get('muted')})
         tl.set_overlays(self.overlays,self.selected_overlay)
         tl.set_audio(self.timeline_audio())
         tl.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() else {'paint','hold','erase'}
