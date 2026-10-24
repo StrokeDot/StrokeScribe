@@ -201,6 +201,7 @@ class StageTimeline(QFrame):
     element_placed=Signal(int,float,int)   # whole video: an element dragged to a new start / track
     element_reset=Signal(int)           # whole video: back to "after the element before it", Track 1
     track_toggled=Signal(int,str)       # whole video: a track's 'mute' or 'hide' button
+    other_overlay_clicked=Signal(int,str)   # whole video: another element's text / picture (k, id)
     move_clicked=Signal(int)            # whole video: a camera move clicked (the move after element k)
     element_flag=Signal(int,str)        # whole video: one element's 'mute' or 'hide' (right-click menu)
 
@@ -583,10 +584,14 @@ class StageTimeline(QFrame):
     CLIP_H=34.; LANE_H=22.; AUDIO_H=26.
 
     def tracks(self):
-        return (max(int(o.get('track',0)) for o in self.overlays)+1) if self.overlays else 0
+        every=list(self.overlays)+[o for _,o in getattr(self,'other_overlays',())]
+        return (max(int(o.get('track',0)) for o in every)+1) if every else 0
 
-    def set_overlays(self, items, selected=None):
+    def set_overlays(self, items, selected=None, others=None):
+        """others (exp.113, whole video): [(k, item)] the texts and pictures of the other
+        elements, item['start'] in seconds of the whole video; shown, a click goes to them."""
         self.overlays=list(items or ())
+        self.other_overlays=list(others or ())
         self.selected_overlay=selected
         self._fit_height()
         self.update()
@@ -631,6 +636,17 @@ class StageTimeline(QFrame):
         start=self.offset+float(item.get('start',0))
         x0=self._x(start); x1=self._x(start+float(item.get('duration',3)))
         return QRectF(x0,lane.top(),max(8.,x1-x0),lane.height())
+
+    def _other_rect(self, item):
+        lane=self._lane(int(item.get('track',0)))
+        x0=self._x(float(item.get('start',0))); x1=self._x(float(item.get('start',0))+float(item.get('duration',3)))
+        return QRectF(x0,lane.top(),max(8.,x1-x0),lane.height())
+
+    def _other_at(self, pos):
+        if self.locked: return None
+        for k,item in reversed(getattr(self,'other_overlays',())):
+            if self._other_rect(item).contains(pos): return k,item
+        return None
 
     def _overlay_at(self, pos):
         if self.locked: return None,None
@@ -816,6 +832,26 @@ class StageTimeline(QFrame):
         # Overlay tracks: pictures and titles on top of the drawing.
         if self.items:
             p.save(); p.setClipRect(self._tracks_area())
+        others=getattr(self,'other_overlays',())
+        if others:
+            # The other elements' texts and pictures (exp.113): fainter; a click goes to them.
+            for track in range(self.tracks()):
+                row=self._lane(track)
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(row,7,7)
+            p.save(); p.setClipRect(QRectF(left,0,width,self.height()))
+            for k,item in others:
+                r=self._other_rect(item).adjusted(1,2,-1,-2)
+                fill=QColor(c.get('erase','#E06A86') if item.get('kind')=='text' else c.get('accent_b','#4C42DE'))
+                fill.setAlpha(90)
+                edge=QColor(fill); edge.setAlpha(200)
+                p.setPen(QPen(edge,1,Qt.PenStyle.DashLine)); p.setBrush(fill)
+                p.drawRoundedRect(r,6,6)
+                if r.width()>30:
+                    p.setPen(QColor(c['text'])); p.setFont(small)
+                    icon='T ' if item.get('kind')=='text' else '▣ '
+                    p.drawText(r.adjusted(7,0,-6,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
+                               f'{icon}{str(item.get("name") or "")[:30]}  ({k+1})')
+            p.restore()
         if self.overlays:
             for track in range(self.tracks()):
                 row=self._lane(track)
@@ -1068,6 +1104,10 @@ class StageTimeline(QFrame):
             event.accept(); return
         if event.button()!=Qt.MouseButton.LeftButton or self.total()<=0:
             return super().mousePressEvent(event)
+        other=self._other_at(pos) if not self._overlay_at(pos)[0] else None
+        if other is not None:
+            self.other_overlay_clicked.emit(other[0],str(other[1].get('id')))
+            event.accept(); return
         item,part=self._overlay_at(pos)
         if item is not None:
             self.selected_overlay=item.get('id'); self.overlay_selected.emit(item.get('id'))
@@ -3003,6 +3043,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.overlay_dropped.connect(lambda path,seconds: w.add_overlay_picture(path,at=seconds))
     w.stage_timeline.element_clicked.connect(lambda k: w.timeline_element_clicked(k))
     w.stage_timeline.move_clicked.connect(lambda k: w.edit_camera_move(k))
+    w.stage_timeline.other_overlay_clicked.connect(lambda k,oid: w.go_to_overlay(k,oid))
     w.stage_timeline.element_edit.connect(lambda k: w.edit_element(k))
     w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))
     w.stage_timeline.element_reset.connect(lambda k: w.reset_element_time(k))

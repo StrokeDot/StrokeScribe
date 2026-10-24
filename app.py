@@ -1049,7 +1049,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.overlays.append(item)
         self.project_changes.mark_changed()
         self.selected_overlay=item['id']
-        self.overlay_to_element_view()
+        if self.board_mode(): self.preview_scope.setCurrentIndex(1)
         self.commit_history(); self.refresh()
         return item
 
@@ -1078,26 +1078,19 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.edit_overlay(item['id'])
         return item
 
+    def go_to_overlay(self,k,oid):
+        """Whole video: another element's text or picture clicked on the timeline: work on that
+        element, with it chosen (the preview stays on the whole video)."""
+        self.timeline_element_clicked(k)
+        if self.scene_index==k and self.find_overlay(oid) is not None:
+            self.select_overlay(oid)
+
     def find_overlay(self,oid):
         return next((o for o in self.overlays if o.get('id')==oid),None)
 
     def select_overlay(self,oid):
         self.selected_overlay=oid or None
-        self.overlay_to_element_view()
         self.refresh()
-
-    def overlay_to_element_view(self):
-        """exp.111: a text or picture on top belongs to its element; it is moved on the picture
-        in "This element" preview (Whole video shows the camera's view, where it cannot be
-        dragged), so a chosen overlay switches the preview there, at the same moment."""
-        if not self.selected_overlay or not (self.all_scenes() or self.board_mode()): return
-        at=self.playhead_seconds()
-        self.preview_scope.setCurrentIndex(0)
-        total=max(1e-6,self.scene_seconds())
-        self.position=max(0.,min(1.,at/total))
-        self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False)
-        self.status.setText('Showing this element: drag the text or picture on the preview to move it, '
-                            'drag its corner to resize. Preview → Whole video shows everything again.')
 
     def move_overlay_clip(self,oid,start,duration,track):
         item=self.find_overlay(oid)
@@ -1133,12 +1126,53 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.status.setText(f'Overlay "{item.get("name","")}" deleted (Ctrl+Z brings it back).')
         self.commit_history(); self.refresh()
 
+    def edited_element_rect(self,W,H):
+        """exp.113: where the edited element is drawn on the preview now, (x, y, w, h) in
+        frame pixels, or None when it is not on screen (texts and pictures on top are
+        moved there, in Whole video too)."""
+        if self.board_mode(): return None
+        if not self.all_scenes(): return (0.,0.,float(W),float(H))
+        try:
+            lay=self.timeline_layout()
+            seconds=self.position*lay.total
+            k=self.scene_index
+            if lay.sequential:
+                import board
+                lengths,joins=self.scene_timeline()
+                where,at,_=board.locate(lengths,joins,seconds)
+                return (0.,0.,float(W),float(H)) if where=='scene' and at==k else None
+            from timeline_model import state_at
+            import timeline_render
+            state=state_at(lay,seconds)
+            if k not in dict(state.active) and k not in state.finished: return None
+            world=self.preview_world(W,H)
+            elements=[dict(transition=s['transition'],move_seconds=s['transition_seconds'],
+                           camera=self.preview_scene(j,W,H)[3] if j==state.current else None)
+                      for j,s in enumerate(self.scenes)]
+            view=timeline_render.view_of(world,lay,state,elements)
+            x,y,w,h=world.place(world.frames[k],view,W,H)
+            return None if w<4 or h<4 else (float(x),float(y),float(w),float(h))
+        except Exception as exc:
+            import applog; applog.error('Element on the preview',exc)
+            return None
+
+    def _to_element(self,x,y):
+        """Preview pixels -> the edited element's own frame pixels (None: not on screen)."""
+        W,H=self.canvas.frame.width(),self.canvas.frame.height()
+        r=self.edited_element_rect(W,H)
+        if r is None: return None
+        rx,ry,rw,rh=r
+        return (x-rx)*W/rw,(y-ry)*H/rh
+
     def overlay_at(self,x,y):
         """The overlay shown at (x, y) of the preview now (the selected one first), or None."""
         import overlays
         if self.canvas.frame is None or not self.overlays: return None
         W,H=self.canvas.frame.width(),self.canvas.frame.height()
         t=self.playhead_seconds(clamp=False)
+        mapped=self._to_element(x,y)
+        if mapped is None: return None
+        x,y=mapped
         order=sorted(self.overlays,key=lambda o: (o.get('id')!=self.selected_overlay,-int(o.get('track',0))))
         for item in order:
             if overlays.state_at(item,t) is None: continue
@@ -1151,9 +1185,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """Dashed box around the selected overlay on the preview (frame pixels), or None."""
         import overlays
         item=self.find_overlay(self.selected_overlay) if self.selected_overlay else None
-        if item is None or self.canvas.frame is None or self.all_scenes() or self.board_mode(): return None
-        if overlays.state_at(item,self.playhead_seconds()) is None: return None
-        return overlays.box(item,self.canvas.frame.width(),self.canvas.frame.height())
+        if item is None or self.canvas.frame is None or self.board_mode(): return None
+        if overlays.state_at(item,self.playhead_seconds(clamp=False)) is None: return None
+        W,H=self.canvas.frame.width(),self.canvas.frame.height()
+        r=self.edited_element_rect(W,H)
+        if r is None: return None
+        rx,ry,rw,rh=r
+        bx,by,bw,bh=overlays.box(item,W,H)
+        return (rx+bx*rw/W,ry+by*rh/H,bw*rw/W,bh*rh/H)
 
     def show_error(self,text):
         """Something went wrong: say so (the details are in the log)."""
@@ -1195,18 +1234,21 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """Drag on the preview: move the picture on the page (Position X / Y), or a frame on the Board."""
         if self.board_mode() or (kind!='start' and getattr(self,'_board_drag',None)):
             return self.board_drag(kind,dx,dy)
-        if kind=='start' and not self.all_scenes():
+        if kind=='start':
             item=self.overlay_at(dx,dy)
             if item is not None:
                 self.playing=False
                 self.selected_overlay=item['id']
-                self._overlay_drag=(item,float(item.get('x',.5)),float(item.get('y',.5)))
+                # Whole video: the element can be drawn smaller (its frame on the page).
+                W,H=self.canvas.frame.width(),self.canvas.frame.height()
+                r=self.edited_element_rect(W,H) or (0.,0.,W,H)
+                self._overlay_drag=(item,float(item.get('x',.5)),float(item.get('y',.5)),W/r[2],H/r[3])
                 return True
         drag=getattr(self,'_overlay_drag',None)
         if drag is not None and kind!='start':
-            item,x0,y0=drag
+            item,x0,y0,sx,sy=drag
             if kind=='move':
-                item['x'],item['y']=round(x0+dx,4),round(y0+dy,4)
+                item['x'],item['y']=round(x0+dx*sx,4),round(y0+dy*sy,4)
                 self.refresh()
             else:
                 self._overlay_drag=None; self.commit_history(); self.refresh()
@@ -1227,7 +1269,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                                 'Click "Center" (Animation tab) to put it back in the middle.')
 
     def click_preview(self,x,y,add=False):
-        if not self.board_mode() and not self.all_scenes():
+        if not self.board_mode():
             item=self.overlay_at(x,y)
             if item is not None or self.selected_overlay:
                 self.selected_overlay=item['id'] if item is not None else None
@@ -2532,7 +2574,6 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def preview_wheel(self,steps,x,y):
         """Mouse wheel on the preview: resize a frame on the Board, or the overlay under the mouse."""
         if self.board_mode(): return self.board_wheel(steps,x,y)
-        if self.all_scenes(): return False
         item=self.overlay_at(x,y)
         if item is None: return False
         item['size']=max(.01,min(3.,float(item.get('size',.3))*(1.08**steps)))
@@ -2553,7 +2594,6 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def preview_double(self,x,y):
         if self.board_mode(): return self.board_double(x,y)
-        if self.all_scenes(): return
         item=self.overlay_at(x,y)
         if item is not None: self.edit_overlay(item['id'])
 
@@ -2770,7 +2810,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                       flags=getattr(self,'track_flags',{}),
                       element_flags={k:{key:True for key in ('hidden','muted') if s.get(key)}
                                      for k,s in enumerate(self.scenes) if s.get('hidden') or s.get('muted')})
-        tl.set_overlays(self.overlays,self.selected_overlay)
+        others=[]
+        if items:
+            # exp.113: the other elements' texts and pictures show on the timeline too.
+            starts={it[0]:it[2] for it in items}
+            for j,scene in enumerate(self.scenes):
+                if j==self.scene_index or not scene.get('state') or j not in starts: continue
+                for o in scene['state'].get('overlays') or ():
+                    others.append((j,dict(o,start=starts[j]+float(o.get('start',0)))))
+        tl.set_overlays(self.overlays,self.selected_overlay,others)
         tl.set_audio(self.timeline_audio())
         tl.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() else {'paint','hold','erase'}
         mine=dict(self.stage_parts(options))
