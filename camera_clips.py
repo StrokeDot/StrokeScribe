@@ -28,30 +28,65 @@ import math
 import uuid
 
 CUSTOM = 'Move to a spot'      # exp.121 (was 'Custom'): drag the frame where the camera goes
-KINDS = ('Zoom in', 'Zoom out', 'Pan left', 'Pan right', 'Pan up', 'Pan down', CUSTOM)
+# exp.124: a camera clip goes in, holds, and comes back to the normal frame; zoom out is its
+# way back (no 'Zoom out' kind any more).
+KINDS = ('Zoom in', 'Pan left', 'Pan right', 'Pan up', 'Pan down', CUSTOM)
 REST = (1., .5, .5)
 PAN_ZOOM = 1.4
+IN_SECONDS = 1.2
+OUT_SECONDS = 1.2
+HOLD_SECONDS = 2.
 
 
-def new_clip(kind='Zoom in', start=0., duration=1.2):
+def new_clip(kind='Zoom in', start=0., duration=None):
+    """A camera clip: `in_s` seconds to get there, it holds, `out_s` seconds back to the
+    normal frame; `duration` is the whole clip (in + hold + out)."""
+    total = IN_SECONDS + HOLD_SECONDS + OUT_SECONDS if duration is None else float(duration)
     clip = dict(id=uuid.uuid4().hex[:10], kind=kind, start=round(float(start), 2),
-                duration=round(max(.2, float(duration)), 2), to=None, **{'from': None})
+                duration=round(max(.4, total), 2), in_s=IN_SECONDS, out_s=OUT_SECONDS,
+                to=None, **{'from': None})
     clip['from'], clip['to'] = presets(kind)
+    fit(clip)
     return clip
 
 
+def fit(clip):
+    """In and back times fit in the clip (each at least .1 s; the hold can be 0)."""
+    total = max(.4, float(clip.get('duration', 4.4)))
+    a, b = max(.1, float(clip.get('in_s', IN_SECONDS))), max(.1, float(clip.get('out_s', OUT_SECONDS)))
+    if a + b > total:
+        scale = total / (a + b)
+        a, b = a * scale, b * scale
+    clip['duration'], clip['in_s'], clip['out_s'] = round(total, 2), round(a, 2), round(b, 2)
+    return clip
+
+
+def upgrade(clip):
+    """Camera clips from exp.119-123 ('duration' was how long it took to get there; it then
+    stayed): the same way in, a 2 s hold, the same time back."""
+    if 'in_s' not in clip:
+        ramp = max(.2, float(clip.get('duration', 1.2)))
+        clip['in_s'], clip['out_s'] = ramp, ramp
+        clip['duration'] = ramp * 2 + HOLD_SECONDS
+        clip.pop('back', None)
+        if clip.get('kind') == 'Zoom out':
+            clip['kind'], clip['from'], clip['to'] = 'Zoom in', None, (1.6, .5, .5)
+        if clip.get('kind') == 'Custom':
+            clip['kind'] = CUSTOM
+    return fit(clip)
+
+
 def presets(kind):
-    """(from, to) of a kind: from None = from wherever the camera is."""
+    """(from, to): pans start at 'from' (the camera gets there first), slide to 'to' while
+    holding; zooms (from None) go straight to 'to'."""
     side = .5 - .5 / PAN_ZOOM                       # how far the view can go at PAN_ZOOM
     return {
         'Zoom in': (None, (1.6, .5, .5)),
-        'Zoom out': (None, REST),
         'Pan left': ((PAN_ZOOM, .5 + side, .5), (PAN_ZOOM, .5 - side, .5)),
         'Pan right': ((PAN_ZOOM, .5 - side, .5), (PAN_ZOOM, .5 + side, .5)),
         'Pan up': ((PAN_ZOOM, .5, .5 + side), (PAN_ZOOM, .5, .5 - side)),
         'Pan down': ((PAN_ZOOM, .5, .5 - side), (PAN_ZOOM, .5, .5 + side)),
         CUSTOM: (None, (1.6, .5, .5)),
-        'Custom': (None, (1.6, .5, .5)),
     }.get(kind, (None, (1.6, .5, .5)))
 
 
@@ -78,40 +113,41 @@ def combine(base, clip):
     return z1 * z2, x1 + (x2 - .5) / z1, y1 + (y2 - .5) / z1
 
 
-def until(clip, moves):
-    """A clip's framing holds until the end of the next transition after it starts (or,
-    'back': it goes back when it ends, as fast as it came; exp.122)."""
-    # exp.123: a moving camera stays as it leaves the camera until another clip changes it
-    # (the page moves go on from it), or it goes back when it ends ('back').
-    start = float(clip['start'])
-    if clip.get('back'):
-        return start + 2 * float(clip.get('duration', 1.2))
-    return math.inf
+def until(clip, moves=()):
+    """exp.124: a clip ends with the camera back at the normal frame."""
+    return float(clip['start']) + max(.4, float(clip.get('duration', 4.4)))
 
 
 def framing_at(clips, seconds, moves=()):
-    """The camera clips' framing at `seconds` of the whole video, or None (no effect)."""
+    """The camera clips' framing at `seconds` of the whole video, or None (no effect).
+
+    exp.124 (the user's rule): in over in_s seconds, it holds there, back to the normal
+    frame over out_s seconds at the end of the clip. Each clip starts from the normal
+    frame; when clips overlap, the later one is shown."""
     t = float(seconds)
-    live = [c for c in clips or () if float(c['start']) <= t + 1e-9 and t < until(c, moves)]
+    live = [c for c in clips or () if float(c['start']) <= t + 1e-9 and t < until(c)]
     if not live:
         return None
     clip = max(live, key=lambda c: (float(c['start']), c.get('id', '')))
-    start = float(clip['start'])
-    begin = clip.get('from')
-    if begin is None:
-        earlier = [c for c in clips if c is not clip and float(c['start']) < start - 1e-9]
-        begin = framing_at(earlier, start, moves) or REST
-    length = max(.05, float(clip.get('duration', 1.2)))
-    p = (t - start) / length
-    if clip.get('back') and p > 1.:                # going back to where it came from
-        return mix(tuple(clip.get('to') or REST), tuple(begin), _ease(p - 1.))
-    return mix(tuple(begin), tuple(clip.get('to') or REST), _ease(p))
+    start, total = float(clip['start']), max(.4, float(clip.get('duration', 4.4)))
+    a = max(.05, float(clip.get('in_s', IN_SECONDS)))
+    b = max(.05, float(clip.get('out_s', OUT_SECONDS)))
+    local = t - start
+    to = tuple(clip.get('to') or REST)
+    there = tuple(clip['from']) if clip.get('from') else to      # where the hold begins
+    if local < a:
+        return mix(REST, there, _ease(local / a))
+    if local > total - b:
+        return mix(to, REST, _ease((local - (total - b)) / b))
+    hold = max(1e-6, total - a - b)
+    return mix(there, to, _ease((local - a) / hold)) if there != to else to
 
 
 def signature(clips):
     """Plain data for fingerprints and option keys."""
     return tuple((c.get('id'), c.get('kind'), round(float(c['start']), 4), round(float(c['duration']), 4),
-                  tuple(c['from']) if c.get('from') else None, tuple(c.get('to') or REST), bool(c.get('back')))
+                  tuple(c['from']) if c.get('from') else None, tuple(c.get('to') or REST),
+                  round(float(c.get('in_s', IN_SECONDS)), 4), round(float(c.get('out_s', OUT_SECONDS)), 4))
                  for c in clips or ())
 
 
@@ -153,6 +189,8 @@ def from_options(base, options, total):
     if not info:
         return base
     start, sig, moves = info
-    clips = [{'id': i, 'kind': k, 'start': s, 'duration': d, 'from': f, 'to': t, 'back': b}
-             for i, k, s, d, f, t, *rest in sig for b in [bool(rest[0]) if rest else False]]
+    clips = []
+    for i, k, s, d, f, t, *rest in sig:
+        a, b = (rest + [IN_SECONDS, OUT_SECONDS])[:2] if len(rest) >= 2 else (IN_SECONDS, OUT_SECONDS)
+        clips.append({'id': i, 'kind': k, 'start': s, 'duration': d, 'from': f, 'to': t, 'in_s': a, 'out_s': b})
     return wrap(base, start, clips, moves, total)

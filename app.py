@@ -1118,10 +1118,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         menu.exec(where)
 
     def find_camera(self,cid):
-        for c in getattr(self,'cameras',[]):
-            if c.get('kind')=='Custom':                  # exp.121: the kind's new name
-                from camera_clips import CUSTOM
-                c['kind']=CUSTOM
+        if any('in_s' not in c for c in getattr(self,'cameras',[])):
+            import camera_clips                          # exp.124: in / hold / back
+            for c in self.cameras: camera_clips.upgrade(c)
         return next((c for c in getattr(self,'cameras',[]) if c.get('id')==cid),None)
 
     def camera_moves(self):
@@ -1169,7 +1168,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if len(self.scenes)>1 and not self.all_scenes(): self.preview_scope.setCurrentIndex(1)
         start=self.video_seconds() if self.position<.999 else 0.
         total=max(.5,self.video_length())
-        clip=camera_clips.new_clip(kind,min(start,max(0.,total-.5)),min(1.2,max(.2,total-start)))
+        clip=camera_clips.new_clip(kind,min(start,max(0.,total-.5)))
         self.record_structure('add camera clip')
         self.cameras.append(clip)
         self.project_changes.mark_changed()
@@ -1194,7 +1193,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if clip is None: return
         if getattr(self,'_cam_recorded',None)!=cid:
             self.record_structure('move camera clip'); self._cam_recorded=cid
-        clip['start'],clip['duration']=round(float(start),2),round(max(.2,float(length)),2)
+        clip['start'],clip['duration']=round(float(start),2),round(max(.4,float(length)),2)
+        import camera_clips; camera_clips.fit(clip)
         self.project_changes.mark_changed()
         self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
 
@@ -1231,14 +1231,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self._filling_camera=True
         try:
             self.cam_clip_kind.setCurrentText(clip.get('kind') if clip.get('kind')!='Custom' else __import__('camera_clips').CUSTOM)
-            self.cam_clip_start.setValue(float(clip['start'])); self.cam_clip_length.setValue(float(clip['duration']))
-            self.cam_clip_from_here.setChecked(clip.get('from') is None)
-            self.cam_clip_back.setChecked(bool(clip.get('back')))
+            self.cam_clip_start.setValue(float(clip['start']))
+            a,b=float(clip.get('in_s',1.2)),float(clip.get('out_s',1.2))
+            self.cam_clip_in.setValue(a); self.cam_clip_out.setValue(b)
+            self.cam_clip_hold.setValue(max(0.,float(clip['duration'])-a-b))
+            pan=clip.get('from') is not None
             for key in ('to','from'):
                 framing=clip.get(key) or (1.,.5,.5)
                 for name,value in zip(('zoom','x','y'),framing):
-                    self.cam_clip_fields[(key,name)].setValue(round(value*100.))
-                    self.cam_clip_fields[(key,name)].setEnabled(key=='to' or clip.get('from') is not None)
+                    field=self.cam_clip_fields[(key,name)]
+                    field.setValue(round(value*100.))
+                    if key=='from': field.parentWidget().setVisible(pan)
+                if key=='from': self.cam_clip_fields[(key,'head')].setVisible(pan)
         finally:
             self._filling_camera=False
 
@@ -1254,12 +1258,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             clip['kind']=self.cam_clip_kind.currentText()
             clip['from'],clip['to']=camera_clips.presets(clip['kind'])
         else:
-            clip['start']=round(self.cam_clip_start.value(),2); clip['duration']=round(self.cam_clip_length.value(),2)
+            clip['start']=round(self.cam_clip_start.value(),2)
+            a,b,hold=self.cam_clip_in.value(),self.cam_clip_out.value(),self.cam_clip_hold.value()
+            clip['in_s'],clip['out_s'],clip['duration']=round(a,2),round(b,2),round(a+hold+b,2)
+            camera_clips.fit(clip)
             get=lambda key: tuple(self.cam_clip_fields[(key,n)].value()/100. for n in ('zoom','x','y'))
             clip['to']=get('to')
-            clip['from']=None if self.cam_clip_from_here.isChecked() else get('from')
-            clip['back']=self.cam_clip_back.isChecked()
-            if clip.get('kind')!=camera_clips.CUSTOM and (clip['to'],clip['from'])!=camera_clips.presets(clip['kind']):
+            if clip.get('from') is not None: clip['from']=get('from')
+            if clip.get('kind')!=camera_clips.CUSTOM and (clip['to'],clip['from'])!=camera_clips.presets(clip['kind']) \
+                    and clip.get('from') is None:
                 clip['kind']=camera_clips.CUSTOM
         self.project_changes.mark_changed()
         self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
@@ -2225,7 +2232,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.track_flags={int(t):dict(f) for t,f in (data.get('track_flags') or {}).items()}
         import copy
         self.overlays=copy.deepcopy(data.get('titles') or [])
-        self.cameras=[dict(c,**{'from':tuple(c['from']) if c.get('from') else None,'to':tuple(c.get('to') or (1.,.5,.5))})
+        import camera_clips
+        self.cameras=[camera_clips.upgrade(dict(c,**{'from':tuple(c['from']) if c.get('from') else None,
+                                                     'to':tuple(c.get('to') or (1.,.5,.5))}))
                       for c in copy.deepcopy(data.get('cameras') or [])]
         self.selected_camera=None
         self.selected_overlay=None
@@ -2268,7 +2277,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             import camera_clips
             for k,st in cams:
                 g=lambda key,d: float(st.get(key,d))
-                clip=camera_clips.new_clip(camera_clips.CUSTOM,starts.get(k,0.)+g('cam_begin',0.),g('cam_time',1.2))
+                ramp=g('cam_time',1.2)
+                clip=camera_clips.new_clip(camera_clips.CUSTOM,starts.get(k,0.)+g('cam_begin',0.),ramp*2+2.)
+                clip['in_s'],clip['out_s']=ramp,ramp
                 clip['from']=(g('cam_start_zoom',100.)/100.,g('cam_start_x',50.)/100.,g('cam_start_y',50.)/100.)
                 clip['to']=(g('cam_end_zoom',160.)/100.,g('cam_end_x',50.)/100.,g('cam_end_y',50.)/100.)
                 self.cameras.append(clip)
@@ -3129,7 +3140,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             z=max(1.,min(5.,z*(1.08**steps))); half=.5/z
             clip['to']=(round(z,3),max(half,min(1-half,cx)),max(half,min(1-half,cy)))
             from camera_clips import CUSTOM
-            if clip.get('kind') not in (CUSTOM,'Zoom in','Zoom out'): clip['kind']=CUSTOM
+            if clip.get('kind') not in (CUSTOM,'Zoom in'): clip['kind']=CUSTOM
             self.project_changes.mark_changed()
             self.fill_camera_panel(); self.sync_camera_timeline(); self.canvas.update()
             return True

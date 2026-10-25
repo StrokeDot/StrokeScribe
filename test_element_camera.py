@@ -65,47 +65,47 @@ class MoveTakesOverTests(unittest.TestCase):
 
 
 class CameraClipTests(unittest.TestCase):
-    """exp.119: camera clips on the Camera track."""
+    """exp.124: a camera clip gets there (in), stays, and comes back to the normal frame."""
 
-    def test_a_zoom_in_eases_then_holds_until_the_transition(self):
+    def test_in_hold_and_back(self):
         import camera_clips as cc
-        clip = cc.new_clip('Zoom in', start=2., duration=2.)
-        moves = [(6., 7.)]
-        self.assertIsNone(cc.framing_at([clip], 1., moves))                 # before it: no effect
-        self.assertEqual(cc.framing_at([clip], 2., moves), (1., .5, .5))     # from where the camera is
-        z, _, _ = cc.framing_at([clip], 3., moves)
+        clip = cc.new_clip('Zoom in', start=2.)                      # 1.2 s in, 2 s stays, 1.2 s back
+        self.assertIsNone(cc.framing_at([clip], 1.))
+        self.assertEqual(cc.framing_at([clip], 2.), (1., .5, .5))    # from the normal frame
+        z, _, _ = cc.framing_at([clip], 2.6)
         self.assertTrue(1. < z < 1.6)
-        self.assertEqual(cc.framing_at([clip], 5., moves), (1.6, .5, .5))    # holds
-        self.assertEqual(cc.framing_at([clip], 6.5, moves), (1.6, .5, .5))   # the page move goes on from it
-        self.assertEqual(cc.framing_at([clip], 9., moves), (1.6, .5, .5))    # exp.123: it stays until changed
+        self.assertEqual(cc.framing_at([clip], 3.2), (1.6, .5, .5))  # there
+        self.assertEqual(cc.framing_at([clip], 5.2), (1.6, .5, .5))  # stays
+        self.assertLess(cc.framing_at([clip], 5.8)[0], 1.6)          # coming back
+        self.assertIsNone(cc.framing_at([clip], 6.5))                # back to normal
+        clip['out_s'] = 3.; cc.fit(clip)                             # its own speed back
+        self.assertAlmostEqual(clip['in_s'] + clip['out_s'], 4.2, places=2)
 
-    def test_go_back_when_it_ends(self):
+    def test_two_clips_do_not_add_up(self):
         import camera_clips as cc
-        clip = cc.new_clip('Zoom in', start=2., duration=2.); clip['back'] = True
-        self.assertEqual(cc.framing_at([clip], 4., ()), (1.6, .5, .5))
-        self.assertLess(cc.framing_at([clip], 5., ())[0], 1.6)
-        self.assertIsNone(cc.framing_at([clip], 6.5, ()))
-        sig = cc.signature([clip])
-        self.assertTrue(cc.from_options(None, dict(video_camera=(0., sig, ())), 10.).clips[0]['back'])
+        a = cc.new_clip('Zoom in', start=0.)
+        b = cc.new_clip('Zoom in', start=8.)
+        self.assertEqual(cc.framing_at([a, b], 10.), (1.6, .5, .5))   # not 1.6 x 1.6
 
-    def test_the_next_clip_starts_where_the_camera_is(self):
+    def test_older_clips_are_upgraded(self):
         import camera_clips as cc
-        a = cc.new_clip('Zoom in', start=0., duration=1.)
-        b = cc.new_clip('Zoom out', start=2., duration=1.)
-        self.assertEqual(cc.framing_at([a, b], 2., ()), (1.6, .5, .5))       # no jump
-        self.assertEqual(cc.framing_at([a, b], 3.5, ()), (1., .5, .5))
+        old = {'id': 'x', 'kind': 'Zoom out', 'start': 1., 'duration': 1.5, 'from': None, 'to': (1., .5, .5), 'back': False}
+        cc.upgrade(old)
+        self.assertEqual((old['in_s'], old['out_s'], old['duration']), (1.5, 1.5, 5.))
+        self.assertEqual(old['kind'], 'Zoom in')
 
     def test_video_camera_combines_with_the_element_camera_and_pickles(self):
         import pickle
         import camera_clips as cc
         from camera import ZoomPath
         own = ZoomPath((2., .5, .5), (2., .5, .5), 0., 1., 4.)
-        cam = cc.wrap(own, 10., [cc.new_clip('Zoom in', 10., 1.)], [], 4.)
-        z, x, y = cam.at(1.)
+        clip = cc.new_clip('Zoom in', 10.)
+        cam = cc.wrap(own, 10., [clip], [], 4.)
+        z, x, y = cam.at(.5)                                           # 12 s: there
         self.assertAlmostEqual(z, 3.2)
-        self.assertEqual(pickle.loads(pickle.dumps(cam)).at(1.), (z, x, y))   # export workers
-        options = dict(video_camera=(10., cc.signature([cc.new_clip('Zoom in', 10., 1.)]), ()))
-        self.assertAlmostEqual(cc.from_options(None, options, 4.).at(1.)[0], 1.6)
+        self.assertEqual(pickle.loads(pickle.dumps(cam)).at(.5), (z, x, y))   # export workers
+        options = dict(video_camera=(10., cc.signature([clip]), ()))
+        self.assertAlmostEqual(cc.from_options(None, options, 4.).at(.5)[0], 1.6)
 
 
 @unittest.skipIf(SKIP, 'needs Qt')
