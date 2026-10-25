@@ -48,7 +48,10 @@ def prepare(path, settings, hand):
     if kind == 'Project':
         import projects
         from scenes import job_from_state
-        drawing, options, s = job_from_state(projects.load(path), hand)
+        data = projects.load(path)
+        drawing, options, s = job_from_state(data, hand)
+        if data.get('titles'):                       # exp.116: the video's own texts
+            options['overlays'] = list(options.get('overlays') or []) + list(data['titles'])
         return drawing, options, formats_from_settings(s)
     if kind == 'SVG':
         from color_reveal import load_color_image
@@ -131,7 +134,8 @@ class BatchWorker(QThread):
                     data = scene_list[0]['project']
                     message = export_scenes(scene_list, folder, data.get('settings', {}), self.hand,
                                             progress=self.item_progress.emit,
-                                            interrupted=self.isInterruptionRequested)
+                                            interrupted=self.isInterruptionRequested,
+                                            titles=data.get('titles'))
                 else:
                     drawing, options, formats = prepare(path, self.settings, self.hand)
                     self.item_state.emit(row, 'Exporting…')

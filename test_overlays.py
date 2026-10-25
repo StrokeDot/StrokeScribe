@@ -158,9 +158,8 @@ class WindowTests(unittest.TestCase):
         other = Window(); self.addCleanup(other.close)
         self.assertTrue(other.open_project(str(saved)))
         self.assertEqual(len(other.overlays), 2)
-        from scenes import job_from_state
-        _, options, _ = job_from_state(projects.load(saved), w.hand)
-        self.assertEqual(len(options['overlays']), 2)
+        # exp.116: the video's own clips, not part of an element.
+        self.assertEqual(len(projects.load(saved)['titles']), 2)
 
     def test_title_shows_in_the_preview(self):
         w = self.w
@@ -178,7 +177,8 @@ class WindowTests(unittest.TestCase):
         w.refresh()
         w.slider.setValue(400); self.app.processEvents()
         W, H = w.canvas.frame.width(), w.canvas.frame.height()
-        self.assertGreater(alpha_in(w.canvas.frame, overlays.box(item, W, H)), .03)
+        # exp.116: on the screen, over the picture (its own layer).
+        self.assertGreater(alpha_in(w.canvas.titles_frame, overlays.box(item, W, H)), .03)
         # The settings window changes it live.
         d = OverlayDialog(w, item, w.scene_seconds(), changed=lambda it: w.refresh())
         d.text.setPlainText('New title'); d.effect_in.setCurrentText('Zoom')
