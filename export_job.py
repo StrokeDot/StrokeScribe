@@ -77,8 +77,17 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     options['audio'] = (dict(path=audio_path, volume=float(s.get('audio_volume', 100)) / 100.,
                              offset=float(s.get('audio_offset', 0)))
                         if audio_path else None)
-    from camera import ZOOMS
-    options['camera_zoom'] = ZOOMS[CAMERA_BY_TEXT.get(s.get('camera') or 'Off', 'off')]
+    from camera import ZOOMS, ZOOM_MODE
+    if s.get('camera') == ZOOM_MODE:
+        # exp.115: the element's own camera, from a start framing to an end framing.
+        plan = tuple(float(s.get(k, d)) for k, d in (
+            ('cam_start_zoom', 100.), ('cam_start_x', 50.), ('cam_start_y', 50.),
+            ('cam_end_zoom', 160.), ('cam_end_x', 50.), ('cam_end_y', 50.),
+            ('cam_begin', 0.), ('cam_time', 1.2)))
+        options['cam_plan'] = plan
+        options['camera_zoom'] = max(plan[0], plan[3]) / 100.
+    else:
+        options['camera_zoom'] = ZOOMS[CAMERA_BY_TEXT.get(s.get('camera') or 'Off', 'off')]
     if image_mode is None:
         image_mode = image_source is not None
     if image_mode:

@@ -157,13 +157,26 @@ def locate(lengths, joins, seconds):
     return 'scene', n - 1, 1.
 
 
-def join_view(all_frames, k, kind, t, aspect=9 / 16, move_seconds=1.):
+def join_view(all_frames, k, kind, t, aspect=9 / 16, move_seconds=1., leaving=None, arriving=None):
     """Camera view during the join after scene k. After the last scene (Show
-    everything) the camera moves out to the whole board, then holds."""
+    everything) the camera moves out to the whole board, then holds.
+
+    exp.115, the element cameras: `leaving` is element k's own camera, `arriving`
+    element k + 1's. The move has the last word on where the camera lands: it starts
+    where element k's camera is (a zoom still running goes on, and the move takes over
+    from it gradually) and lands on element k + 1's first framing."""
+    import camera as _camera
     a = all_frames[k]
+    if leaving is not None:
+        held = _camera.after_end(leaving, t * move_seconds)
+        if held is not None:
+            a = sub_view(a, *held, aspect)
     if k == len(all_frames) - 1:
         return move_view(a, bounds(all_frames, aspect), 'Pan right', end_split(t, move_seconds), aspect)
-    return move_view(a, all_frames[k + 1], 'Camera move' if kind == SHOW_ALL else kind, t, aspect)
+    b = all_frames[k + 1]
+    if arriving is not None:
+        b = sub_view(b, *arriving.at(0.), aspect)
+    return move_view(a, b, 'Camera move' if kind == SHOW_ALL else kind, t, aspect)
 
 
 def end_split(t, move_seconds):

@@ -125,6 +125,7 @@ def for_page(options):
     out = dict(options)
     out['background'] = False
     out['camera_zoom'] = 1.
+    out.pop('cam_plan', None)
     return out
 
 
@@ -337,6 +338,17 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
     work = folder / '_scenes'
     work.mkdir()
 
+    cameras = {}
+
+    def scene_camera(j):
+        """Element j's own camera (exp.115: the moves start and land on it)."""
+        if not 0 <= j < len(prepared):
+            return None
+        if j not in cameras:
+            o = prepared[j]['options']
+            cameras[j] = camera_for(prepared[j]['drawing'], o, float(o.get('camera_zoom', 1.)))
+        return cameras[j]
+
     def write(image):
         nonlocal index, done
         if not image.save(str(folder / f'frame_{index:06d}.png'), 'PNG', 80):
@@ -409,7 +421,8 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                                    world.view(all_frames[k + 1], width, height, upto=k + 1))
                     image = transition_frame(screens[0], screens[1], kind, t)
                 else:
-                    view = board.join_view(all_frames, k, kind, t, aspect, scene['move_seconds'])
+                    view = board.join_view(all_frames, k, kind, t, aspect, scene['move_seconds'],
+                                           leaving=scene_camera(k), arriving=scene_camera(k + 1))
                     image = world.view(view, width, height, upto=k + 1)
                 write(image)
             if interrupted():
