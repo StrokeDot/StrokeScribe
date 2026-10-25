@@ -277,6 +277,48 @@ class WindowTests(unittest.TestCase):
         self.assertEqual([o['id'] for o in data['titles']], [item['id']])
         self.assertFalse(any((s.get('state') or {}).get('overlays') for s in data.get('scenes', [])))
 
+    def test_text_tracks_and_choosing(self):
+        """exp.117: texts sit on their own tracks above the elements (Text 1, Text 2…, each
+        with a hide button); one thing is chosen at a time, Ctrl+click chooses more."""
+        import overlays
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+        w = self.w
+        w.place_element(1, .5, 1)
+        w.preview_scope.setCurrentIndex(1); w.refresh(); self.app.processEvents()
+        a = w.add_overlay(overlays.new_text())
+        b = w.add_overlay(overlays.new_text())
+        w.refresh(); self.app.processEvents()
+        tl = w.stage_timeline
+        self.assertNotEqual(a['track'], b['track'])                       # same time: two tracks
+        self.assertLess(tl._lane(0).bottom(), tl._track_rect(tl.lanes() - 1).top())   # above the elements
+        # Plain click chooses one; Ctrl+click adds; a click on an element clears the texts.
+        r = tl._overlay_rect(a)
+        QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                         QPoint(int(r.center().x()), int(r.center().y())))
+        self.assertEqual({o['id'] for o in w.chosen_overlays()}, {a['id']})
+        r = tl._overlay_rect(b)
+        QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier,
+                         QPoint(int(r.center().x()), int(r.center().y())))
+        self.assertEqual({o['id'] for o in w.chosen_overlays()}, {a['id'], b['id']})
+        block = tl._item_rect(tl.items[0])
+        QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+                         QPoint(int(block.center().x()), int(block.center().y())))
+        self.app.processEvents()
+        self.assertEqual(w.chosen_overlays(), [])
+        # Both chosen and deleted at once (one undo step).
+        w.select_overlay(a['id']); w.toggle_overlay(b['id'])
+        w.overlay_action(a['id'], 'delete')
+        self.assertEqual(w.overlays, [])
+        w.undo(); self.app.processEvents()
+        self.assertEqual(len(w.overlays), 2)
+        # Hide Text 1: not drawn, not in the export list.
+        t = w.overlays[0]['track']
+        w.toggle_text_track(t)
+        self.assertNotIn(t, {int(o['track']) for o in w.visible_titles()})
+        data = json.loads(json.dumps(w.project_state()))
+        self.assertEqual(data['text_hidden'], [t])
+
     def test_older_texts_move_to_the_video(self):
         """Projects from before exp.116: an element's texts become the video's own clips at
         the same moment."""

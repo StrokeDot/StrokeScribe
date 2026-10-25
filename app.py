@@ -485,6 +485,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self._prerender_all=False; self._prerender_next=0
         self.overlays=[]               # pictures and titles on top of this scene (overlays.py)
         self.selected_overlay=None
+        self.selected_overlays=set()    # exp.117: Ctrl+click chooses more than one
+        self.text_hidden=set()          # text tracks hidden from the video
         # Rapid brush-width changes should not synchronously rebuild the entire
         # paint plan for every spinbox/wheel event on the GUI thread.
         self.brush_preview_timer=QTimer(self)
@@ -1062,7 +1064,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.record_structure('add '+('text' if item.get('kind')=='text' else 'picture on top'))
         self.overlays.append(item)
         self.project_changes.mark_changed()
-        self.selected_overlay=item['id']
+        self.selected_overlay=item['id']; self.selected_overlays={item['id']}
         if self.board_mode(): self.preview_scope.setCurrentIndex(1)
         self.refresh()
         return item
@@ -1079,7 +1081,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if force or key!=getattr(self,'_titles_key',None):
             self._titles_key=key
             tl.title_offset=offset
+            tl.text_hidden=set(getattr(self,'text_hidden',set()))
             tl.set_overlays(self.overlays,self.selected_overlay)
+            tl.selected_overlays=set(getattr(self,'selected_overlays',set()))
 
     def titles_for_element(self,k=None):
         """The texts / pictures on top in element k's own time (an export of that element alone)."""
@@ -1088,16 +1092,17 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             start=self.element_start(k) if len(self.scenes)>1 else 0.
         except Exception:
             start=0.
-        return [dict(copy.deepcopy(o),start=float(o.get('start',0))-start) for o in self.overlays]
+        return [dict(copy.deepcopy(o),start=float(o.get('start',0))-start) for o in self.visible_titles()]
 
     def titles_layer(self,width,height):
         """The texts / pictures on top at the playhead, on a clear picture (None: nothing)."""
         import overlays
-        if not self.overlays or self.board_mode(): return None
+        shown=self.visible_titles()
+        if not shown or self.board_mode(): return None
         t=self.video_seconds()
-        if not any(overlays.state_at(o,t) is not None for o in self.overlays): return None
+        if not any(overlays.state_at(o,t) is not None for o in shown): return None
         layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
-        return overlays.paint(layer,self.overlays,t)
+        return overlays.paint(layer,shown,t)
 
     def add_overlay_picture(self,path=None,at=None):
         import overlays
@@ -1163,15 +1168,66 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         return next((o for o in self.overlays if o.get('id')==oid),None)
 
     def select_overlay(self,oid):
+        """One text chosen ('' / None: none). exp.117: choosing one leaves the others."""
         self.selected_overlay=oid or None
+        self.selected_overlays={oid} if oid else set()
+        self.sync_titles_choice()
         self.refresh()
+
+    def toggle_overlay(self,oid):
+        """Ctrl+click: add a text to the choice, or take it out."""
+        chosen=set(getattr(self,'selected_overlays',set()))
+        if self.selected_overlay: chosen.add(self.selected_overlay)
+        if oid in chosen: chosen.discard(oid)
+        else: chosen.add(oid)
+        self.selected_overlays=chosen
+        if self.selected_overlay not in chosen:
+            self.selected_overlay=next(iter(chosen),None)
+        if oid in chosen: self.selected_overlay=oid
+        self.sync_titles_choice()
+        self.refresh()
+
+    def chosen_overlays(self):
+        ids=set(getattr(self,'selected_overlays',set()))
+        if self.selected_overlay: ids.add(self.selected_overlay)
+        return [o for o in self.overlays if o.get('id') in ids]
+
+    def sync_titles_choice(self):
+        tl=self.stage_timeline
+        tl.selected_overlay=self.selected_overlay
+        tl.selected_overlays=set(getattr(self,'selected_overlays',set()))
+        tl.update()
+
+    def toggle_text_track(self,t):
+        """A text track's hide button: its texts are not in the video (exp.117)."""
+        hidden=set(getattr(self,'text_hidden',set()))
+        self.record_structure('hide text track')
+        if t in hidden: hidden.discard(t)
+        else: hidden.add(t)
+        self.text_hidden=hidden
+        self.stage_timeline.text_hidden=set(hidden)
+        self.project_changes.mark_changed()
+        self.refresh()
+
+    def visible_titles(self):
+        hidden=getattr(self,'text_hidden',set())
+        return [o for o in self.overlays if int(o.get('track',0)) not in hidden]
 
     def move_overlay_clip(self,oid,start,duration,track):
         item=self.find_overlay(oid)
         if item is None: return
         if not getattr(self,'_clip_recorded',None)==oid:          # one undo step per drag
             self.record_structure('move text'); self._clip_recorded=oid
+            self._clip_from={o['id']:float(o.get('start',0)) for o in self.chosen_overlays()}
+            self._clip_from[oid]=float(item.get('start',0))
+        moved=abs(float(duration)-float(item.get('duration',3)))<1e-6
         item.update(start=start,duration=duration,track=track)
+        if moved:                          # the other chosen texts move with it (exp.117)
+            starts=getattr(self,'_clip_from',{})
+            shift=float(start)-starts.get(oid,float(start))
+            for o in self.chosen_overlays():
+                if o is not item and o['id'] in starts:
+                    o['start']=round(max(0.,starts[o['id']]+shift),2)
         self.project_changes.mark_changed()
         self.refresh()
 
@@ -1207,8 +1263,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             twin['track']=max(int(o.get('track',0)) for o in self.overlays)+1
             self.overlays.append(twin); self.selected_overlay=twin['id']
         elif action=='delete':
-            self.overlays=[o for o in self.overlays if o.get('id')!=oid]
-            if self.selected_overlay==oid: self.selected_overlay=None
+            gone={o['id'] for o in self.chosen_overlays()} if oid in {o['id'] for o in self.chosen_overlays()} else set()
+            gone.add(oid)                  # exp.117: every chosen text goes
+            self.overlays=[o for o in self.overlays if o.get('id') not in gone]
+            if self.selected_overlay in gone: self.selected_overlay=None
+            self.selected_overlays=set()
             self.status.setText(f'Overlay "{item.get("name","")}" deleted (Ctrl+Z brings it back).')
         self.project_changes.mark_changed(); self.refresh()
 
@@ -1219,7 +1278,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self.board_mode(): return None
         W,H=self.canvas.frame.width(),self.canvas.frame.height()
         t=self.video_seconds()                   # on the screen, in whole-video time (exp.116)
-        order=sorted(self.overlays,key=lambda o: (o.get('id')!=self.selected_overlay,-int(o.get('track',0))))
+        order=sorted(self.visible_titles(),key=lambda o: (o.get('id')!=self.selected_overlay,-int(o.get('track',0))))
         for item in order:
             if overlays.state_at(item,t) is None: continue
             bx,by,bw,bh=overlays.box(item,W,H)
@@ -1308,6 +1367,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             item=self.overlay_at(dx,dy)
             if item is not None:
                 self.playing=False
+                if item['id'] not in getattr(self,'selected_overlays',set()):
+                    self.selected_overlays={item['id']}
                 self.selected_overlay=item['id']
                 self.record_structure('move text on the screen')
                 self._overlay_drag=(item,float(item.get('x',.5)),float(item.get('y',.5)),1.,1.)
@@ -1339,9 +1400,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def click_preview(self,x,y,add=False):
         if not self.board_mode():
             item=self.overlay_at(x,y)
-            if item is not None or self.selected_overlay:
-                self.selected_overlay=item['id'] if item is not None else None
-                self.refresh()
+            if item is not None and add:
+                self.toggle_overlay(item['id']); return
+            if item is not None or self.selected_overlay or getattr(self,'selected_overlays',None):
+                self.select_overlay(item['id'] if item is not None else None)
                 if item is not None: return
         if self.board_mode():
             self.board_select(self.board_pick(x,y)); self.refresh(); return
@@ -1530,6 +1592,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self.overlays:
             import copy
             data['titles']=copy.deepcopy(self.overlays)        # exp.116: the video's own clips
+            if getattr(self,'text_hidden',None): data['text_hidden']=sorted(self.text_hidden)
         data.pop('overlays',None)
         return data
 
@@ -1809,7 +1872,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from scenes import scenes_from_project
         scene_list=scenes_from_project(data)
         index=max(0,min(len(scene_list)-1,int(data.get('scene_index',0) or 0)))
-        main={k:v for k,v in data.items() if k not in ('scenes','scene_index','track_flags','titles')}
+        main={k:v for k,v in data.items() if k not in ('scenes','scene_index','track_flags','titles','text_hidden')}
+        self.text_hidden={int(t) for t in data.get('text_hidden') or ()}
+        self.selected_overlays=set()
         self.track_flags={int(t):dict(f) for t,f in (data.get('track_flags') or {}).items()}
         import copy
         self.overlays=copy.deepcopy(data.get('titles') or [])
@@ -4727,7 +4792,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                              hidden=bool(self.track_flag(s,'hidden')),muted=bool(self.track_flag(s,'muted')))
                         for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
-            self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand,copy.deepcopy(self.overlays))
+            self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand,copy.deepcopy(self.visible_titles()))
         else:
             self.worker=None
         if self.worker is None: self.worker=Exporter(copy.deepcopy(self.drawing),folder,options,

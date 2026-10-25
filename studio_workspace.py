@@ -202,7 +202,9 @@ class StageTimeline(QFrame):
     element_reset=Signal(int)           # whole video: back to "after the element before it", Track 1
     track_toggled=Signal(int,str)       # whole video: a track's 'mute' or 'hide' button
     element_camera_clicked=Signal(int)  # whole video: an element's own camera (zoom) clicked
-    other_overlay_clicked=Signal(int,str)   # whole video: another element's text / picture (k, id)
+    other_overlay_clicked=Signal(int,str)
+    overlay_toggled=Signal(str)         # exp.117: Ctrl+click on a text clip: add it to / take it out of the choice
+    text_track_toggled=Signal(int)      # exp.117: a text track's hide button   # whole video: another element's text / picture (k, id)
     move_clicked=Signal(int)            # whole video: a camera move clicked (the move after element k)
     element_flag=Signal(int,str)        # whole video: one element's 'mute' or 'hide' (right-click menu)
 
@@ -234,6 +236,8 @@ class StageTimeline(QFrame):
         # seconds); this is where second 0 of the whole video is on this timeline (0 in
         # Whole video, minus the element's start in This element).
         self.title_offset=0.
+        self.selected_overlays=set()   # exp.117: the chosen texts (Ctrl+click: more than one)
+        self.text_hidden=set()         # text tracks hidden from the video
         self.audio=None            # {'start', 'seconds', 'name', 'envelope'} or None
         self.editable=set(self.STAGE_KEYS)   # stages whose length can be dragged
         self.overlays=[]           # overlay clips of the scene (dicts, see overlays.py)
@@ -319,10 +323,16 @@ class StageTimeline(QFrame):
         if not self.items: return 0
         return max(i[4] for i in self.items)+2
 
+    def text_lanes(self):
+        """exp.117, whole video: text tracks (like Filmora, above the element tracks): the
+        ones in use plus an empty one on top to drag onto."""
+        if not self.items: return self.tracks()
+        return self.tracks()+1
+
     def _content_height(self):
         n=self.lanes()
         stack=(self.CAM_H+4+(self.CLIP_H+3)*n) if n else (self.CLIP_H+4)
-        return int(22+6+stack+(self.LANE_H+3)*self.tracks()+self.AUDIO_H+10+(12 if self.items else 0))
+        return int(22+6+stack+(self.LANE_H+3)*self.text_lanes()+self.AUDIO_H+10+(12 if self.items else 0))
 
     def _fit_height(self):
         need=self._content_height()
@@ -420,7 +430,7 @@ class StageTimeline(QFrame):
         return QRectF(8.+i*26.,0.,22.,20.)
 
     def _track_rect(self, track):
-        top=22.+6.+self.CAM_H+4.-self.y_off
+        top=22.+6.+self.CAM_H+4.-self.y_off+(self.LANE_H+3)*self.text_lanes()    # under the text tracks
         i=self.lanes()-1-int(track)
         return QRectF(self.LEFT,top+i*(self.CLIP_H+3),self._width(),self.CLIP_H)
 
@@ -485,7 +495,25 @@ class StageTimeline(QFrame):
                 r=self._icon_rect(t,which)
                 is_off=self.flag(t,which)
                 self._icon_button(p,c,r,off if is_off else on,is_off,hover==('track',t,which))
+        # exp.117: the text tracks, named like the element tracks, with a hide button.
+        used_text={int(o.get('track',0)) for o in self.overlays}
+        for t in range(self.text_lanes()):
+            lane=self._lane(t)
+            chip=QRectF(6,lane.top(),self.HEADER-12,lane.height())
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(chip,7,7)
+            hidden=t in self.text_hidden
+            p.setFont(name_font)
+            p.setPen(QColor(c['text'] if t in used_text and not hidden else c['dim']))
+            p.drawText(QRectF(chip.left()+10,chip.top(),chip.width()-40,chip.height()),
+                       Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,f'Text {t+1}')
+            if t in used_text:
+                self._icon_button(p,c,self._text_icon_rect(t),'eye-off' if hidden else 'eye',hidden,
+                                  hover==('text',t))
         p.setFont(small)
+
+    def _text_icon_rect(self, track):
+        lane=self._lane(track)
+        return QRectF(self.HEADER-38.,lane.center().y()-10,22,20)
 
     def _mark_icon(self, p, centre, which):
         """This element is hidden / muted on its own: a small red badge on its clip."""
@@ -637,7 +665,7 @@ class StageTimeline(QFrame):
         else:
             clips=QRectF(self.LEFT,top,self._width(),self.CLIP_H)
         y=self._stack_bottom()+4
-        n=self.tracks()
+        n=0 if self.items else self.tracks()          # whole video: text tracks are on top
         lane_top=y
         y+=(self.LANE_H+3)*n if n else 0
         audio=QRectF(self.LEFT,y,self._width(),(self.AUDIO_H+10) if self.items else
@@ -645,6 +673,10 @@ class StageTimeline(QFrame):
         return ruler_h,clips,audio
 
     def _lane(self, track):
+        if self.items:                    # exp.117: text tracks on top, Text 1 the lowest
+            top=22.+6.+self.CAM_H+4.-self.y_off
+            i=self.text_lanes()-1-int(track)
+            return QRectF(self.LEFT,top+i*(self.LANE_H+3),self._width(),self.LANE_H)
         return QRectF(self.LEFT,self._stack_bottom()+4+(self.LANE_H+3)*track,self._width(),self.LANE_H)
 
     def _overlay_rect(self, item):
@@ -868,17 +900,18 @@ class StageTimeline(QFrame):
                     p.drawText(r.adjusted(7,0,-6,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
                                f'{icon}{str(item.get("name") or "")[:30]}  ({k+1})')
             p.restore()
-        if self.overlays:
-            for track in range(self.tracks()):
+        if self.overlays or self.items:
+            for track in range(self.text_lanes()):
                 row=self._lane(track)
                 p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(row,7,7)
             p.save(); p.setClipRect(QRectF(left,0,width,self.height()))
             colour=QColor(c.get('accent_b','#4C42DE'))
             for item in self.overlays:
                 r=self._overlay_rect(item).adjusted(1,2,-1,-2)
-                chosen=item.get('id')==self.selected_overlay
+                chosen=item.get('id')==self.selected_overlay or item.get('id') in self.selected_overlays
                 fill=QColor(colour if item.get('kind')!='text' else QColor(c.get('erase','#E06A86')))
                 fill.setAlpha(235 if chosen else 185)
+                if int(item.get('track',0)) in self.text_hidden: fill.setAlpha(70)
                 p.setPen(QPen(QColor('white') if chosen else fill.lighter(130),2 if chosen else 1)); p.setBrush(fill)
                 p.drawRoundedRect(r,6,6)
                 if r.width()>30:
@@ -967,7 +1000,9 @@ class StageTimeline(QFrame):
                 x+=w
             p.restore()
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.setPen(QPen(QColor('white') if current else QColor(c['border_strong']),2 if current else 1))
+            # One thing chosen at a time (exp.117): while texts are chosen the element is not outlined.
+            outlined=current and not (self.selected_overlay or self.selected_overlays)
+            p.setPen(QPen(QColor('white') if outlined else QColor(c['border_strong']),2 if outlined else 1))
             p.drawRoundedRect(rect,7,7)
             if current:
                 # Grips on the edges that can be dragged.
@@ -1047,7 +1082,9 @@ class StageTimeline(QFrame):
                 x+=w
             p.restore()
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.setPen(QPen(QColor('white') if current else QColor(c['border_strong']),2 if current else 1))
+            # One thing chosen at a time (exp.117): while texts are chosen the element is not outlined.
+            outlined=current and not (self.selected_overlay or self.selected_overlays)
+            p.setPen(QPen(QColor('white') if outlined else QColor(c['border_strong']),2 if outlined else 1))
             p.drawRoundedRect(rect,7,7)
             if current:
                 p.setPen(QPen(QColor(255,255,255,170),1.4))
@@ -1138,8 +1175,12 @@ class StageTimeline(QFrame):
             self.other_overlay_clicked.emit(other[0],str(other[1].get('id')))
             event.accept(); return
         item,part=self._overlay_at(pos)
+        if item is not None and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            self.overlay_toggled.emit(str(item.get('id')))
+            self.update(); event.accept(); return
         if item is not None:
-            self.selected_overlay=item.get('id'); self.overlay_selected.emit(item.get('id'))
+            if item.get('id') not in self.selected_overlays:
+                self.selected_overlay=item.get('id'); self.overlay_selected.emit(item.get('id'))
             self._frozen=self.total()
             self._drag=('overlay',item,part,pos.x(),pos.y(),float(item.get('start',0)),
                         float(item.get('duration',3)),int(item.get('track',0)),self._px_per_sec())
@@ -1172,6 +1213,11 @@ class StageTimeline(QFrame):
         if self.items and pos.x()<self.LEFT and not self._tracks_area().contains(pos):
             event.accept(); return
         if self.items and pos.x()<self.LEFT:
+            for t in range(self.text_lanes()):
+                if self._text_icon_rect(t).adjusted(-3,-3,3,3).contains(pos) and \
+                        any(int(o.get('track',0))==t for o in self.overlays):
+                    self.text_track_toggled.emit(t)
+                    event.accept(); return
             used={i[4] for i in self.items}
             for t in range(self.lanes()):
                 if t not in used: continue
@@ -1180,6 +1226,9 @@ class StageTimeline(QFrame):
                         self.track_toggled.emit(t,which)
                         event.accept(); return
             event.accept(); return
+        # Anything else clicked: the texts are not chosen any more (one thing at a time).
+        if self.selected_overlay or self.selected_overlays:
+            self.selected_overlay=None; self.selected_overlays=set(); self.overlay_selected.emit('')
         item=self._item_at(pos) if self.items else None
         if item is not None:
             # Whole video on tracks: drag an element along its track or to another track
@@ -1209,7 +1258,9 @@ class StageTimeline(QFrame):
                 start,length,track=start0,length0,track0
                 if part=='move':
                     start=max(0.,min(total-.1,start0+shift))
-                    track=max(0,min(5,track0+int(round((pos.y()-y0)/(self.LANE_H+3)))))
+                    steps=int(round((pos.y()-y0)/(self.LANE_H+3)))
+                    # Whole video: text tracks go up (Text 2 above Text 1).
+                    track=max(0,min(self.text_lanes() if self.items else 5,track0-steps if self.items else track0+steps))
                 elif part=='end':
                     length=max(.2,min(total-start0,length0+shift))
                 else:
@@ -1249,6 +1300,11 @@ class StageTimeline(QFrame):
                     hover=('zoom',which); tip={'out':'Zoom out (Ctrl + wheel)','in':'Zoom in (Ctrl + wheel)',
                                                'fit':'Fit the whole video'}[which]
             if hover is None and self._tracks_area().contains(pos):
+                for t in range(self.text_lanes()):
+                    if self._text_icon_rect(t).contains(pos) and any(int(o.get('track',0))==t for o in self.overlays):
+                        hover=('text',t)
+                        tip=(f'Text {t+1} is hidden. Click to show it.' if t in self.text_hidden
+                             else f'Text {t+1}: hide it from the video')
                 used={i[4] for i in self.items}
                 for t in range(self.lanes()):
                     if t not in used: continue
@@ -3125,6 +3181,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.move_clicked.connect(lambda k: w.edit_camera_move(k))
     w.stage_timeline.element_camera_clicked.connect(lambda k: w.edit_element_camera(k))
     w.stage_timeline.other_overlay_clicked.connect(lambda k,oid: w.go_to_overlay(k,oid))
+    w.stage_timeline.overlay_toggled.connect(lambda oid: w.toggle_overlay(oid))
+    w.stage_timeline.text_track_toggled.connect(lambda t: w.toggle_text_track(t))
     w.stage_timeline.element_edit.connect(lambda k: w.edit_element(k))
     w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))
     w.stage_timeline.element_reset.connect(lambda k: w.reset_element_time(k))
