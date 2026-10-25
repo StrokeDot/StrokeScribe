@@ -387,7 +387,7 @@ class WindowTests(unittest.TestCase):
         self.assertFalse(w.preview_reset_view.isHidden())
         self.assertTrue(w.drag_picture('start', 10, 10))
         w.drag_picture('move', .1, 0.); w.drag_picture('done', 0., 0.)
-        self.assertLess(w.overlay_box()[0], x)
+        self.assertGreater(w.overlay_box()[0], x)            # the picture follows the mouse
         w.preview_frame_toggle.setChecked(False)
         self.assertIsNone(w.overlay_box())
         w.preview_frame_toggle.setChecked(True)
