@@ -128,7 +128,7 @@ class WindowTests(unittest.TestCase):
         W, H = w.canvas.frame.width(), w.canvas.frame.height()
         x, y, bw, bh = overlays.box(item, W, H)
         self.assertIs(w.overlay_at(x + bw / 2, y + bh / 2), item)
-        self.assertIsNotNone(w.overlay_box())
+        self.assertIsNotNone(w.compute_overlay_box())
         self.assertTrue(w.drag_picture('start', x + bw / 2, y + bh / 2))
         w.drag_picture('move', .1, -.05); w.drag_picture('done', 0, 0)
         self.assertAlmostEqual(item['x'], .6, places=2)
