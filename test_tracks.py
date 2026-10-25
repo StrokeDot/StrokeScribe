@@ -251,7 +251,14 @@ class WindowTests(unittest.TestCase):
         item = w.add_overlay(overlays.new_text())
         self.app.processEvents()
         self.assertEqual(w.preview_scope.currentIndex(), 1)                 # stays on the whole video
-        box = w.overlay_box()
+        # exp.114: asked while painting, the box never works out the timeline right there.
+        from unittest import mock
+        w._box_cache = None
+        with mock.patch.object(type(w), 'timeline_layout', side_effect=AssertionError('work in paint')):
+            w.overlay_box()
+        for _ in range(5): self.app.processEvents()
+        self.assertIsNotNone(w.overlay_box())
+        box = w.compute_overlay_box()
         self.assertIsNotNone(box)
         x, y, bw, bh = box
         self.assertIs(w.overlay_at(x + bw / 2, y + bh / 2), item)

@@ -1182,7 +1182,36 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         return None
 
     def overlay_box(self):
-        """Dashed box around the selected overlay on the preview (frame pixels), or None."""
+        """Dashed box around the selected overlay on the preview (frame pixels), or None.
+
+        exp.114: asked while the preview is PAINTED, so it must never do real work there:
+        in Whole video, finding the box needs the timeline of every element, which can load
+        and plan elements and repaint the window (a paint inside a paint: StrokeScribe froze).
+        The box is worked out just after the paint and kept until something changes."""
+        key=(self.selected_overlay,round(float(self.position),5),self.scene_index,
+             self.preview_scope.currentIndex(),
+             None if self.canvas.frame is None else (self.canvas.frame.width(),self.canvas.frame.height()),
+             repr(self.find_overlay(self.selected_overlay)) if self.selected_overlay else None)
+        cached=getattr(self,'_box_cache',None)
+        if cached is not None and cached[0]==key:
+            return cached[1]
+        if not self.selected_overlay:
+            self._box_cache=(key,None); return None
+        if not getattr(self,'_box_pending',False):
+            self._box_pending=True
+            def work():
+                self._box_pending=False
+                if getattr(self,'_closed',False): return
+                try:
+                    box=self.compute_overlay_box()
+                except Exception as exc:
+                    import applog; applog.error('Overlay box',exc); box=None
+                self._box_cache=(key,box)
+                self.canvas.update()
+            QTimer.singleShot(0,work)
+        return cached[1] if cached is not None and cached[0][0]==key[0] else None
+
+    def compute_overlay_box(self):
         import overlays
         item=self.find_overlay(self.selected_overlay) if self.selected_overlay else None
         if item is None or self.canvas.frame is None or self.board_mode(): return None
