@@ -284,13 +284,12 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
             active = [(k, f) for k, f in state.active if k not in hidden]
             state = replace(state, active=active, finished=[k for k in state.finished if k not in hidden],
                             top=active[-1][0] if active else -1)
-        image = timeline_render.compose(world, lay, state, elements, width, height)
+        image = timeline_render.compose(world, lay, state, elements, width, height, titles=titles, seconds=i / fps)
         if not image.save(str(folder / f'frame_{i:06d}.png'), 'PNG', 80):
             raise OSError('Unable to save PNG frame.')
         progress(i + 1, total)
         if interrupted():
             raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
-    paint_titles(folder, fps, titles)
     seconds = total / fps
     (folder / 'sequence.json').write_text(json.dumps(dict(
         width=width, height=height, fps=fps, frames=total, duration=seconds,

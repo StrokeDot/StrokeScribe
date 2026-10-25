@@ -291,7 +291,12 @@ class WindowTests(unittest.TestCase):
         w.refresh(); self.app.processEvents()
         tl = w.stage_timeline
         self.assertNotEqual(a['track'], b['track'])                       # same time: two tracks
-        self.assertLess(tl._lane(0).bottom(), tl._track_rect(tl.lanes() - 1).top())   # above the elements
+        # exp.118: texts sit on the element tracks, above the elements shown at that time.
+        top = max(it.track for it in w.timeline_layout().items)
+        self.assertGreater(min(a['track'], b['track']), top)
+        row = tl._track_rect(a['track'])
+        self.assertTrue(row.contains(tl._overlay_rect(a).center()))
+        self.assertGreater(tl.lanes(), max(a['track'], b['track']))
         # Plain click chooses one; Ctrl+click adds; a click on an element clears the texts.
         r = tl._overlay_rect(a)
         QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
@@ -312,12 +317,37 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(w.overlays, [])
         w.undo(); self.app.processEvents()
         self.assertEqual(len(w.overlays), 2)
-        # Hide Text 1: not drawn, not in the export list.
+        # Its track hidden (the track's own hide button): not drawn, not exported.
         t = w.overlays[0]['track']
-        w.toggle_text_track(t)
+        w.toggle_track(t, 'hide')
         self.assertNotIn(t, {int(o['track']) for o in w.visible_titles()})
-        data = json.loads(json.dumps(w.project_state()))
-        self.assertEqual(data['text_hidden'], [t])
+
+    def test_a_text_under_an_element_of_a_higher_track(self):
+        """exp.118: a text is ordered with the elements by its track."""
+        import overlays
+        w = self.w
+        w.place_element(1, 0., 2)                       # element 2 on Track 3, from 0 s
+        w.preview_scope.setCurrentIndex(1); w.refresh(); self.app.processEvents()
+        w.position = 0.; w.refresh()
+        text = w.add_overlay(overlays.new_text())
+        w.move_overlay_clip(text['id'], 0., 2., 1)     # on Track 2: under element 2
+        on_top, under = w.titles_split(.5)
+        self.assertEqual([o['id'] for o in under], [text['id']])
+        self.assertEqual(on_top, [])
+        w.move_overlay_clip(text['id'], 0., 2., 3)     # Track 4: over it
+        on_top, under = w.titles_split(.5)
+        self.assertEqual([o['id'] for o in on_top], [text['id']])
+
+    def test_opening_a_project_shows_the_whole_video_from_the_start(self):
+        import projects
+        w = self.w
+        w.preview_scope.setCurrentIndex(0); w.position = .7
+        saved = projects.save(Path(self.tmp.name) / 'p', w.project_state())
+        from unittest import mock
+        with mock.patch.object(type(w), 'confirm_leave_project', return_value=True):
+            self.assertTrue(w.open_project(str(saved)))
+        self.assertEqual(w.preview_scope.currentIndex(), 1)
+        self.assertEqual(w.position, 0.)
 
     def test_older_texts_move_to_the_video(self):
         """Projects from before exp.116: an element's texts become the video's own clips at

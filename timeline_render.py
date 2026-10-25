@@ -42,11 +42,15 @@ def view_of(world, lay, state, elements):
     return view
 
 
-def compose(world, lay, state, elements, width, height):
+def compose(world, lay, state, elements, width, height, titles=None, seconds=None):
     """The whole video at this moment, width x height.
 
     elements[k]: {'drawing', 'options' (compose_frame options at the video size),
-                  'camera' (camera follow path or None), 'transition', 'move_seconds'}."""
+                  'camera' (camera follow path or None), 'transition', 'move_seconds'}.
+
+    titles (exp.118): texts / pictures on top, each on a track like the elements: drawn on
+    the screen at `seconds`, over the elements of lower tracks and under the elements being
+    drawn on higher tracks."""
     import board
     from scenes import transition_frame
     if state.kind == 'move':
@@ -56,14 +60,32 @@ def compose(world, lay, state, elements, width, height):
         if kind in board.SCREEN_KINDS and not last:
             a = _page(world, lay, state, elements, world.frames[k], width, height)
             b = _page(world, lay, state, elements, world.frames[k + 1], width, height)
-            return transition_frame(a, b, kind, state.t)
-    return _page(world, lay, state, elements, view_of(world, lay, state, elements), width, height)
+            return _texts(transition_frame(a, b, kind, state.t), titles, seconds)
+    return _page(world, lay, state, elements, view_of(world, lay, state, elements), width, height,
+                 titles, seconds)
 
 
-def _page(world, lay, state, elements, view, width, height):
+def _texts(out, items, seconds, copied=False):
+    if not items or seconds is None:
+        return out
+    import overlays
+    if not any(overlays.state_at(o, seconds) is not None for o in items):
+        return out
+    if not copied:
+        out = out.copy()                 # never draw into a picture kept by the board
+    return overlays.paint(out, items, seconds)
+
+
+def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None):
     skip = set(range(len(elements))) - set(state.finished)
     out = world.view(view, width, height, upto=len(elements), skip=skip)
+    tracks = {it.k: it.track for it in lay.items}
+    waiting = sorted(titles or (), key=lambda o: int(o.get('track', 0)))
     for k, fraction in state.active:
+        under = [o for o in waiting if int(o.get('track', 0)) < tracks.get(k, 0)]
+        if under:
+            out = _texts(out, under, seconds)
+            waiting = [o for o in waiting if o not in under]
         x, y, w, h = world.place(world.frames[k], view, width, height)
         if w < 2 or x > width or y > height or x + w < 0 or y + h < 0:
             continue
@@ -75,4 +97,4 @@ def _page(world, lay, state, elements, view, width, height):
         if k == state.top and opts.get('layers', 'all') != 'art':
             hand = element_frame(el['drawing'], opts, fraction, w, h, 'hand')
             out = world.put(out, hand, world.frames[k], view)
-    return out
+    return _texts(out, waiting, seconds)
