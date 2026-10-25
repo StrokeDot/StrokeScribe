@@ -1098,6 +1098,16 @@ class StageTimeline(QFrame):
             fill=QColor(c['paint']); fill.setAlpha(235 if chosen else 190)
             p.setPen(QPen(QColor('white') if chosen else fill.lighter(130),2 if chosen else 1)); p.setBrush(fill)
             p.drawRoundedRect(r,5,5)
+            # exp.124: getting there / stays / coming back: the two ramps are lighter.
+            total=max(.4,float(clip['duration']))
+            a=float(clip.get('in_s',1.2))/total*r.width(); b=float(clip.get('out_s',1.2))/total*r.width()
+            ramp=QColor(255,255,255,55)
+            p.save(); clip_path=QPainterPath(); clip_path.addRoundedRect(r,5,5); p.setClipPath(clip_path)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(ramp)
+            from PySide6.QtGui import QPolygonF
+            p.drawPolygon(QPolygonF([QPointF(r.left(),r.bottom()),QPointF(r.left()+a,r.top()),QPointF(r.left()+a,r.bottom())]))
+            p.drawPolygon(QPolygonF([QPointF(r.right()-b,r.top()),QPointF(r.right(),r.bottom()),QPointF(r.right()-b,r.bottom())]))
+            p.restore()
             self._draw_icon(p,'camera',QPointF(r.left()+10,r.center().y()),'#FFFFFF',11)
             if r.width()>40:
                 p.setFont(clip_font); p.setPen(QColor('white'))
@@ -1423,8 +1433,10 @@ class StageTimeline(QFrame):
         clip,part=self._clip_at(pos)
         if clip is not None:
             self.setCursor(Qt.CursorShape.SizeHorCursor if part=='end' else Qt.CursorShape.OpenHandCursor)
-            self.setToolTip(f'Camera: {clip.get("kind")}, {float(clip["start"]):.1f} s, {float(clip["duration"]):.1f} s. '
-                            'Drag to move, drag its right edge for the speed, double-click for its settings.')
+            a,b=float(clip.get('in_s',1.2)),float(clip.get('out_s',1.2))
+            self.setToolTip(f'Camera: {clip.get("kind")} at {float(clip["start"]):.1f} s: gets there in {a:.1f} s, '
+                            f'stays {max(0.,float(clip["duration"])-a-b):.1f} s, comes back in {b:.1f} s. '
+                            'Drag to move, drag its right edge to stay longer, double-click for its settings.')
             return super().mouseMoveEvent(event)
         own=self._element_camera_at(pos) if self._move_at(pos) is None else None
         if own is not None:
@@ -3149,18 +3161,19 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.cam_clip_kind=QComboBox(); w.cam_clip_kind.addItems(list(_KINDS)); cf.addRow('Kind',w.cam_clip_kind)
     w.cam_clip_start=w.number(0,3600,0,.1); w.cam_clip_start.setDecimals(1); w.cam_clip_start.setSuffix(' s')
     cf.addRow('Starts at',w.cam_clip_start)
-    w.cam_clip_length=w.number(.2,120,1.2,.1); w.cam_clip_length.setDecimals(1); w.cam_clip_length.setSuffix(' s')
-    w.cam_clip_length.setToolTip('How long the camera takes to get there: longer = slower.')
-    cf.addRow('Speed (length)',w.cam_clip_length)
-    w.cam_clip_back=QCheckBox('Go back when it ends')
-    w.cam_clip_back.setToolTip('On: at the end of the clip the camera goes back to where it was (as fast as it came). '
-                               'Off: it stays there until the next camera move between pages.')
-    cb.addWidget(w.cam_clip_back)
-    w.cam_clip_from_here=QCheckBox('Start from where the camera is')
-    w.cam_clip_from_here.setToolTip('On: it goes on from the camera as it is (no jump). Off: it starts from its own framing below.')
-    cb.addWidget(w.cam_clip_from_here)
+    # exp.124: in (how fast it gets there), hold (how long it stays), back (how fast it
+    # comes back to the normal frame).
+    w.cam_clip_in=w.number(.1,30,1.2,.1); w.cam_clip_in.setDecimals(1); w.cam_clip_in.setSuffix(' s')
+    w.cam_clip_in.setToolTip('How long the camera takes to get there (longer = slower).')
+    cf.addRow('Getting there',w.cam_clip_in)
+    w.cam_clip_hold=w.number(0,600,2.,.1); w.cam_clip_hold.setDecimals(1); w.cam_clip_hold.setSuffix(' s')
+    w.cam_clip_hold.setToolTip('How long it stays there.')
+    cf.addRow('Stays',w.cam_clip_hold)
+    w.cam_clip_out=w.number(.1,30,1.2,.1); w.cam_clip_out.setDecimals(1); w.cam_clip_out.setSuffix(' s')
+    w.cam_clip_out.setToolTip('How long it takes to come back to the normal frame (longer = slower).')
+    cf.addRow('Coming back',w.cam_clip_out)
     w.cam_clip_fields={}
-    for title,key in (('WHERE IT GOES','to'),('WHERE IT STARTS','from')):
+    for title,key in (('WHERE IT GOES','to'),('PAN: WHERE IT STARTS','from')):
         head=label(title); cb.addWidget(head)
         f=form_layout(); cb.addLayout(f)
         for name,text,low,high,value in (('zoom','Zoom',100,500,160),('x','Centre X',0,100,50),('y','Centre Y',0,100,50)):
@@ -3183,10 +3196,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.camera_clip_box.hide()
     for widget in (w.cam_clip_kind,):
         widget.currentIndexChanged.connect(lambda *_: w.camera_panel_changed('kind'))
-    for widget in [w.cam_clip_start,w.cam_clip_length]+[v for k,v in w.cam_clip_fields.items() if k[1]!='head']:
+    for widget in [w.cam_clip_start,w.cam_clip_in,w.cam_clip_hold,w.cam_clip_out]+[v for k,v in w.cam_clip_fields.items() if k[1]!='head']:
         widget.valueChanged.connect(lambda *_: w.camera_panel_changed())
-    w.cam_clip_from_here.toggled.connect(lambda *_: w.camera_panel_changed())
-    w.cam_clip_back.toggled.connect(lambda *_: w.camera_panel_changed())
     camera_l.addStretch(1)
     def camera_mode_changed(*_):
         w.camera_note.setText('Camera follow (this element): Gentle / Close-up zoom glides after the pen, then '
