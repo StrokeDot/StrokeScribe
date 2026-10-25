@@ -1058,9 +1058,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         start=min(max(0.,self.video_seconds()),max(0.,total-.5))
         if self.position>=.999: start=0.
         item['start']=round(start,2); item['duration']=round(max(.5,min(3.,total-start)),2)
-        busy=[o for o in self.overlays if overlays.end_of(o)>item['start'] and o['start']<overlays.end_of(item)]
-        used={int(o.get('track',0)) for o in busy}
-        item['track']=next(t for t in range(10) if t not in used)
+        # exp.118: a text sits on a track like an element: the first free track above the
+        # elements shown at that time (so it is seen on top of them).
+        end=overlays.end_of(item)
+        busy=[int(o.get('track',0)) for o in self.overlays if overlays.end_of(o)>item['start'] and o['start']<end]
+        try:
+            lay=self.timeline_layout()
+            playing=[it.track for it in lay.items if it.end>item['start'] and it.start<end]
+            busy+=playing
+            lowest=max(playing)+1 if playing else 0
+        except Exception:
+            lowest=1
+        item['track']=next(t for t in range(lowest,lowest+40) if t not in busy)
         self.record_structure('add '+('text' if item.get('kind')=='text' else 'picture on top'))
         self.overlays.append(item)
         self.project_changes.mark_changed()
@@ -1097,9 +1106,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def titles_layer(self,width,height):
         """The texts / pictures on top at the playhead, on a clear picture (None: nothing)."""
         import overlays
-        shown=self.visible_titles()
-        if not shown or self.board_mode(): return None
+        if self.board_mode(): return None
         t=self.video_seconds()
+        shown=self.titles_split(t)[0]
+        if not shown: return None
         if not any(overlays.state_at(o,t) is not None for o in shown): return None
         layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
         return overlays.paint(layer,shown,t)
@@ -1210,8 +1220,27 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.refresh()
 
     def visible_titles(self):
-        hidden=getattr(self,'text_hidden',set())
+        """The texts in the video: not on a hidden track (exp.118: the element tracks' own
+        hide buttons)."""
+        hidden=set(getattr(self,'text_hidden',set()))
+        hidden|={int(t) for t,f in (getattr(self,'track_flags',{}) or {}).items() if f.get('hidden')}
         return [o for o in self.overlays if int(o.get('track',0)) not in hidden]
+
+    def titles_split(self,seconds):
+        """(on top, under): the texts over every element being drawn at `seconds`, and the
+        ones on a lower track than one of them (drawn inside the frame, under it)."""
+        shown=self.visible_titles()
+        if not self.all_scenes(): return shown,[]
+        try:
+            lay=self.timeline_layout()
+            if lay.sequential: return shown,[]
+            from timeline_model import state_at
+            hidden=self.hidden_elements()
+            tracks={it.k:it.track for it in lay.items}
+            top=max([tracks[k] for k,_ in state_at(lay,seconds).active if k not in hidden],default=-1)
+        except Exception:
+            return shown,[]
+        return [o for o in shown if int(o.get('track',0))>=top],[o for o in shown if int(o.get('track',0))<top]
 
     def move_overlay_clip(self,oid,start,duration,track):
         item=self.find_overlay(oid)
@@ -1859,6 +1888,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.project_path=str(path)
         self.setWindowTitle(f'{Path(path).stem}  •  {DISPLAY_NAME}')
         self.status.setText('Opened project: '+str(path))
+        self.start_whole_video()
         self.remember_recent(path)
         QTimer.singleShot(400,lambda p=str(path): self.keep_home_preview(p) if self.project_path==p else None)
         self.project_changes.mark_saved(self.project_state())
@@ -1866,6 +1896,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import autosave; autosave.clear()
         self._autosaved=self.history.current
         return True
+
+    def start_whole_video(self):
+        """exp.118: an opened project shows the whole video, from the beginning."""
+        self.playing=False
+        if len(self.scenes)>1: self.preview_scope.setCurrentIndex(1)
+        self.position=0.
+        self.slider.blockSignals(True); self.slider.setValue(0); self.slider.blockSignals(False)
+        self.refresh()
 
     def apply_project(self,data):
         """Open project data: its scenes, then the scene that was being edited."""
@@ -3025,15 +3063,17 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         lay=self.timeline_layout(width,height)
         if not lay.sequential:
             from timeline_model import state_at
-            state=state_at(lay,(self.position if fraction is None else fraction)*lay.total)
+            at=(self.position if fraction is None else fraction)*lay.total
+            state=state_at(lay,at)
             k=state.current if state.kind=='page' else state.move
-            return self.timeline_frame(state,width,height),k,lengths,joins
+            return self.timeline_frame(state,width,height,at),k,lengths,joins
         total=sum(lengths)+sum(joins)
         where,k,f=board.locate(lengths,joins,(self.position if fraction is None else fraction)*total)
         return self.whole_frame_at(where,k,f,width,height),k,lengths,joins
 
-    def timeline_frame(self,state,width,height):
-        """Whole video with elements on tracks: one moment (timeline_render)."""
+    def timeline_frame(self,state,width,height,seconds=None):
+        """Whole video with elements on tracks: one moment (timeline_render); texts under an
+        element of a higher track are drawn in it (the others: on the screen, titles_layer)."""
         import timeline_render
         world=self.preview_world(width,height)
         elements=[]
@@ -3048,7 +3088,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             active=[(k,f) for k,f in state.active if k not in hidden]
             state=replace(state,active=active,finished=[k for k in state.finished if k not in hidden],
                           top=active[-1][0] if active else -1)
-        return timeline_render.compose(world,self.timeline_layout(width,height),state,elements,width,height)
+        under=self.titles_split(seconds)[1] if seconds is not None else []
+        return timeline_render.compose(world,self.timeline_layout(width,height),state,elements,width,height,
+                                       titles=under,seconds=seconds)
 
     def whole_frame_at(self,where,k,f,width,height):
         """Whole video: element k at its own fraction f, or the move after element k."""
@@ -4301,7 +4343,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             last=max(first,math.ceil(b/view['length']*count-1e-9)-1) if b<view['length']-1e-9 else count
             state=state_at(lay,(first/count)*view['length'])
             involved=sorted({k for k,_ in state.active}|set(state.finished)|{state.current})
-            fp=('tl',describe(lay,state,a),tuple(self.element_fingerprint(i) for i in involved),
+            import overlays as _ov
+            low=self.titles_split((a+b)/2)[1]
+            under=repr([o for o in low if _ov.end_of(o)>a and float(o.get('start',0))<b])
+            fp=('tl',describe(lay,state,a),tuple(self.element_fingerprint(i) for i in involved),under,
                 tuple(sorted(self.hidden_elements())),
                 tuple((s['transition'],s['transition_seconds']) for s in self.scenes),
                 repr([s.get('board') for s in self.scenes]),(view.get('width'),view.get('height')))
@@ -4324,7 +4369,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             count=max(1,round(self._view['length']*self.PREVIEW_FPS))
             seconds=(k+local)/count*self._view['length']
             height=round(width*self._view['ratio'])
-            return self.timeline_frame(state_at(self.timeline_layout(),seconds),width,height)
+            return self.timeline_frame(state_at(self.timeline_layout(),seconds),width,height,seconds)
         height=round(width*self._view['ratio'])
         return self.whole_frame_at(where,k,f,width,height)
 

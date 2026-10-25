@@ -319,15 +319,18 @@ class StageTimeline(QFrame):
     CAM_H=14.
 
     def lanes(self):
-        """Track rows shown: the tracks in use plus an empty one on top to drag onto."""
+        """Track rows shown: the tracks in use (by elements and texts) plus an empty one on
+        top to drag onto."""
         if not self.items: return 0
-        return max(i[4] for i in self.items)+2
+        return max([i[4] for i in self.items]+[int(o.get('track',0)) for o in self.overlays])+2
+
+    def _used_tracks(self):
+        return {i[4] for i in self.items or ()}|{int(o.get('track',0)) for o in self.overlays}
 
     def text_lanes(self):
-        """exp.117, whole video: text tracks (like Filmora, above the element tracks): the
-        ones in use plus an empty one on top to drag onto."""
-        if not self.items: return self.tracks()
-        return self.tracks()+1
+        """Rows of their own for the texts: only in This element (exp.118: in the whole video
+        texts are on the element tracks, like any element)."""
+        return 0 if self.items else self.tracks()
 
     def _content_height(self):
         n=self.lanes()
@@ -477,7 +480,7 @@ class StageTimeline(QFrame):
 
     def _paint_headers(self, p, c, small):
         """Left of the tracks: each track's name with its sound and hide buttons (like Filmora)."""
-        used={i[4] for i in self.items or ()}
+        used=self._used_tracks()
         hover=getattr(self,'_hover',None)
         name_font=QFont(self.font()); name_font.setPointSizeF(8.5); name_font.setWeight(QFont.Weight.DemiBold)
         for t in range(self.lanes()):
@@ -673,10 +676,9 @@ class StageTimeline(QFrame):
         return ruler_h,clips,audio
 
     def _lane(self, track):
-        if self.items:                    # exp.117: text tracks on top, Text 1 the lowest
-            top=22.+6.+self.CAM_H+4.-self.y_off
-            i=self.text_lanes()-1-int(track)
-            return QRectF(self.LEFT,top+i*(self.LANE_H+3),self._width(),self.LANE_H)
+        if self.items:                    # exp.118: a text sits on its track like an element
+            row=self._track_rect(track)
+            return QRectF(row.left(),row.top()+6,row.width(),row.height()-12)
         return QRectF(self.LEFT,self._stack_bottom()+4+(self.LANE_H+3)*track,self._width(),self.LANE_H)
 
     def _overlay_rect(self, item):
@@ -1218,7 +1220,7 @@ class StageTimeline(QFrame):
                         any(int(o.get('track',0))==t for o in self.overlays):
                     self.text_track_toggled.emit(t)
                     event.accept(); return
-            used={i[4] for i in self.items}
+            used=self._used_tracks()
             for t in range(self.lanes()):
                 if t not in used: continue
                 for which in ('mute','hide'):
@@ -1258,9 +1260,14 @@ class StageTimeline(QFrame):
                 start,length,track=start0,length0,track0
                 if part=='move':
                     start=max(0.,min(total-.1,start0+shift))
-                    steps=int(round((pos.y()-y0)/(self.LANE_H+3)))
-                    # Whole video: text tracks go up (Text 2 above Text 1).
-                    track=max(0,min(self.text_lanes() if self.items else 5,track0-steps if self.items else track0+steps))
+                    if self.items:          # exp.118: onto the element track under the mouse
+                        track=track0
+                        for t in range(self.lanes()):
+                            r=self._track_rect(t)
+                            if r.top()-2<=pos.y()<=r.bottom()+2: track=t
+                    else:
+                        steps=int(round((pos.y()-y0)/(self.LANE_H+3)))
+                        track=max(0,min(5,track0+steps))
                 elif part=='end':
                     length=max(.2,min(total-start0,length0+shift))
                 else:
@@ -1305,7 +1312,7 @@ class StageTimeline(QFrame):
                         hover=('text',t)
                         tip=(f'Text {t+1} is hidden. Click to show it.' if t in self.text_hidden
                              else f'Text {t+1}: hide it from the video')
-                used={i[4] for i in self.items}
+                used=self._used_tracks()
                 for t in range(self.lanes()):
                     if t not in used: continue
                     for which in ('mute','hide'):
