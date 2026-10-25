@@ -323,16 +323,16 @@ class PlanWorker(QThread):
 class SceneExporter(QThread):
     """All scenes as one video (scenes.export_scenes), off the UI thread."""
     progress=Signal(int,int); done=Signal(str); failed=Signal(str)
-    def __init__(self,scene_list,folder,settings,hand,titles=None):
+    def __init__(self,scene_list,folder,settings,hand,titles=None,cameras=None):
         super().__init__()
         self.scene_list=scene_list; self.folder=Path(folder); self.settings=settings; self.hand=hand
-        self.titles=titles
+        self.titles=titles; self.cameras=cameras
     def run(self):
         try:
             from scenes import export_scenes
             self.done.emit(export_scenes(self.scene_list,self.folder,self.settings,self.hand,
                                          progress=self.progress.emit,interrupted=self.isInterruptionRequested,
-                                         titles=self.titles))
+                                         titles=self.titles,cameras=self.cameras))
         except Exception as e: self.failed.emit(str(e))
 
 class FontInstaller(QThread):
@@ -486,6 +486,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.overlays=[]               # pictures and titles on top of this scene (overlays.py)
         self.selected_overlay=None
         self.selected_overlays=set()    # exp.117: Ctrl+click chooses more than one
+        self.cameras=[]                 # exp.119: the Camera track's clips (camera_clips.py)
+        self.selected_camera=None
         self.text_hidden=set()          # text tracks hidden from the video
         # Rapid brush-width changes should not synchronously rebuild the entire
         # paint plan for every spinbox/wheel event on the GUI thread.
@@ -798,18 +800,26 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self._restoring or not getattr(self,'drawing',None): return
         scenes,index=self.structure_copy()
         import copy
-        self.project_undo.append((self.next_seq(),scenes,index,label,copy.deepcopy(self.overlays)))
+        self.project_undo.append((self.next_seq(),scenes,index,label,self._extras_copy()))
         del self.project_undo[:-30]
         self.project_redo.clear(); self.history.redo_stack.clear()
         self.update_history_controls()
+
+    def _extras_copy(self):
+        """The video's own clips (texts, camera clips) kept with a project undo step."""
+        import copy
+        return {'titles':copy.deepcopy(self.overlays),'cameras':copy.deepcopy(getattr(self,'cameras',[]))}
 
     def restore_structure(self,scenes,index,titles=None):
         from history import History
         self.playing=False
         if titles is not None:
             import copy
-            self.overlays=copy.deepcopy(titles)
+            extras=titles if isinstance(titles,dict) else {'titles':titles}
+            self.overlays=copy.deepcopy(extras.get('titles') or [])
+            if 'cameras' in extras: self.cameras=copy.deepcopy(extras['cameras'] or [])
             if not any(o.get('id')==self.selected_overlay for o in self.overlays): self.selected_overlay=None
+            if not any(c.get('id')==getattr(self,'selected_camera',None) for c in self.cameras): self.selected_camera=None
         self.scenes=[dict(s) for s in scenes]
         self._scene_cache={}; self._base_cache=OrderedDict()
         self.scene_index=-1
@@ -821,7 +831,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         seq,scenes,index,label,*rest=from_stack.pop()
         here,here_index=self.structure_copy()
         import copy
-        to_stack.append((seq,here,here_index,label,copy.deepcopy(self.overlays)))
+        to_stack.append((seq,here,here_index,label,self._extras_copy()))
         self.restore_structure(scenes,index,rest[0] if rest else None)
         self.project_changes.mark_changed()
         self.status.setText(f'{verb}: {label}')
@@ -1094,6 +1104,180 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             tl.set_overlays(self.overlays,self.selected_overlay)
             tl.selected_overlays=set(getattr(self,'selected_overlays',set()))
 
+    # ------------------------------------------------------------ camera track (exp.119)
+    def find_camera(self,cid):
+        return next((c for c in getattr(self,'cameras',[]) if c.get('id')==cid),None)
+
+    def camera_moves(self):
+        """The transitions' times, (start, end), in seconds of the whole video."""
+        try:
+            return [(m.start,m.end) for m in self.timeline_layout().moves]
+        except Exception:
+            return []
+
+    def camera_editing(self):
+        """A camera clip chosen: the preview shows the page without the clips, with a frame
+        where the chosen clip takes the camera (drag it, wheel to zoom)."""
+        return bool(getattr(self,'selected_camera',None)) and self.all_scenes()
+
+    def video_camera(self,k,base,total=None):
+        """Element k's camera in the whole video: its own camera with the camera clips."""
+        clips=getattr(self,'cameras',None)
+        if not clips or self.camera_editing(): return base
+        import camera_clips
+        try:
+            lay=self.timeline_layout()
+            item=lay.items[k]
+        except Exception:
+            return base
+        return camera_clips.wrap(base,item.start,clips,[(m.start,m.end) for m in lay.moves],
+                                 item.length if total is None else total)
+
+    def cameras_signature(self):
+        import camera_clips
+        return (camera_clips.signature(getattr(self,'cameras',[])),self.camera_editing())
+
+    def sync_camera_timeline(self):
+        tl=self.stage_timeline
+        tl.cam_clips=list(getattr(self,'cameras',[]))
+        moves=self.camera_moves() if tl.cam_clips else []
+        import camera_clips
+        tl.cam_holds={c['id']:camera_clips.until(c,moves) for c in tl.cam_clips}
+        tl.selected_camera=getattr(self,'selected_camera',None)
+        tl.update()
+
+    def add_camera_clip(self,kind='Zoom in'):
+        """A camera clip at the playhead on the Camera track (whole video)."""
+        import camera_clips
+        if not self.drawing: return None
+        if len(self.scenes)>1 and not self.all_scenes(): self.preview_scope.setCurrentIndex(1)
+        start=self.video_seconds() if self.position<.999 else 0.
+        total=max(.5,self.video_length())
+        clip=camera_clips.new_clip(kind,min(start,max(0.,total-.5)),min(1.2,max(.2,total-start)))
+        self.record_structure('add camera clip')
+        self.cameras.append(clip)
+        self.project_changes.mark_changed()
+        self.select_camera(clip['id'])
+        if hasattr(self,'show_left_panel'): self.show_left_panel('camera')
+        self.status.setText(f'Camera clip "{kind}" added at {clip["start"]:.1f} s. Drag the frame on the preview '
+                            'to choose where the camera goes; drag the clip\'s right edge on the timeline for the speed.')
+        return clip
+
+    def select_camera(self,cid):
+        """A camera clip chosen ('' / None: none). Choosing it leaves the texts."""
+        cid=cid or None
+        if cid and (self.selected_overlay or getattr(self,'selected_overlays',None)):
+            self.selected_overlay=None; self.selected_overlays=set(); self.sync_titles_choice()
+        self.selected_camera=cid
+        self.fill_camera_panel()
+        self.sync_camera_timeline()
+        self.refresh()
+
+    def move_camera_clip(self,cid,start,length):
+        clip=self.find_camera(cid)
+        if clip is None: return
+        if getattr(self,'_cam_recorded',None)!=cid:
+            self.record_structure('move camera clip'); self._cam_recorded=cid
+        clip['start'],clip['duration']=round(float(start),2),round(max(.2,float(length)),2)
+        self.project_changes.mark_changed()
+        self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
+
+    def camera_clip_done(self,cid):
+        self._cam_recorded=None
+
+    def edit_camera_clip(self,cid):
+        self.select_camera(cid)
+        if hasattr(self,'show_left_panel'): self.show_left_panel('camera')
+
+    def camera_clip_action(self,cid,action):
+        clip=self.find_camera(cid)
+        if clip is None: return
+        if action=='delete':
+            self.record_structure('delete camera clip')
+            self.cameras=[c for c in self.cameras if c.get('id')!=cid]
+            if self.selected_camera==cid: self.selected_camera=None
+            self.status.setText('Camera clip deleted (Ctrl+Z brings it back).')
+        else:
+            import camera_clips
+            self.record_structure('camera clip kind')
+            clip['kind']=action
+            clip['from'],clip['to']=camera_clips.presets(action)
+        self.project_changes.mark_changed()
+        self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
+
+    def fill_camera_panel(self):
+        """The Camera panel shows the chosen camera clip."""
+        if not hasattr(self,'camera_clip_box'): return
+        clip=self.find_camera(getattr(self,'selected_camera',None))
+        self.camera_clip_box.setVisible(clip is not None)
+        self.camera_clip_none.setVisible(clip is None)
+        if clip is None: return
+        self._filling_camera=True
+        try:
+            self.cam_clip_kind.setCurrentText(clip.get('kind','Custom'))
+            self.cam_clip_start.setValue(float(clip['start'])); self.cam_clip_length.setValue(float(clip['duration']))
+            self.cam_clip_from_here.setChecked(clip.get('from') is None)
+            for key in ('to','from'):
+                framing=clip.get(key) or (1.,.5,.5)
+                for name,value in zip(('zoom','x','y'),framing):
+                    self.cam_clip_fields[(key,name)].setValue(round(value*100.))
+                    self.cam_clip_fields[(key,name)].setEnabled(key=='to' or clip.get('from') is not None)
+        finally:
+            self._filling_camera=False
+
+    def camera_panel_changed(self,what=None):
+        if getattr(self,'_filling_camera',False): return
+        clip=self.find_camera(getattr(self,'selected_camera',None))
+        if clip is None: return
+        if getattr(self,'_cam_recorded',None)!=('panel',clip['id']):
+            self.record_structure('camera clip settings'); self._cam_recorded=('panel',clip['id'])
+            QTimer.singleShot(1500,lambda: setattr(self,'_cam_recorded',None))
+        import camera_clips
+        if what=='kind':
+            clip['kind']=self.cam_clip_kind.currentText()
+            clip['from'],clip['to']=camera_clips.presets(clip['kind'])
+        else:
+            clip['start']=round(self.cam_clip_start.value(),2); clip['duration']=round(self.cam_clip_length.value(),2)
+            get=lambda key: tuple(self.cam_clip_fields[(key,n)].value()/100. for n in ('zoom','x','y'))
+            clip['to']=get('to')
+            clip['from']=None if self.cam_clip_from_here.isChecked() else get('from')
+            if clip.get('kind')!='Custom' and (clip['to'],clip['from'])!=camera_clips.presets(clip['kind']):
+                clip['kind']='Custom'
+        self.project_changes.mark_changed()
+        self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
+
+    def camera_box(self):
+        """The chosen camera clip's framing as a frame on the preview (frame pixels)."""
+        clip=self.find_camera(getattr(self,'selected_camera',None))
+        if clip is None or self.canvas.frame is None or not self.all_scenes(): return None
+        W,H=self.canvas.frame.width(),self.canvas.frame.height()
+        z,x,y=clip.get('to') or (1.,.5,.5)
+        w,h=W/max(1.,z),H/max(1.,z)
+        return (x*W-w/2,y*H-h/2,w,h)
+
+    def drag_camera_frame(self,kind,dx,dy):
+        clip=self.find_camera(getattr(self,'selected_camera',None))
+        if clip is None: return False
+        if kind=='start':
+            box=self.camera_box()
+            if box is None: return False
+            bx,by,bw,bh=box
+            if not (bx<=dx<=bx+bw and by<=dy<=by+bh): return False
+            self.record_structure('move camera frame')
+            self._cam_drag=tuple(clip.get('to') or (1.,.5,.5))
+            return True
+        start=getattr(self,'_cam_drag',None)
+        if start is None: return False
+        if kind=='move':
+            z,x,y=start
+            half=.5/max(1.,z)
+            clip['to']=(z,max(half,min(1-half,x+dx)),max(half,min(1-half,y+dy)))
+            if clip.get('kind') not in ('Custom','Zoom in'): clip['kind']='Custom'
+        else:
+            self._cam_drag=None; self.project_changes.mark_changed()
+        self.fill_camera_panel(); self.sync_camera_timeline(); self.canvas.update()
+        return True
+
     def titles_for_element(self,k=None):
         """The texts / pictures on top in element k's own time (an export of that element alone)."""
         import copy
@@ -1179,6 +1363,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def select_overlay(self,oid):
         """One text chosen ('' / None: none). exp.117: choosing one leaves the others."""
+        if oid and getattr(self,'selected_camera',None):
+            self.selected_camera=None; self.fill_camera_panel(); self.sync_camera_timeline()
         self.selected_overlay=oid or None
         self.selected_overlays={oid} if oid else set()
         self.sync_titles_choice()
@@ -1290,7 +1476,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if action=='duplicate':
             twin=copy.deepcopy(item); twin['id']=uuid.uuid4().hex[:10]
             twin['track']=max(int(o.get('track',0)) for o in self.overlays)+1
-            self.overlays.append(twin); self.selected_overlay=twin['id']
+            self.overlays.append(twin); self.selected_overlay=twin['id']; self.selected_overlays={twin['id']}
         elif action=='delete':
             gone={o['id'] for o in self.chosen_overlays()} if oid in {o['id'] for o in self.chosen_overlays()} else set()
             gone.add(oid)                  # exp.117: every chosen text goes
@@ -1326,6 +1512,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
              self.preview_scope.currentIndex(),
              None if self.canvas.frame is None else (self.canvas.frame.width(),self.canvas.frame.height()),
              repr(self.find_overlay(self.selected_overlay)) if self.selected_overlay else None)
+        if getattr(self,'selected_camera',None):
+            return self.camera_box()                 # cheap: no timeline work
         cached=getattr(self,'_box_cache',None)
         if cached is not None and cached[0]==key:
             return cached[1]
@@ -1390,6 +1578,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def drag_picture(self,kind,dx,dy):
         """Drag on the preview: move the picture on the page (Position X / Y), or a frame on the Board."""
+        if self.camera_editing() and (kind=='start' or getattr(self,'_cam_drag',None) is not None):
+            if self.drag_camera_frame(kind,dx,dy): return True
         if self.board_mode() or (kind!='start' and getattr(self,'_board_drag',None)):
             return self.board_drag(kind,dx,dy)
         if kind=='start':
@@ -1622,6 +1812,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             import copy
             data['titles']=copy.deepcopy(self.overlays)        # exp.116: the video's own clips
             if getattr(self,'text_hidden',None): data['text_hidden']=sorted(self.text_hidden)
+        if getattr(self,'cameras',None):
+            import copy
+            data['cameras']=copy.deepcopy(self.cameras)        # exp.119: the Camera track
         data.pop('overlays',None)
         return data
 
@@ -1910,12 +2103,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from scenes import scenes_from_project
         scene_list=scenes_from_project(data)
         index=max(0,min(len(scene_list)-1,int(data.get('scene_index',0) or 0)))
-        main={k:v for k,v in data.items() if k not in ('scenes','scene_index','track_flags','titles','text_hidden')}
+        main={k:v for k,v in data.items() if k not in ('scenes','scene_index','track_flags','titles','text_hidden','cameras')}
         self.text_hidden={int(t) for t in data.get('text_hidden') or ()}
         self.selected_overlays=set()
         self.track_flags={int(t):dict(f) for t,f in (data.get('track_flags') or {}).items()}
         import copy
         self.overlays=copy.deepcopy(data.get('titles') or [])
+        self.cameras=[dict(c,**{'from':tuple(c['from']) if c.get('from') else None,'to':tuple(c.get('to') or (1.,.5,.5))})
+                      for c in copy.deepcopy(data.get('cameras') or [])]
+        self.selected_camera=None
         self.selected_overlay=None
         self._legacy_titles=[]
         for k,scene in enumerate(scene_list):
@@ -1924,6 +2120,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             elif scene.get('state') and scene['state'].get('overlays'):
                 state=dict(scene['state']); self._legacy_titles.append((k,list(state.pop('overlays'))))
                 scene['state']=state
+            if k!=index and scene.get('state') and (scene['state'].get('settings') or {}).get('camera')=='Zoom (start → end)':
+                state=dict(scene['state']); settings=dict(state['settings'])
+                self.__dict__.setdefault('_legacy_cameras',[]).append((k,dict(settings)))
+                settings['camera']='Off'; state['settings']=settings; scene['state']=state
         self.scenes=scene_list; self.scene_index=index
         self._rev_fp=None
         self._scene_cache={}
@@ -1939,6 +2139,20 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def adopt_legacy_titles(self):
         """Texts saved inside elements (before exp.116) become the video's own clips, at the
         same moment of the whole video as before."""
+        cams=getattr(self,'_legacy_cameras',None)
+        if cams:
+            self._legacy_cameras=[]
+            try:
+                starts={it.k:it.start for it in self.timeline_layout().items}
+            except Exception:
+                starts={}
+            import camera_clips
+            for k,st in cams:
+                g=lambda key,d: float(st.get(key,d))
+                clip=camera_clips.new_clip('Custom',starts.get(k,0.)+g('cam_begin',0.),g('cam_time',1.2))
+                clip['from']=(g('cam_start_zoom',100.)/100.,g('cam_start_x',50.)/100.,g('cam_start_y',50.)/100.)
+                clip['to']=(g('cam_end_zoom',160.)/100.,g('cam_end_x',50.)/100.,g('cam_end_y',50.)/100.)
+                self.cameras.append(clip)
         legacy=getattr(self,'_legacy_titles',None)
         if not legacy: return
         self._legacy_titles=[]
@@ -1953,6 +2167,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def apply_scene_state(self,data):
         from projects import drawing_from_dict, qimage_from_b64, set_widget_value
         self.playing=False
+        settings_in=data.get('settings') or {}
+        from camera import ZOOM_MODE
+        if settings_in.get('camera')==ZOOM_MODE:
+            # exp.115's element zoom becomes a camera clip (exp.119), at the same moment.
+            self.__dict__.setdefault('_legacy_cameras',[]).append((self.scene_index,dict(settings_in)))
+            data=dict(data,settings=dict(settings_in,camera='Off'))
         if data.get('overlays'):
             # Before exp.116 texts belonged to an element: they become the video's own clips
             # (apply_project / _enter_scene place them at the same moment).
@@ -2775,6 +2995,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def preview_wheel(self,steps,x,y):
         """Mouse wheel on the preview: resize a frame on the Board, or the overlay under the mouse."""
         if self.board_mode(): return self.board_wheel(steps,x,y)
+        clip=self.find_camera(getattr(self,'selected_camera',None)) if self.camera_editing() else None
+        if clip is not None:                          # the camera frame: wheel to zoom
+            if getattr(self,'_cam_wheel',None)!=clip['id']:
+                self.record_structure('camera zoom'); self._cam_wheel=clip['id']
+                QTimer.singleShot(800,lambda: setattr(self,'_cam_wheel',None))
+            z,cx,cy=clip.get('to') or (1.,.5,.5)
+            z=max(1.,min(5.,z*(1.08**steps))); half=.5/z
+            clip['to']=(round(z,3),max(half,min(1-half,cx)),max(half,min(1-half,cy)))
+            if clip.get('kind') not in ('Custom','Zoom in','Zoom out'): clip['kind']='Custom'
+            self.project_changes.mark_changed()
+            self.fill_camera_panel(); self.sync_camera_timeline(); self.canvas.update()
+            return True
         item=self.overlay_at(x,y)
         if item is None: return False
         if getattr(self,'_wheel_recorded',None)!=item['id']:
@@ -3078,7 +3310,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         world=self.preview_world(width,height)
         elements=[]
         for k in range(len(self.scenes)):
-            drawing,options,_,camera=self.preview_scene(k,width,height)
+            drawing,options,seconds,camera=self.preview_scene(k,width,height)
+            camera=self.video_camera(k,camera,seconds)          # exp.119: the camera clips
             elements.append(dict(drawing=drawing,options=options,camera=camera,
                                  transition=self.scenes[k]['transition'],
                                  move_seconds=self.scenes[k]['transition_seconds']))
@@ -3097,7 +3330,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import board
         from scenes import transition_frame
         if where=='scene':
-            drawing,options,_,camera=self.preview_scene(k,width,height)
+            drawing,options,seconds,camera=self.preview_scene(k,width,height)
+            camera=self.video_camera(k,camera,seconds)          # exp.119: the camera clips
             from artwork_compositor import composite_element
             under=self.scene_base(k,width,height,f,camera)
             return composite_element(under,drawing,f,options,camera)
@@ -3112,9 +3346,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             a=world.view(world.frames[k],width,height,upto=k+1)
             b=world.view(world.frames[k+1],width,height,upto=k+1)
             return transition_frame(a,b,kind,f)
-        nxt=self.preview_scene(k+1,width,height)[3] if k+1<len(self.scenes) else None
+        def cam(j):
+            if not 0<=j<len(self.scenes): return None
+            _,_,seconds,camera=self.preview_scene(j,width,height)
+            return self.video_camera(j,camera,seconds)
         view=board.join_view(world.frames,k,kind,f,world.aspect,self.scenes[k]['transition_seconds'],
-                             leaving=self.preview_scene(k,width,height)[3],arriving=nxt)
+                             leaving=cam(k),arriving=cam(k+1))
         return world.view(view,width,height,upto=k+1)
 
     def open_batch_export(self):
@@ -4315,14 +4552,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if view.get('page'):
                 base=(tuple(self.element_fingerprint(i) for i in range(self.scene_index)),board)
             return ('one',self.element_fingerprint(self.scene_index),base,size)
+        cams=self.cameras_signature()               # exp.119: the Camera track
         if where=='scene':
             base=None
             if self.drawn_over(k):
                 base=(tuple(self.element_fingerprint(i) for i in range(k)),board)
-            return ('scene',self.element_fingerprint(k),base,size)
+            return ('scene',self.element_fingerprint(k),base,size,cams)
         s=self.scenes[k]
         return ('join',k,s['transition'],s['transition_seconds'],
-                tuple(self.element_fingerprint(i) for i in range(min(k+2,len(self.scenes)))),board,size)
+                tuple(self.element_fingerprint(i) for i in range(min(k+2,len(self.scenes)))),board,size,cams)
 
     def segment_at(self,index):
         """(fingerprint, frame inside the segment, frames in the segment, where, k) for a
@@ -4347,6 +4585,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             low=self.titles_split((a+b)/2)[1]
             under=repr([o for o in low if _ov.end_of(o)>a and float(o.get('start',0))<b])
             fp=('tl',describe(lay,state,a),tuple(self.element_fingerprint(i) for i in involved),under,
+                self.cameras_signature(),
                 tuple(sorted(self.hidden_elements())),
                 tuple((s['transition'],s['transition_seconds']) for s in self.scenes),
                 repr([s.get('board') for s in self.scenes]),(view.get('width'),view.get('height')))
@@ -4405,6 +4644,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             return
         self.canvas.frame=frame
         self.sync_titles_timeline()
+        self.sync_camera_timeline()
         try:
             self.canvas.titles_frame=self.titles_layer(frame.width(),frame.height())
         except Exception as exc:
@@ -4829,6 +5069,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         folder=Path(parent)/datetime.now().strftime('StrokeScribe_%Y%m%d_%H%M%S_%f')
         options=self.options()
         options['overlays']=self.titles_for_element()      # this element alone: its time (exp.116)
+        if getattr(self,'cameras',None) and len(self.scenes)<2:      # exp.119: the Camera track
+            import camera_clips
+            options['video_camera']=(0.,camera_clips.signature(self.cameras),tuple(self.camera_moves()))
         if len(self.scenes)>1 and self.export_all_scenes.isChecked():
             self._leave_scene()
             scene_list=[dict(state=copy.deepcopy(s['state']),transition=s['transition'],
@@ -4837,7 +5080,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                              hidden=bool(self.track_flag(s,'hidden')),muted=bool(self.track_flag(s,'muted')))
                         for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
-            self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand,copy.deepcopy(self.visible_titles()))
+            self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand,copy.deepcopy(self.visible_titles()),
+                                      copy.deepcopy(getattr(self,'cameras',[])))
         else:
             self.worker=None
         if self.worker is None: self.worker=Exporter(copy.deepcopy(self.drawing),folder,options,

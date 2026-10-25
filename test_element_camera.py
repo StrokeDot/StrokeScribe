@@ -64,6 +64,41 @@ class MoveTakesOverTests(unittest.TestCase):
             self.assertAlmostEqual(a, b)
 
 
+class CameraClipTests(unittest.TestCase):
+    """exp.119: camera clips on the Camera track."""
+
+    def test_a_zoom_in_eases_then_holds_until_the_transition(self):
+        import camera_clips as cc
+        clip = cc.new_clip('Zoom in', start=2., duration=2.)
+        moves = [(6., 7.)]
+        self.assertIsNone(cc.framing_at([clip], 1., moves))                 # before it: no effect
+        self.assertEqual(cc.framing_at([clip], 2., moves), (1., .5, .5))     # from where the camera is
+        z, _, _ = cc.framing_at([clip], 3., moves)
+        self.assertTrue(1. < z < 1.6)
+        self.assertEqual(cc.framing_at([clip], 5., moves), (1.6, .5, .5))    # holds
+        self.assertEqual(cc.framing_at([clip], 6.5, moves), (1.6, .5, .5))   # the move takes over from it
+        self.assertIsNone(cc.framing_at([clip], 7.5, moves))                 # the next page: unzoomed
+
+    def test_the_next_clip_starts_where_the_camera_is(self):
+        import camera_clips as cc
+        a = cc.new_clip('Zoom in', start=0., duration=1.)
+        b = cc.new_clip('Zoom out', start=2., duration=1.)
+        self.assertEqual(cc.framing_at([a, b], 2., ()), (1.6, .5, .5))       # no jump
+        self.assertEqual(cc.framing_at([a, b], 3.5, ()), (1., .5, .5))
+
+    def test_video_camera_combines_with_the_element_camera_and_pickles(self):
+        import pickle
+        import camera_clips as cc
+        from camera import ZoomPath
+        own = ZoomPath((2., .5, .5), (2., .5, .5), 0., 1., 4.)
+        cam = cc.wrap(own, 10., [cc.new_clip('Zoom in', 10., 1.)], [], 4.)
+        z, x, y = cam.at(1.)
+        self.assertAlmostEqual(z, 3.2)
+        self.assertEqual(pickle.loads(pickle.dumps(cam)).at(1.), (z, x, y))   # export workers
+        options = dict(video_camera=(10., cc.signature([cc.new_clip('Zoom in', 10., 1.)]), ()))
+        self.assertAlmostEqual(cc.from_options(None, options, 4.).at(1.)[0], 1.6)
+
+
 @unittest.skipIf(SKIP, 'needs Qt')
 class WindowTests(unittest.TestCase):
     @classmethod
@@ -76,35 +111,49 @@ class WindowTests(unittest.TestCase):
         from engine import import_svg
         self.w = Window(); self.w.show()
         self.w.set_drawing(import_svg(HERE / 'samples' / 'drawing.svg'))
+        self.w.add_scene()
+        self.w.preview_scope.setCurrentIndex(1); self.w.refresh()
         self.app.processEvents()
 
     def tearDown(self):
         self.w.playing = False
         self.w.close(); self.app.processEvents()
 
-    def test_zoom_camera_settings_reach_the_frames(self):
-        from camera import ZOOM_MODE, ZoomPath
+    def test_camera_clip_on_the_camera_track(self):
+        import json
         w = self.w
-        self.assertTrue(w.camera_zoom_box.isHidden())
-        w.camera.setCurrentText(ZOOM_MODE)
-        self.assertFalse(w.camera_zoom_box.isHidden())
-        w.cam_end_zoom.setValue(200); w.cam_end_x.setValue(30); w.cam_time.setValue(2.)
-        options = w.options()
-        self.assertEqual(options['cam_plan'][3:5], (200., 30.))
-        self.assertEqual(options['camera_zoom'], 2.)
-        self.assertIsInstance(w.preview_camera(options), ZoomPath)
-        w.refresh(); self.app.processEvents()
+        w.position = 0.; w.refresh()
+        clip = w.add_camera_clip('Zoom in')
+        self.app.processEvents()
+        self.assertEqual(w.stage_timeline.cam_clips, w.cameras)
+        self.assertEqual(w.selected_camera, clip['id'])
+        self.assertFalse(w.camera_clip_box.isHidden())
+        # Chosen: the preview shows a frame where the camera goes; drag it.
+        box = w.camera_box()
+        self.assertIsNotNone(box)
+        x, y, bw, bh = box
+        self.assertTrue(w.drag_picture('start', x + bw / 2, y + bh / 2))
+        w.drag_picture('move', -.05, 0.); w.drag_picture('done', 0., 0.)
+        self.assertLess(clip['to'][1], .5)
+        # Saved with the project; Ctrl+Z.
+        data = json.loads(json.dumps(w.project_state()))
+        self.assertEqual(data['cameras'][0]['id'], clip['id'])
+        w.camera_clip_action(clip['id'], 'delete')
+        self.assertEqual(w.cameras, [])
+        w.undo(); self.app.processEvents()
+        self.assertEqual(len(w.cameras), 1)
+        # Not chosen: the whole video uses it (the camera of element 1 is wrapped).
+        w.select_camera(None)
+        camera = w.video_camera(0, None, 4.)
+        self.assertIsNotNone(camera)
 
-    def test_camera_shows_on_the_timeline_and_new_elements_start_without_one(self):
-        from camera import ZOOM_MODE
+    def test_older_element_zoom_becomes_a_camera_clip(self):
         w = self.w
-        w.camera.setCurrentText(ZOOM_MODE)
-        w.add_scene()
-        w.camera.setCurrentText('Off')
-        w.preview_scope.setCurrentIndex(1); w.refresh(); self.app.processEvents()
-        marks = w.element_camera_marks()
-        self.assertEqual([m[0] for m in marks], [0])
-        self.assertTrue(w.new_element('file', path=str(HERE / 'samples' / 'drawing.svg')))
+        data = w.project_state()
+        data['settings'] = dict(data['settings'], camera='Zoom (start → end)', cam_end_zoom=200., cam_time=2.)
+        w.apply_project(data); self.app.processEvents()
+        self.assertEqual(len(w.cameras), 1)
+        self.assertEqual(w.cameras[0]['to'][0], 2.)
         self.assertEqual(w.camera.currentText(), 'Off')
 
 
