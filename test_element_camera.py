@@ -79,6 +79,15 @@ class CameraClipTests(unittest.TestCase):
         self.assertEqual(cc.framing_at([clip], 6.5, moves), (1.6, .5, .5))   # the move takes over from it
         self.assertIsNone(cc.framing_at([clip], 7.5, moves))                 # the next page: unzoomed
 
+    def test_go_back_when_it_ends(self):
+        import camera_clips as cc
+        clip = cc.new_clip('Zoom in', start=2., duration=2.); clip['back'] = True
+        self.assertEqual(cc.framing_at([clip], 4., ()), (1.6, .5, .5))
+        self.assertLess(cc.framing_at([clip], 5., ())[0], 1.6)
+        self.assertIsNone(cc.framing_at([clip], 6.5, ()))
+        sig = cc.signature([clip])
+        self.assertTrue(cc.from_options(None, dict(video_camera=(0., sig, ())), 10.).clips[0]['back'])
+
     def test_the_next_clip_starts_where_the_camera_is(self):
         import camera_clips as cc
         a = cc.new_clip('Zoom in', start=0., duration=1.)

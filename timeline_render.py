@@ -42,7 +42,7 @@ def view_of(world, lay, state, elements):
     return view
 
 
-def compose(world, lay, state, elements, width, height, titles=None, seconds=None, view_scale=1.):
+def compose(world, lay, state, elements, width, height, titles=None, seconds=None, view_scale=1., view_pan=(0., 0.)):
     """The whole video at this moment, width x height.
 
     elements[k]: {'drawing', 'options' (compose_frame options at the video size),
@@ -63,7 +63,8 @@ def compose(world, lay, state, elements, width, height, titles=None, seconds=Non
             return _texts(transition_frame(a, b, kind, state.t), titles, seconds)
     view = view_of(world, lay, state, elements)
     if view_scale > 1.:                  # exp.121: the preview stepped back (Ctrl + wheel)
-        view = (view[0], view[1], view[2] * view_scale)
+        w = view[2] * view_scale         # exp.122: and moved around by dragging it
+        view = (view[0] + view_pan[0] * w, view[1] + view_pan[1] * w * world.aspect, w)
     return _page(world, lay, state, elements, view, width, height, titles, seconds)
 
 
