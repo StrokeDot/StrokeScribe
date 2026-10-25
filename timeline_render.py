@@ -68,15 +68,52 @@ def compose(world, lay, state, elements, width, height, titles=None, seconds=Non
     return _page(world, lay, state, elements, view, width, height, titles, seconds)
 
 
-def _texts(out, items, seconds, copied=False):
+def page_of(lay, seconds):
+    """exp.123: the page a text belongs to: the page the camera shows when it starts."""
+    from timeline_model import state_at
+    if not lay.items:
+        return 0
+    st = state_at(lay, max(0., float(seconds)))
+    if st.kind == 'page':
+        return st.current
+    return min(st.move + 1, len(lay.items) - 1)
+
+
+def paint_texts(out, items, seconds, frames=None, place=None, view=None):
+    """exp.123: texts live on their page like the drawings: each is drawn where its page is
+    in this view (so the camera moves and zooms past it). Without a view: on the screen."""
+    import overlays
     if not items or seconds is None:
         return out
-    import overlays
-    if not any(overlays.state_at(o, seconds) is not None for o in items):
+    shown = [o for o in items if overlays.state_at(o, seconds) is not None]
+    if not shown:
         return out
-    if not copied:
-        out = out.copy()                 # never draw into a picture kept by the board
-    return overlays.paint(out, items, seconds)
+    out = out.copy()                     # never draw into a picture kept by the board
+    w, h = out.width(), out.height()
+    if view is None or frames is None or place is None:
+        return overlays.paint(out, shown, seconds)
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QImage, QPainter
+    groups = {}
+    for o in shown:
+        groups.setdefault(min(max(0, int(o.get('_page', 0) or 0)), len(frames) - 1), []).append(o)
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    for k, group in groups.items():
+        x, y, rw, rh = place(frames[k], view, w, h)
+        if rw < 2 or x > w or y > h or x + rw < 0 or y + rh < 0:
+            continue
+        layer = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
+        overlays.paint(layer, group, seconds)
+        painter.drawImage(QRectF(x, y, rw, rh), layer)
+    painter.end()
+    return out
+
+
+def _texts(out, items, seconds, world=None, view=None):
+    if world is None:
+        return paint_texts(out, items, seconds)
+    return paint_texts(out, items, seconds, world.frames, world.place, view)
 
 
 def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None):
@@ -87,7 +124,7 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
     for k, fraction in state.active:
         under = [o for o in waiting if int(o.get('track', 0)) < tracks.get(k, 0)]
         if under:
-            out = _texts(out, under, seconds)
+            out = _texts(out, under, seconds, world, view)
             waiting = [o for o in waiting if o not in under]
         x, y, w, h = world.place(world.frames[k], view, width, height)
         if w < 2 or x > width or y > height or x + w < 0 or y + h < 0:
@@ -100,4 +137,4 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
         if k == state.top and opts.get('layers', 'all') != 'art':
             hand = element_frame(el['drawing'], opts, fraction, w, h, 'hand')
             out = world.put(out, hand, world.frames[k], view)
-    return _texts(out, waiting, seconds)
+    return _texts(out, waiting, seconds, world, view)

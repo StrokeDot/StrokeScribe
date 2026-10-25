@@ -349,9 +349,9 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(w.preview_scope.currentIndex(), 1)
         self.assertEqual(w.position, 0.)
 
-    def test_a_text_with_no_way_out_stays_until_the_camera_moves(self):
-        """exp.121: like the drawings, a text stays after its clip (no way out) until the
-        next camera move between pages."""
+    def test_a_text_lives_on_its_page_and_stays(self):
+        """exp.123: like the drawings, a text with no way out stays (to the end of the video)
+        on the page the camera showed when it started; the camera moves away from it."""
         import overlays
         w = self.w
         w.set_camera_move(0, 'Camera move', 1.2)
@@ -361,12 +361,18 @@ class WindowTests(unittest.TestCase):
         w.move_overlay_clip(text['id'], 0., 1., text['track'])
         text['effect_out'] = 'None'
         w.visible_titles()
-        move_start = min(a for a, b in w.camera_moves())
-        self.assertAlmostEqual(text['_until'], move_start, places=2)
-        self.assertIsNotNone(overlays.state_at(text, (1. + move_start) / 2))     # still there
-        self.assertIsNone(overlays.state_at(text, move_start + .5))              # gone with the page
+        self.assertEqual(text['_page'], 0)
+        end = w.video_length()
+        self.assertAlmostEqual(text['_until'], end, places=2)
+        self.assertIsNotNone(overlays.state_at(text, end - .1))                  # still there
+        # On element 2's page the text's page is out of view.
+        W, H = 320, 180
+        x, y, rw, rh = w.text_rect(text, end - .1, W, H)
+        self.assertTrue(x + rw <= 1 or x >= W - 1 or y + rh <= 1 or y >= H - 1)
+        x, y, rw, rh = w.text_rect(text, .5, W, H)
+        self.assertAlmostEqual(rw, W, delta=2)                                 # its own page: in view
         text['effect_out'] = 'Fade'
-        self.assertIsNone(overlays.state_at(text, (1. + move_start) / 2))        # its way out: as set
+        self.assertIsNone(overlays.state_at(text, end - .1))                    # its way out: as set
         self.assertNotIn('_until', json.loads(json.dumps(w.project_state()))['titles'][0])
 
     def test_ctrl_wheel_steps_back_in_the_whole_video(self):
