@@ -201,6 +201,7 @@ class StageTimeline(QFrame):
     element_placed=Signal(int,float,int)   # whole video: an element dragged to a new start / track
     element_reset=Signal(int)           # whole video: back to "after the element before it", Track 1
     track_toggled=Signal(int,str)       # whole video: a track's 'mute' or 'hide' button
+    element_camera_clicked=Signal(int)  # whole video: an element's own camera (zoom) clicked
     other_overlay_clicked=Signal(int,str)   # whole video: another element's text / picture (k, id)
     move_clicked=Signal(int)            # whole video: a camera move clicked (the move after element k)
     element_flag=Signal(int,str)        # whole video: one element's 'mute' or 'hide' (right-click menu)
@@ -510,6 +511,17 @@ class StageTimeline(QFrame):
         x0,x1=self._x(start),self._x(start+secs)
         if x1-x0<22: mid=(x0+x1)/2; x0,x1=mid-11,mid+11
         return QRectF(x0+1,cam.top()+1,x1-x0-2,cam.height()-2)
+
+    def _cam_rect(self, start, length):
+        cam=self._camera_rect()
+        x0,x1=self._x(start),self._x(start+length)
+        if x1-x0<22: x1=x0+22
+        return QRectF(x0+1,cam.top()+3,x1-x0-2,cam.height()-6)
+
+    def _element_camera_at(self, pos):
+        for k,start,length,until in getattr(self,'cam_marks',()) or ():
+            if self._cam_rect(start,length).contains(pos): return k
+        return None
 
     def _move_at(self, pos):
         if not self.items or pos.x()<self.LEFT: return None
@@ -982,6 +994,19 @@ class StageTimeline(QFrame):
         p.restore()
         p.setFont(small)
         p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
+        for k,start,length,until in getattr(self,'cam_marks',()) or ():
+            # exp.115: an element's own camera (zoom): an outlined bar; the part after the
+            # camera move that took over from it is faded.
+            r=self._cam_rect(start,length)
+            lit=getattr(self,'_hover',None)==('cam',k)
+            edge=QColor(c['accent']); fill=QColor(c['accent']); fill.setAlpha(110 if lit else 60)
+            p.setPen(QPen(edge,1.2)); p.setBrush(fill); p.drawRoundedRect(r,4,4)
+            if until is not None and until<start+length:
+                gone=QRectF(self._x(until),r.top(),max(0.,r.right()-self._x(until)),r.height())
+                faded=QColor(c['track']); faded.setAlpha(170)
+                p.setPen(Qt.PenStyle.NoPen); p.setBrush(faded); p.drawRect(gone.intersected(r))
+            if r.width()>=22:
+                self._draw_icon(p,'zoom-in',QPointF(r.left()+11,r.center().y()),c['text'],11)
         for k,label,start,secs in self.moves or ():
             # A camera move: a camera drawn as a picture (not a word, so no font can cut it).
             # exp.111: click it to change how and how long the camera moves.
@@ -1136,6 +1161,10 @@ class StageTimeline(QFrame):
         if move is not None:
             self.move_clicked.emit(move)
             event.accept(); return
+        own=self._element_camera_at(pos) if event.button()==Qt.MouseButton.LeftButton else None
+        if own is not None:
+            self.element_camera_clicked.emit(own)
+            event.accept(); return
         if self.items and pos.x()<self.LEFT and not self._tracks_area().contains(pos):
             event.accept(); return
         if self.items and pos.x()<self.LEFT:
@@ -1230,6 +1259,13 @@ class StageTimeline(QFrame):
                 self._hover=hover; self.update()
             self.setToolTip(tip)
             self.setCursor(Qt.CursorShape.PointingHandCursor if hover else Qt.CursorShape.ArrowCursor)
+            return super().mouseMoveEvent(event)
+        own=self._element_camera_at(pos) if self._move_at(pos) is None else None
+        if own is not None:
+            if getattr(self,'_hover',None)!=('cam',own):
+                self._hover=('cam',own); self.update()
+            self.setToolTip(f'Element {own+1}: its own camera (zoom). Click to change it.')
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
             return super().mouseMoveEvent(event)
         move=self._move_at(pos)
         if move is not None:
@@ -2408,7 +2444,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
                              'camera moves on (works with or without colours).')
     a.addRow('Pause after (s)',w.pause_after)
     w.camera=QComboBox()
-    w.camera.addItems(['Off','Gentle zoom','Close-up zoom'])
+    from camera import ZOOM_MODE as _ZOOM_MODE
+    w.camera.addItems(['Off','Gentle zoom','Close-up zoom',_ZOOM_MODE])
     w.camera.setToolTip('Camera follow: the view zooms in and glides after the pen, then pulls back '
                         'to show the whole picture at the end.')
     w.auto_timing_button=QPushButton('Auto timing')
@@ -2878,13 +2915,52 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # Camera: camera follow (moves between elements are set on the timeline).
     camera_page=QWidget();camera_l=QVBoxLayout(camera_page)
     camera_l.setContentsMargins(9,12,9,8);camera_l.setSpacing(10)
-    camera_l.addWidget(label('CAMERA FOLLOW'))
-    camera_form=form_layout();camera_form.addRow('Camera follow',w.camera)
+    camera_l.addWidget(label('THIS ELEMENT\'S CAMERA'))
+    camera_form=form_layout();camera_form.addRow('Camera',w.camera)
     camera_l.addLayout(camera_form)
-    camera_l.addWidget(caption('The view zooms in and glides after the pen, then pulls back to show the '
-                               'whole picture. Camera moves between elements are set on the timeline '
-                               '(Then / Move).'))
+    w.camera_note=caption('')
+    camera_l.addWidget(w.camera_note)
+    # exp.115: the element's own camera, from a start framing to an end framing. The
+    # camera moves between elements (the camera row of the timeline) have the last word:
+    # a zoom still running when the move starts goes on, and the move takes over from it.
+    w.camera_zoom_box=QWidget(); zb=QVBoxLayout(w.camera_zoom_box); zb.setContentsMargins(0,0,0,0); zb.setSpacing(6)
+    w.camera_zoom_widgets={}
+    def cam_row(form,key,text,low,high,value,step,suffix,decimals=0,tip=''):
+        spin=w.number(low,high,value,step); spin.setDecimals(decimals); spin.setSuffix(suffix)
+        if tip: spin.setToolTip(tip)
+        setattr(w,key,spin); w.camera_zoom_widgets[key]=spin
+        holder=QWidget(); line=QHBoxLayout(holder); line.setContentsMargins(0,0,0,0); line.setSpacing(8)
+        slider=linked_slider(spin,low,high,scale=10 if decimals else 1)
+        line.addWidget(slider,1); line.addWidget(spin)
+        form.addRow(text,holder)
+        return spin
+    for title,prefix,zoom in (('START','cam_start',100.),('END','cam_end',160.)):
+        zb.addWidget(label(title+' FRAMING'))
+        f=form_layout(); zb.addLayout(f)
+        cam_row(f,prefix+'_zoom','Zoom',100,500,zoom,5,'%',tip='100% shows the whole element; 200% is twice as close.')
+        cam_row(f,prefix+'_x','Centre X',0,100,50,1,'%',tip='Where the camera looks, across (50% = the middle).')
+        cam_row(f,prefix+'_y','Centre Y',0,100,50,1,'%',tip='Where the camera looks, down (50% = the middle).')
+    zb.addWidget(label('SPEED'))
+    f=form_layout(); zb.addLayout(f)
+    cam_row(f,'cam_begin','Starts at',0,120,0,.1,' s',1,'Seconds into the element when the camera starts to move.')
+    cam_row(f,'cam_time','Zoom time',.2,30,1.2,.1,' s',1,'How long the camera takes from the start framing to '
+            'the end framing. Longer than the element: it goes on into the camera move after it.')
+    zb.addWidget(caption('The camera moves between elements (camera row of the timeline) have the last word: '
+                         'if this zoom is still running when the move starts, the move takes over from it '
+                         'gradually and lands on the next element.'))
+    camera_l.addWidget(w.camera_zoom_box)
     camera_l.addStretch(1)
+    def camera_mode_changed(*_):
+        zoom=w.camera.currentText()==_ZOOM_MODE
+        w.camera_zoom_box.setVisible(zoom)
+        w.camera_note.setText('' if zoom else 'Gentle / Close-up zoom: the view zooms in and glides after the pen, '
+                              'then pulls back to show the whole picture. Camera moves between elements are on '
+                              'the timeline: click a camera on the Camera row.')
+    w.camera.currentIndexChanged.connect(camera_mode_changed)
+    for spin in w.camera_zoom_widgets.values():
+        spin.valueChanged.connect(lambda *_: w.refresh())
+    w.camera_mode_changed=camera_mode_changed
+    camera_mode_changed()
     w.left_tabs.addTab(scroll_view(sound),'Sound')
     w.left_tabs.addTab(scroll_view(music),'Music')
     w.left_tabs.addTab(scroll_view(camera_page),'Camera')
@@ -3043,6 +3119,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.overlay_dropped.connect(lambda path,seconds: w.add_overlay_picture(path,at=seconds))
     w.stage_timeline.element_clicked.connect(lambda k: w.timeline_element_clicked(k))
     w.stage_timeline.move_clicked.connect(lambda k: w.edit_camera_move(k))
+    w.stage_timeline.element_camera_clicked.connect(lambda k: w.edit_element_camera(k))
     w.stage_timeline.other_overlay_clicked.connect(lambda k,oid: w.go_to_overlay(k,oid))
     w.stage_timeline.element_edit.connect(lambda k: w.edit_element(k))
     w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))

@@ -1078,6 +1078,30 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.edit_overlay(item['id'])
         return item
 
+    def element_camera_marks(self,items=None):
+        """exp.115: the elements' own cameras on the Camera row: [(k, start, length, until)],
+        whole-video seconds; `until`: where the camera move after it has fully taken over."""
+        try:
+            lay=self.timeline_layout()
+        except Exception:
+            return []
+        ends={m.k:m.end for m in lay.moves}
+        marks=[]
+        for it in lay.items:
+            plan=self.preview_scene(it.k,960,540)[1].get('cam_plan')
+            if not plan or (plan[0]<=100.01 and plan[3]<=100.01): continue
+            begin,length=float(plan[6]),float(plan[7])
+            start=it.start+begin
+            until=ends.get(it.k,it.end)
+            marks.append((it.k,start,length,until if start+length>until else None))
+        return marks
+
+    def edit_element_camera(self,k):
+        """An element's own camera clicked on the timeline: that element, Camera panel."""
+        if k!=self.scene_index: self.timeline_element_clicked(k)
+        if self.scene_index==k and hasattr(self,'show_left_panel'):
+            self.show_left_panel('camera')
+
     def go_to_overlay(self,k,oid):
         """Whole video: another element's text or picture clicked on the timeline: work on that
         element, with it chosen (the preview stays on the whole video)."""
@@ -1147,7 +1171,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if k not in dict(state.active) and k not in state.finished: return None
             world=self.preview_world(W,H)
             elements=[dict(transition=s['transition'],move_seconds=s['transition_seconds'],
-                           camera=self.preview_scene(j,W,H)[3] if j==state.current else None)
+                           camera=self.preview_scene(j,W,H)[3])
                       for j,s in enumerate(self.scenes)]
             view=timeline_render.view_of(world,lay,state,elements)
             x,y,w,h=world.place(world.frames[k],view,W,H)
@@ -1477,6 +1501,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                       'erase_mode','erase_time','erase_size','eraser',
                       'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export','export_layers','clean_color','export_done_sound',
                       'move_hand','move_hand_size','move_hand_gx','move_hand_gy',
+                      'cam_start_zoom','cam_start_x','cam_start_y','cam_end_zoom','cam_end_x','cam_end_y','cam_begin','cam_time',
                       'ink_on','ink_edges','ink_edge_size','ink_removal','ink_strength','ink_colour','look_colour_on','look_temperature','look_tint','look_saturation','look_light_on','look_exposure','look_brightness','look_contrast','look_highlights','look_shadows','look_whites','look_blacks')
 
     def project_state(self):
@@ -1804,6 +1829,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                        'paper_tolerance':22,'paper_softness':8,
                        # Older projects: slides came in without a hand.
                        'move_hand':False,'entrance_part':'The whole picture',
+                       # exp.115: the element's own camera (older projects: none).
+                       'cam_start_zoom':100.,'cam_start_x':50.,'cam_start_y':50.,'cam_end_zoom':160.,
+                       'cam_end_x':50.,'cam_end_y':50.,'cam_begin':0.,'cam_time':1.2,
                        # Older projects: no Colour / Light / Ink on the page.
                        **__import__('picture_look').DEFAULTS,
                        # Older projects: one Left-handed switch for both hands.
@@ -1821,6 +1849,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             widget.blockSignals(True)
             set_widget_value(widget,settings[name])
             widget.blockSignals(False)
+        if hasattr(self,'camera_mode_changed'): self.camera_mode_changed()
         self.canvas.set_background(self.preview_background.currentIndex())
         import tools_kit
         image,builtin=tools_kit.hand_from_project(data.get('hand'))
@@ -2848,6 +2877,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 for o in scene['state'].get('overlays') or ():
                     others.append((j,dict(o,start=starts[j]+float(o.get('start',0)))))
         tl.set_overlays(self.overlays,self.selected_overlay,others)
+        tl.cam_marks=self.element_camera_marks(items)
         tl.set_audio(self.timeline_audio())
         tl.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() else {'paint','hold','erase'}
         mine=dict(self.stage_parts(options))
@@ -2940,7 +2970,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             a=world.view(world.frames[k],width,height,upto=k+1)
             b=world.view(world.frames[k+1],width,height,upto=k+1)
             return transition_frame(a,b,kind,f)
-        view=board.join_view(world.frames,k,kind,f,world.aspect,self.scenes[k]['transition_seconds'])
+        nxt=self.preview_scene(k+1,width,height)[3] if k+1<len(self.scenes) else None
+        view=board.join_view(world.frames,k,kind,f,world.aspect,self.scenes[k]['transition_seconds'],
+                             leaving=self.preview_scene(k,width,height)[3],arriving=nxt)
         return world.view(view,width,height,upto=k+1)
 
     def open_batch_export(self):
@@ -3873,7 +3905,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             widget.blockSignals(True)
             try: set_widget_value(widget,value)
             finally: widget.blockSignals(False)
-        for name in ('sync_entrance_switches','update_applicable'):
+        for name in ('sync_entrance_switches','update_applicable','camera_mode_changed'):
             try: getattr(self,name)()
             except Exception: pass
 

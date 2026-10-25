@@ -30,7 +30,9 @@ def view_of(world, lay, state, elements):
     if state.kind == 'move':
         k = state.move
         kind = elements[k].get('transition', 'Camera move')
-        return board.join_view(frames, k, kind, state.t, world.aspect, elements[k].get('move_seconds', 1.))
+        nxt = elements[k + 1].get('camera') if k + 1 < len(elements) else None
+        return board.join_view(frames, k, kind, state.t, world.aspect, elements[k].get('move_seconds', 1.),
+                               leaving=elements[k].get('camera'), arriving=nxt)
     k = state.current
     view = frames[k]
     camera = elements[k].get('camera')

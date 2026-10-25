@@ -114,3 +114,59 @@ def crop(frame, width, height, zoom, cx, cy):
 
 def render_size(width, height, zoom):
     return max(width, int(math.ceil(width * zoom))), max(height, int(math.ceil(height * zoom)))
+
+
+# ------------------------------------------------------------ element camera (exp.115)
+
+ZOOM_MODE = 'Zoom (start → end)'
+
+
+class ZoomPath:
+    """The element's own camera: from a start framing to an end framing.
+
+    start / end: (zoom, centre x, centre y) - zoom 1 = the whole element, centres are
+    fractions of the element's frame. The camera holds the start framing until
+    `begin` seconds, moves for `length` seconds (eased; zoom on a natural, logarithmic
+    scale), then holds the end framing. `total` is the element's own time.
+
+    The move can be longer than the element: what is left runs on into the camera
+    move after the element, where the move gradually takes over (board.join_view).
+    """
+
+    def __init__(self, start, end, begin, length, total):
+        self.start, self.end = tuple(map(float, start)), tuple(map(float, end))
+        self.begin, self.length = max(0., float(begin)), max(.05, float(length))
+        self.total = max(1e-6, float(total))
+
+    def at_seconds(self, seconds):
+        p = (float(seconds) - self.begin) / self.length
+        e = float(_smoothstep(np.float64(p)))
+        (z0, x0, y0), (z1, x1, y1) = self.start, self.end
+        z = math.exp(math.log(max(1., z0)) + (math.log(max(1., z1)) - math.log(max(1., z0))) * e)
+        return z, x0 + (x1 - x0) * e, y0 + (y1 - y0) * e
+
+    def at(self, fraction):
+        return self.at_seconds(max(0., min(1., float(fraction))) * self.total)
+
+    def runs_past_end(self):
+        return self.begin + self.length > self.total + 1e-6
+
+
+def zoom_path(plan, total):
+    """ZoomPath from options['cam_plan'] = (start zoom %, x %, y %, end zoom %, x %, y %,
+    begin s, length s), or None when it does nothing (both framings the whole element)."""
+    if not plan:
+        return None
+    sz, sx, sy, ez, ex, ey, begin, length = (float(v) for v in plan)
+    if sz <= 100.01 and ez <= 100.01:
+        return None
+    return ZoomPath((sz / 100., sx / 100., sy / 100.), (ez / 100., ex / 100., ey / 100.), begin, length, total)
+
+
+def after_end(path, seconds_after):
+    """Where an element's camera is `seconds_after` its end (it may still be zooming)."""
+    if path is None:
+        return None
+    if hasattr(path, 'at_seconds'):
+        return path.at_seconds(path.total + max(0., float(seconds_after)))
+    return path.at(1.)

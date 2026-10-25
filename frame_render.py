@@ -363,6 +363,9 @@ def camera_for(drawing, options, zoom, rate=30.):
     """Plan the camera path for these options (None when the camera is off)."""
     import camera
     import motion
+    if options.get('cam_plan') and drawing is not None:      # exp.115: start → end framing
+        from camera import zoom_path
+        return zoom_path(options['cam_plan'], timeline_seconds(drawing, options))
     if zoom <= 1.0001 or drawing is None:
         return None
     total = timeline_seconds(drawing, options)
