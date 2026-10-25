@@ -8,6 +8,7 @@ from __future__ import annotations
 import bisect
 import hashlib
 import math
+import numpy as np
 from collections import OrderedDict, deque
 from dataclasses import dataclass
 from PIL import Image, ImageDraw
@@ -70,8 +71,14 @@ class PaintPlan:
     def mask(self, progress):
         clock = max(0., min(1., float(progress)))/.98*self.total
         # No full-image shortcut, including at progress==1.
-        return Image.frombytes('L', self.size, bytes(
-            255 if t <= clock and progress > 0 else 0 for t in self.arrival))
+        # exp.120: numpy comparison (the same cells), not a Python loop per frame.
+        arrival = self.__dict__.get('_arrival_np')
+        if arrival is None or len(arrival) != len(self.arrival):
+            arrival = np.asarray(self.arrival, dtype=np.float64)
+            self.__dict__['_arrival_np'] = arrival
+        if progress <= 0:
+            return Image.new('L', self.size, 0)
+        return Image.frombytes('L', self.size, ((arrival <= clock) * 255).astype(np.uint8).tobytes())
 
 def _components(labels, width, height):
     """Split disconnected pieces even if they share a closed-contour ID."""
@@ -425,7 +432,10 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55, short_vertic
         # Coverage repair is planned, timed physical painting, not a final fill.
         missing={cell for cell in cells if not math.isfinite(arrival[cell])}
         while missing:
-            target=min(missing,key=lambda cell:math.dist(cursor,center(cell)))
+            # exp.120: vectorised nearest (set order kept, so ties go the same way as min()).
+            order=list(missing)
+            arr=np.fromiter(order,dtype=np.int64,count=len(order))
+            target=order[int(np.argmin(np.hypot(arr%gw+.5-cursor[0],arr//gw+.5-cursor[1])))]
             paint_to(target,rid)
             missing={cell for cell in missing if not math.isfinite(arrival[cell])}
     assert all(not rid or math.isfinite(arrival[i]) for i,rid in enumerate(labels))

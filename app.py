@@ -4653,7 +4653,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self.position=self.finished_position(view)
         self._look_preview=False
         try:
-            frame=self.preview_frame(self.position,playing=self.playing)
+            frame=self.preview_frame(self.position,playing=self.playing or getattr(self,'_scrub_fast',False))
         except Exception as exc:
             # An invalid/expensive brush configuration must not throw out of
             # the Qt signal handler and terminate the application.
@@ -5015,8 +5015,24 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.position=value/1000
         if self.playing and self.preview_sound is not None:
             self.sync_preview_sound()     # user moved the playhead while playing
+        # exp.120: while the playhead is dragged, ready-made frames are shown (like Play);
+        # the exact frame is drawn when the mouse stops.
+        tl=getattr(self,'stage_timeline',None)
+        dragging=self.slider.isSliderDown() or (tl is not None and getattr(tl,'_drag',None)==('seek',))
+        if dragging and not self.playing:
+            self._scrub_fast=True
+            if not hasattr(self,'_scrub_settle'):
+                self._scrub_settle=QTimer(self); self._scrub_settle.setSingleShot(True)
+                self._scrub_settle.timeout.connect(self._scrub_done)
+            self._scrub_settle.start(160)
         self._playhead_only=True
         self.refresh()
+
+    def _scrub_done(self):
+        if not getattr(self,'_scrub_fast',False): return
+        self._scrub_fast=False
+        if not self.playing and not getattr(self,'_closed',False):
+            self._playhead_only=True; self.refresh()
     def toggle(self):
         if not self.drawing or self.busy: return
         if self.board_mode(): self.preview_scope.setCurrentIndex(1)

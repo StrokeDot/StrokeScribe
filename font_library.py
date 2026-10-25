@@ -13,8 +13,7 @@ import os
 from pathlib import Path
 import re
 import shutil
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+# urllib is imported when a font is downloaded (exp.120: faster start).
 
 import cv2
 import numpy as np
@@ -67,6 +66,7 @@ def installed_font(family):
 
 
 def _read_url(url,binary=False):
+    from urllib.request import Request, urlopen
     req=Request(url,headers={
         'User-Agent':'StrokeScribe-font-installer/0.5.3',
         'Accept':'application/vnd.github+json' if not binary else 'application/octet-stream',
@@ -84,6 +84,7 @@ def download_google_font(family):
     Supports open font licenses as organized in Google's public repository.
     Does not download a font without its accompanying upstream license.
     """
+    from urllib.error import HTTPError, URLError
     slug=font_slug(family)
     existing=installed_font(family)
     if existing: return existing
