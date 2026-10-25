@@ -227,7 +227,25 @@ def on_tracks(scenes):
                for s in scenes)
 
 
-def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False):
+def paint_titles(folder, fps, titles):
+    """exp.116: the video's texts / pictures on top, drawn over the finished PNG frames
+    (in seconds of the whole video, on the screen: the camera moves under them)."""
+    if not titles:
+        return
+    import overlays
+    from PySide6.QtGui import QImage
+    for path in sorted(Path(folder).glob('frame_*.png')):
+        t = int(path.stem.split('_')[-1]) / float(fps)
+        if not any(overlays.state_at(o, t) is not None for o in titles):
+            continue
+        image = QImage(str(path)).convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+        overlays.paint(image, titles, t)
+        if not image.save(str(path), 'PNG', 80):
+            raise OSError('Unable to save PNG frame.')
+
+
+def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False,
+                    titles=None):
     """The whole video when elements are on tracks: every frame is one moment of the
     timeline (timeline_render.compose), at the export size. The sounds of each element
     start with it; voiceovers too."""
@@ -272,6 +290,7 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
         progress(i + 1, total)
         if interrupted():
             raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
+    paint_titles(folder, fps, titles)
     seconds = total / fps
     (folder / 'sequence.json').write_text(json.dumps(dict(
         width=width, height=height, fps=fps, frames=total, duration=seconds,
@@ -307,11 +326,12 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
     return encode_outputs(folder, fps, audio=audio, progress=progress, interrupted=interrupted, **formats)
 
 
-def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False):
+def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False,
+                  titles=None):
     """Render all scenes into one PNG sequence + videos. `settings`: the editor's settings
     (its output settings are used for every scene). Returns a summary text."""
     if on_tracks(scenes):
-        return export_timeline(scenes, folder, settings, hand, progress, interrupted)
+        return export_timeline(scenes, folder, settings, hand, progress, interrupted, titles)
     from engine import export_frames
     from export_job import encode_outputs, formats_from_settings
     from sound import RATE, soundtrack, write_wav
@@ -429,6 +449,7 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                 raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
     finally:
         shutil.rmtree(work, ignore_errors=True)
+    paint_titles(folder, fps, titles)
     seconds = index / fps
     (folder / 'sequence.json').write_text(json.dumps(dict(
         width=prepared[0]['options']['width'], height=prepared[0]['options']['height'], fps=fps,

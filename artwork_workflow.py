@@ -238,7 +238,7 @@ class ArtworkWorkflow:
                 self.scene_index+=1;self.scenes.insert(self.scene_index,scene)
                 self.fresh_element_settings()        # exp.112: from zero, not the element before
             if placement!='replace':
-                self.overlays=[];self.selected_overlay=None
+                pass                                  # texts belong to the whole video (exp.116)
             self.image_result=result
             self.image_path=ctx.get('source') if result is not None else None
             self.image_guide=ctx.get('guide') if result is not None else None

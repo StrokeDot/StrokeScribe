@@ -230,6 +230,10 @@ class StageTimeline(QFrame):
         self._ghost=None           # an element being dragged: (k, start, track)
         self.current_scene=0
         self.offset=0.             # whole video: where the edited element starts (seconds)
+        # exp.116: texts and pictures on top are the whole video's own clips (absolute
+        # seconds); this is where second 0 of the whole video is on this timeline (0 in
+        # Whole video, minus the element's start in This element).
+        self.title_offset=0.
         self.audio=None            # {'start', 'seconds', 'name', 'envelope'} or None
         self.editable=set(self.STAGE_KEYS)   # stages whose length can be dragged
         self.overlays=[]           # overlay clips of the scene (dicts, see overlays.py)
@@ -645,7 +649,7 @@ class StageTimeline(QFrame):
 
     def _overlay_rect(self, item):
         lane=self._lane(int(item.get('track',0)))
-        start=self.offset+float(item.get('start',0))
+        start=self.title_offset+float(item.get('start',0))
         x0=self._x(start); x1=self._x(start+float(item.get('duration',3)))
         return QRectF(x0,lane.top(),max(8.,x1-x0),lane.height())
 
@@ -1199,9 +1203,10 @@ class StageTimeline(QFrame):
             if kind=='overlay':
                 _,item,part,x0,y0,start0,length0,track0,px_per_sec=self._drag
                 shift=(pos.x()-x0)/px_per_sec
-                total=self._frozen or self.total()
+                # Absolute seconds of the whole video (exp.116): from 0 to its end; in This
+                # element, a text may go on after the element.
+                total=(self._frozen or self.total()) if (self.items or self.scene_segments) else 1e6
                 start,length,track=start0,length0,track0
-                if self.scene_segments: total=max(.2,self.element_length())
                 if part=='move':
                     start=max(0.,min(total-.1,start0+shift))
                     track=max(0,min(5,track0+int(round((pos.y()-y0)/(self.LANE_H+3)))))
@@ -1360,8 +1365,7 @@ class StageTimeline(QFrame):
         picture=self._audio_url(event,self.PICTURE_TYPES)
         if picture:
             x=event.position().x()
-            seconds=self._sec(x)-self.offset
-            seconds=max(0.,min(self.element_length(),seconds))
+            seconds=max(0.,self._sec(x)-self.title_offset)        # whole-video seconds (exp.116)
             self.overlay_dropped.emit(picture,round(seconds,2))
             event.acceptProposedAction()
 
@@ -3113,7 +3117,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.audio_remove.connect(lambda: w.remove_audio())
     w.stage_timeline.overlay_selected.connect(lambda oid: w.select_overlay(oid))
     w.stage_timeline.overlay_changed.connect(lambda oid,start,length,track: w.move_overlay_clip(oid,start,length,track))
-    w.stage_timeline.overlay_done.connect(lambda oid: w.commit_history())
+    w.stage_timeline.overlay_done.connect(lambda oid: w.overlay_clip_done(oid))
     w.stage_timeline.overlay_edit.connect(lambda oid: w.edit_overlay(oid))
     w.stage_timeline.overlay_action.connect(lambda oid,action: w.overlay_action(oid,action))
     w.stage_timeline.overlay_dropped.connect(lambda path,seconds: w.add_overlay_picture(path,at=seconds))

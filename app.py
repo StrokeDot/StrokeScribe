@@ -61,6 +61,7 @@ class Canvas(QWidget):
         self.on_wheel=None          # on_wheel(steps, x, y) → False when not used
         self.on_double=None         # on_double(x, y)
         self.box_provider=None      # () → (x, y, w, h) in frame pixels of a box to outline, or None
+        self.titles_frame=None      # exp.116: texts / pictures on top, over everything (screen)
         self._press=None
         self.highlight=[]           # selected lines: polylines in frame pixels
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
@@ -184,6 +185,8 @@ class Canvas(QWidget):
                     p.drawImage(rect,self.hand_frame)
             else:
                 p.drawImage(rect,self.frame)
+            if self.titles_frame is not None:
+                p.drawImage(rect,self.titles_frame)
             box=self.box_provider() if self.box_provider is not None else None
             if box:
                 from PySide6.QtGui import QPen
@@ -320,14 +323,16 @@ class PlanWorker(QThread):
 class SceneExporter(QThread):
     """All scenes as one video (scenes.export_scenes), off the UI thread."""
     progress=Signal(int,int); done=Signal(str); failed=Signal(str)
-    def __init__(self,scene_list,folder,settings,hand):
+    def __init__(self,scene_list,folder,settings,hand,titles=None):
         super().__init__()
         self.scene_list=scene_list; self.folder=Path(folder); self.settings=settings; self.hand=hand
+        self.titles=titles
     def run(self):
         try:
             from scenes import export_scenes
             self.done.emit(export_scenes(self.scene_list,self.folder,self.settings,self.hand,
-                                         progress=self.progress.emit,interrupted=self.isInterruptionRequested))
+                                         progress=self.progress.emit,interrupted=self.isInterruptionRequested,
+                                         titles=self.titles))
         except Exception as e: self.failed.emit(str(e))
 
 class FontInstaller(QThread):
@@ -753,7 +758,6 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         extras={n:getattr(d,n) for n in EXTRA_NAMES if d is not None and hasattr(d,n)}
         return {'settings':self.settings_state(),
                 'strokes':tuple(self.drawing.strokes) if self.drawing else (),
-                'overlays':json.dumps(getattr(self,'overlays',[])),
                 'source':self.source_snapshot(),
                 'extras':extras,
                 'seq':self.next_seq()}
@@ -791,14 +795,19 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """Remember the element list before a change to it (add, delete, move, transition)."""
         if self._restoring or not getattr(self,'drawing',None): return
         scenes,index=self.structure_copy()
-        self.project_undo.append((self.next_seq(),scenes,index,label))
+        import copy
+        self.project_undo.append((self.next_seq(),scenes,index,label,copy.deepcopy(self.overlays)))
         del self.project_undo[:-30]
         self.project_redo.clear(); self.history.redo_stack.clear()
         self.update_history_controls()
 
-    def restore_structure(self,scenes,index):
+    def restore_structure(self,scenes,index,titles=None):
         from history import History
         self.playing=False
+        if titles is not None:
+            import copy
+            self.overlays=copy.deepcopy(titles)
+            if not any(o.get('id')==self.selected_overlay for o in self.overlays): self.selected_overlay=None
         self.scenes=[dict(s) for s in scenes]
         self._scene_cache={}; self._base_cache=OrderedDict()
         self.scene_index=-1
@@ -807,10 +816,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.fill_scenes(); self.refresh()
 
     def _project_step(self,from_stack,to_stack,verb):
-        seq,scenes,index,label=from_stack.pop()
+        seq,scenes,index,label,*rest=from_stack.pop()
         here,here_index=self.structure_copy()
-        to_stack.append((seq,here,here_index,label))
-        self.restore_structure(scenes,index)
+        import copy
+        to_stack.append((seq,here,here_index,label,copy.deepcopy(self.overlays)))
+        self.restore_structure(scenes,index,rest[0] if rest else None)
         self.project_changes.mark_changed()
         self.status.setText(f'{verb}: {label}')
         self.update_history_controls()
@@ -918,10 +928,6 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.update_sound_buttons()
             self.canvas.set_background(self.preview_background.currentIndex())
             self.preserve_colors.setEnabled(self.image_animation.currentIndex()==0)
-            if 'overlays' in snapshot:
-                import json
-                self.overlays=json.loads(snapshot['overlays'])
-                if not any(o.get('id')==self.selected_overlay for o in self.overlays): self.selected_overlay=None
             if self.drawing is not None and snapshot['strokes']:
                 selected=set(id(s) for s in self.selected_strokes())
                 self.drawing.strokes=list(snapshot['strokes'])
@@ -1027,31 +1033,71 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from frame_render import timeline_seconds
         return timeline_seconds(self.drawing,self.options()) if self.drawing else 4.
 
-    def playhead_seconds(self,clamp=True):
-        """The playhead in the edited element's own time (seconds)."""
-        if self.all_scenes() or self.board_mode():
-            # exp.111: the real length of the whole video (tracks overlap), as in select_scene.
-            lay=self.timeline_layout()
-            at=self.position*lay.total-self.element_start()
-            return max(0.,min(self.scene_seconds(),at)) if clamp else at
-        return self.position*self.scene_seconds()
+    def video_seconds(self):
+        """The playhead in seconds of the whole video (This element: where it is in it)."""
+        try:
+            if self.all_scenes() or self.board_mode():
+                return self.position*self.timeline_layout().total
+            start=self.element_start() if len(self.scenes)>1 else 0.
+            return start+self.position*self.scene_seconds()
+        except Exception:
+            return 0.
+
+    def video_length(self):
+        try:
+            return self.timeline_layout().total if len(self.scenes)>1 else self.scene_seconds()
+        except Exception:
+            return self.scene_seconds()
 
     def add_overlay(self,item):
-        """Put a new overlay at the playhead (on a free track) and open its settings."""
+        """Put a new text / picture on top at the playhead (on a free track)."""
         import overlays
-        total=self.scene_seconds()
-        start=min(max(0.,self.playhead_seconds()),max(0.,total-.5))
+        total=max(.5,self.video_length())
+        start=min(max(0.,self.video_seconds()),max(0.,total-.5))
         if self.position>=.999: start=0.
         item['start']=round(start,2); item['duration']=round(max(.5,min(3.,total-start)),2)
         busy=[o for o in self.overlays if overlays.end_of(o)>item['start'] and o['start']<overlays.end_of(item)]
         used={int(o.get('track',0)) for o in busy}
         item['track']=next(t for t in range(10) if t not in used)
+        self.record_structure('add '+('text' if item.get('kind')=='text' else 'picture on top'))
         self.overlays.append(item)
         self.project_changes.mark_changed()
         self.selected_overlay=item['id']
         if self.board_mode(): self.preview_scope.setCurrentIndex(1)
-        self.commit_history(); self.refresh()
+        self.refresh()
         return item
+
+    def sync_titles_timeline(self,force=False):
+        """The texts on the timeline: in seconds of the whole video; in This element the
+        timeline starts where the element starts."""
+        tl=self.stage_timeline
+        try:
+            offset=0. if (self.all_scenes() or len(self.scenes)<2) else -self.element_start()
+        except Exception:
+            offset=0.
+        key=(offset,tuple(id(o) for o in self.overlays),self.selected_overlay)
+        if force or key!=getattr(self,'_titles_key',None):
+            self._titles_key=key
+            tl.title_offset=offset
+            tl.set_overlays(self.overlays,self.selected_overlay)
+
+    def titles_for_element(self,k=None):
+        """The texts / pictures on top in element k's own time (an export of that element alone)."""
+        import copy
+        try:
+            start=self.element_start(k) if len(self.scenes)>1 else 0.
+        except Exception:
+            start=0.
+        return [dict(copy.deepcopy(o),start=float(o.get('start',0))-start) for o in self.overlays]
+
+    def titles_layer(self,width,height):
+        """The texts / pictures on top at the playhead, on a clear picture (None: nothing)."""
+        import overlays
+        if not self.overlays or self.board_mode(): return None
+        t=self.video_seconds()
+        if not any(overlays.state_at(o,t) is not None for o in self.overlays): return None
+        layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
+        return overlays.paint(layer,self.overlays,t)
 
     def add_overlay_picture(self,path=None,at=None):
         import overlays
@@ -1064,8 +1110,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             item=overlays.image_item_from_file(path)
         except Exception as exc:
             QMessageBox.warning(self,'Picture',f'This picture could not be opened: {exc}'); return None
-        if at is not None:
-            self.position=max(0.,min(1.,at/max(.01,self.scene_seconds())))
+        if at is not None:                    # whole-video seconds (exp.116)
+            if self.all_scenes():
+                self.position=max(0.,min(1.,at/max(.01,self.video_length())))
+            else:
+                start=self.element_start() if len(self.scenes)>1 else 0.
+                self.position=max(0.,min(1.,(at-start)/max(.01,self.scene_seconds())))
         item=self.add_overlay(item)
         self.status.setText(f'Picture "{item["name"]}" added at {item["start"]:.1f} s with a {item["effect_in"]} '
                             'effect. Drag it on the preview to place it, double-click its clip for more.')
@@ -1119,27 +1169,39 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def move_overlay_clip(self,oid,start,duration,track):
         item=self.find_overlay(oid)
         if item is None: return
+        if not getattr(self,'_clip_recorded',None)==oid:          # one undo step per drag
+            self.record_structure('move text'); self._clip_recorded=oid
         item.update(start=start,duration=duration,track=track)
         self.project_changes.mark_changed()
         self.refresh()
 
+    def overlay_clip_done(self,oid):
+        self._clip_recorded=None
+
     def edit_overlay(self,oid):
         from overlay_dialog import OverlayDialog
+        import copy
         item=self.find_overlay(oid)
         if item is None: return
         self.selected_overlay=oid
-        dialog=OverlayDialog(self,item,self.scene_seconds(),changed=lambda it: self.refresh())
+        before=copy.deepcopy(item)
+        self.record_structure('text settings')
+        dialog=OverlayDialog(self,item,max(item.get('duration',3)+item.get('start',0),self.video_length()),
+                             changed=lambda it: self.refresh())
         dialog.exec()
         if dialog.deleted:
-            self.overlay_action(oid,'delete'); return
-        self.commit_history(); self.refresh()
+            self.overlay_action(oid,'delete',recorded=True); return
+        if item==before and self.project_undo and self.project_undo[-1][3]=='text settings':
+            self.project_undo.pop(); self.update_history_controls()      # nothing changed
+        self.refresh()
 
-    def overlay_action(self,oid,action):
+    def overlay_action(self,oid,action,recorded=False):
         import copy, uuid
         item=self.find_overlay(oid)
         if item is None: return
         if action=='edit':
             self.edit_overlay(oid); return
+        if not recorded: self.record_structure(action+' text')
         if action=='duplicate':
             twin=copy.deepcopy(item); twin['id']=uuid.uuid4().hex[:10]
             twin['track']=max(int(o.get('track',0)) for o in self.overlays)+1
@@ -1148,55 +1210,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.overlays=[o for o in self.overlays if o.get('id')!=oid]
             if self.selected_overlay==oid: self.selected_overlay=None
             self.status.setText(f'Overlay "{item.get("name","")}" deleted (Ctrl+Z brings it back).')
-        self.commit_history(); self.refresh()
-
-    def edited_element_rect(self,W,H):
-        """exp.113: where the edited element is drawn on the preview now, (x, y, w, h) in
-        frame pixels, or None when it is not on screen (texts and pictures on top are
-        moved there, in Whole video too)."""
-        if self.board_mode(): return None
-        if not self.all_scenes(): return (0.,0.,float(W),float(H))
-        try:
-            lay=self.timeline_layout()
-            seconds=self.position*lay.total
-            k=self.scene_index
-            if lay.sequential:
-                import board
-                lengths,joins=self.scene_timeline()
-                where,at,_=board.locate(lengths,joins,seconds)
-                return (0.,0.,float(W),float(H)) if where=='scene' and at==k else None
-            from timeline_model import state_at
-            import timeline_render
-            state=state_at(lay,seconds)
-            if k not in dict(state.active) and k not in state.finished: return None
-            world=self.preview_world(W,H)
-            elements=[dict(transition=s['transition'],move_seconds=s['transition_seconds'],
-                           camera=self.preview_scene(j,W,H)[3])
-                      for j,s in enumerate(self.scenes)]
-            view=timeline_render.view_of(world,lay,state,elements)
-            x,y,w,h=world.place(world.frames[k],view,W,H)
-            return None if w<4 or h<4 else (float(x),float(y),float(w),float(h))
-        except Exception as exc:
-            import applog; applog.error('Element on the preview',exc)
-            return None
-
-    def _to_element(self,x,y):
-        """Preview pixels -> the edited element's own frame pixels (None: not on screen)."""
-        W,H=self.canvas.frame.width(),self.canvas.frame.height()
-        r=self.edited_element_rect(W,H)
-        if r is None: return None
-        rx,ry,rw,rh=r
-        return (x-rx)*W/rw,(y-ry)*H/rh
+        self.project_changes.mark_changed(); self.refresh()
 
     def overlay_at(self,x,y):
         """The overlay shown at (x, y) of the preview now (the selected one first), or None."""
         import overlays
         if self.canvas.frame is None or not self.overlays: return None
+        if self.board_mode(): return None
         W,H=self.canvas.frame.width(),self.canvas.frame.height()
-        t=self.playhead_seconds(clamp=False)
-        mapped=self._to_element(x,y)
-        if mapped is None: return None
-        x,y=mapped
+        t=self.video_seconds()                   # on the screen, in whole-video time (exp.116)
         order=sorted(self.overlays,key=lambda o: (o.get('id')!=self.selected_overlay,-int(o.get('track',0))))
         for item in order:
             if overlays.state_at(item,t) is None: continue
@@ -1239,13 +1261,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import overlays
         item=self.find_overlay(self.selected_overlay) if self.selected_overlay else None
         if item is None or self.canvas.frame is None or self.board_mode(): return None
-        if overlays.state_at(item,self.playhead_seconds(clamp=False)) is None: return None
-        W,H=self.canvas.frame.width(),self.canvas.frame.height()
-        r=self.edited_element_rect(W,H)
-        if r is None: return None
-        rx,ry,rw,rh=r
-        bx,by,bw,bh=overlays.box(item,W,H)
-        return (rx+bx*rw/W,ry+by*rh/H,bw*rw/W,bh*rh/H)
+        if overlays.state_at(item,self.video_seconds()) is None: return None
+        return overlays.box(item,self.canvas.frame.width(),self.canvas.frame.height())
 
     def show_error(self,text):
         """Something went wrong: say so (the details are in the log)."""
@@ -1292,10 +1309,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if item is not None:
                 self.playing=False
                 self.selected_overlay=item['id']
-                # Whole video: the element can be drawn smaller (its frame on the page).
-                W,H=self.canvas.frame.width(),self.canvas.frame.height()
-                r=self.edited_element_rect(W,H) or (0.,0.,W,H)
-                self._overlay_drag=(item,float(item.get('x',.5)),float(item.get('y',.5)),W/r[2],H/r[3])
+                self.record_structure('move text on the screen')
+                self._overlay_drag=(item,float(item.get('x',.5)),float(item.get('y',.5)),1.,1.)
                 return True
         drag=getattr(self,'_overlay_drag',None)
         if drag is not None and kind!='start':
@@ -1304,7 +1319,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 item['x'],item['y']=round(x0+dx*sx,4),round(y0+dy*sy,4)
                 self.refresh()
             else:
-                self._overlay_drag=None; self.commit_history(); self.refresh()
+                self._overlay_drag=None; self.project_changes.mark_changed(); self.refresh()
                 self.status.setText(f'"{item.get("name","")}" moved. Mouse wheel on it: bigger or smaller.')
             return
         if kind=='start':
@@ -1512,6 +1527,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         data=scenes_to_project(self.scene_state(),self.scenes,self.scene_index)
         flags={str(t):f for t,f in getattr(self,'track_flags',{}).items() if f.get('muted') or f.get('hidden')}
         if flags: data['track_flags']=flags
+        if self.overlays:
+            import copy
+            data['titles']=copy.deepcopy(self.overlays)        # exp.116: the video's own clips
+        data.pop('overlays',None)
         return data
 
     def scene_state(self):
@@ -1545,9 +1564,6 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         metadata=getattr(self.drawing,'artwork_assets',None)
         if metadata:
             state['artwork']=metadata
-        if self.overlays:
-            import copy
-            state['overlays']=copy.deepcopy(self.overlays)
         return state
 
     def has_unsaved_changes(self):
@@ -1793,28 +1809,51 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from scenes import scenes_from_project
         scene_list=scenes_from_project(data)
         index=max(0,min(len(scene_list)-1,int(data.get('scene_index',0) or 0)))
-        main={k:v for k,v in data.items() if k not in ('scenes','scene_index','track_flags')}
+        main={k:v for k,v in data.items() if k not in ('scenes','scene_index','track_flags','titles')}
         self.track_flags={int(t):dict(f) for t,f in (data.get('track_flags') or {}).items()}
+        import copy
+        self.overlays=copy.deepcopy(data.get('titles') or [])
+        self.selected_overlay=None
+        self._legacy_titles=[]
         for k,scene in enumerate(scene_list):
             scene['thumb']=None
             if k==index: scene['state']=None          # lives in the editor
+            elif scene.get('state') and scene['state'].get('overlays'):
+                state=dict(scene['state']); self._legacy_titles.append((k,list(state.pop('overlays'))))
+                scene['state']=state
         self.scenes=scene_list; self.scene_index=index
         self._rev_fp=None
         self._scene_cache={}
         if not self._restoring:
             self.project_undo=[];self.project_redo=[]   # another project: nothing of this one to undo
         self.apply_scene_state(main)
+        self.adopt_legacy_titles()
         self.sync_workspace()
         self.settle_rev()
         self.fill_scenes()
         self.make_missing_thumbs()
 
+    def adopt_legacy_titles(self):
+        """Texts saved inside elements (before exp.116) become the video's own clips, at the
+        same moment of the whole video as before."""
+        legacy=getattr(self,'_legacy_titles',None)
+        if not legacy: return
+        self._legacy_titles=[]
+        try:
+            starts={it.k:it.start for it in self.timeline_layout().items} if len(self.scenes)>1 else {0:0.}
+        except Exception as exc:
+            import applog; applog.error('Placing older texts',exc); starts={}
+        for k,items in legacy:
+            for o in items:
+                self.overlays.append(dict(o,start=round(float(o.get('start',0))+starts.get(k,0.),2)))
+
     def apply_scene_state(self,data):
         from projects import drawing_from_dict, qimage_from_b64, set_widget_value
         self.playing=False
-        import copy
-        self.overlays=copy.deepcopy(data.get('overlays') or [])
-        self.selected_overlay=None
+        if data.get('overlays'):
+            # Before exp.116 texts belonged to an element: they become the video's own clips
+            # (apply_project / _enter_scene place them at the same moment).
+            self.__dict__.setdefault('_legacy_titles',[]).append((self.scene_index,list(data['overlays'])))
         drawing=drawing_from_dict(data['drawing'])
         metadata=data.get('artwork') or getattr(drawing,'artwork_assets',None)
         managed=None
@@ -2106,6 +2145,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.update_history_controls()
         self._scene_cache={key:v for key,v in self._scene_cache.items()
                            if any(id(s['state'])==key for s in self.scenes)}
+        self.adopt_legacy_titles()
         self.sync_workspace()
         self.settle_rev()                  # as opened = as saved: its frames stay ready
         self.fill_scenes()
@@ -2558,7 +2598,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         p.drawText(box.adjusted(12,0,-12,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
                    p.fontMetrics().elidedText(hint,Qt.TextElideMode.ElideRight,int(box.width()-24)))
         p.end()
-        self.canvas.frame=image; self.canvas.highlight=[]; self.canvas.update()
+        self.canvas.frame=image; self.canvas.highlight=[]; self.canvas.titles_frame=None; self.canvas.update()
         segments,lengths,joins=self.whole_segments(960,round(960*aspect))
         self.show_whole_timeline(segments,lengths,joins,self.options())
         total=self.timeline_layout(960,round(960*aspect)).total
@@ -2634,6 +2674,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self.board_mode(): return self.board_wheel(steps,x,y)
         item=self.overlay_at(x,y)
         if item is None: return False
+        if getattr(self,'_wheel_recorded',None)!=item['id']:
+            self.record_structure('resize text'); self._wheel_recorded=item['id']
+            QTimer.singleShot(800,lambda: setattr(self,'_wheel_recorded',None))
         item['size']=max(.01,min(3.,float(item.get('size',.3))*(1.08**steps)))
         self.selected_overlay=item['id']
         self.note_change(); self.refresh()
@@ -2868,15 +2911,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                       flags=getattr(self,'track_flags',{}),
                       element_flags={k:{key:True for key in ('hidden','muted') if s.get(key)}
                                      for k,s in enumerate(self.scenes) if s.get('hidden') or s.get('muted')})
-        others=[]
-        if items:
-            # exp.113: the other elements' texts and pictures show on the timeline too.
-            starts={it[0]:it[2] for it in items}
-            for j,scene in enumerate(self.scenes):
-                if j==self.scene_index or not scene.get('state') or j not in starts: continue
-                for o in scene['state'].get('overlays') or ():
-                    others.append((j,dict(o,start=starts[j]+float(o.get('start',0)))))
-        tl.set_overlays(self.overlays,self.selected_overlay,others)
+        self.sync_titles_timeline(force=True)
         tl.cam_marks=self.element_camera_marks(items)
         tl.set_audio(self.timeline_audio())
         tl.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() else {'paint','hold','erase'}
@@ -4050,7 +4085,6 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             import picture_look
             options['final_image']=picture_look.adjusted(
                 render_appearance(self.drawing,max(options['width'],options['height'])),settings)
-        options['overlays']=list(getattr(self,'overlays',[]))
         return options
 
     # ------------------------------------------------------------ preview
@@ -4063,8 +4097,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         d=self.drawing
         return (id(d),id(getattr(d,'strokes',None)),len(getattr(d,'strokes',()) or ()),self.scene_index,
                 self.all_scenes(),self.source_type.currentIndex(),id(self.final_image),
-                self.hand.cacheKey() if self.hand is not None else None,len(self.scenes),
-                repr(getattr(self,'overlays',[])) if not self.playing else None)
+                self.hand.cacheKey() if self.hand is not None else None,len(self.scenes))
 
     def schedule_refresh(self,*args):
         """Redraw soon, at most every 40 ms (for controls that are dragged)."""
@@ -4108,7 +4141,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.final_image.cacheKey() if getattr(self,'final_image',None) is not None else None,
             self._token(getattr(self,'image_result',None)),
             self.hand.cacheKey() if self.hand is not None else None,
-            repr(getattr(self,'overlays',[])),getattr(d,'pen_ease',None),
+            getattr(d,'pen_ease',None),
             # How the colours are painted: the painting order (Line order → Painting)
             # and the AI parts. Without them, playback reused frames painted the old way.
             tuple(getattr(d,'paint_part_order',None) or ()),getattr(d,'ai_parts_digest',None),
@@ -4261,6 +4294,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.status.setText('Preview could not be updated: '+str(exc)[:220])
             return
         self.canvas.frame=frame
+        self.sync_titles_timeline()
+        try:
+            self.canvas.titles_frame=self.titles_layer(frame.width(),frame.height())
+        except Exception as exc:
+            import applog; applog.error('Texts on top',exc); self.canvas.titles_frame=None
         self.canvas.art_frame=None; self.canvas.hand_frame=None
         self.canvas.blend_mode='Normal'
         self.canvas.artwork_opacity=100
@@ -4310,7 +4348,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.clear_frames(); self._view=None
         self.sync_workspace()
         if not self.drawing:
-            self.canvas.frame=None;self.canvas.highlight=[];self.canvas.update()
+            self.canvas.frame=None;self.canvas.highlight=[];self.canvas.titles_frame=None;self.canvas.update()
             self.stage_timeline.update_state(0,0,0,0)
             self.clock.setText(timecode(0)); self.clock_total.setText(timecode(0))
             return False
@@ -4334,7 +4372,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                             lengths=list(lengths),joins=list(joins),width=width,height=height)
             return True
         self.stage_timeline.set_scenes(None,current=self.scene_index)
-        self.stage_timeline.set_overlays(self.overlays,self.selected_overlay)
+        self.sync_titles_timeline(force=True)
         self.stage_timeline.set_audio(self.timeline_audio())
         paint_only=self.is_image_artwork() and self.image_animation.currentIndex()==1
         self.stage_timeline.editable={'paint','hold','erase'} if paint_only \
@@ -4680,6 +4718,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import copy
         folder=Path(parent)/datetime.now().strftime('StrokeScribe_%Y%m%d_%H%M%S_%f')
         options=self.options()
+        options['overlays']=self.titles_for_element()      # this element alone: its time (exp.116)
         if len(self.scenes)>1 and self.export_all_scenes.isChecked():
             self._leave_scene()
             scene_list=[dict(state=copy.deepcopy(s['state']),transition=s['transition'],
@@ -4688,7 +4727,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                              hidden=bool(self.track_flag(s,'hidden')),muted=bool(self.track_flag(s,'muted')))
                         for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
-            self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand)
+            self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand,copy.deepcopy(self.overlays))
         else:
             self.worker=None
         if self.worker is None: self.worker=Exporter(copy.deepcopy(self.drawing),folder,options,

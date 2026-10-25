@@ -237,9 +237,9 @@ class WindowTests(unittest.TestCase):
         w.restore_original_look()
         self.assertEqual((w.picture_x.value(), w.artwork_size.value()), (0., 100.))
 
-    def test_texts_in_the_whole_video(self):
-        """exp.113: a text stays in Whole video: it can be chosen and dragged there, and the
-        other elements' texts show on the timeline (a click goes to them)."""
+    def test_texts_are_the_videos_own_clips(self):
+        """exp.116: a text is not part of an element: it is a clip of the whole video, in its
+        seconds, drawn on the screen over everything; it stays when elements are chosen."""
         import overlays
         w = self.w
         w.place_element(1, .5, 1)
@@ -249,8 +249,10 @@ class WindowTests(unittest.TestCase):
         w.position = (it.start + it.length * .5) / lay.total
         w.refresh(); self.app.processEvents()
         item = w.add_overlay(overlays.new_text())
-        self.app.processEvents()
-        self.assertEqual(w.preview_scope.currentIndex(), 1)                 # stays on the whole video
+        self.assertAlmostEqual(item['start'], round(w.position * lay.total, 2), places=1)
+        self.assertEqual(w.preview_scope.currentIndex(), 1)
+        w.refresh(); self.app.processEvents()
+        self.assertIsNotNone(w.canvas.titles_frame)                         # on the screen
         # exp.114: asked while painting, the box never works out the timeline right there.
         from unittest import mock
         w._box_cache = None
@@ -258,21 +260,38 @@ class WindowTests(unittest.TestCase):
             w.overlay_box()
         for _ in range(5): self.app.processEvents()
         self.assertIsNotNone(w.overlay_box())
-        box = w.compute_overlay_box()
-        self.assertIsNotNone(box)
-        x, y, bw, bh = box
+        x, y, bw, bh = w.compute_overlay_box()
         self.assertIs(w.overlay_at(x + bw / 2, y + bh / 2), item)
         before = item['x']
         self.assertTrue(w.drag_picture('start', x + bw / 2, y + bh / 2))
         w.drag_picture('move', .05, 0.); w.drag_picture('done', 0., 0.)
-        self.assertGreater(item['x'], before)
-        # Element 1 chosen: element 2's text shows on the timeline, and a click goes to it.
+        self.assertAlmostEqual(item['x'], before + .05, places=3)
+        w.undo(); self.app.processEvents()
+        self.assertAlmostEqual(w.find_overlay(item['id'])['x'], before, places=3)   # Ctrl+Z
+        # Another element chosen: the text is still there (it belongs to the video).
         w.select_scene(0); self.app.processEvents()
-        others = w.stage_timeline.other_overlays
-        self.assertEqual([(k, o['id']) for k, o in others], [(1, item['id'])])
-        w.go_to_overlay(1, item['id']); self.app.processEvents()
-        self.assertEqual((w.scene_index, w.selected_overlay), (1, item['id']))
-        self.assertEqual(w.preview_scope.currentIndex(), 1)
+        self.assertEqual([o['id'] for o in w.overlays], [item['id']])
+        self.assertEqual([o['id'] for o in w.stage_timeline.overlays], [item['id']])
+        # Saved with the project, not inside an element.
+        data = json.loads(json.dumps(w.project_state()))
+        self.assertEqual([o['id'] for o in data['titles']], [item['id']])
+        self.assertFalse(any((s.get('state') or {}).get('overlays') for s in data.get('scenes', [])))
+
+    def test_older_texts_move_to_the_video(self):
+        """Projects from before exp.116: an element's texts become the video's own clips at
+        the same moment."""
+        import overlays
+        w = self.w
+        data = json.loads(json.dumps(w.project_state()))
+        lay = w.timeline_layout()
+        text = dict(overlays.new_text(), start=.5, duration=1.)
+        data['scenes'][1]['state']['overlays'] = [text] if data['scenes'][1].get('state') else []
+        if not data['scenes'][1].get('state'):
+            data['overlays'] = [text]                       # element 2 is the edited one
+        data.pop('titles', None)
+        w.apply_project(data); self.app.processEvents()
+        self.assertEqual(len(w.overlays), 1)
+        self.assertAlmostEqual(w.overlays[0]['start'], round(.5 + w.timeline_layout().items[1].start, 2), places=2)
 
     def test_element_hide_and_mute_on_its_own(self):
         """exp.106: hide / mute one element (right-click), not only a whole track."""
