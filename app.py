@@ -1476,7 +1476,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if action=='duplicate':
             twin=copy.deepcopy(item); twin['id']=uuid.uuid4().hex[:10]
             twin['track']=max(int(o.get('track',0)) for o in self.overlays)+1
-            self.overlays.append(twin); self.selected_overlay=twin['id']
+            self.overlays.append(twin); self.selected_overlay=twin['id']; self.selected_overlays={twin['id']}
         elif action=='delete':
             gone={o['id'] for o in self.chosen_overlays()} if oid in {o['id'] for o in self.chosen_overlays()} else set()
             gone.add(oid)                  # exp.117: every chosen text goes
