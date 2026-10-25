@@ -203,6 +203,11 @@ class StageTimeline(QFrame):
     track_toggled=Signal(int,str)       # whole video: a track's 'mute' or 'hide' button
     element_camera_clicked=Signal(int)  # whole video: an element's own camera (zoom) clicked
     other_overlay_clicked=Signal(int,str)
+    camera_selected=Signal(str)         # exp.119: a camera clip clicked ('' = none)
+    camera_changed=Signal(str,float,float)   # a camera clip dragged: id, start, length
+    camera_done=Signal(str)
+    camera_edit=Signal(str)             # double-click: its settings
+    camera_action=Signal(str,str)       # id, a kind / 'delete'
     overlay_toggled=Signal(str)         # exp.117: Ctrl+click on a text clip: add it to / take it out of the choice
     text_track_toggled=Signal(int)      # exp.117: a text track's hide button   # whole video: another element's text / picture (k, id)
     move_clicked=Signal(int)            # whole video: a camera move clicked (the move after element k)
@@ -237,6 +242,9 @@ class StageTimeline(QFrame):
         # Whole video, minus the element's start in This element).
         self.title_offset=0.
         self.selected_overlays=set()   # exp.117: the chosen texts (Ctrl+click: more than one)
+        self.cam_clips=[]              # exp.119: the camera clips (camera_clips.py)
+        self.cam_holds={}              # clip id -> where its framing stops holding (seconds)
+        self.selected_camera=None
         self.text_hidden=set()         # text tracks hidden from the video
         self.audio=None            # {'start', 'seconds', 'name', 'envelope'} or None
         self.editable=set(self.STAGE_KEYS)   # stages whose length can be dragged
@@ -316,7 +324,7 @@ class StageTimeline(QFrame):
         self.update()
 
     # ------------------------------------------------------------ tracks (whole video)
-    CAM_H=14.
+    CAM_H=22.            # exp.119: the Camera track holds camera clips
 
     def lanes(self):
         """Track rows shown: the tracks in use (by elements and texts) plus an empty one on
@@ -557,6 +565,22 @@ class StageTimeline(QFrame):
         for k,start,length,until in getattr(self,'cam_marks',()) or ():
             if self._cam_rect(start,length).contains(pos): return k
         return None
+
+    def _clip_rect(self, clip, start=None, length=None):
+        cam=self._camera_rect()
+        start=float(clip['start']) if start is None else start
+        length=float(clip['duration']) if length is None else length
+        x0,x1=self._x(start),self._x(start+length)
+        return QRectF(x0+1,cam.top()+1,max(10.,x1-x0-2),cam.height()-2)
+
+    def _clip_at(self, pos):
+        """(clip, 'move' / 'end') under the mouse on the Camera track, or (None, None)."""
+        if not self.items or self.locked: return None,None
+        for clip in reversed(self.cam_clips):
+            r=self._clip_rect(clip)
+            if r.adjusted(-2,-2,2,2).contains(pos):
+                return clip,('end' if abs(pos.x()-r.right())<=self.EDGE and r.width()>2*self.EDGE else 'move')
+        return None,None
 
     def _move_at(self, pos):
         if not self.items or pos.x()<self.LEFT: return None
@@ -1056,6 +1080,30 @@ class StageTimeline(QFrame):
             p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['accent'] if lit else c['border_strong']))
             p.drawRoundedRect(r,4,4)
             self._draw_icon(p,'camera',r.center(),'#FFFFFF' if lit else c['text'],12)
+        # exp.119: the camera clips; a thin line shows how long the framing holds after it.
+        clip_font=QFont(self.font()); clip_font.setPointSizeF(7.5); clip_font.setBold(True)
+        for clip in self.cam_clips:
+            r=self._clip_rect(clip)
+            hold=self.cam_holds.get(clip['id'])
+            end=float(clip['start'])+float(clip['duration'])
+            if hold is not None and hold>end:
+                x1=self._x(min(hold,self.total()))
+                p.setPen(QPen(QColor(c['paint']),2,Qt.PenStyle.DotLine))
+                p.drawLine(QPointF(r.right(),r.center().y()),QPointF(x1,r.center().y()))
+            chosen=clip['id']==self.selected_camera
+            fill=QColor(c['paint']); fill.setAlpha(235 if chosen else 190)
+            p.setPen(QPen(QColor('white') if chosen else fill.lighter(130),2 if chosen else 1)); p.setBrush(fill)
+            p.drawRoundedRect(r,5,5)
+            self._draw_icon(p,'camera',QPointF(r.left()+10,r.center().y()),'#FFFFFF',11)
+            if r.width()>40:
+                p.setFont(clip_font); p.setPen(QColor('white'))
+                text=p.fontMetrics().elidedText(str(clip.get('kind','Camera')),Qt.TextElideMode.ElideRight,int(r.width()-26))
+                p.drawText(r.adjusted(19,0,-4,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,text)
+                p.setFont(small)
+            if r.width()>=24:                              # grip: drag to make it slower / faster
+                p.setPen(QPen(QColor(255,255,255,150),1.2))
+                gx=r.right()-4
+                p.drawLine(QPointF(gx,r.top()+5),QPointF(gx,r.bottom()-5))
         p.restore()
         p.save(); p.setClipRect(QRectF(0,area.top(),self.LEFT,area.height()))
         self._paint_headers(p,c,small)
@@ -1132,6 +1180,22 @@ class StageTimeline(QFrame):
             event.accept(); return
         pos=event.position()
         if event.button()==Qt.MouseButton.RightButton:
+            clip,_=self._clip_at(pos)
+            if clip is not None:
+                from PySide6.QtWidgets import QMenu
+                from camera_clips import KINDS
+                cid=clip['id']
+                self.selected_camera=cid; self.camera_selected.emit(cid); self.update()
+                menu=QMenu(self)
+                menu.addAction('Settings…',lambda: self.camera_edit.emit(cid))
+                menu.addSeparator()
+                for kind in KINDS:
+                    a=menu.addAction(kind,lambda kind=kind: self.camera_action.emit(cid,kind))
+                    a.setCheckable(True); a.setChecked(kind==clip.get('kind'))
+                menu.addSeparator()
+                menu.addAction('Delete',lambda: self.camera_action.emit(cid,'delete'))
+                menu.exec(event.globalPosition().toPoint())
+                event.accept(); return
             item,_=self._overlay_at(pos)
             if item is not None:
                 from PySide6.QtWidgets import QMenu
@@ -1181,6 +1245,8 @@ class StageTimeline(QFrame):
             self.overlay_toggled.emit(str(item.get('id')))
             self.update(); event.accept(); return
         if item is not None:
+            if self.selected_camera:
+                self.selected_camera=None; self.camera_selected.emit('')
             if item.get('id') not in self.selected_overlays:
                 self.selected_overlay=item.get('id'); self.overlay_selected.emit(item.get('id'))
             self._frozen=self.total()
@@ -1204,6 +1270,14 @@ class StageTimeline(QFrame):
                     if which=='fit': self.zoom=1.; self.view_start=0.; self._update_bars(); self.update()
                     else: self.set_zoom(self.zoom*(1.5 if which=='in' else 1/1.5))
                     event.accept(); return
+        clip,part=self._clip_at(pos)
+        if clip is not None and event.button()==Qt.MouseButton.LeftButton:
+            if self.selected_overlay or self.selected_overlays:
+                self.selected_overlay=None; self.selected_overlays=set()
+            self.selected_camera=clip['id']; self.camera_selected.emit(clip['id'])
+            self._frozen=self.total()
+            self._drag=('camclip',clip,part,pos.x(),float(clip['start']),float(clip['duration']),self._px_per_sec())
+            self.update(); event.accept(); return
         move=self._move_at(pos) if event.button()==Qt.MouseButton.LeftButton else None
         if move is not None:
             self.move_clicked.emit(move)
@@ -1231,6 +1305,8 @@ class StageTimeline(QFrame):
         # Anything else clicked: the texts are not chosen any more (one thing at a time).
         if self.selected_overlay or self.selected_overlays:
             self.selected_overlay=None; self.selected_overlays=set(); self.overlay_selected.emit('')
+        if self.selected_camera:
+            self.selected_camera=None; self.camera_selected.emit('')
         item=self._item_at(pos) if self.items else None
         if item is not None:
             # Whole video on tracks: drag an element along its track or to another track
@@ -1251,6 +1327,18 @@ class StageTimeline(QFrame):
         pos=event.position()
         if self._drag and event.buttons() & Qt.MouseButton.LeftButton:
             kind=self._drag[0]
+            if kind=='camclip':
+                _,clip,part,x0,start0,length0,px_per_sec=self._drag
+                shift=(pos.x()-x0)/px_per_sec
+                total=self._frozen or self.total()
+                if part=='end':
+                    start,length=start0,max(.2,min(total-start0,length0+shift))
+                else:
+                    start,length=max(0.,min(total-.2,start0+shift)),length0
+                self.camera_changed.emit(clip['id'],round(start,2),round(length,2))
+                self.setToolTip(f'{clip.get("kind","Camera")}: {start:.1f} s → {start+length:.1f} s '
+                                f'({length:.1f} s: longer = slower)')
+                event.accept(); return
             if kind=='overlay':
                 _,item,part,x0,y0,start0,length0,track0,px_per_sec=self._drag
                 shift=(pos.x()-x0)/px_per_sec
@@ -1328,6 +1416,12 @@ class StageTimeline(QFrame):
             self.setToolTip(tip)
             self.setCursor(Qt.CursorShape.PointingHandCursor if hover else Qt.CursorShape.ArrowCursor)
             return super().mouseMoveEvent(event)
+        clip,part=self._clip_at(pos)
+        if clip is not None:
+            self.setCursor(Qt.CursorShape.SizeHorCursor if part=='end' else Qt.CursorShape.OpenHandCursor)
+            self.setToolTip(f'Camera: {clip.get("kind")}, {float(clip["start"]):.1f} s, {float(clip["duration"]):.1f} s. '
+                            'Drag to move, drag its right edge for the speed, double-click for its settings.')
+            return super().mouseMoveEvent(event)
         own=self._element_camera_at(pos) if self._move_at(pos) is None else None
         if own is not None:
             if getattr(self,'_hover',None)!=('cam',own):
@@ -1368,6 +1462,9 @@ class StageTimeline(QFrame):
         if self.locked or event.button()!=Qt.MouseButton.LeftButton:
             event.accept();return
         self._drag=None;self._frozen=None
+        clip,_=self._clip_at(event.position())
+        if clip is not None:
+            self.camera_edit.emit(clip['id']);event.accept();return
         item,_=self._overlay_at(event.position())
         if item is not None:
             self.overlay_edit.emit(item.get('id'));event.accept();return
@@ -1396,6 +1493,9 @@ class StageTimeline(QFrame):
         if self._drag and self._drag[0]=='overlay':
             self._frozen=None
             self.overlay_done.emit(self._drag[1].get('id'))
+        if self._drag and self._drag[0]=='camclip':
+            self._frozen=None
+            self.camera_done.emit(self._drag[1]['id'])
         if self._drag and self._drag[0]=='edge':
             self._frozen=None
             self.stage_drag_done.emit()
@@ -1442,6 +1542,8 @@ class StageTimeline(QFrame):
         if event.key()==Qt.Key.Key_Menu or (event.key()==Qt.Key.Key_F10 and mods & Qt.KeyboardModifier.ShiftModifier):
             self.source_menu(self.current_scene,self.mapToGlobal(self.rect().center()))
             event.accept();return
+        if event.key() in (Qt.Key.Key_Delete,Qt.Key.Key_Backspace) and self.selected_camera:
+            self.camera_action.emit(self.selected_camera,'delete'); return
         if event.key() in (Qt.Key.Key_Delete,Qt.Key.Key_Backspace) and self.selected_overlay:
             self.overlay_action.emit(self.selected_overlay,'delete'); return
         if event.key() in (Qt.Key.Key_Left,Qt.Key.Key_Right):
@@ -2512,7 +2614,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     a.addRow('Pause after (s)',w.pause_after)
     w.camera=QComboBox()
     from camera import ZOOM_MODE as _ZOOM_MODE
-    w.camera.addItems(['Off','Gentle zoom','Close-up zoom',_ZOOM_MODE])
+    w.camera.addItems(['Off','Gentle zoom','Close-up zoom'])     # exp.119: zooms are camera clips now
     w.camera.setToolTip('Camera follow: the view zooms in and glides after the pen, then pulls back '
                         'to show the whole picture at the end.')
     w.auto_timing_button=QPushButton('Auto timing')
@@ -3016,13 +3118,56 @@ def build_workspace(w, Canvas, BRAND_ICON):
                          'if this zoom is still running when the move starts, the move takes over from it '
                          'gradually and lands on the next element.'))
     camera_l.addWidget(w.camera_zoom_box)
+    w.camera_zoom_box.hide()   # exp.119: replaced by camera clips (kept for older projects)
+    # exp.119: the Camera track. A camera clip moves the camera for the whole picture.
+    camera_l.addWidget(label('CAMERA TRACK'))
+    w.camera_clip_add=QPushButton('+  Add a camera clip at the playhead')
+    w.camera_clip_add.setObjectName('primary')
+    w.camera_clip_add.clicked.connect(lambda checked=False: w.add_camera_clip())
+    camera_l.addWidget(w.camera_clip_add)
+    w.camera_clip_box=QWidget(); cb=QVBoxLayout(w.camera_clip_box); cb.setContentsMargins(0,0,0,0); cb.setSpacing(6)
+    from camera_clips import KINDS as _KINDS
+    cf=form_layout(); cb.addLayout(cf)
+    w.cam_clip_kind=QComboBox(); w.cam_clip_kind.addItems(list(_KINDS)); cf.addRow('Kind',w.cam_clip_kind)
+    w.cam_clip_start=w.number(0,3600,0,.1); w.cam_clip_start.setDecimals(1); w.cam_clip_start.setSuffix(' s')
+    cf.addRow('Starts at',w.cam_clip_start)
+    w.cam_clip_length=w.number(.2,120,1.2,.1); w.cam_clip_length.setDecimals(1); w.cam_clip_length.setSuffix(' s')
+    w.cam_clip_length.setToolTip('How long the camera takes to get there: longer = slower.')
+    cf.addRow('Speed (length)',w.cam_clip_length)
+    w.cam_clip_from_here=QCheckBox('Start from where the camera is')
+    w.cam_clip_from_here.setToolTip('On: it goes on from the camera as it is (no jump). Off: it starts from its own framing below.')
+    cb.addWidget(w.cam_clip_from_here)
+    w.cam_clip_fields={}
+    for title,key in (('WHERE IT GOES','to'),('WHERE IT STARTS','from')):
+        head=label(title); cb.addWidget(head)
+        f=form_layout(); cb.addLayout(f)
+        for name,text,low,high,value in (('zoom','Zoom',100,500,160),('x','Centre X',0,100,50),('y','Centre Y',0,100,50)):
+            spin=w.number(low,high,value,5 if name=='zoom' else 1); spin.setDecimals(0)
+            spin.setSuffix('%')
+            holder=QWidget(); line=QHBoxLayout(holder); line.setContentsMargins(0,0,0,0); line.setSpacing(8)
+            line.addWidget(linked_slider(spin,low,high),1); line.addWidget(spin)
+            f.addRow(text,holder)
+            w.cam_clip_fields[(key,name)]=spin
+        w.cam_clip_fields[(key,'head')]=head
+    cb.addWidget(caption('Tip: with a camera clip chosen, the preview shows the page without it and a frame '
+                         'where the camera goes: drag the frame, mouse wheel to zoom.'))
+    w.cam_clip_delete=QPushButton('Delete camera clip'); w.cam_clip_delete.setObjectName('subtle')
+    w.cam_clip_delete.clicked.connect(lambda checked=False: w.camera_clip_action(w.selected_camera,'delete'))
+    cb.addWidget(w.cam_clip_delete)
+    camera_l.addWidget(w.camera_clip_box)
+    w.camera_clip_none=caption('Choose a camera clip on the Camera track (top of the timeline, in Whole video) '
+                               'to change it, or add one at the playhead.')
+    camera_l.addWidget(w.camera_clip_none)
+    w.camera_clip_box.hide()
+    for widget in (w.cam_clip_kind,):
+        widget.currentIndexChanged.connect(lambda *_: w.camera_panel_changed('kind'))
+    for widget in [w.cam_clip_start,w.cam_clip_length]+[v for k,v in w.cam_clip_fields.items() if k[1]!='head']:
+        widget.valueChanged.connect(lambda *_: w.camera_panel_changed())
+    w.cam_clip_from_here.toggled.connect(lambda *_: w.camera_panel_changed())
     camera_l.addStretch(1)
     def camera_mode_changed(*_):
-        zoom=w.camera.currentText()==_ZOOM_MODE
-        w.camera_zoom_box.setVisible(zoom)
-        w.camera_note.setText('' if zoom else 'Gentle / Close-up zoom: the view zooms in and glides after the pen, '
-                              'then pulls back to show the whole picture. Camera moves between elements are on '
-                              'the timeline: click a camera on the Camera row.')
+        w.camera_note.setText('Camera follow (this element): Gentle / Close-up zoom glides after the pen, then '
+                              'pulls back to show the whole picture.')
     w.camera.currentIndexChanged.connect(camera_mode_changed)
     for spin in w.camera_zoom_widgets.values():
         spin.valueChanged.connect(lambda *_: w.refresh())
@@ -3077,6 +3222,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.add_text_overlay.setToolTip('Put a title or label on top of this scene, with an entrance effect.')
     w.add_text_overlay.clicked.connect(lambda checked=False: w.add_overlay_text())
     timeline_head.addWidget(w.add_text_overlay)
+    w.add_camera_clip_button=QPushButton('+ Camera'); w.add_camera_clip_button.setObjectName('subtle')
+    w.add_camera_clip_button.setToolTip('A camera clip on the Camera track at the playhead (whole video): zoom in, '
+                                        'zoom out, pan… Its length is its speed; drag a frame on the preview to '
+                                        'choose where the camera goes.')
+    w.add_camera_clip_button.clicked.connect(lambda checked=False: w.add_camera_clip())
+    timeline_head.addWidget(w.add_camera_clip_button)
     w.timeline_status=label('','panelHint')
     timeline_head.addWidget(w.timeline_status)
     body=QWidget();body.setObjectName('panelBody')
@@ -3189,6 +3340,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.element_camera_clicked.connect(lambda k: w.edit_element_camera(k))
     w.stage_timeline.other_overlay_clicked.connect(lambda k,oid: w.go_to_overlay(k,oid))
     w.stage_timeline.overlay_toggled.connect(lambda oid: w.toggle_overlay(oid))
+    w.stage_timeline.camera_selected.connect(lambda cid: w.select_camera(cid))
+    w.stage_timeline.camera_changed.connect(lambda cid,start,length: w.move_camera_clip(cid,start,length))
+    w.stage_timeline.camera_done.connect(lambda cid: w.camera_clip_done(cid))
+    w.stage_timeline.camera_edit.connect(lambda cid: w.edit_camera_clip(cid))
+    w.stage_timeline.camera_action.connect(lambda cid,action: w.camera_clip_action(cid,action))
     w.stage_timeline.text_track_toggled.connect(lambda t: w.toggle_text_track(t))
     w.stage_timeline.element_edit.connect(lambda k: w.edit_element(k))
     w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))

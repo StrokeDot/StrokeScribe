@@ -360,7 +360,18 @@ def _camera_view(frame, zoom, cx, cy):
 
 
 def camera_for(drawing, options, zoom, rate=30.):
-    """Plan the camera path for these options (None when the camera is off)."""
+    """Plan the camera path for these options (None when the camera is off).
+
+    exp.119: options['video_camera'] (whole video): the camera clips of the Camera track
+    on top of the element's own camera (camera_clips.py)."""
+    base = _own_camera(drawing, options, zoom, rate)
+    if options.get('video_camera') and drawing is not None:
+        import camera_clips
+        return camera_clips.from_options(base, options, timeline_seconds(drawing, options))
+    return base
+
+
+def _own_camera(drawing, options, zoom, rate=30.):
     import camera
     import motion
     if options.get('cam_plan') and drawing is not None:      # exp.115: start → end framing

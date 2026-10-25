@@ -135,7 +135,7 @@ class BatchWorker(QThread):
                     message = export_scenes(scene_list, folder, data.get('settings', {}), self.hand,
                                             progress=self.item_progress.emit,
                                             interrupted=self.isInterruptionRequested,
-                                            titles=data.get('titles'))
+                                            titles=data.get('titles'), cameras=data.get('cameras'))
                 else:
                     drawing, options, formats = prepare(path, self.settings, self.hand)
                     self.item_state.emit(row, 'Exporting…')

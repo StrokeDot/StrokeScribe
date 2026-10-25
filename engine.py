@@ -301,7 +301,7 @@ def _reuse_frame(source,target):
     shutil.copyfile(source,target)
 
 
-def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0, camera_zoom=1.0, erase=None, workers=None, sound_files=None, layers='all', offset=(0., 0.), background=True, overlays=None, entrance='draw', pause=0., blend_mode='Normal', artwork_opacity=100, paper_cleanup=False, paper_tolerance=22, paper_softness=8, entrance_part='all', move_hand=None, move_hand_grip=None, move_hand_size=.35):
+def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, thickness=1, hand=None, hand_scale=.18, anchor=(.1,.1), callback=None, final_image=None, fade_duration=.4, hold_duration=.6, reveal_mode='fade', brush_width=.14, painting_hand=None, stroke_spacing=.55, artwork_scale=1.0, camera_zoom=1.0, erase=None, workers=None, sound_files=None, layers='all', offset=(0., 0.), background=True, overlays=None, entrance='draw', pause=0., blend_mode='Normal', artwork_opacity=100, paper_cleanup=False, paper_tolerance=22, paper_softness=8, entrance_part='all', move_hand=None, move_hand_grip=None, move_hand_size=.35, cam_plan=None, video_camera=None):
     """Write the PNG frames. workers: None/0 = automatic (several CPU cores for
     longer exports), 1 = one core, n = n worker processes."""
     folder=Path(folder)
@@ -325,6 +325,8 @@ def export_frames(drawing, folder, duration=4, fps=30, width=1920, height=1080, 
                  blend_mode=blend_mode,artwork_opacity=artwork_opacity,
                  paper_cleanup=paper_cleanup,paper_tolerance=paper_tolerance,
                  paper_softness=paper_softness)
+    if cam_plan: options['cam_plan']=tuple(cam_plan)            # exp.115/119: the cameras
+    if video_camera: options['video_camera']=video_camera
     from frame_render import timeline_seconds
     total=timeline_seconds(drawing,options)
     count=max(2,round(total*fps))

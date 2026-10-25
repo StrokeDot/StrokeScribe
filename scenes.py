@@ -245,7 +245,7 @@ def paint_titles(folder, fps, titles):
 
 
 def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False,
-                    titles=None):
+                    titles=None, cameras=None):
     """The whole video when elements are on tracks: every frame is one moment of the
     timeline (timeline_render.compose), at the export size. The sounds of each element
     start with it; voiceovers too."""
@@ -272,7 +272,12 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
         # compose_frame takes the hand size relative to the scaled artwork (like the preview).
         options['hand_scale'] = float(options.get('hand_scale', .18)) / max(.25, float(options.get('artwork_scale', 1.)))
         zoom = float(options.get('camera_zoom', 1.) or 1.)
-        camera = camera_for(p['drawing'], options, zoom) if zoom > 1.0001 else None
+        camera = camera_for(p['drawing'], options, zoom) if zoom > 1.0001 or options.get('cam_plan') else None
+        if cameras:                                     # exp.119: the Camera track
+            import camera_clips
+            item = lay.items[len(elements)]
+            camera = camera_clips.wrap(camera, item.start, cameras, [(m.start, m.end) for m in lay.moves],
+                                       item.length)
         elements.append(dict(drawing=p['drawing'], options=options, camera=camera,
                              transition=p['transition'], move_seconds=p['move_seconds']))
     total = max(1, round(lay.total * fps))
@@ -326,11 +331,11 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
 
 
 def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False,
-                  titles=None):
+                  titles=None, cameras=None):
     """Render all scenes into one PNG sequence + videos. `settings`: the editor's settings
     (its output settings are used for every scene). Returns a summary text."""
     if on_tracks(scenes):
-        return export_timeline(scenes, folder, settings, hand, progress, interrupted, titles)
+        return export_timeline(scenes, folder, settings, hand, progress, interrupted, titles, cameras)
     from engine import export_frames
     from export_job import encode_outputs, formats_from_settings
     from sound import RATE, soundtrack, write_wav
@@ -350,6 +355,16 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                          for k, p in enumerate(prepared)], aspect)
     counts = [frame_count(p['seconds'], fps) for p in prepared]
     joins = [round(p['transition_seconds'] * fps) for p in prepared]
+    if cameras:
+        # exp.119: the Camera track: every element's frames (and the moves) with the clips.
+        import camera_clips
+        starts, moves, at = [], [], 0
+        for c, j in zip(counts, joins):
+            starts.append(at / fps); at += c
+            moves.append((at / fps, (at + j) / fps)); at += j
+        sig = camera_clips.signature(cameras)
+        for k, p in enumerate(prepared):
+            p['options'] = dict(p['options'], video_camera=(starts[k], sig, tuple(moves)))
     total = sum(counts) + sum(joins)
     done = 0
     index = 0
