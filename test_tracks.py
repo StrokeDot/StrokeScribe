@@ -383,6 +383,19 @@ class WindowTests(unittest.TestCase):
         self.assertIsNotNone(w.canvas.frame)
         x, y, bw, bh = w.overlay_box()                     # the camera's frame, dashed
         self.assertLess(bw, w.canvas.frame.width())
+        # exp.122: drag to look around; the frame moves with it; Camera view puts it back.
+        self.assertFalse(w.preview_reset_view.isHidden())
+        self.assertTrue(w.drag_picture('start', 10, 10))
+        w.drag_picture('move', .1, 0.); w.drag_picture('done', 0., 0.)
+        self.assertLess(w.overlay_box()[0], x)
+        w.preview_frame_toggle.setChecked(False)
+        self.assertIsNone(w.overlay_box())
+        w.preview_frame_toggle.setChecked(True)
+        w.reset_preview_view()
+        self.assertFalse(w.zoomed_out())
+        self.assertTrue(w.preview_reset_view.isHidden())
+        with mock.patch.object(QApplication, 'keyboardModifiers', return_value=Qt.KeyboardModifier.ControlModifier):
+            w.preview_wheel(-3, 10, 10)
         w.preview_scope.setCurrentIndex(0); self.app.processEvents()
         self.assertFalse(w.zoomed_out())
 

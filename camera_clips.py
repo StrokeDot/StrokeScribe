@@ -79,10 +79,14 @@ def combine(base, clip):
 
 
 def until(clip, moves):
-    """A clip's framing holds until the end of the next transition after it starts."""
+    """A clip's framing holds until the end of the next transition after it starts (or,
+    'back': it goes back when it ends, as fast as it came; exp.122)."""
     start = float(clip['start'])
     ends = [b for a, b in moves if b > start + 1e-6]
-    return min(ends) if ends else math.inf
+    limit = min(ends) if ends else math.inf
+    if clip.get('back'):
+        limit = min(limit, start + 2 * float(clip.get('duration', 1.2)))
+    return limit
 
 
 def framing_at(clips, seconds, moves=()):
@@ -97,14 +101,17 @@ def framing_at(clips, seconds, moves=()):
     if begin is None:
         earlier = [c for c in clips if c is not clip and float(c['start']) < start - 1e-9]
         begin = framing_at(earlier, start, moves) or REST
-    p = (t - start) / max(.05, float(clip.get('duration', 1.2)))
+    length = max(.05, float(clip.get('duration', 1.2)))
+    p = (t - start) / length
+    if clip.get('back') and p > 1.:                # going back to where it came from
+        return mix(tuple(clip.get('to') or REST), tuple(begin), _ease(p - 1.))
     return mix(tuple(begin), tuple(clip.get('to') or REST), _ease(p))
 
 
 def signature(clips):
     """Plain data for fingerprints and option keys."""
     return tuple((c.get('id'), c.get('kind'), round(float(c['start']), 4), round(float(c['duration']), 4),
-                  tuple(c['from']) if c.get('from') else None, tuple(c.get('to') or REST))
+                  tuple(c['from']) if c.get('from') else None, tuple(c.get('to') or REST), bool(c.get('back')))
                  for c in clips or ())
 
 
@@ -146,5 +153,6 @@ def from_options(base, options, total):
     if not info:
         return base
     start, sig, moves = info
-    clips = [{'id': i, 'kind': k, 'start': s, 'duration': d, 'from': f, 'to': t} for i, k, s, d, f, t in sig]
+    clips = [{'id': i, 'kind': k, 'start': s, 'duration': d, 'from': f, 'to': t, 'back': b}
+             for i, k, s, d, f, t, *rest in sig for b in [bool(rest[0]) if rest else False]]
     return wrap(base, start, clips, moves, total)

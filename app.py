@@ -1233,6 +1233,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.cam_clip_kind.setCurrentText(clip.get('kind') if clip.get('kind')!='Custom' else __import__('camera_clips').CUSTOM)
             self.cam_clip_start.setValue(float(clip['start'])); self.cam_clip_length.setValue(float(clip['duration']))
             self.cam_clip_from_here.setChecked(clip.get('from') is None)
+            self.cam_clip_back.setChecked(bool(clip.get('back')))
             for key in ('to','from'):
                 framing=clip.get(key) or (1.,.5,.5)
                 for name,value in zip(('zoom','x','y'),framing):
@@ -1257,6 +1258,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             get=lambda key: tuple(self.cam_clip_fields[(key,n)].value()/100. for n in ('zoom','x','y'))
             clip['to']=get('to')
             clip['from']=None if self.cam_clip_from_here.isChecked() else get('from')
+            clip['back']=self.cam_clip_back.isChecked()
             if clip.get('kind')!=camera_clips.CUSTOM and (clip['to'],clip['from'])!=camera_clips.presets(clip['kind']):
                 clip['kind']=camera_clips.CUSTOM
         self.project_changes.mark_changed()
@@ -1265,7 +1267,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def camera_box(self):
         """The chosen camera clip's framing as a frame on the preview (frame pixels)."""
         clip=self.find_camera(getattr(self,'selected_camera',None))
-        if clip is None or self.canvas.frame is None or not self.all_scenes(): return None
+        if clip is None or self.canvas.frame is None or not self.all_scenes() or self.zoomed_out(): return None
         W,H=self.canvas.frame.width(),self.canvas.frame.height()
         z,x,y=clip.get('to') or (1.,.5,.5)
         w,h=W/max(1.,z),H/max(1.,z)
@@ -1309,8 +1311,20 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def titles_layer(self,width,height):
         """The texts / pictures on top at the playhead, on a clear picture (None: nothing)."""
         import overlays
-        if self.board_mode() or self.zoomed_out(): return None
+        if self.board_mode(): return None
         t=self.video_seconds()
+        if self.zoomed_out():
+            # exp.122: zoomed out, the texts are drawn where the video's frame is.
+            shown=self.visible_titles()
+            if not shown or not any(overlays.state_at(o,t) is not None for o in shown): return None
+            full=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); full.fill(0)
+            overlays.paint(full,shown,t)
+            layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
+            from PySide6.QtCore import QRectF
+            from PySide6.QtGui import QPainter
+            painter=QPainter(layer); painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            painter.drawImage(QRectF(*self.camera_frame_rect(width,height)),full); painter.end()
+            return layer
         shown=self.titles_split(t)[0]
         if not shown: return None
         if not any(overlays.state_at(o,t) is not None for o in shown): return None
@@ -1548,10 +1562,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
              None if self.canvas.frame is None else (self.canvas.frame.width(),self.canvas.frame.height()),
              repr(self.find_overlay(self.selected_overlay)) if self.selected_overlay else None)
         if self.zoomed_out() and self.canvas.frame is not None:
-            # exp.121: zoomed out: the dashed frame is what the video shows.
-            W,H=self.canvas.frame.width(),self.canvas.frame.height()
-            z=self.preview_zoom_out
-            return (W/2-W/z/2,H/2-H/z/2,W/z,H/z)
+            # exp.121: zoomed out: the dashed frame is what the video shows (it can be hidden).
+            if hasattr(self,'preview_frame_toggle') and not self.preview_frame_toggle.isChecked(): return None
+            return self.camera_frame_rect(self.canvas.frame.width(),self.canvas.frame.height())
         if getattr(self,'selected_camera',None):
             return self.camera_box()                 # cheap: no timeline work
         cached=getattr(self,'_box_cache',None)
@@ -1620,6 +1633,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """Drag on the preview: move the picture on the page (Position X / Y), or a frame on the Board."""
         if self.camera_editing() and (kind=='start' or getattr(self,'_cam_drag',None) is not None):
             if self.drag_camera_frame(kind,dx,dy): return True
+        if self.zoomed_out() and (kind=='start' or getattr(self,'_pan_drag',None) is not None):
+            # exp.122: zoomed out, drag the preview to look around (the video is not changed).
+            if kind=='start':
+                self._pan_drag=getattr(self,'preview_pan',(0.,0.)); self.playing=False; return True
+            if kind=='move':
+                z=self.preview_zoom_out; x0,y0=self._pan_drag
+                limit=(z-1)/2+.5
+                self.preview_pan=(max(-limit,min(limit,x0-dx)),max(-limit,min(limit,y0-dy)))
+                self._playhead_only=True; self.refresh()
+            else:
+                self._pan_drag=None
+            return True
         if self.board_mode() or (kind!='start' and getattr(self,'_board_drag',None)):
             return self.board_drag(kind,dx,dy)
         if kind=='start':
@@ -2825,6 +2850,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def preview_scope_changed(self):
         self.playing=False
         self.preview_zoom_out=1.                  # exp.121: back to the camera's view
+        self.preview_pan=(0.,0.)
+        self.sync_zoom_controls()
         if self.preview_sound is not None: self.preview_sound.stop()
         if hasattr(self,'board_arrange'): self.board_arrange.setVisible(self.board_mode())
         if self.board_mode():
@@ -3088,10 +3115,30 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if new<1.03: new=1.
         if abs(new-old)<1e-6: return True
         self.preview_zoom_out=new
+        if new<=1.: self.preview_pan=(0.,0.)
+        self.sync_zoom_controls()
         self.status.setText('Preview zoomed out ×%.1f: the dashed frame is what the video shows. '
                             'Ctrl + mouse wheel to zoom back in.'%new if new>1 else 'Preview back to the camera\'s view.')
         self.refresh()
         return True
+
+    def reset_preview_view(self):
+        """Back to what the video shows (exp.122)."""
+        self.preview_zoom_out=1.; self.preview_pan=(0.,0.)
+        self.sync_zoom_controls()
+        self.status.setText('Preview back to the camera\'s view.')
+        self.refresh()
+
+    def sync_zoom_controls(self):
+        zoomed=self.zoomed_out()
+        for b in ('preview_frame_toggle','preview_reset_view'):
+            if hasattr(self,b): getattr(self,b).setVisible(zoomed)
+
+    def camera_frame_rect(self,W,H):
+        """Zoomed out: where the video's frame is on the preview (frame pixels)."""
+        z=getattr(self,'preview_zoom_out',1.)
+        px,py=getattr(self,'preview_pan',(0.,0.))
+        return (W/2-W/z/2-px*W,H/2-H/z/2-py*H,W/z,H/z)
 
     def board_wheel(self,steps,x,y):
         k=self.board_pick(x,y)
@@ -3377,13 +3424,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             at=(self.position if fraction is None else fraction)*lay.total
             state=state_at(lay,at)
             k=state.current if state.kind=='page' else state.move
+            zoom=self.zoomed_out()
             return self.timeline_frame(state,width,height,at,
-                                       view_scale=getattr(self,'preview_zoom_out',1.) if self.zoomed_out() else 1.),k,lengths,joins
+                                       view_scale=self.preview_zoom_out if zoom else 1.,
+                                       view_pan=getattr(self,'preview_pan',(0.,0.)) if zoom else (0.,0.)),k,lengths,joins
         total=sum(lengths)+sum(joins)
         where,k,f=board.locate(lengths,joins,(self.position if fraction is None else fraction)*total)
         return self.whole_frame_at(where,k,f,width,height),k,lengths,joins
 
-    def timeline_frame(self,state,width,height,seconds=None,view_scale=1.):
+    def timeline_frame(self,state,width,height,seconds=None,view_scale=1.,view_pan=(0.,0.)):
         """Whole video with elements on tracks: one moment (timeline_render); texts under an
         element of a higher track are drawn in it (the others: on the screen, titles_layer)."""
         import timeline_render
@@ -3403,7 +3452,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                           top=active[-1][0] if active else -1)
         under=self.titles_split(seconds)[1] if seconds is not None and view_scale<=1. else []
         return timeline_render.compose(world,self.timeline_layout(width,height),state,elements,width,height,
-                                       titles=under,seconds=seconds,view_scale=view_scale)
+                                       titles=under,seconds=seconds,view_scale=view_scale,view_pan=view_pan)
 
     def whole_frame_at(self,where,k,f,width,height):
         """Whole video: element k at its own fraction f, or the move after element k."""

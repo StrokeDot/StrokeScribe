@@ -2490,6 +2490,20 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.preview_background.setAccessibleName('Background')
     top.addWidget(label('Background','panelHint'))
     top.addWidget(w.preview_background)
+    # exp.122: zoomed out (Ctrl + wheel on the Whole video preview): back to the camera's view,
+    # and the frame showing what the video shows on / off.
+    w.preview_frame_toggle=QPushButton('Frame'); w.preview_frame_toggle.setObjectName('subtle')
+    w.preview_frame_toggle.setCheckable(True); w.preview_frame_toggle.setChecked(True)
+    w.preview_frame_toggle.setToolTip('Show or hide the dashed frame: what the video shows.')
+    w.preview_frame_toggle.toggled.connect(lambda on: w.canvas.update())
+    w.preview_reset_view=QPushButton('Camera view'); w.preview_reset_view.setObjectName('subtle')
+    from ui_icons import icon as _icon
+    w.preview_reset_view.setIcon(_icon('zoom-fit',RAIL_ICON))
+    w.preview_reset_view.setToolTip('Back to what the video shows (the preview was zoomed out with Ctrl + wheel '
+                                    'and moved by dragging).')
+    w.preview_reset_view.clicked.connect(lambda checked=False: w.reset_preview_view())
+    for b in (w.preview_frame_toggle,w.preview_reset_view):
+        b.hide(); top.addWidget(b)
     top.addWidget(w.fullscreen_button)
     well=QFrame();well.setObjectName('monitorWell')
     well_l=QVBoxLayout(well);well_l.setContentsMargins(1,1,1,1)
@@ -3141,6 +3155,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.cam_clip_length=w.number(.2,120,1.2,.1); w.cam_clip_length.setDecimals(1); w.cam_clip_length.setSuffix(' s')
     w.cam_clip_length.setToolTip('How long the camera takes to get there: longer = slower.')
     cf.addRow('Speed (length)',w.cam_clip_length)
+    w.cam_clip_back=QCheckBox('Go back when it ends')
+    w.cam_clip_back.setToolTip('On: at the end of the clip the camera goes back to where it was (as fast as it came). '
+                               'Off: it stays there until the next camera move between pages.')
+    cb.addWidget(w.cam_clip_back)
     w.cam_clip_from_here=QCheckBox('Start from where the camera is')
     w.cam_clip_from_here.setToolTip('On: it goes on from the camera as it is (no jump). Off: it starts from its own framing below.')
     cb.addWidget(w.cam_clip_from_here)
@@ -3171,6 +3189,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     for widget in [w.cam_clip_start,w.cam_clip_length]+[v for k,v in w.cam_clip_fields.items() if k[1]!='head']:
         widget.valueChanged.connect(lambda *_: w.camera_panel_changed())
     w.cam_clip_from_here.toggled.connect(lambda *_: w.camera_panel_changed())
+    w.cam_clip_back.toggled.connect(lambda *_: w.camera_panel_changed())
     camera_l.addStretch(1)
     def camera_mode_changed(*_):
         w.camera_note.setText('Camera follow (this element): Gentle / Close-up zoom glides after the pen, then '
@@ -3220,17 +3239,37 @@ def build_workspace(w, Canvas, BRAND_ICON):
     timeline,timeline_outer,timeline_head=panel('timelinePanel','Timeline','Click or drag to scrub')
     w.timeline_panel=timeline
     # Overlays (pictures and titles on top of the scene, on their own tracks).
-    w.add_picture_overlay=QPushButton('+ Picture'); w.add_picture_overlay.setObjectName('subtle')
-    w.add_picture_overlay.setToolTip('Put a picture on top of this scene (PNG, JPG or SVG), with an entrance '
+    from PySide6.QtGui import QIcon as _QIcon, QPainter as _QP, QColor as _QC
+    from PySide6.QtCore import QSize as _QS
+    def plus_icon(name):
+        """exp.122: an icon with a small + (add a picture / a text / a camera clip)."""
+        from ui_icons import pixmap
+        base=pixmap(name,'#E8E6F0',22)
+        out=base.copy(); painter=_QP(out); painter.setRenderHint(_QP.RenderHint.Antialiasing)
+        ratio=out.devicePixelRatio() or 1.
+        size=out.width()/ratio
+        painter.setPen(_QC(0,0,0,0)); painter.setBrush(_QC('#6E4FF2'))
+        painter.drawEllipse(int(size-11),int(size-11),11,11)
+        painter.drawPixmap(int(size-10),int(size-10),pixmap('plus','#FFFFFF',9))
+        painter.end()
+        return _QIcon(out)
+    w.add_picture_overlay=QPushButton(); w.add_picture_overlay.setObjectName('subtle')
+    w.add_picture_overlay.setIcon(plus_icon('image')); w.add_picture_overlay.setIconSize(_QS(22,22))
+    w.add_picture_overlay.setFixedSize(38,32)
+    w.add_picture_overlay.setToolTip('Add a picture on top. Put a picture on top of this scene (PNG, JPG or SVG), with an entrance '
                                      'effect. It appears at the playhead; drag its clip to change when.')
     w.add_picture_overlay.clicked.connect(lambda checked=False: w.add_overlay_picture())
     timeline_head.addWidget(w.add_picture_overlay)
-    w.add_text_overlay=QPushButton('+ Text'); w.add_text_overlay.setObjectName('subtle')
-    w.add_text_overlay.setToolTip('Put a title or label on top of this scene, with an entrance effect.')
+    w.add_text_overlay=QPushButton(); w.add_text_overlay.setObjectName('subtle')
+    w.add_text_overlay.setIcon(plus_icon('text')); w.add_text_overlay.setIconSize(_QS(22,22))
+    w.add_text_overlay.setFixedSize(38,32)
+    w.add_text_overlay.setToolTip('Add a text. Put a title or label on top of this scene, with an entrance effect.')
     w.add_text_overlay.clicked.connect(lambda checked=False: w.add_overlay_text())
     timeline_head.addWidget(w.add_text_overlay)
-    w.add_camera_clip_button=QPushButton('+ Camera'); w.add_camera_clip_button.setObjectName('subtle')
-    w.add_camera_clip_button.setToolTip('A camera clip on the Camera track at the playhead (whole video): zoom in, '
+    w.add_camera_clip_button=QPushButton(); w.add_camera_clip_button.setObjectName('subtle')
+    w.add_camera_clip_button.setIcon(plus_icon('camera')); w.add_camera_clip_button.setIconSize(_QS(22,22))
+    w.add_camera_clip_button.setFixedSize(38,32)
+    w.add_camera_clip_button.setToolTip('Add a camera clip. A camera clip on the Camera track at the playhead (whole video): zoom in, '
                                         'zoom out, pan… Its length is its speed; drag a frame on the preview to '
                                         'choose where the camera goes.')
     w.add_camera_clip_button.clicked.connect(lambda checked=False: w.add_camera_menu(w.add_camera_clip_button))
