@@ -14,7 +14,6 @@ import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
-from importlib import metadata
 from pathlib import Path
 
 NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
@@ -163,6 +162,7 @@ def run_checks(tier='balanced'):
     items = []
     for dist, module in PACKAGES:
         try:
+            from importlib import metadata      # exp.120: only when asked (faster start)
             version = metadata.version(dist)
             spec = __import__(module)
             where = str(Path(spec.__file__).parent) if getattr(spec, '__file__', None) else ''

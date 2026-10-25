@@ -8,6 +8,7 @@ from __future__ import annotations
 import bisect
 import hashlib
 import math
+import numpy as np
 from collections import OrderedDict, deque
 from dataclasses import dataclass
 from PIL import Image, ImageDraw
@@ -70,8 +71,14 @@ class PaintPlan:
     def mask(self, progress):
         clock = max(0., min(1., float(progress)))/.98*self.total
         # No full-image shortcut, including at progress==1.
-        return Image.frombytes('L', self.size, bytes(
-            255 if t <= clock and progress > 0 else 0 for t in self.arrival))
+        # exp.120: numpy comparison (the same cells), not a Python loop per frame.
+        arrival = self.__dict__.get('_arrival_np')
+        if arrival is None or len(arrival) != len(self.arrival):
+            arrival = np.asarray(self.arrival, dtype=np.float64)
+            self.__dict__['_arrival_np'] = arrival
+        if progress <= 0:
+            return Image.new('L', self.size, 0)
+        return Image.frombytes('L', self.size, ((arrival <= clock) * 255).astype(np.uint8).tobytes())
 
 def _components(labels, width, height):
     """Split disconnected pieces even if they share a closed-contour ID."""
@@ -174,6 +181,34 @@ def _split_open_area_by_colour(labels, support, source, gw, gh):
             labels[i] = first + regions.labels[i]
 
 
+def _alpha_cells(source, iw, ih, gw, gh):
+    """(support, faint) grid cells: where the image is visible / only faintly there.
+    exp.120: numpy instead of a Python loop over every pixel (same cells)."""
+    import numpy as np
+    alpha=np.frombuffer(source.getchannel('A').tobytes(),np.uint8).reshape(ih,iw)
+    rows=np.minimum(gh-1,(2*np.arange(ih,dtype=np.int64)+1)*gh//(2*ih))
+    cols=np.minimum(gw-1,(2*np.arange(iw,dtype=np.int64)+1)*gw//(2*iw))
+    cells=(rows[:,None]*gw+cols[None,:])
+    strong=np.zeros(gw*gh,np.uint8); weak=np.zeros(gw*gh,np.uint8)
+    strong[cells[alpha>=VISIBLE_ALPHA]]=1
+    weak[cells[(alpha>0)&(alpha<VISIBLE_ALPHA)]]=1
+    return bytearray(strong.tobytes()),bytearray(weak.tobytes())
+
+
+def _nearest_entry(pool, cursor, gw):
+    """The region whose nearest cell is closest to the cursor, and that cell (exp.120:
+    vectorised; the first one wins ties, as with min())."""
+    import numpy as np
+    best=None
+    for i,(_,cells) in pool:
+        arr=np.asarray(cells,dtype=np.int64)
+        d=np.hypot(arr%gw+.5-cursor[0],arr//gw+.5-cursor[1])
+        j=int(np.argmin(d))
+        if best is None or d[j]<best[0]:
+            best=(float(d[j]),i,int(arr[j]))
+    return best[1],best[2]
+
+
 def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55, short_vertical=False):
     from color_reveal import artwork_rect, last_stroke_canvas_endpoint
     source=pil_image(image)
@@ -188,13 +223,7 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55, short_vertic
     # The hand paints only where the image is actually visible (alpha at
     # least VISIBLE_ALPHA). Nearly invisible leftovers from background removal
     # are revealed with their nearest painted area instead, with no hand visit.
-    support=bytearray(gw*gh)
-    faint=bytearray(gw*gh)
-    for i,a in enumerate(source.getchannel('A').tobytes()):
-        if a:
-            cell=min(gh-1,(2*(i//iw)+1)*gh//(2*ih))*gw+min(gw-1,(2*(i%iw)+1)*gw//(2*iw))
-            if a>=VISIBLE_ALPHA: support[cell]=1
-            else: faint[cell]=1
+    support,faint=_alpha_cells(source,iw,ih,gw,gh)
     if not any(support):
         if not any(faint):
             raise ValueError('The color image has no nontransparent pixels.')
@@ -271,12 +300,16 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55, short_vertic
         return y*gw+x if 0<=x<gw and 0<=y<gh else None
     def stamp(point,radius,rid,when):
         # Pixel-center disk footprints; region clip prevents boundary bleed.
+        # (exp.120: the same disk, without a min() call per cell: planning was slow.)
         x,y=point
+        r2=radius**2
+        xs=range(max(0,math.floor(x-radius)),min(gw,math.ceil(x+radius)))
         for yy in range(max(0,math.floor(y-radius)),min(gh,math.ceil(y+radius))):
-            for xx in range(max(0,math.floor(x-radius)),min(gw,math.ceil(x+radius))):
-                cell=yy*gw+xx
-                if labels[cell]==rid and (xx+.5-x)**2+(yy+.5-y)**2<=radius**2:
-                    arrival[cell]=min(arrival[cell],when)
+            row=yy*gw; dy2=(yy+.5-y)**2
+            for xx in xs:
+                cell=row+xx
+                if labels[cell]==rid and (xx+.5-x)**2+dy2<=r2 and when<arrival[cell]:
+                    arrival[cell]=when
     def move(point,rid,painting,radius=.72,quick=False):
         nonlocal cursor,clock
         distance=math.dist(cursor,point)
@@ -361,9 +394,7 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55, short_vertic
             pool=[item for item in pool if band(item[1][1])==best]
         first_region=False
         # Nearest region, preserving the actual final stroke as route origin.
-        ri,entry=min(((i,min(cells,key=lambda c:math.dist(cursor,center(c))))
-                      for i,(_,cells) in pool),
-                     key=lambda pair:math.dist(cursor,center(pair[1])))
+        ri,entry=_nearest_entry(pool,cursor,gw)
         rid,cells=remaining.pop(ri)
         paint_to(entry,rid)
         xs=[c%gw for c in cells]; ys=[c//gw for c in cells]
@@ -401,7 +432,10 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55, short_vertic
         # Coverage repair is planned, timed physical painting, not a final fill.
         missing={cell for cell in cells if not math.isfinite(arrival[cell])}
         while missing:
-            target=min(missing,key=lambda cell:math.dist(cursor,center(cell)))
+            # exp.120: vectorised nearest (set order kept, so ties go the same way as min()).
+            order=list(missing)
+            arr=np.fromiter(order,dtype=np.int64,count=len(order))
+            target=order[int(np.argmin(np.hypot(arr%gw+.5-cursor[0],arr//gw+.5-cursor[1])))]
             paint_to(target,rid)
             missing={cell for cell in missing if not math.isfinite(arrival[cell])}
     assert all(not rid or math.isfinite(arrival[i]) for i,rid in enumerate(labels))

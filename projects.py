@@ -80,13 +80,49 @@ def qimage_to_b64(image):
     return base64.b64encode(bytes(buffer.data())).decode('ascii')
 
 
+_DECODED = {}
+
+
 def qimage_from_b64(text):
+    """exp.120: decoded once per picture (opening / switching elements decoded the same
+    big PNGs again and again). QImage is copy-on-write: a caller that draws into it gets
+    its own copy, the kept one stays as it was."""
     if not text:
         return None
+    hit = _DECODED.get(text)
+    if hit is not None:
+        return QImage_copy(hit)
     from PySide6.QtGui import QImage
     image = QImage()
     image.loadFromData(base64.b64decode(text), 'PNG')
-    return None if image.isNull() else image
+    if image.isNull():
+        return None
+    _DECODED[text] = image
+    while len(_DECODED) > 24:
+        _DECODED.pop(next(iter(_DECODED)))
+    return QImage_copy(image)
+
+
+def QImage_copy(image):
+    from PySide6.QtGui import QImage
+    return QImage(image)          # a shallow (shared, copy-on-write) handle
+
+
+_ENCODED = {}
+
+
+def qimage_to_b64_cached(image):
+    """The PNG of a picture that did not change since it was last encoded (cacheKey)."""
+    if image is None or image.isNull():
+        return None
+    key = (image.cacheKey(), image.width(), image.height())
+    hit = _ENCODED.get(key)
+    if hit is None:
+        hit = qimage_to_b64(image)
+        _ENCODED[key] = hit
+        while len(_ENCODED) > 24:
+            _ENCODED.pop(next(iter(_ENCODED)))
+    return hit
 
 
 # ---------------------------------------------------------------- drawings

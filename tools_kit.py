@@ -34,10 +34,19 @@ def builtin_path(name):
     return ASSETS / BUILTIN[name][0]
 
 
+_BUILTIN = {}
+
+
 def builtin_image(name):
+    """exp.120: each built-in picture is read from disk once (copy-on-write handles)."""
     from PySide6.QtGui import QImage
     path = builtin_path(name)
-    return QImage(str(path)) if path.is_file() else QImage()
+    key = (str(path), path.stat().st_mtime if path.is_file() else None)
+    hit = _BUILTIN.get(key)
+    if hit is None:
+        hit = QImage(str(path)) if path.is_file() else QImage()
+        _BUILTIN[key] = hit
+    return QImage(hit)
 
 
 def _tool_class():

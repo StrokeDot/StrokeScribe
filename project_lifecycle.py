@@ -8,6 +8,30 @@ import hashlib
 import json
 
 
+_BIG = {}
+
+
+def _light(value):
+    """exp.120: big texts (the pictures, in base64) stand in by a digest worked out once;
+    a project of 100 MB was escaped and hashed in full on every autosave and close."""
+    if isinstance(value, str):
+        if len(value) < 4096:
+            return value
+        hit = _BIG.get(value)
+        if hit is None:
+            hit = '#' + hashlib.blake2b(value.encode('ascii', 'backslashreplace'), digest_size=16).hexdigest() + \
+                  f':{len(value)}'
+            _BIG[value] = hit
+            while len(_BIG) > 64:
+                _BIG.pop(next(iter(_BIG)))
+        return hit
+    if isinstance(value, dict):
+        return {k: _light(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_light(v) for v in value]
+    return value
+
+
 class ProjectChangeTracker:
     def __init__(self):
         self.revision = 0
@@ -28,11 +52,10 @@ class ProjectChangeTracker:
 
     @staticmethod
     def signature(project):
-        digest = hashlib.sha256()
-        encoder = json.JSONEncoder(sort_keys=True, separators=(',', ':'), ensure_ascii=True)
-        for chunk in encoder.iterencode(project):
-            digest.update(chunk.encode('utf-8'))
-        return digest.hexdigest()
+        # One call of the C encoder on the light copy (chunk by chunk was slow).
+        text = json.dumps(_light(project), sort_keys=True, separators=(',', ':'), ensure_ascii=True,
+                          default=str)
+        return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
     def changed(self, project):
         if self.saved_signature is None:
