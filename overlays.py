@@ -98,8 +98,15 @@ def _effect(kind, p):
 def state_at(item, t):
     """How the overlay looks at time t (seconds in the scene), or None when it is not shown."""
     start, length = float(item.get('start', 0)), max(.05, float(item.get('duration', 3)))
-    if t < start or t > start + length:
+    # exp.121: with no way out (None), it stays after its clip, like the drawings do, until
+    # the camera moves to another page ('_until', worked out by the window from the timeline).
+    until = start + length
+    if item.get('effect_out', 'None') == 'None':
+        until = max(until, float(item.get('_until', until)))
+    if t < start or t > until:
         return None
+    if t > start + length:
+        return 1., 0., 0., 1., 0.
     local = t - start
     tin = min(float(item.get('in_seconds', .5)), length / 2) if item.get('effect_in', 'None') != 'None' else 0
     tout = min(float(item.get('out_seconds', .4)), length / 2) if item.get('effect_out', 'None') != 'None' else 0
@@ -112,6 +119,14 @@ def state_at(item, t):
 
 def end_of(item):
     return float(item.get('start', 0)) + float(item.get('duration', 3))
+
+
+def shown_until(item):
+    """The clip's end, or later when it stays on screen (no way out: exp.121)."""
+    end = end_of(item)
+    if item.get('effect_out', 'None') == 'None':
+        end = max(end, float(item.get('_until', end)))
+    return end
 
 
 # ------------------------------------------------------------ pictures

@@ -42,7 +42,7 @@ def view_of(world, lay, state, elements):
     return view
 
 
-def compose(world, lay, state, elements, width, height, titles=None, seconds=None):
+def compose(world, lay, state, elements, width, height, titles=None, seconds=None, view_scale=1.):
     """The whole video at this moment, width x height.
 
     elements[k]: {'drawing', 'options' (compose_frame options at the video size),
@@ -57,12 +57,14 @@ def compose(world, lay, state, elements, width, height, titles=None, seconds=Non
         k = state.move
         kind = elements[k].get('transition', 'Camera move')
         last = k == len(elements) - 1
-        if kind in board.SCREEN_KINDS and not last:
+        if kind in board.SCREEN_KINDS and not last and view_scale <= 1.:
             a = _page(world, lay, state, elements, world.frames[k], width, height)
             b = _page(world, lay, state, elements, world.frames[k + 1], width, height)
             return _texts(transition_frame(a, b, kind, state.t), titles, seconds)
-    return _page(world, lay, state, elements, view_of(world, lay, state, elements), width, height,
-                 titles, seconds)
+    view = view_of(world, lay, state, elements)
+    if view_scale > 1.:                  # exp.121: the preview stepped back (Ctrl + wheel)
+        view = (view[0], view[1], view[2] * view_scale)
+    return _page(world, lay, state, elements, view, width, height, titles, seconds)
 
 
 def _texts(out, items, seconds, copied=False):

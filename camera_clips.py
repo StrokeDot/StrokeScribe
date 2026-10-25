@@ -27,7 +27,8 @@ from __future__ import annotations
 import math
 import uuid
 
-KINDS = ('Zoom in', 'Zoom out', 'Pan left', 'Pan right', 'Pan up', 'Pan down', 'Custom')
+CUSTOM = 'Move to a spot'      # exp.121 (was 'Custom'): drag the frame where the camera goes
+KINDS = ('Zoom in', 'Zoom out', 'Pan left', 'Pan right', 'Pan up', 'Pan down', CUSTOM)
 REST = (1., .5, .5)
 PAN_ZOOM = 1.4
 
@@ -49,6 +50,7 @@ def presets(kind):
         'Pan right': ((PAN_ZOOM, .5 - side, .5), (PAN_ZOOM, .5 + side, .5)),
         'Pan up': ((PAN_ZOOM, .5, .5 + side), (PAN_ZOOM, .5, .5 - side)),
         'Pan down': ((PAN_ZOOM, .5, .5 - side), (PAN_ZOOM, .5, .5 + side)),
+        CUSTOM: (None, (1.6, .5, .5)),
         'Custom': (None, (1.6, .5, .5)),
     }.get(kind, (None, (1.6, .5, .5)))
 
