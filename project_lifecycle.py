@@ -52,11 +52,10 @@ class ProjectChangeTracker:
 
     @staticmethod
     def signature(project):
-        digest = hashlib.sha256()
-        encoder = json.JSONEncoder(sort_keys=True, separators=(',', ':'), ensure_ascii=True)
-        for chunk in encoder.iterencode(_light(project)):
-            digest.update(chunk.encode('utf-8'))
-        return digest.hexdigest()
+        # One call of the C encoder on the light copy (chunk by chunk was slow).
+        text = json.dumps(_light(project), sort_keys=True, separators=(',', ':'), ensure_ascii=True,
+                          default=str)
+        return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
     def changed(self, project):
         if self.saved_signature is None:
