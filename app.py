@@ -1820,7 +1820,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def scene_state(self):
         """Everything needed to reopen the scene being edited."""
-        from projects import drawing_to_dict, qimage_to_b64, widget_value
+        from projects import drawing_to_dict, qimage_to_b64, qimage_to_b64_cached, widget_value
         from tools_kit import hand_to_project
         image_source=self.is_image_artwork()
         state={'title':self.project_title,'source':'image' if image_source else 'svg',
@@ -1832,12 +1832,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                'audio':str(self.audio_path or '')}
         if image_source and self.image_result:
             r=self.image_result
-            state['image']={'png':qimage_to_b64(r.image),'filename':r.filename,'detail':r.detail,
+            state['image']={'png':qimage_to_b64_cached(r.image),'filename':r.filename,'detail':r.detail,
                             'path':str(self.image_path or ''),'guide':str(self.image_guide or '')}
         else:
             original=getattr(self,'color_original',None)
             keep=original if original is not None else self.final_image
-            state['color_png']=None if getattr(self.drawing,'svg_has_fill',False) and not self.color_path else qimage_to_b64(keep)
+            state['color_png']=None if getattr(self.drawing,'svg_has_fill',False) and not self.color_path else qimage_to_b64_cached(keep)
             state['svg_color_override']=bool(getattr(self,'color_path',None))
         if self.paint_hand_path and Path(self.paint_hand_path).is_file():
             import base64
@@ -1914,7 +1914,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if not path: return None
         try:
             state=self.project_state()
-            path=projects.save(path,state)
+            path=projects.save(path,self.with_thumbs(state))
         except Exception as exc:
             QMessageBox.warning(self,'Save project',str(exc)); return None
         self.project_path=str(path)
@@ -1987,6 +1987,21 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             home.setGeometry(obj.rect())
         return super().eventFilter(obj,event)
 
+    def with_thumbs(self,data):
+        """exp.120: the elements' small pictures go into the saved file, so opening a project
+        shows them at once (they were made again, one by one, every time)."""
+        from projects import qimage_to_b64_cached
+        data=dict(data)
+        try:
+            thumbs=[qimage_to_b64_cached(s.get('thumb')) if s.get('thumb') is not None else None for s in self.scenes]
+            if 'scenes' in data:
+                data['scenes']=[dict(item,thumb_png=t) if t else item for item,t in zip(data['scenes'],thumbs)]
+            elif thumbs and thumbs[0]:
+                data['thumb_png']=thumbs[0]
+        except Exception as exc:
+            import applog; applog.error('Element pictures for the project file',exc)
+        return data
+
     def remember_recent(self,path):
         try:
             import autosave; autosave.add_recent(path)
@@ -2006,7 +2021,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if signature==self.project_changes.saved_signature or signature==self._autosaved_signature:
                 return False
             import autosave
-            autosave.save(state,getattr(self,'project_path',None),self.project_title)
+            autosave.save(self.with_thumbs(state),getattr(self,'project_path',None),self.project_title)
             self._autosaved_signature=signature
             self._autosaved=self.history.current
             return True
@@ -2114,8 +2129,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.selected_camera=None
         self.selected_overlay=None
         self._legacy_titles=[]
+        from projects import qimage_from_b64
         for k,scene in enumerate(scene_list):
-            scene['thumb']=None
+            # exp.120: the pictures saved with the project (none: made after opening).
+            try: scene['thumb']=qimage_from_b64(scene.pop('thumb_png',None))
+            except Exception: scene['thumb']=None
             if k==index: scene['state']=None          # lives in the editor
             elif scene.get('state') and scene['state'].get('overlays'):
                 state=dict(scene['state']); self._legacy_titles.append((k,list(state.pop('overlays'))))
@@ -4972,11 +4990,16 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if getattr(self,'_view',None) is None: return [],0
         count=self.frame_index(1.)[1]+1
         runs=[]
-        for i in range(count):
-            segment,local,_,_,_=self.segment_at(i)
-            ready=self.segment_cache.has(segment,local,self.PREVIEW_WIDTH)
-            if runs and runs[-1][2]==ready: runs[-1][1]=i
-            else: runs.append([i,i,ready])
+        i=0
+        while i<count:
+            # exp.120: one fingerprint per segment, not per frame (the bar was slow to draw).
+            segment,local,frames,_,_=self.segment_at(i)
+            n=max(1,min(count-i,frames-local))
+            for j in range(n):
+                ready=self.segment_cache.has(segment,local+j,self.PREVIEW_WIDTH)
+                if runs and runs[-1][2]==ready: runs[-1][1]=i+j
+                else: runs.append([i+j,i+j,ready])
+            i+=n
         return [tuple(r) for r in runs],count
 
     def update_render_bar(self):

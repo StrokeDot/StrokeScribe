@@ -537,7 +537,7 @@ def scenes_from_project(data):
     main = {k: v for k, v in data.items() if k not in ('scenes', 'scene_index')}
     if not listed:
         return [dict(state=main, transition=DEFAULT_TRANSITION, transition_seconds=DEFAULT_TRANSITION_SECONDS,
-                     uid=data.get('scene_uid'), rev=data.get('scene_rev'))]
+                     uid=data.get('scene_uid'), rev=data.get('scene_rev'), thumb_png=data.get('thumb_png'))]
     out = []
     for item in listed:
         state = item.get('state') or main
@@ -546,7 +546,8 @@ def scenes_from_project(data):
                         name=item.get('name'), board=item.get('board'),
                         uid=item.get('uid'), rev=item.get('rev'),
                         start=item.get('start'), track=item.get('track') or 0,
-                        hidden=bool(item.get('hidden')), muted=bool(item.get('muted'))))
+                        hidden=bool(item.get('hidden')), muted=bool(item.get('muted')),
+                        thumb_png=item.get('thumb_png')))
     return out
 
 

@@ -8,6 +8,30 @@ import hashlib
 import json
 
 
+_BIG = {}
+
+
+def _light(value):
+    """exp.120: big texts (the pictures, in base64) stand in by a digest worked out once;
+    a project of 100 MB was escaped and hashed in full on every autosave and close."""
+    if isinstance(value, str):
+        if len(value) < 4096:
+            return value
+        hit = _BIG.get(value)
+        if hit is None:
+            hit = '#' + hashlib.blake2b(value.encode('ascii', 'backslashreplace'), digest_size=16).hexdigest() + \
+                  f':{len(value)}'
+            _BIG[value] = hit
+            while len(_BIG) > 64:
+                _BIG.pop(next(iter(_BIG)))
+        return hit
+    if isinstance(value, dict):
+        return {k: _light(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_light(v) for v in value]
+    return value
+
+
 class ProjectChangeTracker:
     def __init__(self):
         self.revision = 0
@@ -30,7 +54,7 @@ class ProjectChangeTracker:
     def signature(project):
         digest = hashlib.sha256()
         encoder = json.JSONEncoder(sort_keys=True, separators=(',', ':'), ensure_ascii=True)
-        for chunk in encoder.iterencode(project):
+        for chunk in encoder.iterencode(_light(project)):
             digest.update(chunk.encode('utf-8'))
         return digest.hexdigest()
 

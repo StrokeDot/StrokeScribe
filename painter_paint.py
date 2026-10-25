@@ -29,14 +29,8 @@ def _grid(drawing, image, source):
     rect = artwork_rect(drawing, image, 1920, 1080)
     end = last_stroke_canvas_endpoint(drawing, 1920, 1080) if drawing.strokes else (rect.x(), rect.y())
     origin = ((end[0] - rect.x()) * gw / rect.width(), (end[1] - rect.y()) * gh / rect.height())
-    support = bytearray(gw * gh); faint = bytearray(gw * gh)
-    for i, a in enumerate(source.getchannel('A').tobytes()):
-        if a:
-            cell = min(gh - 1, (2 * (i // iw) + 1) * gh // (2 * ih)) * gw + min(gw - 1, (2 * (i % iw) + 1) * gw // (2 * iw))
-            if a >= VISIBLE_ALPHA:
-                support[cell] = 1
-            else:
-                faint[cell] = 1
+    from adaptive_hand import _alpha_cells
+    support, faint = _alpha_cells(source, iw, ih, gw, gh)       # exp.120: numpy, same cells
     if not any(support):
         if not any(faint):
             raise ValueError('The color image has no nontransparent pixels.')
