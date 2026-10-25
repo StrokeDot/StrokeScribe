@@ -285,8 +285,9 @@ class WindowTests(unittest.TestCase):
         data = json.loads(json.dumps(w.project_state()))
         lay = w.timeline_layout()
         text = dict(overlays.new_text(), start=.5, duration=1.)
-        data['scenes'][1]['state']['overlays'] = [text] if data['scenes'][1].get('state') else []
-        if not data['scenes'][1].get('state'):
+        if data['scenes'][1].get('state'):
+            data['scenes'][1]['state']['overlays'] = [text]
+        else:
             data['overlays'] = [text]                       # element 2 is the edited one
         data.pop('titles', None)
         w.apply_project(data); self.app.processEvents()
