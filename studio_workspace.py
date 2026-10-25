@@ -934,6 +934,13 @@ class StageTimeline(QFrame):
             colour=QColor(c.get('accent_b','#4C42DE'))
             for item in self.overlays:
                 r=self._overlay_rect(item).adjusted(1,2,-1,-2)
+                held=item.get('_until')
+                end=float(item.get('start',0))+float(item.get('duration',3))
+                if held is not None and item.get('effect_out','None')=='None' and float(held)>end+1e-3:
+                    # exp.121: it stays on screen until the camera moves on (dotted).
+                    x1=self._x(self.title_offset+float(held))
+                    p.setPen(QPen(QColor(c.get('erase','#E06A86')),2,Qt.PenStyle.DotLine))
+                    p.drawLine(QPointF(r.right(),r.center().y()),QPointF(x1,r.center().y()))
                 chosen=item.get('id')==self.selected_overlay or item.get('id') in self.selected_overlays
                 fill=QColor(colour if item.get('kind')!='text' else QColor(c.get('erase','#E06A86')))
                 fill.setAlpha(235 if chosen else 185)
@@ -3084,7 +3091,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # Camera: camera follow (moves between elements are set on the timeline).
     camera_page=QWidget();camera_l=QVBoxLayout(camera_page)
     camera_l.setContentsMargins(9,12,9,8);camera_l.setSpacing(10)
-    camera_l.addWidget(label('THIS ELEMENT\'S CAMERA'))
+    camera_l.addWidget(label('THIS ELEMENT: CAMERA FOLLOW'))
     camera_form=form_layout();camera_form.addRow('Camera',w.camera)
     camera_l.addLayout(camera_form)
     w.camera_note=caption('')
@@ -3123,7 +3130,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     camera_l.addWidget(label('CAMERA TRACK'))
     w.camera_clip_add=QPushButton('+  Add a camera clip at the playhead')
     w.camera_clip_add.setObjectName('primary')
-    w.camera_clip_add.clicked.connect(lambda checked=False: w.add_camera_clip())
+    w.camera_clip_add.clicked.connect(lambda checked=False: w.add_camera_menu(w.camera_clip_add))
     camera_l.addWidget(w.camera_clip_add)
     w.camera_clip_box=QWidget(); cb=QVBoxLayout(w.camera_clip_box); cb.setContentsMargins(0,0,0,0); cb.setSpacing(6)
     from camera_clips import KINDS as _KINDS
@@ -3226,7 +3233,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.add_camera_clip_button.setToolTip('A camera clip on the Camera track at the playhead (whole video): zoom in, '
                                         'zoom out, pan… Its length is its speed; drag a frame on the preview to '
                                         'choose where the camera goes.')
-    w.add_camera_clip_button.clicked.connect(lambda checked=False: w.add_camera_clip())
+    w.add_camera_clip_button.clicked.connect(lambda checked=False: w.add_camera_menu(w.add_camera_clip_button))
     timeline_head.addWidget(w.add_camera_clip_button)
     w.timeline_status=label('','panelHint')
     timeline_head.addWidget(w.timeline_status)

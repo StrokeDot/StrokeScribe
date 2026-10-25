@@ -349,6 +349,43 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(w.preview_scope.currentIndex(), 1)
         self.assertEqual(w.position, 0.)
 
+    def test_a_text_with_no_way_out_stays_until_the_camera_moves(self):
+        """exp.121: like the drawings, a text stays after its clip (no way out) until the
+        next camera move between pages."""
+        import overlays
+        w = self.w
+        w.set_camera_move(0, 'Camera move', 1.2)
+        w.place_element(1, 6., 0)
+        w.preview_scope.setCurrentIndex(1); w.position = 0.; w.refresh(); self.app.processEvents()
+        text = w.add_overlay(overlays.new_text())
+        w.move_overlay_clip(text['id'], 0., 1., text['track'])
+        text['effect_out'] = 'None'
+        w.visible_titles()
+        move_start = min(a for a, b in w.camera_moves())
+        self.assertAlmostEqual(text['_until'], move_start, places=2)
+        self.assertIsNotNone(overlays.state_at(text, (1. + move_start) / 2))     # still there
+        self.assertIsNone(overlays.state_at(text, move_start + .5))              # gone with the page
+        text['effect_out'] = 'Fade'
+        self.assertIsNone(overlays.state_at(text, (1. + move_start) / 2))        # its way out: as set
+        self.assertNotIn('_until', json.loads(json.dumps(w.project_state()))['titles'][0])
+
+    def test_ctrl_wheel_steps_back_in_the_whole_video(self):
+        from unittest import mock
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+        w = self.w
+        w.preview_scope.setCurrentIndex(1); w.refresh(); self.app.processEvents()
+        before = w.canvas.frame
+        with mock.patch.object(QApplication, 'keyboardModifiers', return_value=Qt.KeyboardModifier.ControlModifier):
+            self.assertTrue(w.preview_wheel(-3, 10, 10))
+        self.assertGreater(w.preview_zoom_out, 1.)
+        self.assertTrue(w.zoomed_out())
+        self.assertIsNotNone(w.canvas.frame)
+        x, y, bw, bh = w.overlay_box()                     # the camera's frame, dashed
+        self.assertLess(bw, w.canvas.frame.width())
+        w.preview_scope.setCurrentIndex(0); self.app.processEvents()
+        self.assertFalse(w.zoomed_out())
+
     def test_older_texts_move_to_the_video(self):
         """Projects from before exp.116: an element's texts become the video's own clips at
         the same moment."""

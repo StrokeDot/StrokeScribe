@@ -227,6 +227,17 @@ def on_tracks(scenes):
                for s in scenes)
 
 
+def with_holds(titles, move_starts, total):
+    """exp.121: texts with no way out stay until the next camera move (see overlays)."""
+    import overlays
+    out = []
+    for o in titles or ():
+        end = overlays.end_of(o)
+        later = [a for a in move_starts if a >= end - 1e-6]
+        out.append(dict(o, _until=min(later) if later else max(end, total)))
+    return out
+
+
 def paint_titles(folder, fps, titles):
     """exp.116: the video's texts / pictures on top, drawn over the finished PNG frames
     (in seconds of the whole video, on the screen: the camera moves under them)."""
@@ -281,6 +292,7 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
         elements.append(dict(drawing=p['drawing'], options=options, camera=camera,
                              transition=p['transition'], move_seconds=p['move_seconds']))
     total = max(1, round(lay.total * fps))
+    titles = with_holds(titles, [m.start for m in lay.moves], lay.total)
     hidden = {k for k, s in enumerate(scenes) if s.get('hidden')}       # their track is hidden
     from dataclasses import replace
     for i in range(total):
@@ -463,6 +475,13 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                 raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
     finally:
         shutil.rmtree(work, ignore_errors=True)
+    if titles:
+        starts, at = [], 0
+        for c, j in zip(counts, joins):
+            at += c
+            if j: starts.append(at / fps)
+            at += j
+        titles = with_holds(titles, starts, index / fps)
     paint_titles(folder, fps, titles)
     seconds = index / fps
     (folder / 'sequence.json').write_text(json.dumps(dict(
