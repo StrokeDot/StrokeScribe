@@ -1313,23 +1313,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import overlays
         if self.board_mode(): return None
         t=self.video_seconds()
-        if self.zoomed_out():
-            # exp.122: zoomed out, the texts are drawn where the video's frame is.
-            shown=self.visible_titles()
-            if not shown or not any(overlays.state_at(o,t) is not None for o in shown): return None
-            full=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); full.fill(0)
-            overlays.paint(full,shown,t)
-            layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
-            from PySide6.QtCore import QRectF
-            from PySide6.QtGui import QPainter
-            painter=QPainter(layer); painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-            painter.drawImage(QRectF(*self.camera_frame_rect(width,height)),full); painter.end()
-            return layer
-        shown=self.titles_split(t)[0]
-        if not shown: return None
-        if not any(overlays.state_at(o,t) is not None for o in shown): return None
+        shown=self.visible_titles() if self.zoomed_out() else self.titles_split(t)[0]
+        if not shown or not any(overlays.state_at(o,t) is not None for o in shown): return None
         layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
-        return overlays.paint(layer,shown,t)
+        placed=self.text_view(t,width,height)          # exp.123: on their pages
+        import timeline_render
+        if placed is None:
+            return timeline_render.paint_texts(layer,shown,t)
+        frames,place,view=placed
+        return timeline_render.paint_texts(layer,shown,t,frames,place,view)
 
     def add_overlay_picture(self,path=None,at=None):
         import overlays
@@ -1447,19 +1439,55 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         return [o for o in self.overlays if int(o.get('track',0)) not in hidden]
 
     def mark_title_holds(self):
-        """exp.121: a text with no way out stays on screen after its clip, like the drawings,
-        until the next camera move between pages starts (or the video ends)."""
+        """exp.123: a text lives on its page like the drawings: the page the camera shows when
+        it starts ('_page'); with no way out it stays there to the end of the video ('_until'),
+        so the camera can move away from it and come back to it."""
         if not self.overlays: return
         try:
-            moves=[a for a,b in self.camera_moves()] if len(self.scenes)>1 else []
             end=self.video_length()
+            lay=self.timeline_layout() if len(self.scenes)>1 else None
         except Exception:
-            moves,end=[],None
+            end,lay=None,None
         import overlays as _ov
+        import timeline_render
         for o in self.overlays:
             clip_end=_ov.end_of(o)
-            later=[a for a in moves if a>=clip_end-1e-6]
-            o['_until']=round(min(later) if later else max(clip_end,end or clip_end),3)
+            o['_until']=round(max(clip_end,end or clip_end),3)
+            try:
+                o['_page']=timeline_render.page_of(lay,float(o.get('start',0))) if lay is not None else 0
+            except Exception:
+                o['_page']=0
+
+    def text_view(self,seconds,width,height):
+        """(frames, place, view) of the camera at `seconds` (whole video), for drawing the texts
+        on their pages; None: on the screen as it is (This element, one element)."""
+        if not self.all_scenes() or self.board_mode(): return None
+        try:
+            from timeline_model import state_at
+            import timeline_render
+            lay=self.timeline_layout()
+            world=self.preview_world(width,height)
+            elements=[]
+            for k in range(len(self.scenes)):
+                _,_,secs,camera=self.preview_scene(k,width,height)
+                elements.append(dict(camera=self.video_camera(k,camera,secs),transition=self.scenes[k]['transition'],
+                                     move_seconds=self.scenes[k]['transition_seconds']))
+            view=timeline_render.view_of(world,lay,state_at(lay,seconds),elements)
+            if self.zoomed_out():
+                z=self.preview_zoom_out; px,py=getattr(self,'preview_pan',(0.,0.))
+                w=view[2]*z; view=(view[0]+px*w,view[1]+py*w*world.aspect,w)
+            return world.frames,world.place,view
+        except Exception as exc:
+            import applog; applog.error('Texts on their pages',exc)
+            return None
+
+    def text_rect(self,item,seconds,width,height):
+        """Where the text's page is on the preview now (x, y, w, h)."""
+        placed=self.text_view(seconds,width,height)
+        if placed is None: return (0.,0.,float(width),float(height))
+        frames,place,view=placed
+        k=min(max(0,int(item.get('_page',0) or 0)),len(frames)-1)
+        return place(frames[k],view,width,height)
 
     def titles_split(self,seconds):
         """(on top, under): the texts over every element being drawn at `seconds`, and the
@@ -1541,11 +1569,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self.canvas.frame is None or not self.overlays: return None
         if self.board_mode() or self.zoomed_out(): return None
         W,H=self.canvas.frame.width(),self.canvas.frame.height()
-        t=self.video_seconds()                   # on the screen, in whole-video time (exp.116)
+        t=self.video_seconds()                   # in whole-video time (exp.116), on its page (exp.123)
         order=sorted(self.visible_titles(),key=lambda o: (o.get('id')!=self.selected_overlay,-int(o.get('track',0))))
         for item in order:
             if overlays.state_at(item,t) is None: continue
+            rx,ry,rw,rh=self.text_rect(item,t,W,H)
             bx,by,bw,bh=overlays.box(item,W,H)
+            bx,by,bw,bh=rx+bx*rw/W,ry+by*rh/H,bw*rw/W,bh*rh/H
             if bx-6<=x<=bx+bw+6 and by-6<=y<=by+bh+6:
                 return item
         return None
@@ -1590,8 +1620,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import overlays
         item=self.find_overlay(self.selected_overlay) if self.selected_overlay else None
         if item is None or self.canvas.frame is None or self.board_mode(): return None
-        if overlays.state_at(item,self.video_seconds()) is None: return None
-        return overlays.box(item,self.canvas.frame.width(),self.canvas.frame.height())
+        t=self.video_seconds()
+        if overlays.state_at(item,t) is None: return None
+        W,H=self.canvas.frame.width(),self.canvas.frame.height()
+        rx,ry,rw,rh=self.text_rect(item,t,W,H)
+        bx,by,bw,bh=overlays.box(item,W,H)
+        return (rx+bx*rw/W,ry+by*rh/H,bw*rw/W,bh*rh/H)
 
     def show_error(self,text):
         """Something went wrong: say so (the details are in the log)."""
@@ -1655,7 +1689,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                     self.selected_overlays={item['id']}
                 self.selected_overlay=item['id']
                 self.record_structure('move text on the screen')
-                self._overlay_drag=(item,float(item.get('x',.5)),float(item.get('y',.5)),1.,1.)
+                W,H=self.canvas.frame.width(),self.canvas.frame.height()
+                rx,ry,rw,rh=self.text_rect(item,self.video_seconds(),W,H)
+                self._overlay_drag=(item,float(item.get('x',.5)),float(item.get('y',.5)),W/max(1.,rw),H/max(1.,rh))
                 return True
         drag=getattr(self,'_overlay_drag',None)
         if drag is not None and kind!='start':
@@ -1875,7 +1911,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if flags: data['track_flags']=flags
         if self.overlays:
             import copy
-            data['titles']=[{k:v for k,v in o.items() if k!='_until'} for o in copy.deepcopy(self.overlays)]   # exp.116
+            data['titles']=[{k:v for k,v in o.items() if k not in ('_until','_page')} for o in copy.deepcopy(self.overlays)]   # exp.116
             if getattr(self,'text_hidden',None): data['text_hidden']=sorted(self.text_hidden)
         if getattr(self,'cameras',None):
             import copy

@@ -76,8 +76,8 @@ class CameraClipTests(unittest.TestCase):
         z, _, _ = cc.framing_at([clip], 3., moves)
         self.assertTrue(1. < z < 1.6)
         self.assertEqual(cc.framing_at([clip], 5., moves), (1.6, .5, .5))    # holds
-        self.assertEqual(cc.framing_at([clip], 6.5, moves), (1.6, .5, .5))   # the move takes over from it
-        self.assertIsNone(cc.framing_at([clip], 7.5, moves))                 # the next page: unzoomed
+        self.assertEqual(cc.framing_at([clip], 6.5, moves), (1.6, .5, .5))   # the page move goes on from it
+        self.assertEqual(cc.framing_at([clip], 9., moves), (1.6, .5, .5))    # exp.123: it stays until changed
 
     def test_go_back_when_it_ends(self):
         import camera_clips as cc

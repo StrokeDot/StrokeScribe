@@ -81,12 +81,12 @@ def combine(base, clip):
 def until(clip, moves):
     """A clip's framing holds until the end of the next transition after it starts (or,
     'back': it goes back when it ends, as fast as it came; exp.122)."""
+    # exp.123: a moving camera stays as it leaves the camera until another clip changes it
+    # (the page moves go on from it), or it goes back when it ends ('back').
     start = float(clip['start'])
-    ends = [b for a, b in moves if b > start + 1e-6]
-    limit = min(ends) if ends else math.inf
     if clip.get('back'):
-        limit = min(limit, start + 2 * float(clip.get('duration', 1.2)))
-    return limit
+        return start + 2 * float(clip.get('duration', 1.2))
+    return math.inf
 
 
 def framing_at(clips, seconds, moves=()):

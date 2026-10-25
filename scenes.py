@@ -227,30 +227,40 @@ def on_tracks(scenes):
                for s in scenes)
 
 
-def with_holds(titles, move_starts, total):
-    """exp.121: texts with no way out stay until the next camera move (see overlays)."""
+def with_holds(titles, move_starts, total, page_at=None):
+    """exp.123: texts with no way out stay to the end of the video, on their page (like the
+    drawings): page_at(seconds) gives the page the camera shows when the text starts."""
     import overlays
     out = []
     for o in titles or ():
         end = overlays.end_of(o)
-        later = [a for a in move_starts if a >= end - 1e-6]
-        out.append(dict(o, _until=min(later) if later else max(end, total)))
+        extra = {'_until': max(end, total)}
+        if page_at is not None:
+            extra['_page'] = page_at(float(o.get('start', 0)))
+        out.append(dict(o, **extra))
     return out
 
 
-def paint_titles(folder, fps, titles):
+def paint_titles(folder, fps, titles, world=None, views=None):
     """exp.116: the video's texts / pictures on top, drawn over the finished PNG frames
-    (in seconds of the whole video, on the screen: the camera moves under them)."""
+    (in seconds of the whole video). exp.123: on their page, where the camera's view of the
+    frame (views[i]) has it."""
     if not titles:
         return
     import overlays
+    import timeline_render
     from PySide6.QtGui import QImage
     for path in sorted(Path(folder).glob('frame_*.png')):
-        t = int(path.stem.split('_')[-1]) / float(fps)
+        i = int(path.stem.split('_')[-1])
+        t = i / float(fps)
         if not any(overlays.state_at(o, t) is not None for o in titles):
             continue
         image = QImage(str(path)).convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
-        overlays.paint(image, titles, t)
+        view = views[i] if views is not None and i < len(views) else None
+        if world is not None and view is not None:
+            image = timeline_render.paint_texts(image, titles, t, world.frames, world.place, view)
+        else:
+            overlays.paint(image, titles, t)
         if not image.save(str(path), 'PNG', 80):
             raise OSError('Unable to save PNG frame.')
 
@@ -292,7 +302,8 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
         elements.append(dict(drawing=p['drawing'], options=options, camera=camera,
                              transition=p['transition'], move_seconds=p['move_seconds']))
     total = max(1, round(lay.total * fps))
-    titles = with_holds(titles, [m.start for m in lay.moves], lay.total)
+    titles = with_holds(titles, [m.start for m in lay.moves], lay.total,
+                        page_at=lambda sec: timeline_render.page_of(lay, sec))
     hidden = {k for k, s in enumerate(scenes) if s.get('hidden')}       # their track is hidden
     from dataclasses import replace
     for i in range(total):
@@ -385,6 +396,7 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
     work.mkdir()
 
     cameras = {}
+    views, pages = [], []                # exp.123: per frame: the camera's view, the page shown
 
     def scene_camera(j):
         """Element j's own camera (exp.115: the moves start and land on it)."""
@@ -447,9 +459,14 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                     if not output.save(str(frame), 'PNG', 80):
                         raise OSError('Unable to save PNG frame.')
             start = index
-            for frame in frames:
+            camera = scene_camera(k)
+            for i, frame in enumerate(frames):
                 frame.replace(folder / f'frame_{index:06d}.png')
                 index += 1
+                # exp.123: what the camera shows in this frame (texts are drawn on their page).
+                views.append(board.sub_view(all_frames[k], *camera.at(i / max(1, len(frames) - 1)), aspect)
+                             if camera is not None else all_frames[k])
+                pages.append(k)
             ranges.append((start, index))
             # The move after this scene: the camera flies over the board to the next frame
             # (or, after the last scene, out to the whole board).
@@ -459,6 +476,7 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
             screens = None
             for j in range(n):
                 t = (j + 1) / n if last else (j + 1) / (n + 1)
+                view = None
                 if layers == 'hand':
                     image = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied); image.fill(0)
                 elif kind in board.SCREEN_KINDS and not last:
@@ -470,6 +488,11 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                     view = board.join_view(all_frames, k, kind, t, aspect, scene['move_seconds'],
                                            leaving=scene_camera(k), arriving=scene_camera(k + 1))
                     image = world.view(view, width, height, upto=k + 1)
+                if kind in board.SCREEN_KINDS and not last:
+                    views.append(None)
+                else:
+                    views.append(view)
+                pages.append(min(k + 1, len(prepared) - 1))
                 write(image)
             if interrupted():
                 raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
@@ -481,8 +504,9 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
             at += c
             if j: starts.append(at / fps)
             at += j
-        titles = with_holds(titles, starts, index / fps)
-    paint_titles(folder, fps, titles)
+        titles = with_holds(titles, starts, index / fps,
+                            page_at=lambda sec: pages[min(len(pages) - 1, max(0, round(sec * fps)))] if pages else 0)
+    paint_titles(folder, fps, titles, world, views)
     seconds = index / fps
     (folder / 'sequence.json').write_text(json.dumps(dict(
         width=prepared[0]['options']['width'], height=prepared[0]['options']['height'], fps=fps,

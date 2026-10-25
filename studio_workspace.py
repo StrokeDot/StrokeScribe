@@ -324,7 +324,7 @@ class StageTimeline(QFrame):
         self.update()
 
     # ------------------------------------------------------------ tracks (whole video)
-    CAM_H=22.            # exp.119: the Camera track holds camera clips
+    CAM_H=46.            # exp.123: two camera rows: Fixed camera (page moves), Moving camera (clips)
 
     def lanes(self):
         """Track rows shown: the tracks in use (by elements and texts) plus an empty one on
@@ -533,15 +533,24 @@ class StageTimeline(QFrame):
         self._draw_icon(p,'eye-off' if which=='hide' else 'volume-off',r.center(),'#FF7A7E',12)
         p.restore()
 
-    def _paint_fixed_header(self, p, c, small):
-        """Top left: the zoom buttons over the track names, and the Camera row's name."""
+    def _fixed_row(self):
         cam=self._camera_rect()
+        return QRectF(cam.left(),cam.top(),cam.width(),cam.height()/2-1)
+
+    def _moving_row(self):
+        cam=self._camera_rect()
+        return QRectF(cam.left(),cam.top()+cam.height()/2+1,cam.width(),cam.height()/2-1)
+
+    def _paint_fixed_header(self, p, c, small):
+        """Top left: the zoom buttons over the track names, and the two camera rows' names
+        (exp.123: Fixed camera = the moves between pages; Moving camera = zooms and pans)."""
         hover=getattr(self,'_hover',None)
         p.setFont(small)
-        self._draw_icon(p,'camera',QPointF(18,cam.center().y()),c['muted'],14)
-        p.setPen(QColor(c['muted']))
-        p.drawText(QRectF(30,cam.top()-2,self.HEADER-34,cam.height()+4),
-                   Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,'Camera')
+        for row,text in ((self._fixed_row(),'Fixed camera'),(self._moving_row(),'Moving camera')):
+            self._draw_icon(p,'camera',QPointF(18,row.center().y()),c['muted'],13)
+            p.setPen(QColor(c['muted']))
+            p.drawText(QRectF(30,row.top()-2,self.HEADER-34,row.height()+4),
+                       Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,text)
         for which,name in (('out','zoom-out'),('in','zoom-in'),('fit','zoom-fit')):
             self._icon_button(p,c,self._zoom_rect(which),name,False,hover==('zoom',which))
 
@@ -550,13 +559,13 @@ class StageTimeline(QFrame):
 
     def _move_chip(self, start, secs):
         """The camera move's chip on the Camera row (at least 22 px wide, so it can be clicked)."""
-        cam=self._camera_rect()
+        cam=self._fixed_row()
         x0,x1=self._x(start),self._x(start+secs)
         if x1-x0<22: mid=(x0+x1)/2; x0,x1=mid-11,mid+11
         return QRectF(x0+1,cam.top()+1,x1-x0-2,cam.height()-2)
 
     def _cam_rect(self, start, length):
-        cam=self._camera_rect()
+        cam=self._moving_row()
         x0,x1=self._x(start),self._x(start+length)
         if x1-x0<22: x1=x0+22
         return QRectF(x0+1,cam.top()+3,x1-x0-2,cam.height()-6)
@@ -567,7 +576,7 @@ class StageTimeline(QFrame):
         return None
 
     def _clip_rect(self, clip, start=None, length=None):
-        cam=self._camera_rect()
+        cam=self._moving_row()
         start=float(clip['start']) if start is None else start
         length=float(clip['duration']) if length is None else length
         x0,x1=self._x(start),self._x(start+length)
@@ -934,13 +943,6 @@ class StageTimeline(QFrame):
             colour=QColor(c.get('accent_b','#4C42DE'))
             for item in self.overlays:
                 r=self._overlay_rect(item).adjusted(1,2,-1,-2)
-                held=item.get('_until')
-                end=float(item.get('start',0))+float(item.get('duration',3))
-                if held is not None and item.get('effect_out','None')=='None' and float(held)>end+1e-3:
-                    # exp.121: it stays on screen until the camera moves on (dotted).
-                    x1=self._x(self.title_offset+float(held))
-                    p.setPen(QPen(QColor(c.get('erase','#E06A86')),2,Qt.PenStyle.DotLine))
-                    p.drawLine(QPointF(r.right(),r.center().y()),QPointF(x1,r.center().y()))
                 chosen=item.get('id')==self.selected_overlay or item.get('id') in self.selected_overlays
                 fill=QColor(colour if item.get('kind')!='text' else QColor(c.get('erase','#E06A86')))
                 fill.setAlpha(235 if chosen else 185)
@@ -1059,7 +1061,8 @@ class StageTimeline(QFrame):
                  'move':c['draw']}
         cam=self._camera_rect()
         area=self._tracks_area()
-        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(cam,5,5)
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track']))
+        p.drawRoundedRect(self._fixed_row(),5,5); p.drawRoundedRect(self._moving_row(),5,5)
         p.save(); p.setClipRect(area)
         for t in range(self.lanes()):
             p.drawRoundedRect(self._track_rect(t),9,9)
@@ -1091,12 +1094,6 @@ class StageTimeline(QFrame):
         clip_font=QFont(self.font()); clip_font.setPointSizeF(7.5); clip_font.setBold(True)
         for clip in self.cam_clips:
             r=self._clip_rect(clip)
-            hold=self.cam_holds.get(clip['id'])
-            end=float(clip['start'])+float(clip['duration'])
-            if hold is not None and hold>end:
-                x1=self._x(min(hold,self.total()))
-                p.setPen(QPen(QColor(c['paint']),2,Qt.PenStyle.DotLine))
-                p.drawLine(QPointF(r.right(),r.center().y()),QPointF(x1,r.center().y()))
             chosen=clip['id']==self.selected_camera
             fill=QColor(c['paint']); fill.setAlpha(235 if chosen else 190)
             p.setPen(QPen(QColor('white') if chosen else fill.lighter(130),2 if chosen else 1)); p.setBrush(fill)
@@ -3141,8 +3138,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     camera_l.addWidget(w.camera_zoom_box)
     w.camera_zoom_box.hide()   # exp.119: replaced by camera clips (kept for older projects)
     # exp.119: the Camera track. A camera clip moves the camera for the whole picture.
-    camera_l.addWidget(label('CAMERA TRACK'))
-    w.camera_clip_add=QPushButton('+  Add a camera clip at the playhead')
+    camera_l.addWidget(label('MOVING CAMERA (zoom, pan)'))
+    w.camera_clip_add=QPushButton('+  Add camera')
     w.camera_clip_add.setObjectName('primary')
     w.camera_clip_add.clicked.connect(lambda checked=False: w.add_camera_menu(w.camera_clip_add))
     camera_l.addWidget(w.camera_clip_add)
