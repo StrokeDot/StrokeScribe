@@ -501,10 +501,16 @@ class WindowTests(unittest.TestCase):
         tl.set_zoom(4.)
         self.app.processEvents()
         self.assertTrue(tl.hbar.isVisible())
-        self.assertAlmostEqual(tl._span(), total / 4, places=3)              # a quarter of the video shown
-        self.assertAlmostEqual(tl._x(total) - tl._x(0), tl._width() * 4, delta=2)
+        room = tl._room()
+        self.assertGreater(room, total)                                     # exp.133: room after the end
+        self.assertAlmostEqual(tl._span(), room / 4, places=3)              # a quarter shown
+        self.assertAlmostEqual(tl._x(room) - tl._x(0), tl._width() * 4, delta=2)
         tl.set_zoom(1.)
-        self.assertFalse(tl.hbar.isVisible())
+        self.assertTrue(tl.hbar.isVisible())                                # always there (exp.133)
+        self.assertLess(tl._x(total), tl.LEFT + tl._width() - 5)             # the end is not at the edge
+        tl.set_zoom(.1)
+        self.assertAlmostEqual(tl._span(), room / tl.MIN_ZOOM, places=3)   # zooms out further
+        tl.set_zoom(1.)
         for k in range(len(w.scenes)):
             w.place_element(k, 0., 4 + k)                              # tracks 5 and 6: tall
         tl.resize(tl.width(), 180); self.app.processEvents()
