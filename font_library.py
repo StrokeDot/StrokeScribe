@@ -15,7 +15,8 @@ import re
 import shutil
 # urllib is imported when a font is downloaded (exp.120: faster start).
 
-import cv2
+from lazy_import import Lazy as _Lazy
+cv2 = _Lazy("cv2")      # exp.130: loaded when first used
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from engine import Drawing, Stroke

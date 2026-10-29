@@ -2,6 +2,7 @@
 from __future__ import annotations
 import bisect, math, json, os, shutil, subprocess, io, re
 from dataclasses import dataclass
+from itertools import accumulate as _accumulate
 from pathlib import Path
 import xml.etree.ElementTree as ET
 from PySide6.QtCore import QPointF, QRectF, Qt
@@ -18,9 +19,10 @@ class Stroke:
     # <1 faster (quick guide lines). Used by image-source timing.
     pace: float = 1.0
     def __post_init__(self):
-        self.distances = [0.0]
-        for a, b in zip(self.points, self.points[1:]):
-            self.distances.append(self.distances[-1] + math.dist(a, b))
+        # exp.130: the same sums in C (accumulate/map) instead of a Python loop: opening a
+        # project builds every stroke of every element.
+        points = self.points
+        self.distances = list(_accumulate(map(math.dist, points, points[1:]), initial=0.0))
         self.length = self.distances[-1]
     def portion(self, distance):
         if distance >= self.length: return self.points
