@@ -732,13 +732,14 @@ class StageTimeline(QFrame):
         return QRectF(x0,lane.top(),max(8.,x1-x0),lane.height())
 
     def _other_at(self, pos):
-        if self.locked: return None
+        if self.locked or (self.items and not self._tracks_area().contains(pos)): return None
         for k,item in reversed(getattr(self,'other_overlays',())):
             if self._other_rect(item).contains(pos): return k,item
         return None
 
     def _overlay_at(self, pos):
         if self.locked: return None,None
+        if self.items and not self._tracks_area().contains(pos): return None,None   # exp.131: scrolled out of view
         for item in reversed(self.overlays):
             r=self._overlay_rect(item)
             if r.adjusted(-3,0,3,0).contains(pos):
@@ -927,7 +928,7 @@ class StageTimeline(QFrame):
             for track in range(self.tracks()):
                 row=self._lane(track)
                 p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(row,7,7)
-            p.save(); p.setClipRect(QRectF(left,0,width,self.height()))
+            p.save(); p.setClipRect(QRectF(left,0,width,self.height()),Qt.ClipOperation.IntersectClip)   # exp.131: stay inside the tracks
             for k,item in others:
                 r=self._other_rect(item).adjusted(1,2,-1,-2)
                 fill=QColor(c.get('erase','#E06A86') if item.get('kind')=='text' else c.get('accent_b','#4C42DE'))
@@ -945,7 +946,7 @@ class StageTimeline(QFrame):
             for track in range(self.text_lanes()):
                 row=self._lane(track)
                 p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(row,7,7)
-            p.save(); p.setClipRect(QRectF(left,0,width,self.height()))
+            p.save(); p.setClipRect(QRectF(left,0,width,self.height()),Qt.ClipOperation.IntersectClip)   # exp.131: scrolled like the elements
             colour=QColor(c.get('accent_b','#4C42DE'))
             for item in self.overlays:
                 r=self._overlay_rect(item).adjusted(1,2,-1,-2)
