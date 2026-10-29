@@ -356,9 +356,17 @@ class StageTimeline(QFrame):
         self._update_bars()
 
     # ---------------------------------------------- zoom and scrolling (whole video)
-    def _span(self):
+    MIN_ZOOM=.25          # exp.133: zoom out past the whole video (up to 4x more)
+
+    def _room(self):
+        """exp.133 (the user): the timeline goes on after the end of the video, so the last
+        clips are not cut at the edge and things can be moved past the end."""
         total=self._view_total()
-        return total/max(1.,self.zoom) if total>0 else 0.
+        return total*1.12+2. if (self.items and total>0) else total
+
+    def _span(self):
+        room=self._room()
+        return room/max(self.MIN_ZOOM if self.items else 1.,self.zoom) if room>0 else 0.
 
     def _px_per_sec(self):
         span=self._span()
@@ -372,16 +380,16 @@ class StageTimeline(QFrame):
         if total<=0: return
         anchor_x=self.LEFT+self._width()/2 if anchor_x is None else anchor_x
         at=self._sec(anchor_x)
-        self.zoom=max(1.,min(40.,float(zoom)))
+        self.zoom=max(self.MIN_ZOOM if self.items else 1.,min(40.,float(zoom)))
         self.view_start=at-(anchor_x-self.LEFT)/self._width()*self._span()
         self._clamp_view(); self._update_bars(); self.update()
 
     def _clamp_view(self):
-        self.view_start=max(0.,min(max(0.,self.total()-self._span()),self.view_start))
+        self.view_start=max(0.,min(max(0.,self._room()-self._span()),self.view_start))
 
     def _hbar_moved(self, value):
         if self._syncing_bars: return
-        room=max(0.,self.total()-self._span())
+        room=max(0.,self._room()-self._span())
         self.view_start=room*value/1000.; self.update()
 
     def _vbar_moved(self, value):
@@ -394,12 +402,18 @@ class StageTimeline(QFrame):
         if not hasattr(self,'hbar'): return
         self._syncing_bars=True
         try:
-            zoomed=bool(self.items) and self.zoom>1.001
+            # exp.133: always there in the whole video (scroll left and right)
+            zoomed=bool(self.items)
             self.hbar.setVisible(zoomed)
             if zoomed:
-                room=max(1e-6,self.total()-self._span())
-                self.hbar.setRange(0,1000); self.hbar.setPageStep(max(1,int(1000*self._span()/max(1e-6,room))))
-                self.hbar.setValue(int(1000*self.view_start/room))
+                room=self._room()-self._span()
+                if room>1e-3:
+                    self.hbar.setEnabled(True)
+                    self.hbar.setRange(0,1000)
+                    self.hbar.setPageStep(max(1,min(100000,int(1000*self._span()/room))))
+                    self.hbar.setValue(int(1000*self.view_start/room))
+                else:                                 # everything is in view: nothing to scroll
+                    self.hbar.setRange(0,0); self.hbar.setEnabled(False)
                 self.hbar.setGeometry(int(self.LEFT),self.height()-11,int(self._width()),10)
             over=self._content_height()-self.height() if self.items else 0
             self.vbar.setVisible(over>0)
@@ -1373,7 +1387,7 @@ class StageTimeline(QFrame):
             if kind=='camclip':
                 _,clip,part,x0,start0,length0,px_per_sec=self._drag
                 shift=(pos.x()-x0)/px_per_sec
-                total=self._frozen or self.total()
+                total=self._room()                    # exp.133: may go past the end
                 if part=='end':
                     start,length=start0,max(.2,min(total-start0,length0+shift))
                 else:
@@ -1387,7 +1401,7 @@ class StageTimeline(QFrame):
                 shift=(pos.x()-x0)/px_per_sec
                 # Absolute seconds of the whole video (exp.116): from 0 to its end; in This
                 # element, a text may go on after the element.
-                total=(self._frozen or self.total()) if (self.items or self.scene_segments) else 1e6
+                total=self._room() if self.items else (self._frozen or self.total()) if self.scene_segments else 1e6
                 start,length,track=start0,length0,track0
                 if part=='move':
                     start=max(0.,min(total-.1,start0+shift))
