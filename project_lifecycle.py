@@ -28,8 +28,30 @@ def _light(value):
     if isinstance(value, dict):
         return {k: _light(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
+        if value:
+            # exp.130: lists of numbers (a drawing's points: hundreds of thousands) are kept as
+            # they are instead of being walked one by one; they hold no big text to replace.
+            first = value[0]
+            numbers = (isinstance(first, (int, float)) and not isinstance(first, bool)) or \
+                (isinstance(first, (list, tuple)) and first and isinstance(first[0], (int, float))
+                 and not isinstance(first[0], bool) and all(isinstance(v, (int, float)) for v in first))
+            if numbers:
+                return _numbers(value)
         return [_light(v) for v in value]
     return value
+
+
+def _numbers(value):
+    """A long list of numbers (or of number pairs) as a short digest: worked out by numpy
+    in one go instead of being written out as text number by number (exp.130)."""
+    if len(value) < 64:
+        return value
+    try:
+        import numpy as np
+        array = np.asarray(value, dtype=np.float64)
+    except (ValueError, TypeError):
+        return [_light(v) for v in value]
+    return '#n' + hashlib.blake2b(array.tobytes(), digest_size=16).hexdigest() + f':{array.shape}'
 
 
 class ProjectChangeTracker:

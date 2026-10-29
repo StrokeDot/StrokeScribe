@@ -1,5 +1,6 @@
 """Visible startup diagnostics for the Windows launcher."""
-import sys, os, traceback, faulthandler
+import sys, os, time, traceback, faulthandler
+T0 = time.perf_counter()
 from pathlib import Path
 
 root=Path(__file__).resolve().parent
@@ -59,10 +60,12 @@ def main():
         from PySide6.QtCore import QTimer
         from app import Window
         from engine import import_svg
+        t_imports = time.perf_counter()
         stage('Creating the Windows interface...')
         app=QApplication(sys.argv); app.setStyle('Fusion')
         stage('Loading controls...')
         window=Window()
+        t_window = time.perf_counter()
         if len(sys.argv)>1:
             stage('Loading drawing: '+sys.argv[1])
             window.set_drawing(import_svg(Path(sys.argv[1])))
@@ -70,6 +73,32 @@ def main():
         if len(sys.argv)<=1:
             window.show_home()          # exp.107: start on Home, not in a project
         window.close_to_home=True       # exp.109: X in a project goes back to Home
+        def shown():
+            # exp.130: how long starting took, in the user's log (to make it faster).
+            try:
+                import applog
+                applog.info('Start: window on screen after %.1f s (loading the program %.1f s, '
+                            'building the window %.1f s)' % (time.perf_counter() - T0, t_imports - T0,
+                                                             t_window - t_imports))
+            except Exception:
+                pass
+        QTimer.singleShot(0, shown)
+        def compile_ahead():
+            # exp.130: after an update, every part of the program is read and prepared the
+            # first time it is used (a pause when you first open a panel or export). Here
+            # it is prepared in the background, at low priority, while you look at Home.
+            try:
+                import subprocess
+                flags = 0
+                if sys.platform == 'win32':
+                    flags = 0x08000000 | 0x00004000      # no window, below normal priority
+                subprocess.Popen([sys.executable, '-m', 'compileall', '-q', '-l', str(root)],
+                                 cwd=str(root), creationflags=flags, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+        if os.environ.get('STROKESCRIBE_STARTUP_TEST') != '1':
+            QTimer.singleShot(6000, compile_ahead)
         def ready():
             stage(f'Ready: {len(window.drawing.strokes)} strokes loaded. Press Play in the StrokeScribe window.')
             faulthandler.cancel_dump_traceback_later()

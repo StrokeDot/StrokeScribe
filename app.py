@@ -535,7 +535,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         # window is up. Never in headless/offscreen runs such as tests.
         if saved['show_at_startup'] and QApplication.platformName()!='offscreen':
             QTimer.singleShot(400,self.open_setup)
-        self.set_drawing(import_svg(Path(__file__).parent/'samples'/'drawing.svg'))
+        from engine import import_svg_cached          # exp.130: the sample, kept ready
+        self.set_drawing(import_svg_cached(Path(__file__).parent/'samples'/'drawing.svg'))
         self.timer=QTimer(self)
         self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.timeout.connect(self.tick)
@@ -2292,9 +2293,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         # full in-memory snapshot and restore it on failure, rather than leave
         # the user's unsaved work half-replaced.
         previous=self.project_state() if self.drawing is not None else None
+        import time as _time
+        began=_time.perf_counter()
+        held=getattr(self,'_suspend_refresh',False); self._suspend_refresh=True   # exp.130: one preview at the end
         try:
             self.apply_project(data)
         except Exception as exc:
+            self._suspend_refresh=held
             if previous is not None:
                 try:
                     self.apply_project(previous)
@@ -2306,10 +2311,23 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.project_path=str(path)
         self.setWindowTitle(f'{Path(path).stem}  •  {DISPLAY_NAME}')
         self.status.setText('Opened project: '+str(path))
-        self.start_whole_video()
+        try:
+            self.start_whole_video()
+        finally:
+            self._suspend_refresh=held
+        if not held: self.refresh()
         self.remember_recent(path)
         QTimer.singleShot(400,lambda p=str(path): self.keep_home_preview(p) if self.project_path==p else None)
-        self.project_changes.mark_saved(self.project_state())
+        # exp.130: the project's fingerprint (to know later whether it changed) is worked out
+        # just after it shows, not before: it was most of the time spent opening.
+        self.project_changes.mark_saved(); self.project_changes.saved_signature=None
+        opened=(str(path),self.project_changes.revision)
+        def fingerprint_later():
+            if (getattr(self,'project_path',None),self.project_changes.revision)==opened and not self._closed:
+                self.project_changes.mark_saved(self.project_state())
+        QTimer.singleShot(1500,fingerprint_later)
+        import applog
+        applog.info('Opened a project of %d elements in %.1f s',len(self.scenes),_time.perf_counter()-began)
         self._autosaved_signature=None
         import autosave; autosave.clear()
         self._autosaved=self.history.current
@@ -2735,9 +2753,17 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if (self.builder and self.builder.isRunning()) or not self.drawing:
             self.fill_scenes(); return
         self.playing=False
-        self._leave_scene()
-        self._stash_history()
-        self._enter_scene(row)
+        # exp.130: the preview was drawn 3-4 times while the element was loaded (each part
+        # asked for it); now once, at the end.
+        held=getattr(self,'_suspend_refresh',False); self._suspend_refresh=True
+        try:
+            self._leave_scene()
+            self._stash_history()
+            self._enter_scene(row)
+        finally:
+            self._suspend_refresh=held
+        if not self.all_scenes() and not held:
+            self.refresh()
         if self.all_scenes():
             # Whole video: the playhead jumps to where this element ends (finished).
             try:

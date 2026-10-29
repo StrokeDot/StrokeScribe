@@ -148,7 +148,7 @@ def drawing_to_dict(drawing):
 
 def drawing_from_dict(data):
     from engine import Drawing, Stroke
-    strokes = [Stroke(s['name'], [tuple(p) for p in s['points']], s.get('color', '#153c54'),
+    strokes = [Stroke(s['name'], list(map(tuple, s['points'])), s.get('color', '#153c54'),
                       s.get('width', 3), s.get('pace', 1.)) for s in data['strokes']]
     for stroke, s in zip(strokes, data['strokes']):
         stroke.pause = float(s.get('pause', 0.) or 0.)
