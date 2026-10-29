@@ -1131,14 +1131,21 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             return []
 
     def camera_editing(self):
-        """A camera clip chosen: the preview shows the page without the clips, with a frame
-        where the chosen clip takes the camera (drag it, wheel to zoom)."""
+        """A camera clip chosen: the preview shows the page without that clip, with a frame
+        where it takes the camera (drag it, wheel to zoom)."""
         return bool(getattr(self,'selected_camera',None)) and self.all_scenes()
+
+    def live_clips(self):
+        """The camera clips the preview uses (exp.125: all but the one being aimed)."""
+        clips=list(getattr(self,'cameras',None) or ())
+        if self.camera_editing():
+            clips=[c for c in clips if c.get('id')!=self.selected_camera]
+        return clips
 
     def video_camera(self,k,base,total=None):
         """Element k's camera in the whole video: its own camera with the camera clips."""
-        clips=getattr(self,'cameras',None)
-        if not clips or self.camera_editing(): return base
+        clips=self.live_clips()
+        if not clips: return base
         import camera_clips
         try:
             lay=self.timeline_layout()
@@ -1148,9 +1155,25 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         return camera_clips.wrap(base,item.start,clips,[(m.start,m.end) for m in lay.moves],
                                  item.length if total is None else total)
 
-    def cameras_signature(self):
+    def cameras_signature(self,a=None,b=None):
+        """The camera clips that touch the stretch of the video from a to b seconds (exp.125:
+        changing a clip makes only its own stretch of ready frames old, not the whole video)."""
         import camera_clips
-        return (camera_clips.signature(getattr(self,'cameras',[])),self.camera_editing())
+        clips=self.live_clips()
+        if a is not None and b is not None:
+            clips=[c for c in clips if float(c['start'])<=b+1e-6 and camera_clips.until(c)>=a-1e-6]
+        return camera_clips.signature(clips)
+
+    def segment_span(self,where,k):
+        """(start, end) in seconds of the whole video of an element (where='scene') or of the
+        camera move after it ('join')."""
+        try:
+            lay=self.timeline_layout()
+            if where=='scene':
+                it=lay.items[k]; return it.start,it.end
+            m=next(m for m in lay.moves if m.k==k); return m.start,m.end
+        except Exception:
+            return None,None
 
     def sync_camera_timeline(self):
         tl=self.stage_timeline
@@ -4728,7 +4751,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if view.get('page'):
                 base=(tuple(self.element_fingerprint(i) for i in range(self.scene_index)),board)
             return ('one',self.element_fingerprint(self.scene_index),base,size)
-        cams=self.cameras_signature()               # exp.119: the Camera track
+        cams=self.cameras_signature(*self.segment_span(where,k))     # exp.119/125: the Camera track
         if where=='scene':
             base=None
             if self.drawn_over(k):
@@ -4761,7 +4784,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             low=self.titles_split((a+b)/2)[1]
             under=repr([o for o in low if _ov.shown_until(o)>a and float(o.get('start',0))<b])
             fp=('tl',describe(lay,state,a),tuple(self.element_fingerprint(i) for i in involved),under,
-                self.cameras_signature(),
+                self.cameras_signature(a,b),
                 tuple(sorted(self.hidden_elements())),
                 tuple((s['transition'],s['transition_seconds']) for s in self.scenes),
                 repr([s.get('board') for s in self.scenes]),(view.get('width'),view.get('height')))
