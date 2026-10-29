@@ -1,6 +1,6 @@
 """Local vector-stroke renderer. All raster output starts with transparent pixels."""
 from __future__ import annotations
-import bisect, math, json, shutil, subprocess, io, re
+import bisect, math, json, os, shutil, subprocess, io, re
 from dataclasses import dataclass
 from pathlib import Path
 import xml.etree.ElementTree as ET
@@ -508,3 +508,32 @@ def encode_mp4(folder, fps=30, background='white', audio=None):
     if not output.is_file() or output.stat().st_size<=0:
         raise RuntimeError('MP4 encoder did not produce a nonempty video.')
     return output
+
+
+def import_svg_cached(filename):
+    """import_svg, kept ready on disk (exp.130): the sample drawing every start opens took
+    about a third of a second to read again each time. The copy is used only while the file,
+    its size and the app version are unchanged."""
+    import pickle
+    path = Path(filename)
+    try:
+        from preview_cache import default_folder, digest
+        from version import APP_VERSION
+        st = path.stat()
+        folder = default_folder().parent / 'svg-cache'
+        kept = folder / (digest((str(path.resolve()), st.st_mtime_ns, st.st_size, APP_VERSION)) + '.pickle')
+    except Exception:
+        return import_svg(path)
+    try:
+        return pickle.loads(kept.read_bytes())
+    except Exception:
+        pass
+    drawing = import_svg(path)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        part = kept.with_suffix('.part')
+        part.write_bytes(pickle.dumps(drawing, protocol=pickle.HIGHEST_PROTOCOL))
+        os.replace(part, kept)
+    except Exception:
+        pass
+    return drawing
