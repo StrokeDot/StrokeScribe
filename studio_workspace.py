@@ -3328,9 +3328,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
                                'to a free place next to the pictures already there. When the page is full, '
                                'it goes to a new page and the camera moves there.')
     w.scene_picture.clicked.connect(lambda checked=False: w.add_element_menu(True,w.scene_picture))
-    # exp.126: not shown any more (the user: the + next to picture / text / camera and the
-    # + card at the end of the strip already add elements). Kept for the menus and tests.
-    w.scene_add.hide(); w.scene_picture.hide()
+    # exp.127: '+ Add element' is back (the user wants it there); '+ On this page' stays
+    # hidden (the Add menu and the + card do it).
+    w.scene_picture.hide()
+    scene_buttons.addWidget(w.scene_add)
     move_row=QHBoxLayout();move_row.setSpacing(4)
     w.scene_edit=QPushButton('Edit…');w.scene_edit.setObjectName('primary')
     w.scene_edit.setToolTip('Settings of this element in a window of its own, with its own preview: how it '
@@ -3349,11 +3350,14 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.scene_transition=QComboBox();w.scene_transition.addItems(list(TRANSITIONS))
     w.scene_transition.setToolTip('How the camera goes from this element to the next one.')
     w.scene_transition.activated.connect(lambda index: w.scene_transition_changed())
-    trans.addRow('Then',w.scene_transition)
+    w.scene_transition.setToolTip('After this element, the camera goes to the next one: how it gets there '
+                                  '(a camera move, a pan, a zoom, a fade, a cut) or Same page (it stays). '
+                                  'This is how the video moves to another place: set it on each element.')
+    trans.addRow('After it',w.scene_transition)
     w.scene_transition_time=w.number(.2,6,1.2,.1)
     w.scene_transition_time.setToolTip('Length of the move to the next element (seconds).')
     w.scene_transition_time.valueChanged.connect(lambda value: w.scene_transition_changed())
-    trans.addRow('Move (s)',w.scene_transition_time)
+    trans.addRow('Move time',w.scene_transition_time)
     w.preview_scope=QComboBox();w.preview_scope.addItems(['This element','Whole video','Board'])
     w.preview_scope.setItemData(0,'Only the element you are editing (its own parts on the timeline).',Qt.ItemDataRole.ToolTipRole)
     w.preview_scope.setItemData(1,'The whole video: every element one after the other, with the camera moves.',Qt.ItemDataRole.ToolTipRole)
