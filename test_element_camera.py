@@ -202,6 +202,10 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(got[0][0], 'Fixed camera')
         self.assertTrue(w.scene_transition.isHidden())               # the move is on the timeline now
 
+    def test_add_camera_offers_reframe_and_moving(self):
+        menu = self.w.camera_menu()
+        self.assertEqual([a.text() for a in menu.actions()], ['Reframe', 'Moving camera'])
+
     def test_a_camera_clip_only_touches_its_own_stretch(self):
         """exp.125: changing a camera clip makes only its own stretch of ready frames old."""
         w = self.w
