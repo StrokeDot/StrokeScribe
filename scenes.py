@@ -250,6 +250,18 @@ def paint_titles(folder, fps, titles, world=None, views=None):
     import overlays
     import timeline_render
     from PySide6.QtGui import QImage
+    from frame_writer import FrameWriter
+    writer = FrameWriter()
+    try:
+        _paint_titles(folder, fps, titles, world, views, writer)
+    finally:
+        writer.close()
+
+
+def _paint_titles(folder, fps, titles, world, views, writer):
+    import overlays
+    import timeline_render
+    from PySide6.QtGui import QImage
     for path in sorted(Path(folder).glob('frame_*.png')):
         i = int(path.stem.split('_')[-1])
         t = i / float(fps)
@@ -261,8 +273,7 @@ def paint_titles(folder, fps, titles, world=None, views=None):
             image = timeline_render.paint_texts(image, titles, t, world.frames, world.place, view)
         else:
             overlays.paint(image, titles, t)
-        if not image.save(str(path), 'PNG', 80):
-            raise OSError('Unable to save PNG frame.')
+        writer.write(image, path)
 
 
 def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False,
@@ -306,18 +317,27 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
                         page_at=lambda sec: timeline_render.page_of(lay, sec))
     hidden = {k for k, s in enumerate(scenes) if s.get('hidden')}       # their track is hidden
     from dataclasses import replace
-    for i in range(total):
-        state = state_at(lay, i / fps)
-        if hidden:
-            active = [(k, f) for k, f in state.active if k not in hidden]
-            state = replace(state, active=active, finished=[k for k in state.finished if k not in hidden],
-                            top=active[-1][0] if active else -1)
-        image = timeline_render.compose(world, lay, state, elements, width, height, titles=titles, seconds=i / fps)
-        if not image.save(str(folder / f'frame_{i:06d}.png'), 'PNG', 80):
-            raise OSError('Unable to save PNG frame.')
-        progress(i + 1, total)
-        if interrupted():
-            raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
+    from frame_writer import FrameWriter
+    import applog
+    import time as _time
+    began = _time.perf_counter()
+    writer = FrameWriter()                       # exp.125: PNGs saved on other threads
+    try:
+        for i in range(total):
+            state = state_at(lay, i / fps)
+            if hidden:
+                active = [(k, f) for k, f in state.active if k not in hidden]
+                state = replace(state, active=active, finished=[k for k in state.finished if k not in hidden],
+                                top=active[-1][0] if active else -1)
+            image = timeline_render.compose(world, lay, state, elements, width, height, titles=titles, seconds=i / fps)
+            writer.write(image, folder / f'frame_{i:06d}.png')
+            progress(i + 1, total)
+            if interrupted():
+                raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
+    finally:
+        writer.close()
+    applog.info('Export: %d frames (%d x %d, %d fps) drawn and saved in %.1f s', total, width, height, fps,
+                _time.perf_counter() - began)
     seconds = total / fps
     (folder / 'sequence.json').write_text(json.dumps(dict(
         width=width, height=height, fps=fps, frames=total, duration=seconds,
@@ -407,10 +427,12 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
             cameras[j] = camera_for(prepared[j]['drawing'], o, float(o.get('camera_zoom', 1.)))
         return cameras[j]
 
+    from frame_writer import FrameWriter
+    writer = FrameWriter()                       # exp.125: PNGs saved on other threads
+
     def write(image):
         nonlocal index, done
-        if not image.save(str(folder / f'frame_{index:06d}.png'), 'PNG', 80):
-            raise OSError('Unable to save PNG frame.')
+        writer.write(image, folder / f'frame_{index:06d}.png')
         index += 1; done += 1
         progress(done, total)
     try:
@@ -456,8 +478,8 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                         output=stack(under,QImage(str(frame)),
                             options.get('blend_mode','Normal'),
                             options.get('artwork_opacity',100))
-                    if not output.save(str(frame), 'PNG', 80):
-                        raise OSError('Unable to save PNG frame.')
+                    writer.write(output, frame)
+            writer.flush()                       # the files are renamed next
             start = index
             camera = scene_camera(k)
             for i, frame in enumerate(frames):
@@ -497,7 +519,10 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
             if interrupted():
                 raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        try:
+            writer.close()
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
     if titles:
         starts, at = [], 0
         for c, j in zip(counts, joins):

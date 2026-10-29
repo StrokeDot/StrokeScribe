@@ -53,6 +53,25 @@ class PlanningTests(unittest.TestCase):
             self.assertEqual(plan.mask(p).tobytes(), expected)
 
 
+@unittest.skipIf(SKIP, 'needs Qt')
+class FrameWriterTests(unittest.TestCase):
+    def test_frames_are_the_same_pictures(self):
+        import tempfile
+        from pathlib import Path
+        from PySide6.QtGui import QColor, QImage
+        from frame_writer import FrameWriter
+        folder = Path(tempfile.mkdtemp())
+        a = QImage(64, 36, QImage.Format.Format_ARGB32_Premultiplied); a.fill(QColor(200, 30, 60, 128))
+        b = QImage(64, 36, QImage.Format.Format_ARGB32_Premultiplied); b.fill(QColor(10, 220, 60))
+        writer = FrameWriter(threads=3)
+        for i, img in enumerate((a, a, b, b, a)):
+            writer.write(img, folder / f'frame_{i:06d}.png')
+        writer.close()
+        for i, img in enumerate((a, a, b, b, a)):
+            back = QImage(str(folder / f'frame_{i:06d}.png')).convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+            self.assertEqual(back.pixelColor(5, 5), img.pixelColor(5, 5))
+
+
 class CacheTests(unittest.TestCase):
     def test_signature_sees_changes_in_big_texts(self):
         from project_lifecycle import ProjectChangeTracker as T
