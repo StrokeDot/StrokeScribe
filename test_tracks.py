@@ -217,8 +217,8 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(w.inspector_tabs.currentIndex(), TABS['export'])
         self.assertTrue(w.inspector_tabs.isVisible())
 
-    def test_add_buttons_are_gone_from_the_strip(self):
-        self.assertFalse(self.w.scene_add.isVisible())
+    def test_add_element_button_but_not_on_this_page(self):
+        self.assertTrue(self.w.scene_add.isVisible())
         self.assertFalse(self.w.scene_picture.isVisible())
         self.assertTrue(self.w.scene_edit.isVisible())
 

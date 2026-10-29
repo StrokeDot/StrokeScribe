@@ -1117,7 +1117,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from camera_clips import KINDS, CUSTOM
         menu=QMenu(self)
         for kind in KINDS:
-            text=kind+('…  (drag the frame on the preview)' if kind==CUSTOM else '')
+            text=('Zoom to a spot you choose…' if kind==CUSTOM else kind)
             menu.addAction(text,lambda kind=kind: self.add_camera_clip(kind))
         where=button.mapToGlobal(button.rect().bottomLeft()) if button is not None else QCursor.pos()
         menu.exec(where)
@@ -1202,8 +1202,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.project_changes.mark_changed()
         self.select_camera(clip['id'])
         if hasattr(self,'show_left_panel'): self.show_left_panel('camera')
-        self.status.setText(f'Camera clip "{kind}" added at {clip["start"]:.1f} s. Drag the frame on the preview '
-                            'to choose where the camera goes; drag the clip\'s right edge on the timeline for the speed.')
+        self.status.setText(f'Camera clip "{kind}" added at {clip["start"]:.1f} s: the camera goes in, stays, and comes '
+                            'back. Drag the frame on the preview to choose where it looks.')
         return clip
 
     def select_camera(self,cid):
