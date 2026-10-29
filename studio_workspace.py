@@ -578,7 +578,11 @@ class StageTimeline(QFrame):
 
     def _clip_rect(self, clip, start=None, length=None):
         # exp.128: a fixed camera sits on the Fixed camera row, the others on Moving camera.
-        cam=self._fixed_row() if clip.get('kind')=='Fixed camera' else self._moving_row()
+        if clip.get('kind')=='Fixed camera':
+            start=float(clip['start']) if start is None else start
+            length=float(clip['duration']) if length is None else length
+            return self._move_chip(start,length)
+        cam=self._moving_row()
         start=float(clip['start']) if start is None else start
         length=float(clip['duration']) if length is None else length
         x0,x1=self._x(start),self._x(start+length)
@@ -1097,6 +1101,20 @@ class StageTimeline(QFrame):
         for clip in self.cam_clips:
             r=self._clip_rect(clip)
             chosen=clip['id']==self.selected_camera
+            if clip.get('kind')=='Fixed camera':
+                # exp.129 (the user): a fixed camera looks like the moves between pages (a grey
+                # chip with a camera) and a thin line while it stays there.
+                hold=self.cam_holds.get(clip['id'])
+                if hold is not None and hold>float(clip['start'])+float(clip['duration'])+1e-3:
+                    line=QColor(c['border_strong']); y=r.center().y(); x1=self._x(hold)
+                    p.setPen(QPen(line,2)); p.drawLine(QPointF(r.right()+1,y),QPointF(x1,y))
+                    p.drawLine(QPointF(x1,r.top()+5),QPointF(x1,r.bottom()-5))
+                lit=chosen or getattr(self,'_hover',None)==('camclip',clip['id'])
+                p.setPen(QPen(QColor('white'),1.5) if chosen else Qt.PenStyle.NoPen)
+                p.setBrush(QColor(c['accent'] if lit else c['border_strong']))
+                p.drawRoundedRect(r,4,4)
+                self._draw_icon(p,'camera',r.center(),'#FFFFFF' if lit else c['text'],12)
+                continue
             fill=QColor(c['paint']); fill.setAlpha(235 if chosen else 190)
             p.setPen(QPen(QColor('white') if chosen else fill.lighter(130),2 if chosen else 1)); p.setBrush(fill)
             p.drawRoundedRect(r,5,5)

@@ -166,6 +166,8 @@ def _fixed_at(fixeds, t, moves):
     start = float(clip['start'])
     earlier = [c for c in fixeds if (float(c['start']), c.get('id', '')) < (start, clip.get('id', ''))]
     before = _fixed_at(earlier, start - 1e-6, moves) if earlier else None
+    if clip.get('how') == 'Cut':                 # exp.129: straight there
+        return tuple(clip.get('to') or REST)
     a = max(.05, float(clip.get('in_s', clip.get('duration', IN_SECONDS))))
     return mix(before or REST, tuple(clip.get('to') or REST), _ease((t - start) / a))
 
@@ -204,7 +206,8 @@ def signature(clips):
     """Plain data for fingerprints and option keys."""
     return tuple((c.get('id'), c.get('kind'), round(float(c['start']), 4), round(float(c['duration']), 4),
                   tuple(c['from']) if c.get('from') else None, tuple(c.get('to') or REST),
-                  round(float(c.get('in_s', IN_SECONDS)), 4), round(float(c.get('out_s', OUT_SECONDS)), 4))
+                  round(float(c.get('in_s', IN_SECONDS)), 4), round(float(c.get('out_s', OUT_SECONDS)), 4),
+                  c.get('how'))
                  for c in clips or ())
 
 
@@ -249,5 +252,6 @@ def from_options(base, options, total):
     clips = []
     for i, k, s, d, f, t, *rest in sig:
         a, b = (rest + [IN_SECONDS, OUT_SECONDS])[:2] if len(rest) >= 2 else (IN_SECONDS, OUT_SECONDS)
-        clips.append({'id': i, 'kind': k, 'start': s, 'duration': d, 'from': f, 'to': t, 'in_s': a, 'out_s': b})
+        clips.append({'id': i, 'kind': k, 'start': s, 'duration': d, 'from': f, 'to': t, 'in_s': a, 'out_s': b,
+                      'how': rest[2] if len(rest) >= 3 else None})
     return wrap(base, start, clips, moves, total)
