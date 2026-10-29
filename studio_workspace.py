@@ -732,13 +732,14 @@ class StageTimeline(QFrame):
         return QRectF(x0,lane.top(),max(8.,x1-x0),lane.height())
 
     def _other_at(self, pos):
-        if self.locked: return None
+        if self.locked or (self.items and not self._tracks_area().contains(pos)): return None
         for k,item in reversed(getattr(self,'other_overlays',())):
             if self._other_rect(item).contains(pos): return k,item
         return None
 
     def _overlay_at(self, pos):
         if self.locked: return None,None
+        if self.items and not self._tracks_area().contains(pos): return None,None   # exp.131: scrolled out of view
         for item in reversed(self.overlays):
             r=self._overlay_rect(item)
             if r.adjusted(-3,0,3,0).contains(pos):
@@ -927,7 +928,7 @@ class StageTimeline(QFrame):
             for track in range(self.tracks()):
                 row=self._lane(track)
                 p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(row,7,7)
-            p.save(); p.setClipRect(QRectF(left,0,width,self.height()))
+            p.save(); p.setClipRect(QRectF(left,0,width,self.height()),Qt.ClipOperation.IntersectClip)   # exp.131: stay inside the tracks
             for k,item in others:
                 r=self._other_rect(item).adjusted(1,2,-1,-2)
                 fill=QColor(c.get('erase','#E06A86') if item.get('kind')=='text' else c.get('accent_b','#4C42DE'))
@@ -945,7 +946,7 @@ class StageTimeline(QFrame):
             for track in range(self.text_lanes()):
                 row=self._lane(track)
                 p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(row,7,7)
-            p.save(); p.setClipRect(QRectF(left,0,width,self.height()))
+            p.save(); p.setClipRect(QRectF(left,0,width,self.height()),Qt.ClipOperation.IntersectClip)   # exp.131: scrolled like the elements
             colour=QColor(c.get('accent_b','#4C42DE'))
             for item in self.overlays:
                 r=self._overlay_rect(item).adjusted(1,2,-1,-2)
@@ -1225,13 +1226,13 @@ class StageTimeline(QFrame):
             clip,_=self._clip_at(pos)
             if clip is not None:
                 from PySide6.QtWidgets import QMenu
-                from camera_clips import KINDS
+                from camera_clips import MOVING as KINDS
                 cid=clip['id']
                 self.selected_camera=cid; self.camera_selected.emit(cid); self.update()
                 menu=QMenu(self)
                 menu.addAction('Settings…',lambda: self.camera_edit.emit(cid))
                 menu.addSeparator()
-                for kind in KINDS:
+                for kind in (KINDS if clip.get('kind')!='Fixed camera' else ()):
                     a=menu.addAction(kind,lambda kind=kind: self.camera_action.emit(cid,kind))
                     a.setCheckable(True); a.setChecked(kind==clip.get('kind'))
                 menu.addSeparator()
@@ -1520,8 +1521,6 @@ class StageTimeline(QFrame):
             self.element_camera_clicked.emit(own);event.accept();return
         if self.items and pos.x()>=self.LEFT and self.total()>0:
             seconds=max(0.,self._sec(pos.x()))
-            if self._fixed_row().contains(pos):
-                self.camera_add.emit('Fixed camera',seconds);event.accept();return
             if self._moving_row().contains(pos):
                 self.camera_add.emit('',seconds);event.accept();return
         item,_=self._overlay_at(event.position())
@@ -3202,7 +3201,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     from camera_clips import KINDS as _KINDS
     cf=form_layout(); cb.addLayout(cf)
     w.cam_clip_form=cf
-    w.cam_clip_kind=QComboBox(); w.cam_clip_kind.addItems(list(_KINDS)); cf.addRow('Kind',w.cam_clip_kind)
+    from camera_clips import MOVING as _MOVING
+    w.cam_clip_kind=QComboBox(); w.cam_clip_kind.addItems(list(_MOVING)); cf.addRow('Kind',w.cam_clip_kind)
     w.cam_clip_start=w.number(0,3600,0,.1); w.cam_clip_start.setDecimals(1); w.cam_clip_start.setSuffix(' s')
     cf.addRow('Starts at',w.cam_clip_start)
     # exp.124: in (how fast it gets there), hold (how long it stays), back (how fast it

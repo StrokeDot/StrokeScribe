@@ -352,9 +352,15 @@ class WindowTests(unittest.TestCase):
                          QPoint(int(r.center().x()), int(r.center().y())))
         self.assertEqual({o['id'] for o in w.chosen_overlays()}, {a['id']})
         r = tl._overlay_rect(b)
+        area = tl._tracks_area()
+        if not area.contains(r.center()):                 # exp.131: scroll it into view first
+            tl.vbar.setValue(0); tl.y_off = 0.; tl.update(); self.app.processEvents()
+            r = tl._overlay_rect(b)
         QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier,
                          QPoint(int(r.center().x()), int(r.center().y())))
         self.assertEqual({o['id'] for o in w.chosen_overlays()}, {a['id'], b['id']})
+        if tl.vbar.isVisible():
+            tl.vbar.setValue(tl.vbar.maximum()); tl.update(); self.app.processEvents()
         block = tl._item_rect(tl.items[0])
         QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
                          QPoint(int(block.center().x()), int(block.center().y())))

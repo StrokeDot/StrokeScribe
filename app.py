@@ -1120,15 +1120,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """'+ Camera': what the camera does (exp.121)."""
         from PySide6.QtWidgets import QMenu
         from PySide6.QtGui import QCursor
-        from camera_clips import MOVING, CUSTOM, FIXED
+        from camera_clips import MOVING, CUSTOM
         menu=QMenu(self)
-        # exp.128 (the user): two kinds. Fixed: the camera goes there and stays. Moving: it
-        # goes, stays a moment and comes back.
-        menu.addAction('Fixed camera — goes there and stays',lambda: self.add_camera_clip(FIXED,at=at))
-        moving=menu.addMenu('Moving camera — goes and comes back')
+        # exp.132 (the user): the fixed camera moves come with the elements (one per element),
+        # so + Add camera adds the moving ones only.
         for kind in MOVING:
             text=('Zoom to a spot you choose' if kind==CUSTOM else kind)
-            moving.addAction(text,lambda kind=kind: self.add_camera_clip(kind,at=at))
+            menu.addAction(text,lambda kind=kind: self.add_camera_clip(kind,at=at))
         where=button.mapToGlobal(button.rect().bottomLeft()) if button is not None else QCursor.pos()
         menu.exec(where)
 
