@@ -374,7 +374,7 @@ class StageTimeline(QFrame):
         fit=self._fit()
         if fit<=0: return 0.
         if not self.items: return fit/max(1.,self.zoom)
-        return min(self._room(),fit/max(self.MIN_ZOOM,self.zoom))
+        return min(self._room(),fit/max(1e-6,self.zoom))
 
     def _px_per_sec(self):
         span=self._span()
@@ -388,7 +388,8 @@ class StageTimeline(QFrame):
         if total<=0: return
         anchor_x=self.LEFT+self._width()/2 if anchor_x is None else anchor_x
         at=self._sec(anchor_x)
-        self.zoom=max(self.MIN_ZOOM if self.items else 1.,min(40.,float(zoom)))
+        lo=min(self.MIN_ZOOM,self._fit()/max(1e-6,self._room())) if self.items else 1.   # exp.134: out to all of it
+        self.zoom=max(lo,min(40.,float(zoom)))
         self.view_start=at-(anchor_x-self.LEFT)/self._width()*self._span()
         self._clamp_view(); self._update_bars(); self.update()
 
