@@ -106,6 +106,10 @@ class CameraClipTests(unittest.TestCase):
         self.assertEqual(cc.until(fixed, moves, [fixed, second]), 4.)
         self.assertEqual(cc.framing_at([fixed, second], 4., moves), (2., .3, .3))  # from the first one
         self.assertEqual(cc.framing_at([fixed, second], 6., moves), (1.5, .6, .6))
+        second['how'] = 'Cut'                                           # exp.129: straight there
+        self.assertEqual(cc.framing_at([fixed, second], 4., moves), (1.5, .6, .6))
+        back = cc.from_options(None, dict(video_camera=(0., cc.signature([second]), ())), 10.)
+        self.assertEqual(back.clips[0]['how'], 'Cut')
         cc.set_kind(second, 'Zoom in')
         self.assertEqual(second['duration'], 4.4)
 

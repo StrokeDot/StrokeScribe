@@ -1248,8 +1248,59 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self._cam_recorded=None
 
     def edit_camera_clip(self,cid):
+        import camera_clips
+        clip=self.find_camera(cid)
+        if clip is not None and camera_clips.fixed(clip):
+            return self.edit_fixed_camera(cid)
         self.select_camera(cid)
         if hasattr(self,'show_left_panel'): self.show_left_panel('camera')
+
+    def edit_fixed_camera(self,cid):
+        """exp.129 (the user): a fixed camera opens the same window as the moves between pages:
+        how it moves, how long, and where it goes (the frame on the preview)."""
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QComboBox, QDoubleSpinBox, QPushButton, QLabel
+        import camera_clips
+        clip=self.find_camera(cid)
+        if clip is None: return
+        dialog=QDialog(self); dialog.setWindowTitle('Camera move')
+        form=QFormLayout(dialog)
+        note=QLabel(f'At {float(clip["start"]):.1f} s: the camera goes to a new place and stays there '
+                    '(until the next camera move).')
+        note.setWordWrap(True); form.addRow(note)
+        how=QComboBox(); how.addItems(['Camera move','Cut']); how.setCurrentText(clip.get('how') or 'Camera move')
+        how.setItemData(1,'Straight there, no movement.',Qt.ItemDataRole.ToolTipRole)
+        form.addRow('How',how)
+        secs=QDoubleSpinBox(); secs.setRange(.2,30); secs.setSingleStep(.1); secs.setDecimals(1)
+        secs.setSuffix(' s'); secs.setValue(float(clip.get('duration',1.2)))
+        form.addRow('How long',secs)
+        how.currentTextChanged.connect(lambda text: secs.setEnabled(text!='Cut'))
+        secs.setEnabled(how.currentText()!='Cut')
+        place=QPushButton('Where the camera goes: drag the frame on the preview…')
+        place.setToolTip('The preview shows the page with a frame: drag it to where the camera goes, '
+                         'mouse wheel to zoom in or out.')
+        form.addRow(place)
+        remove=QPushButton('Delete this camera move'); remove.setObjectName('subtle')
+        form.addRow(remove)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        wants={'aim':False,'delete':False}
+        place.clicked.connect(lambda: (wants.update(aim=True),dialog.accept()))
+        remove.clicked.connect(lambda: (wants.update(delete=True),dialog.accept()))
+        if dialog.exec()!=QDialog.DialogCode.Accepted: return
+        if wants['delete']:
+            return self.camera_clip_action(cid,'delete')
+        new_how=how.currentText(); new_secs=round(secs.value(),2)
+        if (clip.get('how') or 'Camera move',float(clip['duration']))!=(new_how,new_secs):
+            self.record_structure('camera move')
+            clip['how']=None if new_how=='Camera move' else new_how
+            clip['duration']=new_secs; camera_clips.fit(clip)
+            self.project_changes.mark_changed()
+        if wants['aim']:
+            self.select_camera(cid)
+            self.status.setText('Drag the frame on the preview to where the camera goes; mouse wheel to zoom.')
+        else:
+            self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
 
     def camera_clip_action(self,cid,action):
         clip=self.find_camera(cid)
