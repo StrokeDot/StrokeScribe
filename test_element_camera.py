@@ -156,6 +156,21 @@ class WindowTests(unittest.TestCase):
         camera = w.video_camera(0, None, 4.)
         self.assertIsNotNone(camera)
 
+    def test_a_camera_clip_only_touches_its_own_stretch(self):
+        """exp.125: changing a camera clip makes only its own stretch of ready frames old."""
+        w = self.w
+        w.position = 0.; w.refresh()
+        clip = w.add_camera_clip('Zoom in')
+        clip['start'], clip['duration'] = 0., .8
+        w.select_camera(None); w.refresh(); self.app.processEvents()
+        lay = w.timeline_layout()
+        far = w.segment_fingerprint('scene', 1)
+        near = w.segment_fingerprint('scene', 0)
+        w.move_camera_clip(clip['id'], 0., 1.)
+        self.assertEqual(w.segment_fingerprint('scene', 1), far)      # element 2: still ready
+        self.assertNotEqual(w.segment_fingerprint('scene', 0), near)  # element 1: drawn again
+        self.assertGreater(lay.items[1].start, 1.)
+
     def test_older_element_zoom_becomes_a_camera_clip(self):
         w = self.w
         data = w.project_state()
