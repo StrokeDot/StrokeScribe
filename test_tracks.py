@@ -42,6 +42,14 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(state_at(lay, 7.).finished, [0, 1])
         self.assertAlmostEqual(lay.total, 9.)
 
+    def test_swapping_two_elements_keeps_the_rest_in_place(self):
+        # exp.126: element 4 moved before element 3 (which has its own start): no collision.
+        from timeline_model import layout, swapped_places
+        lay = layout([2., 3., 2., 4.], [1., 1., 1., 0.], [None, None, 10., None])
+        self.assertEqual(swapped_places(lay, 3, 2), {3: (10., 0), 2: (15., 0)})
+        side = layout([4., 5.], [0., 0.], [None, 1.], [0, 1])          # side by side: swap places
+        self.assertEqual(swapped_places(side, 0, 1), {1: (0., 0), 0: (1., 1)})
+
 
 @unittest.skipIf(SKIP, 'needs Qt')
 class WindowTests(unittest.TestCase):
@@ -182,6 +190,47 @@ class WindowTests(unittest.TestCase):
         lay = w.timeline_layout()
         it = lay.items[1]
         self.assertAlmostEqual(w.position * lay.total, it.start + it.length * .999, delta=.05)
+
+    def test_moving_an_element_earlier_does_not_make_it_collide(self):
+        w = self.w
+        w.scenes[0]['transition'] = 'Cut'
+        w.add_scene()
+        from engine import import_svg
+        w.set_drawing(import_svg(HERE / 'samples' / 'drawing.svg')); w.duration.setValue(1.)
+        w.refresh(); self.app.processEvents()
+        lay = w.timeline_layout()
+        w.place_element(1, lay.items[1].start + 2., 0)      # element 2 has a start of its own
+        w.select_scene(2); self.app.processEvents()
+        w.move_scene(-1); self.app.processEvents()
+        lay = w.timeline_layout()
+        ends = sorted((it.start, it.end) for it in lay.items if it.track == 0)
+        for (a0, a1), (b0, b1) in zip(ends, ends[1:]):
+            self.assertLessEqual(a1, b0 + 1e-3)                # one after the other on Track 1
+        self.assertEqual(w.scene_index, 1)
+
+    def test_export_animation_opens_the_export_panel(self):
+        from studio_workspace import TABS
+        w = self.w
+        w.show_right_panel('source')
+        w.right_panel_close.click(); self.app.processEvents()
+        w.quick_export.click(); self.app.processEvents()
+        self.assertEqual(w.inspector_tabs.currentIndex(), TABS['export'])
+        self.assertTrue(w.inspector_tabs.isVisible())
+
+    def test_add_buttons_are_gone_from_the_strip(self):
+        self.assertFalse(self.w.scene_add.isVisible())
+        self.assertFalse(self.w.scene_picture.isVisible())
+        self.assertTrue(self.w.scene_edit.isVisible())
+
+    def test_texts_follow_the_frame_shown_while_playing(self):
+        w = self.w
+        w.position = .503; w.playing = True
+        try:
+            index, count = w.frame_index(w.position)
+            self.assertAlmostEqual(w.shown_seconds(), index / count * w._view['length'], places=3)
+        finally:
+            w.playing = False
+        self.assertAlmostEqual(w.shown_seconds(), w.video_seconds())
 
     def test_plus_card_after_the_last_element(self):
         from unittest import mock
