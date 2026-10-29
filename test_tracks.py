@@ -359,6 +359,8 @@ class WindowTests(unittest.TestCase):
         QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier,
                          QPoint(int(r.center().x()), int(r.center().y())))
         self.assertEqual({o['id'] for o in w.chosen_overlays()}, {a['id'], b['id']})
+        if tl.vbar.isVisible():
+            tl.vbar.setValue(tl.vbar.maximum()); tl.update(); self.app.processEvents()
         block = tl._item_rect(tl.items[0])
         QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
                          QPoint(int(block.center().x()), int(block.center().y())))

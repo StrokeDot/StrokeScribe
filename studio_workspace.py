@@ -1226,13 +1226,13 @@ class StageTimeline(QFrame):
             clip,_=self._clip_at(pos)
             if clip is not None:
                 from PySide6.QtWidgets import QMenu
-                from camera_clips import KINDS
+                from camera_clips import MOVING as KINDS
                 cid=clip['id']
                 self.selected_camera=cid; self.camera_selected.emit(cid); self.update()
                 menu=QMenu(self)
                 menu.addAction('Settings…',lambda: self.camera_edit.emit(cid))
                 menu.addSeparator()
-                for kind in KINDS:
+                for kind in (KINDS if clip.get('kind')!='Fixed camera' else ()):
                     a=menu.addAction(kind,lambda kind=kind: self.camera_action.emit(cid,kind))
                     a.setCheckable(True); a.setChecked(kind==clip.get('kind'))
                 menu.addSeparator()
@@ -1521,8 +1521,6 @@ class StageTimeline(QFrame):
             self.element_camera_clicked.emit(own);event.accept();return
         if self.items and pos.x()>=self.LEFT and self.total()>0:
             seconds=max(0.,self._sec(pos.x()))
-            if self._fixed_row().contains(pos):
-                self.camera_add.emit('Fixed camera',seconds);event.accept();return
             if self._moving_row().contains(pos):
                 self.camera_add.emit('',seconds);event.accept();return
         item,_=self._overlay_at(event.position())
@@ -3203,7 +3201,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     from camera_clips import KINDS as _KINDS
     cf=form_layout(); cb.addLayout(cf)
     w.cam_clip_form=cf
-    w.cam_clip_kind=QComboBox(); w.cam_clip_kind.addItems(list(_KINDS)); cf.addRow('Kind',w.cam_clip_kind)
+    from camera_clips import MOVING as _MOVING
+    w.cam_clip_kind=QComboBox(); w.cam_clip_kind.addItems(list(_MOVING)); cf.addRow('Kind',w.cam_clip_kind)
     w.cam_clip_start=w.number(0,3600,0,.1); w.cam_clip_start.setDecimals(1); w.cam_clip_start.setSuffix(' s')
     cf.addRow('Starts at',w.cam_clip_start)
     # exp.124: in (how fast it gets there), hold (how long it stays), back (how fast it
