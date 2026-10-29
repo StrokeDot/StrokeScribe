@@ -203,14 +203,8 @@ class WindowTests(unittest.TestCase):
         self.assertTrue(w.scene_transition.isHidden())               # the move is on the timeline now
 
     def test_add_camera_offers_reframe_and_moving(self):
-        from unittest import mock
-        from PySide6.QtWidgets import QMenu
-        seen = []
-        def capture(menu, *a, **k):
-            seen.extend(x.text() for x in menu.actions())
-        with mock.patch.object(QMenu, 'exec', capture):
-            self.w.add_camera_menu(None)
-        self.assertEqual(seen, ['Reframe', 'Moving camera'])
+        menu = self.w.camera_menu()
+        self.assertEqual([a.text() for a in menu.actions()], ['Reframe', 'Moving camera'])
 
     def test_a_camera_clip_only_touches_its_own_stretch(self):
         """exp.125: changing a camera clip makes only its own stretch of ready frames old."""

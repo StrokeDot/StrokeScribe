@@ -1120,6 +1120,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """'+ Camera': what the camera does (exp.121)."""
         from PySide6.QtWidgets import QMenu
         from PySide6.QtGui import QCursor
+        menu=self.camera_menu(at)
+        where=button.mapToGlobal(button.rect().bottomLeft()) if button is not None else QCursor.pos()
+        menu.exec(where)
+
+    def camera_menu(self,at=None):
+        from PySide6.QtWidgets import QMenu
         from camera_clips import MOVING, CUSTOM, FIXED
         menu=QMenu(self)
         # exp.132 (the user): Reframe = the camera goes to another spot of the page and stays,
@@ -1129,8 +1135,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         for kind in MOVING:
             text=('Zoom to a spot you choose' if kind==CUSTOM else kind)
             moving.addAction(text,lambda kind=kind: self.add_camera_clip(kind,at=at))
-        where=button.mapToGlobal(button.rect().bottomLeft()) if button is not None else QCursor.pos()
-        menu.exec(where)
+        return menu
 
     def find_camera(self,cid):
         if any('in_s' not in c for c in getattr(self,'cameras',[])):
