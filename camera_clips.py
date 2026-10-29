@@ -30,7 +30,13 @@ import uuid
 CUSTOM = 'Move to a spot'      # exp.121 (was 'Custom'): drag the frame where the camera goes
 # exp.124: a camera clip goes in, holds, and comes back to the normal frame; zoom out is its
 # way back (no 'Zoom out' kind any more).
-KINDS = ('Zoom in', 'Pan left', 'Pan right', 'Pan up', 'Pan down', CUSTOM)
+# exp.128 (the user): a fixed camera goes to a framing and STAYS there (until the next fixed
+# camera or the next move between pages); the others (moving camera) go, stay a moment and
+# come back.
+FIXED = 'Fixed camera'
+MOVING = ('Zoom in', 'Pan left', 'Pan right', 'Pan up', 'Pan down', CUSTOM)
+KINDS = MOVING + (FIXED,)
+FOREVER = 1e9
 REST = (1., .5, .5)
 PAN_ZOOM = 1.4
 IN_SECONDS = 1.2
@@ -41,7 +47,9 @@ HOLD_SECONDS = 2.
 def new_clip(kind='Zoom in', start=0., duration=None):
     """A camera clip: `in_s` seconds to get there, it holds, `out_s` seconds back to the
     normal frame; `duration` is the whole clip (in + hold + out)."""
-    total = IN_SECONDS + HOLD_SECONDS + OUT_SECONDS if duration is None else float(duration)
+    if duration is None:
+        duration = IN_SECONDS if kind == FIXED else IN_SECONDS + HOLD_SECONDS + OUT_SECONDS
+    total = float(duration)
     clip = dict(id=uuid.uuid4().hex[:10], kind=kind, start=round(float(start), 2),
                 duration=round(max(.4, total), 2), in_s=IN_SECONDS, out_s=OUT_SECONDS,
                 to=None, **{'from': None})
@@ -52,6 +60,10 @@ def new_clip(kind='Zoom in', start=0., duration=None):
 
 def fit(clip):
     """In and back times fit in the clip (each at least .1 s; the hold can be 0)."""
+    if clip.get('kind') == FIXED:          # only the way there: then it stays
+        d = round(max(.2, float(clip.get('duration', IN_SECONDS))), 2)
+        clip['duration'], clip['in_s'], clip['out_s'] = d, d, 0.
+        return clip
     total = max(.4, float(clip.get('duration', 4.4)))
     a, b = max(.1, float(clip.get('in_s', IN_SECONDS))), max(.1, float(clip.get('out_s', OUT_SECONDS)))
     if a + b > total:
@@ -87,6 +99,7 @@ def presets(kind):
         'Pan up': ((PAN_ZOOM, .5, .5 + side), (PAN_ZOOM, .5, .5 - side)),
         'Pan down': ((PAN_ZOOM, .5, .5 - side), (PAN_ZOOM, .5, .5 + side)),
         CUSTOM: (None, (1.6, .5, .5)),
+        FIXED: (None, (1.6, .5, .5)),
     }.get(kind, (None, (1.6, .5, .5)))
 
 
@@ -113,21 +126,65 @@ def combine(base, clip):
     return z1 * z2, x1 + (x2 - .5) / z1, y1 + (y2 - .5) / z1
 
 
-def until(clip, moves=()):
-    """exp.124: a clip ends with the camera back at the normal frame."""
-    return float(clip['start']) + max(.4, float(clip.get('duration', 4.4)))
+def set_kind(clip, kind):
+    """A clip changed to another kind (fixed <-> moving: its times start again)."""
+    was = fixed(clip)
+    clip['kind'] = kind
+    clip['from'], clip['to'] = presets(kind)
+    if fixed(clip) and not was:
+        clip['duration'] = float(clip.get('in_s', IN_SECONDS))
+    elif was and not fixed(clip):
+        clip['in_s'], clip['out_s'] = IN_SECONDS, OUT_SECONDS
+        clip['duration'] = IN_SECONDS + HOLD_SECONDS + OUT_SECONDS
+    return fit(clip)
+
+
+def fixed(clip):
+    return clip.get('kind') == FIXED
+
+
+def until(clip, moves=(), clips=()):
+    """Where the clip's effect ends (seconds of the whole video). A moving camera: at the end
+    of the clip, back at the normal frame (exp.124). A fixed camera (exp.128): it stays until
+    the next fixed camera starts or until the end of the next move between pages (the move
+    takes the camera to the next page, which starts at its normal frame)."""
+    start = float(clip['start'])
+    if not fixed(clip):
+        return start + max(.4, float(clip.get('duration', 4.4)))
+    ends = [FOREVER]
+    ends += [float(c['start']) for c in clips or () if fixed(c) and c is not clip
+             and (float(c['start']), c.get('id', '')) > (start, clip.get('id', ''))]
+    ends += [float(b) for a, b in moves or () if float(a) >= start - 1e-6]
+    return max(start + float(clip.get('duration', IN_SECONDS)), min(ends))
+
+
+def _fixed_at(fixeds, t, moves):
+    live = [c for c in fixeds if float(c['start']) <= t + 1e-9 and t < until(c, moves, fixeds)]
+    if not live:
+        return None
+    clip = max(live, key=lambda c: (float(c['start']), c.get('id', '')))
+    start = float(clip['start'])
+    earlier = [c for c in fixeds if (float(c['start']), c.get('id', '')) < (start, clip.get('id', ''))]
+    before = _fixed_at(earlier, start - 1e-6, moves) if earlier else None
+    a = max(.05, float(clip.get('in_s', clip.get('duration', IN_SECONDS))))
+    return mix(before or REST, tuple(clip.get('to') or REST), _ease((t - start) / a))
 
 
 def framing_at(clips, seconds, moves=()):
     """The camera clips' framing at `seconds` of the whole video, or None (no effect).
 
-    exp.124 (the user's rule): in over in_s seconds, it holds there, back to the normal
-    frame over out_s seconds at the end of the clip. Each clip starts from the normal
-    frame; when clips overlap, the later one is shown."""
+    exp.124 (the user's rule): a moving camera goes in over in_s seconds, holds there, and
+    comes back over out_s seconds at the end of the clip; when they overlap, the later one is
+    shown. exp.128: a fixed camera moves there and stays (see until); the moving cameras go
+    out from where the fixed camera has it and come back there."""
     t = float(seconds)
-    live = [c for c in clips or () if float(c['start']) <= t + 1e-9 and t < until(c)]
+    clips = list(clips or ())
+    fixeds = [c for c in clips if fixed(c)]
+    base = _fixed_at(fixeds, t, moves) if fixeds else None
+    live = [c for c in clips if not fixed(c) and float(c['start']) <= t + 1e-9 and t < until(c)]
     if not live:
-        return None
+        return base
+    rest = base or REST
     clip = max(live, key=lambda c: (float(c['start']), c.get('id', '')))
     start, total = float(clip['start']), max(.4, float(clip.get('duration', 4.4)))
     a = max(.05, float(clip.get('in_s', IN_SECONDS)))
@@ -136,9 +193,9 @@ def framing_at(clips, seconds, moves=()):
     to = tuple(clip.get('to') or REST)
     there = tuple(clip['from']) if clip.get('from') else to      # where the hold begins
     if local < a:
-        return mix(REST, there, _ease(local / a))
+        return mix(rest, there, _ease(local / a))
     if local > total - b:
-        return mix(to, REST, _ease((local - (total - b)) / b))
+        return mix(to, rest, _ease((local - (total - b)) / b))
     hold = max(1e-6, total - a - b)
     return mix(there, to, _ease((local - a) / hold)) if there != to else to
 
