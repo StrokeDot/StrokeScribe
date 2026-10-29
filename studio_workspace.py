@@ -356,17 +356,25 @@ class StageTimeline(QFrame):
         self._update_bars()
 
     # ---------------------------------------------- zoom and scrolling (whole video)
-    MIN_ZOOM=.25          # exp.133: zoom out past the whole video (up to 4x more)
+    MIN_ZOOM=.25          # exp.133: zoom out past the whole video
 
-    def _room(self):
-        """exp.133 (the user): the timeline goes on after the end of the video, so the last
-        clips are not cut at the edge and things can be moved past the end."""
+    def _fit(self):
+        """What 'fit' shows: the whole video and a little after it."""
         total=self._view_total()
         return total*1.12+2. if (self.items and total>0) else total
 
+    def _room(self):
+        """exp.134 (the user, like Filmora): the timeline goes on well after the end of the
+        video: there is always as much empty time after it as the video is long (at least 30
+        s), to scroll to and to put things in."""
+        total=self._view_total()
+        return total+max(30.,total) if (self.items and total>0) else total
+
     def _span(self):
-        room=self._room()
-        return room/max(self.MIN_ZOOM if self.items else 1.,self.zoom) if room>0 else 0.
+        fit=self._fit()
+        if fit<=0: return 0.
+        if not self.items: return fit/max(1.,self.zoom)
+        return min(self._room(),fit/max(self.MIN_ZOOM,self.zoom))
 
     def _px_per_sec(self):
         span=self._span()

@@ -501,15 +501,17 @@ class WindowTests(unittest.TestCase):
         tl.set_zoom(4.)
         self.app.processEvents()
         self.assertTrue(tl.hbar.isVisible())
-        room = tl._room()
-        self.assertGreater(room, total)                                     # exp.133: room after the end
-        self.assertAlmostEqual(tl._span(), room / 4, places=3)              # a quarter shown
-        self.assertAlmostEqual(tl._x(room) - tl._x(0), tl._width() * 4, delta=2)
+        room, fit = tl._room(), tl._fit()
+        self.assertGreaterEqual(room, total + 30.)                          # exp.134: plenty after the end
+        self.assertAlmostEqual(tl._span(), fit / 4, places=3)               # a quarter of 'fit' shown
         tl.set_zoom(1.)
-        self.assertTrue(tl.hbar.isVisible())                                # always there (exp.133)
+        self.assertTrue(tl.hbar.isVisible() and tl.hbar.isEnabled())       # scroll on past the end
         self.assertLess(tl._x(total), tl.LEFT + tl._width() - 5)             # the end is not at the edge
-        tl.set_zoom(.1)
-        self.assertAlmostEqual(tl._span(), room / tl.MIN_ZOOM, places=3)   # zooms out further
+        tl.hbar.setValue(1000); self.app.processEvents()
+        self.assertAlmostEqual(tl.view_start + tl._span(), room, places=2)  # to the far end
+        tl.hbar.setValue(0)
+        tl.set_zoom(.01)
+        self.assertAlmostEqual(tl._span(), room, places=3)                  # zoomed out: all of it
         tl.set_zoom(1.)
         for k in range(len(w.scenes)):
             w.place_element(k, 0., 4 + k)                              # tracks 5 and 6: tall
