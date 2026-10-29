@@ -142,3 +142,20 @@ def describe(lay, state, a):
     if state.kind == 'move':
         return ('move', state.move, active, tuple(state.finished), state.top)
     return ('page', state.current, active, tuple(state.finished), state.top)
+
+
+def swapped_places(lay, k, j):
+    """exp.126: elements k and j (next to each other in the list) change places in time too.
+
+    Returns {element: (start, track)} for both, in their own (old) numbering. One after
+    the other on the same track: the later one now starts where the earlier one started,
+    the earlier one follows it with the same gap, so the pair ends where it ended and
+    nothing after it moves (before, the ◀ ▶ buttons only changed the list order: elements
+    with a start of their own stayed, the others moved, and they collided). Otherwise
+    (side by side, on other tracks) they swap start and track."""
+    a, b = sorted((k, j))
+    first, second = lay.items[a], lay.items[b]
+    if first.track == second.track and second.start >= first.end - 1e-6:
+        gap = second.start - first.end
+        return {b: (first.start, first.track), a: (first.start + second.length + gap, first.track)}
+    return {b: (first.start, first.track), a: (second.start, second.track)}

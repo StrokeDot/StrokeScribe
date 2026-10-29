@@ -729,8 +729,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.status.setText(f'Setup level: {settings["label"]}  •  '
                                 f'Line art detail {settings["detail"].title()}')
     def open_export(self):
+        """Export Animation (top right): opens the Export panel, also when the right panel
+        is closed (exp.126: it only changed the hidden panel's page, so nothing happened)."""
         from studio_workspace import TABS
-        self.inspector_tabs.setCurrentIndex(TABS['export'])
+        if hasattr(self,'show_right_panel'):
+            self.show_right_panel('export')
+        else:
+            self.inspector_tabs.setCurrentIndex(TABS['export'])
         self.export.setFocus()
 
 
@@ -1338,11 +1343,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                      **({'_until':float(o['_until'])-start} if o.get('_until') is not None else {}))
                 for o in self.visible_titles()]
 
-    def titles_layer(self,width,height):
-        """The texts / pictures on top at the playhead, on a clear picture (None: nothing)."""
+    def titles_layer(self,width,height,seconds=None):
+        """The texts / pictures on top at the playhead, on a clear picture (None: nothing).
+        `seconds`: the time of the frame shown (playing: the video frame, exp.126)."""
         import overlays
         if self.board_mode(): return None
-        t=self.video_seconds()
+        t=self.video_seconds() if seconds is None else float(seconds)
         shown=self.visible_titles() if self.zoomed_out() else self.titles_split(t)[0]
         if not shown or not any(overlays.state_at(o,t) is not None for o in shown): return None
         layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
@@ -2889,7 +2895,30 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         k=self.scene_index; j=k+direction
         if not 0<=j<len(self.scenes): return
         self.record_structure('move element')
+        try:
+            lay=self.timeline_layout()
+            free=lay.sequential
+            lengths,joins=(list(v) for v in self.scene_timeline())
+        except Exception:
+            lay,free=None,True
+        if not free:
+            # exp.126: elements placed on the timeline change places in time too (they collided).
+            from timeline_model import swapped_places
+            places=swapped_places(lay,k,j)
+            for i,(start,track) in places.items():
+                self.scenes[i]['start']=round(start,3); self.scenes[i]['track']=track
         self.scenes[k],self.scenes[j]=self.scenes[j],self.scenes[k]
+        if not free:
+            # A start that comes out the same with "right after the one before": keep it
+            # following (so it still moves when an earlier element gets longer).
+            from timeline_model import layout as _layout
+            lengths[k],lengths[j]=lengths[j],lengths[k]; joins[k],joins[j]=joins[j],joins[k]
+            for i in sorted((k,j)):
+                kept=self.scenes[i].get('start')
+                trial=[s.get('start') for s in self.scenes]; trial[i]=None
+                tracks=[s.get('track') or 0 for s in self.scenes]
+                if abs(_layout(lengths,joins,trial,tracks).items[i].start-float(kept))<1e-3:
+                    self.scenes[i]['start']=None
         self.scene_index=j
         self.fill_scenes(); self.refresh()
 
@@ -4845,7 +4874,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.sync_titles_timeline()
         self.sync_camera_timeline()
         try:
-            self.canvas.titles_frame=self.titles_layer(frame.width(),frame.height())
+            self.canvas.titles_frame=self.titles_layer(frame.width(),frame.height(),self.shown_seconds())
         except Exception as exc:
             import applog; applog.error('Texts on top',exc); self.canvas.titles_frame=None
         self.canvas.art_frame=None; self.canvas.hand_frame=None
@@ -4994,6 +5023,20 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             return stack(under,compose_frame(self.drawing,fraction,options,camera))
         return compose_frame(self.drawing,fraction,options,camera)
 
+    def shown_seconds(self):
+        """exp.126: the time of the frame on the screen. Playing (or scrubbing fast), that is
+        the nearest video frame, not the exact playhead: the texts on top must be drawn at
+        the same moment as the picture under them, or they shake against it in a zoom."""
+        exact=self.video_seconds()
+        view=getattr(self,'_view',None)
+        if not (self.playing or getattr(self,'_scrub_fast',False)) or not view or self.zoomed_out():
+            return exact
+        try:
+            index,count=self.frame_index(self.position)
+            return exact+(index/count-self.position)*view['length']
+        except Exception:
+            return exact
+
     def frame_index(self,fraction):
         count=max(1,round(self._view['length']*self.PREVIEW_FPS))
         return max(0,min(count,round(fraction*count))),count
@@ -5012,15 +5055,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if stats is not None: stats['ready' if cached is not None else 'drawn']+=1
         if cached is not None:
             return cached
-        cost=getattr(self,'_play_cost',0.)
-        width=self.PREVIEW_WIDTH if cost<.03 else 768 if cost<.045 else 640
-        began=time.perf_counter()
-        frame=self.render_segment(where,k,local,frames,width)
-        spent=time.perf_counter()-began
-        self._play_cost=spent if not cost else .7*cost+.3*spent*self.PREVIEW_WIDTH/width
-        if width==self.PREVIEW_WIDTH:
-            self.segment_cache.put(segment,local,width,frame)
-            self.schedule_render_bar()
+        # exp.126: always the full size. Smaller frames when the computer could not keep up
+        # made the picture and the texts change sharpness from one frame to the next (the
+        # first title 'palpitated', zoom-ins wobbled); now a slow frame is simply late.
+        frame=self.render_segment(where,k,local,frames,self.PREVIEW_WIDTH)
+        self.segment_cache.put(segment,local,self.PREVIEW_WIDTH,frame)
+        self.schedule_render_bar()
         return frame
 
     def keep_frame(self,index,frame):

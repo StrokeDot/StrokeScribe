@@ -3328,9 +3328,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
                                'to a free place next to the pictures already there. When the page is full, '
                                'it goes to a new page and the camera moves there.')
     w.scene_picture.clicked.connect(lambda checked=False: w.add_element_menu(True,w.scene_picture))
-    add_row=QHBoxLayout();add_row.setSpacing(4)
-    add_row.addWidget(w.scene_add); add_row.addWidget(w.scene_picture)
-    scene_buttons.addLayout(add_row)
+    # exp.126: not shown any more (the user: the + next to picture / text / camera and the
+    # + card at the end of the strip already add elements). Kept for the menus and tests.
+    w.scene_add.hide(); w.scene_picture.hide()
     move_row=QHBoxLayout();move_row.setSpacing(4)
     w.scene_edit=QPushButton('Edit…');w.scene_edit.setObjectName('primary')
     w.scene_edit.setToolTip('Settings of this element in a window of its own, with its own preview: how it '

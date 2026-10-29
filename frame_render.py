@@ -56,7 +56,7 @@ def _ghosted(art, top, opacity):
     return out
 
 
-def _core(drawing, fraction, opts, camera_path=None):
+def _core(drawing, fraction, opts, camera_path=None, camera_fraction=None):
     """Artwork + hand, without the erase stage or lettering background."""
     from camera import crop, render_size
     from engine import render, scale_animation_frame
@@ -69,7 +69,14 @@ def _core(drawing, fraction, opts, camera_path=None):
     opts = {k: v for k, v in opts.items() if k in RENDER_KEYS}
     scale = opts.pop('artwork_scale', 1.0)
     width, height = opts['width'], opts['height']
-    zoom, cx, cy = camera_path.at(fraction) if camera_path is not None else (1., .5, .5)
+    if camera_path is not None and camera_fraction is not None and getattr(camera_path, 'clips', None):
+        # exp.126: the camera clips run on the video's clock. `fraction` here is the drawing's
+        # own (faster when the element has a pause or a way out), so a zoom ran ahead of the
+        # pictures under it and jumped back at the end: the picture moved during a zoom-in.
+        fraction_for_camera = camera_fraction
+    else:
+        fraction_for_camera = fraction
+    zoom, cx, cy = camera_path.at(fraction_for_camera) if camera_path is not None else (1., .5, .5)
     big_w, big_h = render_size(width, height, zoom)
     opts['width'], opts['height'] = big_w, big_h
     with capture() as hands:
@@ -289,11 +296,15 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
         lines_only = entrance != 'draw' and _lines_part(opts)
         if lines_only and base_fraction * timeline_seconds(drawing, dict(opts, pause=0)) >= \
                 float(opts.get('duration', 4) or 0):
-            frame = _core(drawing, base_fraction, opts, camera_path)    # the colours are painted
+            frame = _core(drawing, base_fraction, opts, camera_path, fraction)    # the colours are painted
         elif entrance != 'draw':
             frame = _entering(drawing, base_fraction, opts, entrance, lines_only)
+            if camera_path is not None and getattr(camera_path, 'clips', None):
+                # exp.126: an element that moves in follows the camera clips too (it stayed
+                # unzoomed while everything around it zoomed in).
+                frame = _camera_view(frame, *camera_path.at(fraction))
         else:
-            frame = _core(drawing, base_fraction, opts, camera_path)
+            frame = _core(drawing, base_fraction, opts, camera_path, fraction)
     elif erase.get('mode') in EXITS:
         # Goes out with an effect (fade, pop, zoom, spin, move out) instead of an eraser.
         hold = finished_picture(drawing, opts)
