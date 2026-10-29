@@ -1110,15 +1110,24 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             tl.selected_overlays=set(getattr(self,'selected_overlays',set()))
 
     # ------------------------------------------------------------ camera track (exp.119)
-    def add_camera_menu(self,button=None):
+    def add_camera_at(self,kind,seconds):
+        """exp.128: double-click on a camera row of the timeline: a camera there."""
+        if kind: return self.add_camera_clip(kind,at=seconds)
+        return self.add_camera_menu(None,at=seconds)
+
+    def add_camera_menu(self,button=None,at=None):
         """'+ Camera': what the camera does (exp.121)."""
         from PySide6.QtWidgets import QMenu
         from PySide6.QtGui import QCursor
-        from camera_clips import KINDS, CUSTOM
+        from camera_clips import MOVING, CUSTOM, FIXED
         menu=QMenu(self)
-        for kind in KINDS:
-            text=('Zoom to a spot you choose…' if kind==CUSTOM else kind)
-            menu.addAction(text,lambda kind=kind: self.add_camera_clip(kind))
+        # exp.128 (the user): two kinds. Fixed: the camera goes there and stays. Moving: it
+        # goes, stays a moment and comes back.
+        menu.addAction('Fixed camera — goes there and stays',lambda: self.add_camera_clip(FIXED,at=at))
+        moving=menu.addMenu('Moving camera — goes and comes back')
+        for kind in MOVING:
+            text=('Zoom to a spot you choose' if kind==CUSTOM else kind)
+            moving.addAction(text,lambda kind=kind: self.add_camera_clip(kind,at=at))
         where=button.mapToGlobal(button.rect().bottomLeft()) if button is not None else QCursor.pos()
         menu.exec(where)
 
@@ -1144,7 +1153,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """The camera clips the preview uses (exp.125: all but the one being aimed)."""
         clips=list(getattr(self,'cameras',None) or ())
         if self.camera_editing():
-            clips=[c for c in clips if c.get('id')!=self.selected_camera]
+            # exp.128: aiming a clip, the preview shows the page as it is without camera
+            # clips (the frame you drag is where the camera goes on that page).
+            clips=[]
         return clips
 
     def video_camera(self,k,base,total=None):
@@ -1166,7 +1177,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import camera_clips
         clips=self.live_clips()
         if a is not None and b is not None:
-            clips=[c for c in clips if float(c['start'])<=b+1e-6 and camera_clips.until(c)>=a-1e-6]
+            moves=self.camera_moves() if any(camera_clips.fixed(c) for c in clips) else []
+            clips=[c for c in clips if float(c['start'])<=b+1e-6 and camera_clips.until(c,moves,clips)>=a-1e-6]
         return camera_clips.signature(clips)
 
     def segment_span(self,where,k):
@@ -1185,16 +1197,17 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         tl.cam_clips=list(getattr(self,'cameras',[]))
         moves=self.camera_moves() if tl.cam_clips else []
         import camera_clips
-        tl.cam_holds={c['id']:camera_clips.until(c,moves) for c in tl.cam_clips}
+        tl.cam_holds={c['id']:min(camera_clips.until(c,moves,tl.cam_clips),self.video_length() if tl.cam_clips else 0.)
+                      for c in tl.cam_clips}
         tl.selected_camera=getattr(self,'selected_camera',None)
         tl.update()
 
-    def add_camera_clip(self,kind='Zoom in'):
-        """A camera clip at the playhead on the Camera track (whole video)."""
+    def add_camera_clip(self,kind='Zoom in',at=None):
+        """A camera clip at the playhead (or at `at` seconds) on the Camera track (whole video)."""
         import camera_clips
         if not self.drawing: return None
         if len(self.scenes)>1 and not self.all_scenes(): self.preview_scope.setCurrentIndex(1)
-        start=self.video_seconds() if self.position<.999 else 0.
+        start=float(at) if at is not None else (self.video_seconds() if self.position<.999 else 0.)
         total=max(.5,self.video_length())
         clip=camera_clips.new_clip(kind,min(start,max(0.,total-.5)))
         self.record_structure('add camera clip')
@@ -1202,8 +1215,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.project_changes.mark_changed()
         self.select_camera(clip['id'])
         if hasattr(self,'show_left_panel'): self.show_left_panel('camera')
-        self.status.setText(f'Camera clip "{kind}" added at {clip["start"]:.1f} s: the camera goes in, stays, and comes '
-                            'back. Drag the frame on the preview to choose where it looks.')
+        if kind==camera_clips.FIXED:
+            self.status.setText(f'Fixed camera at {clip["start"]:.1f} s: the camera goes there and stays (until the next '
+                                'fixed camera or the next move to another page). Drag the frame on the preview to '
+                                'choose where; drag the clip on the timeline to move it.')
+        else:
+            self.status.setText(f'Camera clip "{kind}" added at {clip["start"]:.1f} s: the camera goes in, stays, and comes '
+                                'back. Drag the frame on the preview to choose where it looks.')
         return clip
 
     def select_camera(self,cid):
@@ -1244,8 +1262,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         else:
             import camera_clips
             self.record_structure('camera clip kind')
-            clip['kind']=action
-            clip['from'],clip['to']=camera_clips.presets(action)
+            camera_clips.set_kind(clip,action)
         self.project_changes.mark_changed()
         self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
 
@@ -1263,6 +1280,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             a,b=float(clip.get('in_s',1.2)),float(clip.get('out_s',1.2))
             self.cam_clip_in.setValue(a); self.cam_clip_out.setValue(b)
             self.cam_clip_hold.setValue(max(0.,float(clip['duration'])-a-b))
+            moving=clip.get('kind')!=__import__('camera_clips').FIXED     # exp.128: a fixed one stays
+            for field in (self.cam_clip_hold,self.cam_clip_out):
+                field.setVisible(moving)
+                name=self.cam_clip_form.labelForField(field)
+                if name is not None: name.setVisible(moving)
             pan=clip.get('from') is not None
             for key in ('to','from'):
                 framing=clip.get(key) or (1.,.5,.5)
@@ -1283,17 +1305,17 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             QTimer.singleShot(1500,lambda: setattr(self,'_cam_recorded',None))
         import camera_clips
         if what=='kind':
-            clip['kind']=self.cam_clip_kind.currentText()
-            clip['from'],clip['to']=camera_clips.presets(clip['kind'])
+            camera_clips.set_kind(clip,self.cam_clip_kind.currentText())
         else:
             clip['start']=round(self.cam_clip_start.value(),2)
             a,b,hold=self.cam_clip_in.value(),self.cam_clip_out.value(),self.cam_clip_hold.value()
+            if camera_clips.fixed(clip): b,hold=0.,0.
             clip['in_s'],clip['out_s'],clip['duration']=round(a,2),round(b,2),round(a+hold+b,2)
             camera_clips.fit(clip)
             get=lambda key: tuple(self.cam_clip_fields[(key,n)].value()/100. for n in ('zoom','x','y'))
             clip['to']=get('to')
             if clip.get('from') is not None: clip['from']=get('from')
-            if clip.get('kind')!=camera_clips.CUSTOM and (clip['to'],clip['from'])!=camera_clips.presets(clip['kind']) \
+            if clip.get('kind') not in (camera_clips.CUSTOM,camera_clips.FIXED) and (clip['to'],clip['from'])!=camera_clips.presets(clip['kind']) \
                     and clip.get('from') is None:
                 clip['kind']=camera_clips.CUSTOM
         self.project_changes.mark_changed()

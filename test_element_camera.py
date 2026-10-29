@@ -87,6 +87,28 @@ class CameraClipTests(unittest.TestCase):
         b = cc.new_clip('Zoom in', start=8.)
         self.assertEqual(cc.framing_at([a, b], 10.), (1.6, .5, .5))   # not 1.6 x 1.6
 
+    def test_a_fixed_camera_stays_until_the_next_move(self):
+        # exp.128: it goes there and stays; a moving camera goes out from it and back to it;
+        # the next move between pages ends it.
+        import camera_clips as cc
+        fixed = cc.new_clip(cc.FIXED, 2.); fixed['to'] = (2., .3, .3)
+        self.assertEqual((fixed['duration'], fixed['in_s'], fixed['out_s']), (1.2, 1.2, 0.))
+        moves = [(10., 11.2)]
+        self.assertIsNone(cc.framing_at([fixed], 1., moves))
+        self.assertEqual(cc.framing_at([fixed], 5., moves), (2., .3, .3))
+        self.assertEqual(cc.framing_at([fixed], 10.5, moves), (2., .3, .3))
+        self.assertIsNone(cc.framing_at([fixed], 11.5, moves))           # the next page: normal
+        self.assertEqual(cc.until(fixed, moves, [fixed]), 11.2)
+        zoom = cc.new_clip('Zoom in', 6.)
+        self.assertEqual(cc.framing_at([fixed, zoom], 6., moves), (2., .3, .3))   # starts from it
+        self.assertEqual(cc.framing_at([fixed, zoom], 10.45, moves), (2., .3, .3))  # and back to it
+        second = cc.new_clip(cc.FIXED, 4.); second['to'] = (1.5, .6, .6)
+        self.assertEqual(cc.until(fixed, moves, [fixed, second]), 4.)
+        self.assertEqual(cc.framing_at([fixed, second], 4., moves), (2., .3, .3))  # from the first one
+        self.assertEqual(cc.framing_at([fixed, second], 6., moves), (1.5, .6, .6))
+        cc.set_kind(second, 'Zoom in')
+        self.assertEqual(second['duration'], 4.4)
+
     def test_older_clips_are_upgraded(self):
         import camera_clips as cc
         old = {'id': 'x', 'kind': 'Zoom out', 'start': 1., 'duration': 1.5, 'from': None, 'to': (1., .5, .5), 'back': False}
@@ -155,6 +177,26 @@ class WindowTests(unittest.TestCase):
         w.select_camera(None)
         camera = w.video_camera(0, None, 4.)
         self.assertIsNotNone(camera)
+
+    def test_fixed_camera_on_its_own_row_and_double_click_adds(self):
+        import camera_clips as cc
+        w = self.w
+        w.position = 0.; w.refresh()
+        clip = w.add_camera_clip(cc.FIXED)
+        self.app.processEvents()
+        tl = w.stage_timeline
+        r = tl._clip_rect(clip)
+        self.assertTrue(tl._fixed_row().contains(r.center()))
+        self.assertTrue(w.cam_clip_hold.isHidden())                   # it stays: no 'Stays' / 'Coming back'
+        w.select_camera(None)
+        self.assertIsNotNone(w.video_camera(0, None, 4.))
+        got = []
+        tl.camera_add.connect(lambda kind, s: got.append((kind, s)))
+        from PySide6.QtCore import QPointF
+        tl.camera_add.emit('Fixed camera', 1.)
+        self.assertEqual(len(w.cameras), 2)
+        self.assertEqual(got[0][0], 'Fixed camera')
+        self.assertTrue(w.scene_transition.isHidden())               # the move is on the timeline now
 
     def test_a_camera_clip_only_touches_its_own_stretch(self):
         """exp.125: changing a camera clip makes only its own stretch of ready frames old."""

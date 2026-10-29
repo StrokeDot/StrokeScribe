@@ -208,6 +208,7 @@ class StageTimeline(QFrame):
     camera_done=Signal(str)
     camera_edit=Signal(str)             # double-click: its settings
     camera_action=Signal(str,str)       # id, a kind / 'delete'
+    camera_add=Signal(str,float)        # exp.128: double-click on a camera row: kind ('' = ask), seconds
     overlay_toggled=Signal(str)         # exp.117: Ctrl+click on a text clip: add it to / take it out of the choice
     text_track_toggled=Signal(int)      # exp.117: a text track's hide button   # whole video: another element's text / picture (k, id)
     move_clicked=Signal(int)            # whole video: a camera move clicked (the move after element k)
@@ -576,7 +577,8 @@ class StageTimeline(QFrame):
         return None
 
     def _clip_rect(self, clip, start=None, length=None):
-        cam=self._moving_row()
+        # exp.128: a fixed camera sits on the Fixed camera row, the others on Moving camera.
+        cam=self._fixed_row() if clip.get('kind')=='Fixed camera' else self._moving_row()
         start=float(clip['start']) if start is None else start
         length=float(clip['duration']) if length is None else length
         x0,x1=self._x(start),self._x(start+length)
@@ -1109,6 +1111,14 @@ class StageTimeline(QFrame):
             p.drawPolygon(QPolygonF([QPointF(r.right()-b,r.top()),QPointF(r.right(),r.bottom()),QPointF(r.right()-b,r.bottom())]))
             p.restore()
             self._draw_icon(p,'camera',QPointF(r.left()+10,r.center().y()),'#FFFFFF',11)
+            hold=self.cam_holds.get(clip['id']) if clip.get('kind')=='Fixed camera' else None
+            if hold is not None and hold>float(clip['start'])+float(clip['duration'])+1e-3:
+                # It stays there: a line to where it stops (the next fixed camera / page move).
+                x1=self._x(hold)
+                line=QColor(c['paint']); line.setAlpha(200 if chosen else 140)
+                p.setPen(QPen(line,3)); y=r.center().y()
+                p.drawLine(QPointF(r.right()+1,y),QPointF(x1,y))
+                p.setPen(QPen(line,1.5)); p.drawLine(QPointF(x1,r.top()+4),QPointF(x1,r.bottom()-4))
             if r.width()>40:
                 p.setFont(clip_font); p.setPen(QColor('white'))
                 text=p.fontMetrics().elidedText(str(clip.get('kind','Camera')),Qt.TextElideMode.ElideRight,int(r.width()-26))
@@ -1481,6 +1491,21 @@ class StageTimeline(QFrame):
         clip,_=self._clip_at(event.position())
         if clip is not None:
             self.camera_edit.emit(clip['id']);event.accept();return
+        pos=event.position()
+        # exp.128: the camera rows answer a double-click too: a move between pages or an
+        # element's own zoom opens its settings; an empty spot adds a camera there.
+        move=self._move_at(pos)
+        if move is not None:
+            self.move_clicked.emit(move);event.accept();return
+        own=self._element_camera_at(pos)
+        if own is not None:
+            self.element_camera_clicked.emit(own);event.accept();return
+        if self.items and pos.x()>=self.LEFT and self.total()>0:
+            seconds=max(0.,self._sec(pos.x()))
+            if self._fixed_row().contains(pos):
+                self.camera_add.emit('Fixed camera',seconds);event.accept();return
+            if self._moving_row().contains(pos):
+                self.camera_add.emit('',seconds);event.accept();return
         item,_=self._overlay_at(event.position())
         if item is not None:
             self.overlay_edit.emit(item.get('id'));event.accept();return
@@ -3150,7 +3175,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     camera_l.addWidget(w.camera_zoom_box)
     w.camera_zoom_box.hide()   # exp.119: replaced by camera clips (kept for older projects)
     # exp.119: the Camera track. A camera clip moves the camera for the whole picture.
-    camera_l.addWidget(label('MOVING CAMERA (zoom, pan)'))
+    camera_l.addWidget(label('CAMERA (fixed or moving)'))
     w.camera_clip_add=QPushButton('+  Add camera')
     w.camera_clip_add.setObjectName('primary')
     w.camera_clip_add.clicked.connect(lambda checked=False: w.add_camera_menu(w.camera_clip_add))
@@ -3158,6 +3183,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.camera_clip_box=QWidget(); cb=QVBoxLayout(w.camera_clip_box); cb.setContentsMargins(0,0,0,0); cb.setSpacing(6)
     from camera_clips import KINDS as _KINDS
     cf=form_layout(); cb.addLayout(cf)
+    w.cam_clip_form=cf
     w.cam_clip_kind=QComboBox(); w.cam_clip_kind.addItems(list(_KINDS)); cf.addRow('Kind',w.cam_clip_kind)
     w.cam_clip_start=w.number(0,3600,0,.1); w.cam_clip_start.setDecimals(1); w.cam_clip_start.setSuffix(' s')
     cf.addRow('Starts at',w.cam_clip_start)
@@ -3367,6 +3393,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
                                'camera moves. Board: all elements from above — move and resize their frames.')
     w.preview_scope.currentIndexChanged.connect(lambda index: w.preview_scope_changed())
     trans.addRow('Preview',w.preview_scope)
+    # exp.128 (the user): the move to the next element is on the timeline's Fixed camera row
+    # (click it to change it, or add a Fixed camera); not here any more.
+    for field in (w.scene_transition,w.scene_transition_time):
+        field.hide(); trans.labelForField(field).hide()
     w.board_arrange=QPushButton('Arrange in a row'); w.board_arrange.setObjectName('subtle')
     w.board_arrange.setToolTip('Put every frame next to the one before it again (following the transitions).')
     w.board_arrange.clicked.connect(lambda checked=False: w.arrange_board())
@@ -3403,6 +3433,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.camera_done.connect(lambda cid: w.camera_clip_done(cid))
     w.stage_timeline.camera_edit.connect(lambda cid: w.edit_camera_clip(cid))
     w.stage_timeline.camera_action.connect(lambda cid,action: w.camera_clip_action(cid,action))
+    w.stage_timeline.camera_add.connect(lambda kind,seconds: w.add_camera_at(kind,seconds))
     w.stage_timeline.text_track_toggled.connect(lambda t: w.toggle_text_track(t))
     w.stage_timeline.element_edit.connect(lambda k: w.edit_element(k))
     w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))
