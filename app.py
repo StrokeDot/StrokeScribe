@@ -1120,13 +1120,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """'+ Camera': what the camera does (exp.121)."""
         from PySide6.QtWidgets import QMenu
         from PySide6.QtGui import QCursor
-        from camera_clips import MOVING, CUSTOM
+        from camera_clips import MOVING, CUSTOM, FIXED
         menu=QMenu(self)
-        # exp.132 (the user): the fixed camera moves come with the elements (one per element),
-        # so + Add camera adds the moving ones only.
+        # exp.132 (the user): Reframe = the camera goes to another spot of the page and stays,
+        # like a move to the next element but without one; the moving cameras come back.
+        menu.addAction('Reframe',lambda: self.add_camera_clip(FIXED,at=at))
+        moving=menu.addMenu('Moving camera')
         for kind in MOVING:
             text=('Zoom to a spot you choose' if kind==CUSTOM else kind)
-            menu.addAction(text,lambda kind=kind: self.add_camera_clip(kind,at=at))
+            moving.addAction(text,lambda kind=kind: self.add_camera_clip(kind,at=at))
         where=button.mapToGlobal(button.rect().bottomLeft()) if button is not None else QCursor.pos()
         menu.exec(where)
 
@@ -1215,9 +1217,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.select_camera(clip['id'])
         if hasattr(self,'show_left_panel'): self.show_left_panel('camera')
         if kind==camera_clips.FIXED:
-            self.status.setText(f'Fixed camera at {clip["start"]:.1f} s: the camera goes there and stays (until the next '
-                                'fixed camera or the next move to another page). Drag the frame on the preview to '
-                                'choose where; drag the clip on the timeline to move it.')
+            self.status.setText(f'Reframe at {clip["start"]:.1f} s: the camera goes there and stays. Drag the frame on '
+                                'the preview to choose where; double-click it on the timeline for its settings.')
         else:
             self.status.setText(f'Camera clip "{kind}" added at {clip["start"]:.1f} s: the camera goes in, stays, and comes '
                                 'back. Drag the frame on the preview to choose where it looks.')
@@ -1261,10 +1262,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import camera_clips
         clip=self.find_camera(cid)
         if clip is None: return
-        dialog=QDialog(self); dialog.setWindowTitle('Camera move')
+        dialog=QDialog(self); dialog.setWindowTitle('Reframe')
         form=QFormLayout(dialog)
-        note=QLabel(f'At {float(clip["start"]):.1f} s: the camera goes to a new place and stays there '
-                    '(until the next camera move).')
+        note=QLabel(f'At {float(clip["start"]):.1f} s: the camera goes to another spot of this page and stays '
+                    'there (until the next reframe or the move to the next element).')
         note.setWordWrap(True); form.addRow(note)
         how=QComboBox(); how.addItems(['Camera move','Cut']); how.setCurrentText(clip.get('how') or 'Camera move')
         how.setItemData(1,'Straight there, no movement.',Qt.ItemDataRole.ToolTipRole)
@@ -1278,7 +1279,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         place.setToolTip('The preview shows the page with a frame: drag it to where the camera goes, '
                          'mouse wheel to zoom in or out.')
         form.addRow(place)
-        remove=QPushButton('Delete this camera move'); remove.setObjectName('subtle')
+        # Where: the spot you choose, the whole page again, or the same spot as an earlier
+        # reframe (to go back to a place without a new element).
+        where=QComboBox(); where.addItem('The spot I choose',None); where.addItem('The whole page',tuple(camera_clips.REST))
+        for other in sorted(self.cameras,key=lambda c: float(c['start'])):
+            if other is not clip and camera_clips.fixed(other) and other.get('to'):
+                where.addItem(f'Same spot as the reframe at {float(other["start"]):.1f} s',tuple(other['to']))
+        form.addRow('Goes to',where)
+        remove=QPushButton('Delete this reframe'); remove.setObjectName('subtle')
         form.addRow(remove)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
@@ -1289,6 +1297,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if dialog.exec()!=QDialog.DialogCode.Accepted: return
         if wants['delete']:
             return self.camera_clip_action(cid,'delete')
+        target=where.currentData()
+        if target is not None and tuple(clip.get('to') or ())!=tuple(target):
+            self.record_structure('camera move')
+            clip['to']=tuple(target)
+            self.project_changes.mark_changed()
         new_how=how.currentText(); new_secs=round(secs.value(),2)
         if (clip.get('how') or 'Camera move',float(clip['duration']))!=(new_how,new_secs):
             self.record_structure('camera move')

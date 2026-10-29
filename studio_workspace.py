@@ -1521,6 +1521,8 @@ class StageTimeline(QFrame):
             self.element_camera_clicked.emit(own);event.accept();return
         if self.items and pos.x()>=self.LEFT and self.total()>0:
             seconds=max(0.,self._sec(pos.x()))
+            if self._fixed_row().contains(pos):
+                self.camera_add.emit('Fixed camera',seconds);event.accept();return     # a reframe there
             if self._moving_row().contains(pos):
                 self.camera_add.emit('',seconds);event.accept();return
         item,_=self._overlay_at(event.position())
