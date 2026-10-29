@@ -80,6 +80,39 @@ class CacheTests(unittest.TestCase):
         self.assertNotEqual(T.signature(a), T.signature({'png': 'a' * 9999 + 'b', 'x': [1, 2.5]}))
         self.assertNotEqual(T.signature(a), T.signature({'png': 'a' * 10000, 'x': [1, 2.6]}))
 
+    def test_signature_of_many_points_sees_one_moved_point(self):
+        # exp.130: long lists of numbers are digested in one go.
+        from project_lifecycle import ProjectChangeTracker as T
+        points = [[i * .5, i * .25] for i in range(5000)]
+        a = {'strokes': [{'points': points}], 'xs': list(range(200))}
+        sig = T.signature(a)
+        self.assertEqual(sig, T.signature({'strokes': [{'points': [list(p) for p in points]}], 'xs': list(range(200))}))
+        points[2500][1] += .001
+        self.assertNotEqual(sig, T.signature(a))
+        self.assertNotEqual(T.signature({'p': [[1, 2]] * 70}), T.signature({'p': [[1, 2]] * 69 + [[1, 3]]}))
+        self.assertNotEqual(T.signature({'p': [[1, 'x']] * 70}), T.signature({'p': [[1, 'y']] * 70}))
+
+    @unittest.skipIf(SKIP, 'needs Qt')
+    def test_sample_drawing_is_kept_ready(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        import engine
+        sample = Path(__file__).parent / 'samples' / 'drawing.svg'
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict('os.environ', {'STROKESCRIBE_PREVIEW_CACHE': str(Path(tmp) / 'p')}):
+            first = engine.import_svg_cached(sample)
+            with mock.patch.object(engine, 'import_svg', side_effect=AssertionError('read again')):
+                again = engine.import_svg_cached(sample)
+        plain = engine.import_svg(sample)
+        self.assertEqual([s.points for s in again.strokes], [s.points for s in plain.strokes])
+        self.assertEqual([s.distances for s in again.strokes], [s.distances for s in first.strokes])
+        self.assertEqual(again.bounds, plain.bounds)
+
+    def test_cv2_waits_until_used(self):
+        from lazy_import import Lazy
+        math_module = Lazy('math')
+        self.assertEqual(math_module.sqrt(9), 3)
+
     @unittest.skipIf(SKIP, 'needs Qt')
     def test_decoded_pictures_are_not_changed_by_callers(self):
         from PySide6.QtGui import QColor, QImage, QPainter
