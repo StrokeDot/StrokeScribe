@@ -406,10 +406,14 @@ class StageTimeline(QFrame):
             zoomed=bool(self.items)
             self.hbar.setVisible(zoomed)
             if zoomed:
-                room=max(1e-6,self._room()-self._span())
-                self.hbar.setEnabled(self._room()-self._span()>1e-3)
-                self.hbar.setRange(0,1000); self.hbar.setPageStep(max(1,int(1000*self._span()/max(1e-6,room))))
-                self.hbar.setValue(int(1000*self.view_start/room))
+                room=self._room()-self._span()
+                if room>1e-3:
+                    self.hbar.setEnabled(True)
+                    self.hbar.setRange(0,1000)
+                    self.hbar.setPageStep(max(1,min(100000,int(1000*self._span()/room))))
+                    self.hbar.setValue(int(1000*self.view_start/room))
+                else:                                 # everything is in view: nothing to scroll
+                    self.hbar.setRange(0,0); self.hbar.setEnabled(False)
                 self.hbar.setGeometry(int(self.LEFT),self.height()-11,int(self._width()),10)
             over=self._content_height()-self.height() if self.items else 0
             self.vbar.setVisible(over>0)
