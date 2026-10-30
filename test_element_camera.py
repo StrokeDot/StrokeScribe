@@ -200,6 +200,22 @@ class HandRestTests(unittest.TestCase):
         # Without it nothing changes.
         self.assertEqual(hand_window(drawing, plain), None)
 
+    def test_the_hand_that_draws_shows_on_tracks(self):
+        # exp.146: an element holding its finished picture on a higher track does not hide
+        # the hand of the element that draws (the hand disappeared).
+        from engine import import_svg
+        from timeline_model import State
+        from timeline_render import _hand_element
+        drawing = import_svg(HERE / 'samples' / 'drawing.svg')
+        hand = self.options()['hand']
+        drawing_el = dict(drawing=drawing, options=dict(duration=2., hand=hand))
+        holding = dict(drawing=drawing, options=dict(duration=2., hand=hand, pause=3.))
+        state = State('page', current=1, active=[(0, .5), (1, .8)], top=1)
+        self.assertEqual(_hand_element(state, [drawing_el, holding], {0: 0, 1: 1}), 0)
+        travelling = dict(drawing=drawing, options=self.options(layers='all'))
+        state = State('page', current=1, active=[(1, .8), (0, .99)], top=0)
+        self.assertEqual(_hand_element(state, [travelling, holding], {0: 0, 1: 1}), 0)   # going back
+
     def test_the_window_shows_the_waiting_hand(self):
         from app import Window
         from engine import import_svg

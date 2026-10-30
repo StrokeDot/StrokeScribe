@@ -116,11 +116,26 @@ def _texts(out, items, seconds, world=None, view=None):
     return paint_texts(out, items, seconds, world.frames, world.place, view)
 
 
+def _hand_element(state, elements, tracks):
+    """exp.146: the element whose hand shows: the highest one whose hand is drawing or
+    travelling now. It used to be simply the top element being drawn, so an element still
+    holding its finished picture on a higher track hid the hand of the one drawing (the
+    user: the hand disappeared going to the drawing and always going back)."""
+    from frame_render import hand_busy
+    busy = [k for k, f in state.active
+            if elements[k]['options'].get('layers', 'all') != 'art'
+            and hand_busy(elements[k]['drawing'], elements[k]['options'], f)]
+    if not busy:
+        return state.top
+    return max(busy, key=lambda k: (tracks.get(k, 0), k))
+
+
 def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None):
     skip = set(range(len(elements))) - set(state.finished)
     out = world.view(view, width, height, upto=len(elements), skip=skip)
     tracks = {it.k: it.track for it in lay.items}
     waiting = sorted(titles or (), key=lambda o: int(o.get('track', 0)))
+    hand_k = _hand_element(state, elements, tracks)
     for k, fraction in state.active:
         under = [o for o in waiting if int(o.get('track', 0)) < tracks.get(k, 0)]
         if under:
@@ -134,7 +149,7 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
         art = element_frame(el['drawing'], opts, fraction, w, h, 'art')
         out = world.put(out, art, world.frames[k], view, opts.get('blend_mode', 'Normal'),
                         opts.get('artwork_opacity', 100))
-        if k == state.top and opts.get('layers', 'all') != 'art':
+        if k == hand_k and opts.get('layers', 'all') != 'art':
             hand = element_frame(el['drawing'], opts, fraction, w, h, 'hand')
             out = world.put(out, hand, world.frames[k], view)
     return _texts(out, waiting, seconds, world, view)
