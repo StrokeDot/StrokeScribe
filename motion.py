@@ -190,6 +190,24 @@ def _pen_canvas(drawing, fraction, width, height, duration, fade_duration, hold_
 def track(drawing, options, total_seconds, rate=30.):
     """[(time_s, PenSample)] sampled `rate` times a second over the animation."""
     count = max(2, int(math.ceil(total_seconds * rate)) + 1)
+    if options.get('hand_travel'):
+        from frame_render import travel_plan, travel_phase
+        plan = travel_plan(drawing, options)
+        if plan is not None:
+            # exp.143: no pen sound while the hand travels to / from its corner.
+            lead, hand_end, tail, inner_total, inner = plan
+            inner_track = track(drawing, inner, inner_total, rate)
+            n = len(inner_track) - 1
+            out = []
+            for i in range(count):
+                t = i / (count - 1) * total_seconds
+                inner_t, phase, _ = travel_phase(t, lead, hand_end, tail)
+                if phase:
+                    out.append((t, PenSample(None, None)))
+                else:
+                    j = max(0, min(n, round(inner_t / max(1e-9, inner_total) * n)))
+                    out.append((t, inner_track[j][1]))
+            return out
     pause = max(0., float(options.get('pause', 0) or 0))
     if (options.get('entrance') or 'draw') != 'draw':
         import move_in

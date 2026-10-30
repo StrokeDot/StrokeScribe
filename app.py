@@ -62,6 +62,7 @@ class Canvas(QWidget):
         self.on_double=None         # on_double(x, y)
         self.box_provider=None      # () → (x, y, w, h) in frame pixels of a box to outline, or None
         self.titles_frame=None      # exp.116: texts / pictures on top, over everything (screen)
+        self.rest_frame=None        # exp.143: the hand waiting in its corner (screen)
         self._press=None
         self.highlight=[]           # selected lines: polylines in frame pixels
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
@@ -187,6 +188,8 @@ class Canvas(QWidget):
                 p.drawImage(rect,self.frame)
             if self.titles_frame is not None:
                 p.drawImage(rect,self.titles_frame)
+            if self.rest_frame is not None:
+                p.drawImage(rect,self.rest_frame)
             box=self.box_provider() if self.box_provider is not None else None
             if box:
                 from PySide6.QtGui import QPen
@@ -2107,7 +2110,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                       'image_style','image_animation_style','clean_faint',
                       'erase_mode','erase_time','erase_size','eraser',
                       'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export','export_layers','clean_color','export_done_sound',
-                      'move_hand','move_hand_size','move_hand_gx','move_hand_gy',
+                      'move_hand','move_hand_size','move_hand_gx','move_hand_gy','hand_rest','hand_rest_corner','hand_rest_travel',
                       'cam_start_zoom','cam_start_x','cam_start_y','cam_end_zoom','cam_end_x','cam_end_y','cam_begin','cam_time',
                       'ink_on','ink_edges','ink_edge_size','ink_removal','ink_strength','ink_colour','look_colour_on','look_temperature','look_tint','look_saturation','look_light_on','look_exposure','look_brightness','look_contrast','look_highlights','look_shadows','look_whites','look_blacks')
 
@@ -3180,10 +3183,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             memo[key]=(self.drawing,options,seconds_of(self.drawing,options),self.preview_camera(options))
             return memo[key]
         state=self.scenes[k]['state']
-        key=(id(state),width,height,over)
+        rest=self.hand_rest_settings()             # exp.143: the same for every element
+        key=(id(state),width,height,over,tuple(sorted(rest.items())))
         cached=self._scene_cache.get(id(state))
         if cached is None or cached[0]!=key:
-            drawing,options,_=job_from_state(state,self.hand)
+            drawing,options,_=job_from_state(state,self.hand,overrides=rest)
             options.pop('fps',None); options.pop('audio',None)
             if over: options['background']=False
             options['hand_scale']/=options['artwork_scale']
@@ -4967,7 +4971,45 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def element_fingerprint(self,k):
         uid,rev=self.current_rev() if k==self.scene_index else self.scene_rev(k)
         return ('el',uid,rev,self.hand_digest(),self.preview_background.currentText(),
-                repr(getattr(self,'background_color',None)))
+                repr(getattr(self,'background_color',None)),self.hand_rest_settings())
+
+    def hand_rest_settings(self):
+        """exp.143: the hand waiting in a corner, for every element of the video."""
+        if not hasattr(self,'hand_rest'): return {}
+        return dict(hand_rest=self.hand_rest.isChecked(),hand_rest_corner=self.hand_rest_corner.currentText(),
+                    hand_rest_travel=self.hand_rest_travel.value())
+
+    def hand_rest_changed(self,*args):
+        self._scene_cache={}; self._base_cache=OrderedDict()
+        if getattr(self,'_restoring',False) or getattr(self,'_entering_scene',False) or not self.drawing:
+            return
+        self.clear_frames(); self.refresh()
+
+    def rest_hand_layer(self,width,height,seconds):
+        """exp.143: the hand in its corner at `seconds` (None when an element's hand is
+        drawing or travelling, or when the hand does not wait in a corner)."""
+        if not getattr(self,'hand_rest',None) or not self.hand_rest.isChecked() or self.board_mode() or not self.drawing:
+            return None
+        from frame_render import hand_window, paint_rest_hand
+        if self.all_scenes():
+            lay=self.timeline_layout(); hidden=self.hidden_elements()
+            options=None
+            for it in lay.items:
+                if it.k in hidden: continue
+                drawing,opts,_,_=self.preview_scene(it.k,960,540)        # its timing (as the timeline)
+                window=hand_window(drawing,opts)
+                if window is None: continue
+                if options is None or it.start<=seconds: options=opts
+                if it.start-1e-6<=seconds<it.start+window[0]-1e-6:
+                    return None                     # this element's own hand
+            if options is None: return None
+        else:
+            drawing,options,_,_=self.preview_scene(self.scene_index,960,540)
+            window=hand_window(drawing,options)
+            if window is None: return None
+            if self.position*window[1]<window[0]-1e-6: return None
+        layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
+        return paint_rest_hand(layer,dict(options,layers='all'))
 
     def segment_fingerprint(self,where,k):
         """The fingerprint of one segment of the current view (see preview_cache)."""
@@ -5076,6 +5118,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.canvas.titles_frame=self.titles_layer(frame.width(),frame.height(),self.shown_seconds())
         except Exception as exc:
             import applog; applog.error('Texts on top',exc); self.canvas.titles_frame=None
+        try:
+            self.canvas.rest_frame=self.rest_hand_layer(frame.width(),frame.height(),self.shown_seconds())
+        except Exception as exc:
+            import applog; applog.error('Hand in its corner',exc); self.canvas.rest_frame=None
         self.canvas.art_frame=None; self.canvas.hand_frame=None
         self.canvas.blend_mode='Normal'
         self.canvas.artwork_opacity=100

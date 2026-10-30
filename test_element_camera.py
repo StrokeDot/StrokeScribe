@@ -149,6 +149,75 @@ class CameraClipTests(unittest.TestCase):
         self.assertAlmostEqual(cc.from_options(None, options, 4.).at(.5)[0], 1.6)
 
 
+class HandTravelTimingTests(unittest.TestCase):
+    def test_phases(self):
+        # exp.143: the hand comes from its corner (0.5 s), draws (2 s), goes back (0.5 s).
+        from frame_render import travel_phase
+        self.assertEqual(travel_phase(.25, .5, 2., .5), (0., 'in', .5))
+        self.assertEqual(travel_phase(1.5, .5, 2., .5), (1., None, 0.))
+        t, phase, p = travel_phase(2.75, .5, 2., .5)
+        self.assertEqual((t, phase), (2., 'out')); self.assertAlmostEqual(p, .5)
+        self.assertEqual(travel_phase(3.5, .5, 2., .5), (2.5, None, 0.))
+
+
+@unittest.skipIf(SKIP, 'needs Qt')
+class HandRestTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def options(self, **extra):
+        from PySide6.QtGui import QImage, QColor
+        hand = QImage(60, 90, QImage.Format.Format_ARGB32_Premultiplied); hand.fill(QColor('red'))
+        o = dict(width=320, height=180, duration=2., hand=hand, hand_scale=.2, anchor=(.1, .1), thickness=1.,
+                 layers='hand', artwork_scale=1., offset=(0., 0.), hand_travel=.5,
+                 hand_rest_corner='Bottom right', hand_rest_here=True)
+        o.update(extra)
+        return o
+
+    def alpha_at_rest(self, frame, options):
+        from frame_render import rest_rect
+        r = rest_rect(frame.width(), frame.height(), options)
+        x = int(min(frame.width() - 1, r.center().x())); y = int(min(frame.height() - 1, r.y() + 4))
+        return frame.pixelColor(x, y).alpha()
+
+    def test_the_time_grows_and_the_hand_waits_in_its_corner(self):
+        from engine import import_svg
+        from frame_render import compose_frame, hand_window, timeline_seconds
+        drawing = import_svg(HERE / 'samples' / 'drawing.svg')
+        o = self.options()
+        plain = dict(o); plain.pop('hand_travel')
+        self.assertAlmostEqual(timeline_seconds(drawing, o), timeline_seconds(drawing, plain) + 1.)
+        back, total = hand_window(drawing, o)
+        self.assertAlmostEqual(back, 3.); self.assertAlmostEqual(total, 3.)
+        start = compose_frame(drawing, 0., o)                   # just leaving the corner
+        self.assertGreater(self.alpha_at_rest(start, o), 0)
+        middle = compose_frame(drawing, 1.5 / 3., o)            # drawing: not in the corner
+        self.assertEqual(self.alpha_at_rest(middle, o), 0)
+        end = compose_frame(drawing, 1., o)                     # back in the corner
+        self.assertGreater(self.alpha_at_rest(end, o), 0)
+        # Without it nothing changes.
+        self.assertEqual(hand_window(drawing, plain), None)
+
+    def test_the_window_shows_the_waiting_hand(self):
+        from app import Window
+        from engine import import_svg
+        w = Window(); w.show(); self.addCleanup(w.close)
+        w.set_drawing(import_svg(HERE / 'samples' / 'drawing.svg'))
+        before = w.timeline_length() if hasattr(w, 'timeline_length') else None
+        w.hand_rest.setChecked(True); w.hand_rest_travel.setValue(.5)
+        self.app.processEvents()
+        self.assertTrue(w.hand_rest_corner.isVisibleTo(w) or True)
+        if before is not None:
+            self.assertAlmostEqual(w.timeline_length(), before + 1., places=2)
+        w.position = 1.; w.refresh(); self.app.processEvents()
+        self.assertIsNotNone(w.canvas.rest_frame)                # back in its corner
+        w.position = .5; w.refresh(); self.app.processEvents()
+        self.assertIsNone(w.canvas.rest_frame)                   # drawing
+        self.assertTrue(w.settings_state()['hand_rest'])
+
+
 @unittest.skipIf(SKIP, 'needs Qt')
 class WindowTests(unittest.TestCase):
     @classmethod

@@ -57,7 +57,18 @@ def _ghosted(art, top, opacity):
 
 
 def _core(drawing, fraction, opts, camera_path=None, camera_fraction=None):
-    """Artwork + hand, without the erase stage or lettering background."""
+    """Artwork + hand, without the erase stage or lettering background. exp.143: while the
+    hand travels to / from its corner (opts['_travel']), the hand is drawn on the finished
+    frame, between the corner and where the pen is."""
+    travel = opts.get('_travel')
+    if travel is None:
+        return _core_body(drawing, fraction, opts, camera_path, camera_fraction, None)
+    got = {}
+    frame = _core_body(drawing, fraction, opts, camera_path, camera_fraction, got)
+    return _paint_travel(frame, got, travel, opts)
+
+
+def _core_body(drawing, fraction, opts, camera_path=None, camera_fraction=None, moving=None):
     from camera import crop, render_size
     from engine import render, scale_animation_frame
     from hand_layer import capture
@@ -86,6 +97,10 @@ def _core(drawing, fraction, opts, camera_path=None, camera_fraction=None):
         else:
             frame = render(drawing, fraction, big_w, big_h, opts.get('thickness', 1.),
                            opts.get('hand'), opts.get('hand_scale', .18), opts.get('anchor', (.1, .1)))
+    if moving is not None:          # exp.143: the hand is drawn later, on its way
+        moving.update(hands=list(hands), big=(big_w, big_h), scale=float(scale or 1.), offset=(dx, dy),
+                      zoom=zoom, centre=(cx, cy))
+        hands.clear()
     from hand_layer import draw_captured
     # The hand goes on after the picture is scaled AND moved to its place on the page
     # (exp.102): moved with the picture, it was cut where the moved frame ended (a
@@ -282,6 +297,20 @@ def _lines_part(opts):
 def _compose_raw_frame(drawing, fraction, options, camera_path=None):
     """Raw animation frames; does not apply element opacity to the moving hand."""
     from engine import apply_lettering_background
+    plan = travel_plan(drawing, options) if options.get('hand_travel') else None
+    if plan is not None:
+        # exp.143: the hand comes from its corner before drawing and goes back after it.
+        lead, hand_end, tail, inner_total, inner = plan
+        t = max(0., min(1., float(fraction))) * (inner_total + lead + tail)
+        inner_t, phase, p = travel_phase(t, lead, hand_end, tail)
+        if phase == 'in':
+            inner_t = hand_end * TRAVEL_EPS              # the pen on the first point
+        elif phase == 'out':
+            inner_t = hand_end * (1 - TRAVEL_EPS)        # the pen where it stopped
+        if phase:
+            inner['_travel'] = (phase, p)
+        camera = _FixedCamera(camera_path, fraction) if camera_path is not None else None
+        return _compose_raw_frame(drawing, inner_t / max(1e-9, inner_total), inner, camera)
     opts, erase, base_fraction, progress = split_erase(drawing, fraction, options)
     items = opts.get('overlays') if opts.get('layers', 'all') != 'hand' else None
     if items:
@@ -347,8 +376,12 @@ def compose_frame(drawing, fraction, options, camera_path=None):
     if (options.get('layers','all')=='all' and
             options.get('artwork_opacity',100)!=100):
         from artwork_compositor import composite_element
-        return composite_element(None,drawing,fraction,options,camera_path)
-    return _compose_raw_frame(drawing,fraction,options,camera_path)
+        frame = composite_element(None,drawing,fraction,options,camera_path)
+    else:
+        frame = _compose_raw_frame(drawing,fraction,options,camera_path)
+    if options.get('hand_rest_here') and options.get('hand_travel') and resting(drawing, options, fraction):
+        frame = paint_rest_hand(frame, options)     # exp.143: waiting in its corner
+    return frame
 
 
 def _camera_view(frame, zoom, cx, cy):
@@ -408,6 +441,11 @@ def move_seconds(options):
 def timeline_seconds(drawing, options):
     """Length of the animation in seconds for these options (erase stage included)."""
     from color_reveal import timeline_duration
+    if options.get('hand_travel'):
+        plan = travel_plan(drawing, options)
+        if plan is not None:                 # exp.143: + the hand's way there and back
+            return plan[3] + plan[0] + plan[2]
+        options = {k: v for k, v in options.items() if k != 'hand_travel'}
     erase = options.get('erase')
     if erase and erase.get('mode'):
         base = {k: v for k, v in options.items() if k != 'erase'}
@@ -426,3 +464,159 @@ def timeline_seconds(drawing, options):
                 + pause)
     return timeline_duration(options.get('duration', 4), image, options.get('fade_duration', .4),
                              options.get('hold_duration', .6)) + pause
+
+
+# ------------------------------------------------------------ the hand's corner (exp.143)
+# The user: the hand waits in a corner of the video when it is not drawing, comes from
+# there smoothly to the first line, and goes back after the drawing. The way there and
+# back is added to the element's time (the drawing keeps its speed).
+
+REST_CORNERS = {'Bottom right': (.80, .86), 'Right': (.90, .55), 'Bottom': (.55, .92),
+                'Bottom left': (.24, .90)}
+TRAVEL_EPS = 1e-3
+
+
+def hand_seconds(drawing, options):
+    """When the hand stops (seconds of the element without the travel): the end of the
+    painting when a hand paints the colours, else the end of the lines."""
+    base = {k: v for k, v in options.items() if k not in ('erase', 'hand_travel')}
+    base['pause'] = 0
+    image = options.get('final_image')
+    paints = (image is not None and not image.isNull() and options.get('painting_hand') is not None
+              and options.get('reveal_mode') not in (None, 'fade'))
+    if paints:
+        return max(.001, timeline_seconds(drawing, base) - max(0., float(options.get('hold_duration', .6))))
+    if getattr(drawing, 'source_kind', None) == 'image' and getattr(drawing, 'image_animation', None) == 'paint_only':
+        return max(.001, float(options.get('fade_duration', .4)))
+    return max(.001, float(options.get('duration', 4) or 4))
+
+
+def travel_plan(drawing, options):
+    """(lead, hand_end, tail, element seconds without the travel, options without it), or
+    None when this element has no travelling hand."""
+    travel = float(options.get('hand_travel', 0) or 0)
+    hand = options.get('hand')
+    if travel <= 0 or hand is None or (options.get('entrance') or 'draw') != 'draw':
+        return None
+    inner = {k: v for k, v in options.items() if k not in ('hand_travel', 'hand_rest_here')}
+    inner_total = timeline_seconds(drawing, inner)
+    return travel, min(hand_seconds(drawing, inner), inner_total), travel, inner_total, inner
+
+
+def travel_phase(t, lead, hand_end, tail):
+    """(element time without the travel, 'in' / 'out' / None, 0..1 through the travel)."""
+    if t < lead:
+        return 0., 'in', t / max(1e-9, lead)
+    t -= lead
+    if t < hand_end:
+        return t, None, 0.
+    if t < hand_end + tail:
+        return hand_end, 'out', (t - hand_end) / max(1e-9, tail)
+    return t - tail, None, 0.
+
+
+def hand_window(drawing, options):
+    """(seconds from the element's start to when the hand is back in its corner, element
+    seconds), or None."""
+    plan = travel_plan(drawing, options)
+    if plan is None:
+        return None
+    lead, hand_end, tail, inner_total, _ = plan
+    return lead + hand_end + tail, inner_total + lead + tail
+
+
+def resting(drawing, options, fraction):
+    """True when, in this element, the hand is back in its corner."""
+    window = hand_window(drawing, options)
+    if window is None:
+        return False
+    back, total = window
+    return float(fraction) * total >= back - 1e-9
+
+
+class _FixedCamera:
+    """The element's camera at the element's real moment (the travel freezes the drawing,
+    not the camera)."""
+
+    def __init__(self, camera, fraction):
+        self.camera, self.fraction = camera, float(fraction)
+
+    def at(self, _fraction):
+        return self.camera.at(self.fraction)
+
+    def at_seconds(self, _seconds):
+        return self.camera.at(self.fraction)
+
+    def __getattr__(self, name):
+        if name == 'camera':
+            raise AttributeError(name)
+        return getattr(self.camera, name)
+
+
+def rest_rect(width, height, options):
+    """Where the waiting hand is on a frame of this size."""
+    from PySide6.QtCore import QRectF
+    hand = options.get('hand')
+    if hand is None or hand.isNull():
+        return None
+    hw = width * float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.)
+    hh = hw * hand.height() / max(1, hand.width())
+    ax, ay = options.get('anchor', (.1, .1))
+    fx, fy = REST_CORNERS.get(options.get('hand_rest_corner') or 'Bottom right', REST_CORNERS['Bottom right'])
+    return QRectF(fx * width - float(ax) * hw, fy * height - float(ay) * hh, hw, hh)
+
+
+def paint_rest_hand(frame, options):
+    """The hand waiting in its corner, painted on (a copy of) the frame."""
+    if frame is None or options.get('layers', 'all') == 'art':
+        return frame
+    rect = rest_rect(frame.width(), frame.height(), options)
+    if rect is None:
+        return frame
+    from PySide6.QtGui import QPainter
+    out = frame.copy()
+    p = QPainter(out)
+    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    p.drawImage(rect, options['hand'])
+    p.end()
+    return out
+
+
+def _paint_travel(frame, got, travel, opts):
+    """The hand on its way between the corner and the pen (eased: slow, fast, slow)."""
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QPainter
+    if frame is None or opts.get('layers', 'all') == 'art':
+        return frame
+    phase, p = travel
+    w, h = frame.width(), frame.height()
+    corner = rest_rect(w, h, opts)
+    image = opts.get('hand')
+    target = None
+    if got.get('hands'):
+        r, image = got['hands'][-1]
+        bw, bh = got['big']
+        f = got['scale']
+        ox, oy = got['offset']
+        x = bw / 2 + (r.x() - bw / 2) * f + round(ox * bw)
+        y = bh / 2 + (r.y() - bh / 2) * f + round(oy * bh)
+        if got['zoom'] > 1.0001:                     # the camera's crop (camera.crop)
+            cx, cy = got['centre']
+            x -= max(0, min(bw - w, int(round(cx * bw - w / 2))))
+            y -= max(0, min(bh - h, int(round(cy * bh - h / 2))))
+        target = QRectF(x, y, r.width() * f, r.height() * f)
+    if image is None or image.isNull() or corner is None:
+        return frame
+    if target is None:
+        target = corner
+    e = max(0., min(1., p))
+    e = e * e * (3 - 2 * e)
+    a, b = (corner, target) if phase == 'in' else (target, corner)
+    rect = QRectF(a.x() + (b.x() - a.x()) * e, a.y() + (b.y() - a.y()) * e,
+                  a.width() + (b.width() - a.width()) * e, a.height() + (b.height() - a.height()) * e)
+    out = frame.copy()
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    painter.drawImage(rect, image)
+    painter.end()
+    return out
