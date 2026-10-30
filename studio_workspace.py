@@ -237,6 +237,9 @@ class StageTimeline(QFrame):
         self.items=None            # whole video on tracks: [(k, label, start, seconds, track, parts)]
         self.moves=None            # whole video: camera moves [(k, label, start, seconds)]
         self._ghost=None           # an element being dragged: (k, start, track)
+        self._cam_ghost=None       # exp.140: a camera being dragged: (id, start, row)
+        self._text_ghost=None      # exp.140: a text being dragged: (id, start, length, track)
+        self._drag_y0=0.
         self.current_scene=0
         self.offset=0.             # whole video: where the edited element starts (seconds)
         # exp.116: texts and pictures on top are the whole video's own clips (absolute
@@ -1130,7 +1133,9 @@ class StageTimeline(QFrame):
         cam=self._camera_rect()
         area=self._tracks_area()
         p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track']))
-        p.drawRoundedRect(self._fixed_row(),5,5); p.drawRoundedRect(self._moving_row(),5,5)
+        p.drawRoundedRect(self._fixed_row(),5,5)
+        for i in range(self._cam_lane_count()):              # exp.140: one row per line, like the tracks
+            p.drawRoundedRect(self._moving_lane(i),5,5)
         p.save(); p.setClipRect(area)
         for t in range(self.lanes()):
             p.drawRoundedRect(self._track_rect(t),9,9)
@@ -1262,7 +1267,33 @@ class StageTimeline(QFrame):
                 p.setPen(QColor('white'))
                 p.drawText(r.adjusted(8,0,-8,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
                            f'{item[1]}  {start:.1f}s, Track {track+1}')
+        if self._text_ghost is not None:
+            oid,start,length,track=self._text_ghost
+            item=next((o for o in self.overlays if o.get('id')==oid),None)
+            if item is not None:
+                r=self._overlay_rect(dict(item,start=start,duration=length,track=track)).adjusted(1,2,-1,-2)
+                p.setBrush(QColor(255,255,255,40)); p.setPen(QPen(QColor('white'),1.5,Qt.PenStyle.DashLine))
+                p.drawRoundedRect(r,6,6); p.setPen(QColor('white'))
+                p.drawText(r.adjusted(7,0,-6,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
+                           f'T {str(item.get("name") or "")[:20]}  {start:.1f}s')
         p.restore(); p.setFont(small)
+        if self._cam_ghost is not None:
+            cid,start,lane=self._cam_ghost
+            clip=next((c for c in self.cam_clips if c.get('id')==cid),None)
+            if clip is not None:
+                if clip.get('kind')=='Fixed camera':
+                    r=self._move_chip(start,float(clip['duration']))
+                else:
+                    row=self._moving_lane(lane)
+                    x0,x1=self._x(start),self._x(start+float(clip['duration']))
+                    r=QRectF(x0+1,row.top()+1,max(10.,x1-x0-2),row.height()-2)
+                p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
+                p.setBrush(QColor(255,255,255,40)); p.setPen(QPen(QColor('white'),1.5,Qt.PenStyle.DashLine))
+                p.drawRoundedRect(r,5,5); p.setPen(QColor('white'))
+                if r.width()>40:
+                    p.drawText(r.adjusted(6,0,-4,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
+                               f'{start:.1f}s')
+                p.restore()
 
     def set_locked(self, locked):
         self.locked=bool(locked)
@@ -1350,6 +1381,7 @@ class StageTimeline(QFrame):
             if item.get('id') not in self.selected_overlays:
                 self.selected_overlay=item.get('id'); self.overlay_selected.emit(item.get('id'))
             self._frozen=self.total()
+            self._text_ghost=None
             self._drag=('overlay',item,part,pos.x(),pos.y(),float(item.get('start',0)),
                         float(item.get('duration',3)),int(item.get('track',0)),self._px_per_sec())
             self.update(); event.accept(); return
@@ -1377,6 +1409,7 @@ class StageTimeline(QFrame):
             self.selected_camera=clip['id']; self.camera_selected.emit(clip['id'])
             self._frozen=self.total()
             self._lanes_frozen=self._cam_lane_count()    # exp.139: like the element tracks
+            self._cam_ghost=None; self._drag_y0=pos.y()
             self._drag=('camclip',clip,part,pos.x(),float(clip['start']),float(clip['duration']),self._px_per_sec())
             self.update(); event.accept(); return
         move=self._move_at(pos) if event.button()==Qt.MouseButton.LeftButton else None
@@ -1434,13 +1467,19 @@ class StageTimeline(QFrame):
                 total=self._room()                    # exp.133: may go past the end
                 if part=='end':
                     start,length=start0,max(.2,min(total-start0,length0+shift))
+                    self.camera_changed.emit(clip['id'],round(start,2),round(length,2))
                 else:
+                    # exp.140 (the user): moved like an element: a dashed copy shows where it
+                    # goes (time and row); it moves there when the mouse is let go.
                     start,length=max(0.,min(total-.2,start0+shift)),length0
-                self.camera_changed.emit(clip['id'],round(start,2),round(length,2))
-                if part!='end' and clip.get('kind')!='Fixed camera':
-                    lane=self._lane_at(pos.y())
-                    if lane is not None and lane!=int(clip.get('lane',0) or 0):
-                        self.camera_lane.emit(clip['id'],lane)
+                    if abs(pos.x()-x0)<4 and self._cam_ghost is None and abs(pos.y()-self._drag_y0)<4:
+                        event.accept(); return
+                    lane=int(clip.get('lane',0) or 0)
+                    if clip.get('kind')!='Fixed camera':
+                        under=self._lane_at(pos.y())
+                        if under is not None: lane=under
+                    self._cam_ghost=(clip['id'],round(start,2),lane)
+                    self.update()
                 self.setToolTip(f'{clip.get("kind","Camera")}: {start:.1f} s → {start+length:.1f} s '
                                 f'({length:.1f} s: longer = slower)')
                 event.accept(); return
@@ -1465,6 +1504,13 @@ class StageTimeline(QFrame):
                     length=max(.2,min(total-start0,length0+shift))
                 else:
                     start=max(0.,min(start0+length0-.2,start0+shift)); length=start0+length0-start
+                if part=='move' and self.items:
+                    # exp.140: like an element: a dashed copy until the mouse is let go.
+                    if abs(pos.x()-x0)<4 and abs(pos.y()-y0)<4 and self._text_ghost is None:
+                        event.accept(); return
+                    self._text_ghost=(item.get('id'),round(start,2),round(length,2),track)
+                    self.setToolTip(f'{item.get("name","")}: {start:.1f} s → {start+length:.1f} s')
+                    self.update(); event.accept(); return
                 self.overlay_changed.emit(item.get('id'),round(start,2),round(length,2),track)
                 self.setToolTip(f'{item.get("name","")}: {start:.1f} s → {start+length:.1f} s')
                 event.accept(); return
@@ -1612,11 +1658,21 @@ class StageTimeline(QFrame):
             event.accept(); return
         if self._drag and self._drag[0]=='overlay':
             self._frozen=None
+            ghost,self._text_ghost=self._text_ghost,None
+            if ghost is not None:
+                self.overlay_changed.emit(*ghost)
             self.overlay_done.emit(self._drag[1].get('id'))
         if self._drag and self._drag[0]=='camclip':
             self._frozen=None
+            ghost,self._cam_ghost=self._cam_ghost,None
+            clip=self._drag[1]
+            if ghost is not None:
+                _,start,lane=ghost
+                self.camera_changed.emit(clip['id'],start,float(clip['duration']))
+                if clip.get('kind')!='Fixed camera' and lane!=int(clip.get('lane',0) or 0):
+                    self.camera_lane.emit(clip['id'],lane)
             self._lanes_frozen=None; self._fit_height(); self.update()
-            self.camera_done.emit(self._drag[1]['id'])
+            self.camera_done.emit(clip['id'])
         if self._drag and self._drag[0]=='edge':
             self._frozen=None
             self.stage_drag_done.emit()
