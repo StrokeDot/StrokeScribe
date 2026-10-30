@@ -423,6 +423,20 @@ class ReadyFrames:
             self.window.segment_cache.has(*self._key(index))
 
 
+def help_label(text, tip):
+    """exp.135 (the user): a short word with a ? that explains it (hover or click), instead
+    of long sentences in the windows."""
+    from PySide6.QtWidgets import QToolButton, QToolTip
+    from PySide6.QtGui import QCursor
+    box=QWidget(); line=QHBoxLayout(box); line.setContentsMargins(0,0,0,0); line.setSpacing(4)
+    line.addWidget(QLabel(text))
+    ask=QToolButton(); ask.setText('?'); ask.setAutoRaise(True); ask.setToolTip(tip)
+    ask.setFixedSize(18,18); ask.setCursor(Qt.CursorShape.WhatsThisCursor)
+    ask.clicked.connect(lambda: QToolTip.showText(QCursor.pos(),tip,ask))
+    line.addWidget(ask); line.addStretch(1)
+    return box
+
+
 class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1267,29 +1281,29 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import camera_clips
         clip=self.find_camera(cid)
         if clip is None: return
-        dialog=QDialog(self); dialog.setWindowTitle('Reframe')
+        dialog=QDialog(self); dialog.setWindowTitle('Camera')
         form=QFormLayout(dialog)
-        # exp.134 (the user found it confusing): three questions, in order. Where it goes,
-        # how it moves, how long it takes. A spot you pick: after OK the preview shows a frame
-        # to drag (no separate button).
-        note=QLabel(f'At {float(clip["start"]):.1f} s the camera moves and stays there.')
-        note.setWordWrap(True); form.addRow(note)
         where=QComboBox()
-        where.addItem('A spot I pick on the preview',None)
-        where.addItem('The whole page',tuple(camera_clips.REST))
+        where.addItem('Pick on preview',None)
+        where.addItem('Whole page',tuple(camera_clips.REST))
         for other in sorted(self.cameras,key=lambda c: float(c['start'])):
             if other is not clip and camera_clips.fixed(other) and other.get('to'):
-                where.addItem(f'Back to the spot of {float(other["start"]):.1f} s',tuple(other['to']))
+                where.addItem(f'Same as {float(other["start"]):.1f} s',tuple(other['to']))
         now=tuple(clip.get('to') or ())
         for i in range(1,where.count()):
             if where.itemData(i) is not None and tuple(where.itemData(i))==now:
                 where.setCurrentIndex(i); break
-        form.addRow('Goes to',where)
+        form.addRow(help_label('Goes to','Where the camera looks from this point on, on the same page.\n'
+                               'Pick on preview: after OK a dashed frame shows on the picture. Drag it '
+                               'where you want; mouse wheel = closer / further.\n'
+                               'Whole page: back to the full page.\n'
+                               'Same as ...: back to the place of an earlier camera.\n'
+                               'It stays there until the next camera on this row.'),where)
         how=QComboBox(); how.addItems(['Smooth','Cut']); how.setCurrentIndex(1 if clip.get('how')=='Cut' else 0)
-        form.addRow('Movement',how)
+        form.addRow(help_label('Move','Smooth: the camera glides there. Cut: it jumps there.'),how)
         secs=QDoubleSpinBox(); secs.setRange(.2,30); secs.setSingleStep(.1); secs.setDecimals(1)
         secs.setSuffix(' s'); secs.setValue(float(clip.get('duration',1.2)))
-        form.addRow('Takes',secs)
+        form.addRow(help_label('Time','How long the glide takes. Longer = slower.'),secs)
         how.currentTextChanged.connect(lambda text: secs.setEnabled(text!='Cut'))
         secs.setEnabled(how.currentText()!='Cut')
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
@@ -3449,21 +3463,21 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if not 0<=k<len(self.scenes): return
         scene=self.scenes[k]
         last=k==len(self.scenes)-1
-        dialog=QDialog(self); dialog.setWindowTitle('Camera move')
+        dialog=QDialog(self); dialog.setWindowTitle('Camera')
         form=QFormLayout(dialog)
-        name=(f'After element {k+1}: the camera goes to element {k+2}' if not last
-              else 'After the last element: the camera shows everything')
-        from PySide6.QtWidgets import QLabel
-        note=QLabel(name); note.setWordWrap(True); form.addRow(note)
+        goes=QWidget(); gl=QHBoxLayout(goes); gl.setContentsMargins(0,0,0,0)
+        gl.addWidget(QLabel(f'Element {k+2}' if not last else 'Everything'),1)
+        place=QPushButton('Board…'); place.setObjectName('subtle')
+        place.setToolTip('Change where it is: the Board shows all the pages from above.')
+        gl.addWidget(place)
+        form.addRow(help_label('Goes to','Every element has its own place. After this element, the camera '
+                               'travels to the next one. To change where that is, open the Board and move its frame.'),goes)
         kind=QComboBox(); kind.addItems(list(TRANSITIONS)); kind.setCurrentText(scene['transition'])
-        form.addRow('How',kind)
+        form.addRow(help_label('Move','How the camera gets there: a camera move, a pan, a zoom, a fade, a cut. '
+                               'Same page: it does not move.'),kind)
         secs=QDoubleSpinBox(); secs.setRange(.2,6); secs.setSingleStep(.1); secs.setDecimals(1)
         secs.setSuffix(' s'); secs.setValue(float(scene['transition_seconds']))
-        form.addRow('How long',secs)
-        place=QPushButton('Where the camera goes: arrange on the Board…')
-        place.setToolTip('The Board shows every page from above: drag a frame to move where the camera '
-                         'looks, mouse wheel to make it bigger or smaller.')
-        form.addRow(place)
+        form.addRow(help_label('Time','How long the trip takes. Longer = slower.'),secs)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
