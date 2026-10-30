@@ -528,6 +528,21 @@ def hand_window(drawing, options):
     return lead + hand_end + tail, inner_total + lead + tail
 
 
+def hand_busy(drawing, options, fraction):
+    """exp.146: True while this element's hand draws, paints or travels."""
+    if options.get('hand') is None:
+        return False
+    try:
+        if options.get('hand_travel'):
+            window = hand_window(drawing, options)
+            if window is not None:
+                return float(fraction) * window[1] < window[0] - 1e-9
+        total = timeline_seconds(drawing, options)
+        return 0. < float(fraction) * total < hand_seconds(drawing, options)
+    except Exception:
+        return False
+
+
 def resting(drawing, options, fraction):
     """True when, in this element, the hand is back in its corner."""
     window = hand_window(drawing, options)
