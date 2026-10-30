@@ -1205,6 +1205,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def sync_camera_timeline(self):
         tl=self.stage_timeline
+        import camera_clips as _cc
+        _cc.assign_lanes(getattr(self,'cameras',[]))
         tl.cam_clips=list(getattr(self,'cameras',[]))
         moves=self.camera_moves() if tl.cam_clips else []
         import camera_clips
@@ -1224,6 +1226,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         start=float(at) if at is not None else (self.video_seconds() if self.position<.999 else 0.)
         total=max(.5,self.video_length())
         clip=camera_clips.new_clip(kind,min(start,max(0.,total-.5)))
+        if not camera_clips.fixed(clip):                # exp.138: a free Moving camera row
+            clip['lane']=camera_clips.free_lane(self.cameras,float(clip['start']),camera_clips.until(clip))
         self.record_structure('add camera clip')
         self.cameras.append(clip)
         self.project_changes.mark_changed()
@@ -1256,6 +1260,16 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import camera_clips; camera_clips.fit(clip)
         self.project_changes.mark_changed()
         self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
+
+    def move_camera_lane(self,cid,lane):
+        """exp.138: a moving camera dragged onto another row (the higher row wins)."""
+        clip=self.find_camera(cid)
+        if clip is None or int(clip.get('lane',0) or 0)==int(lane): return
+        if getattr(self,'_cam_recorded',None)!=cid:
+            self.record_structure('move camera clip'); self._cam_recorded=cid
+        clip['lane']=max(0,int(lane))
+        self.project_changes.mark_changed()
+        self.sync_camera_timeline(); self.refresh()
 
     def camera_clip_done(self,cid):
         self._cam_recorded=None

@@ -139,6 +139,27 @@ def set_kind(clip, kind):
     return fit(clip)
 
 
+def free_lane(clips, start, end, skip=None):
+    """exp.138: the lowest Moving camera row with nothing between start and end."""
+    lane = 0
+    while any(int(c.get('lane', 0) or 0) == lane and c is not skip and not fixed(c)
+              and float(c['start']) < end - 1e-6 and until(c) > start + 1e-6 for c in clips):
+        lane += 1
+    return lane
+
+
+def assign_lanes(clips):
+    """Clips from before exp.138 (no row): each on the lowest row where it fits, as they
+    were shown."""
+    if all('lane' in c or fixed(c) for c in clips):
+        return False
+    placed = [c for c in clips if 'lane' in c]
+    for c in sorted((c for c in clips if 'lane' not in c and not fixed(c)), key=lambda c: float(c['start'])):
+        c['lane'] = free_lane(placed, float(c['start']), until(c))
+        placed.append(c)
+    return True
+
+
 def fixed(clip):
     return clip.get('kind') == FIXED
 
@@ -187,7 +208,9 @@ def framing_at(clips, seconds, moves=()):
     if not live:
         return base
     rest = base or REST
-    clip = max(live, key=lambda c: (float(c['start']), c.get('id', '')))
+    # exp.138 (the user, like Filmora): the camera on the higher row wins; on the same row,
+    # the later one.
+    clip = max(live, key=lambda c: (int(c.get('lane', 0) or 0), float(c['start']), c.get('id', '')))
     start, total = float(clip['start']), max(.4, float(clip.get('duration', 4.4)))
     a = max(.05, float(clip.get('in_s', IN_SECONDS)))
     b = max(.05, float(clip.get('out_s', OUT_SECONDS)))
@@ -207,7 +230,7 @@ def signature(clips):
     return tuple((c.get('id'), c.get('kind'), round(float(c['start']), 4), round(float(c['duration']), 4),
                   tuple(c['from']) if c.get('from') else None, tuple(c.get('to') or REST),
                   round(float(c.get('in_s', IN_SECONDS)), 4), round(float(c.get('out_s', OUT_SECONDS)), 4),
-                  c.get('how'))
+                  c.get('how'), int(c.get('lane', 0) or 0))
                  for c in clips or ())
 
 
@@ -253,5 +276,5 @@ def from_options(base, options, total):
     for i, k, s, d, f, t, *rest in sig:
         a, b = (rest + [IN_SECONDS, OUT_SECONDS])[:2] if len(rest) >= 2 else (IN_SECONDS, OUT_SECONDS)
         clips.append({'id': i, 'kind': k, 'start': s, 'duration': d, 'from': f, 'to': t, 'in_s': a, 'out_s': b,
-                      'how': rest[2] if len(rest) >= 3 else None})
+                      'how': rest[2] if len(rest) >= 3 else None, 'lane': rest[3] if len(rest) >= 4 else 0})
     return wrap(base, start, clips, moves, total)

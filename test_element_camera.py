@@ -113,6 +113,21 @@ class CameraClipTests(unittest.TestCase):
         cc.set_kind(second, 'Zoom in')
         self.assertEqual(second['duration'], 4.4)
 
+    def test_the_higher_row_wins(self):
+        # exp.138 (the user, like Filmora): where two moving cameras overlap, the higher row shows.
+        import camera_clips as cc
+        low = cc.new_clip('Zoom in', 0.); low['to'] = (2., .3, .3); low['lane'] = 1
+        high = cc.new_clip('Zoom in', 1.); high['to'] = (1.5, .7, .7); high['lane'] = 0
+        self.assertEqual(cc.framing_at([low, high], 3.), (2., .3, .3))      # row 1 is above row 0
+        high['lane'] = 2
+        self.assertEqual(cc.framing_at([low, high], 3.), (1.5, .7, .7))
+        old = [cc.new_clip('Zoom in', 0.), cc.new_clip('Pan left', 1.), cc.new_clip('Zoom in', 9.)]
+        for c in old: c.pop('lane', None)
+        cc.assign_lanes(old)
+        self.assertEqual([c['lane'] for c in old], [0, 1, 0])
+        back = cc.from_options(None, dict(video_camera=(0., cc.signature([high]), ())), 10.)
+        self.assertEqual(back.clips[0]['lane'], 2)
+
     def test_older_clips_are_upgraded(self):
         import camera_clips as cc
         old = {'id': 'x', 'kind': 'Zoom out', 'start': 1., 'duration': 1.5, 'from': None, 'to': (1., .5, .5), 'back': False}
@@ -225,9 +240,14 @@ class WindowTests(unittest.TestCase):
         tl = w.stage_timeline
         ra, rb = tl._clip_rect(a), tl._clip_rect(b)
         self.assertFalse(ra.intersects(rb))                          # both can be touched
-        self.assertEqual(tl._cam_lane_count(), 2)
+        self.assertEqual((a['lane'], b['lane']), (0, 1))
+        self.assertEqual(tl._cam_lane_count(), 3)                    # and an empty row on top
+        self.assertLess(rb.top(), ra.top())                           # the higher row is drawn higher
         self.assertGreater(tl.CAM_H, 2 * tl.CAM_ROW)
         self.assertEqual(tl._clip_at(rb.center())[0]['id'], b['id'])
+        w.move_camera_lane(b['id'], 0); w.move_camera_lane(a['id'], 2)
+        self.assertEqual(a['lane'], 2)
+        self.assertEqual(tl._clip_at(tl._clip_rect(a).center())[0]['id'], a['id'])
 
     def test_a_camera_clip_only_touches_its_own_stretch(self):
         """exp.125: changing a camera clip makes only its own stretch of ready frames old."""
