@@ -3033,6 +3033,25 @@ def build_workspace(w, Canvas, BRAND_ICON):
         'Right-handed or left-handed drawing hand. Left mirrors the drawing hand, the eraser '
         'and the move-in hand.')
     h.addRow('Hand',w.left_handed_toggle)
+    # exp.143 (the user): between drawings the hand waits in a corner of the video, comes
+    # from there to the first line and goes back after the drawing (for the whole video).
+    w.hand_rest=QCheckBox('Waits in a corner')
+    w.hand_rest.setToolTip('Between drawings the hand stays in a corner of the video. It glides to the '
+                           'first line, draws, and glides back. The glide is added to each element.')
+    h.addRow('Between drawings',w.hand_rest)
+    from frame_render import REST_CORNERS
+    w.hand_rest_corner=QComboBox(); w.hand_rest_corner.addItems(list(REST_CORNERS))
+    w.hand_rest_corner.setToolTip('Where the hand waits.')
+    h.addRow('Corner',w.hand_rest_corner)
+    w.hand_rest_travel=w.number(.2,5,.8,.1); w.hand_rest_travel.setSuffix(' s')
+    w.hand_rest_travel.setToolTip('How long the hand takes to glide from the corner to the drawing (and back).')
+    h.addRow('Glide',w.hand_rest_travel)
+    def _rest_rows(on):
+        h.setRowVisible(w.hand_rest_corner,bool(on)); h.setRowVisible(w.hand_rest_travel,bool(on))
+    w.hand_rest.toggled.connect(_rest_rows); _rest_rows(False)
+    w.hand_rest.toggled.connect(lambda on: w.hand_rest_changed())
+    w.hand_rest_corner.currentIndexChanged.connect(lambda i: w.hand_rest_changed())
+    w.hand_rest_travel.valueChanged.connect(lambda v: w.hand_rest_changed())
     w.handsize=w.number(.02,.8,.75,.01);h.addRow('Hand size',w.handsize)
     h.setRowVisible(w.handsize,False)        # edited through Size (%) above
     w.hand_size_pct.setValue(round(w.handsize.value()*100))

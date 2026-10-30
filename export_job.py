@@ -64,6 +64,10 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     options['move_hand'], options['move_hand_grip'] = move_in.move_hand(s)
     options['move_hand_size'] = float(s.get('move_hand_size', 35) or 35) / 100.
     options['workers'] = 0 if s.get('fast_export', True) else 1
+    # exp.143: the hand waits in a corner between drawings (its way there and back is added).
+    options['hand_travel'] = (float(s.get('hand_rest_travel', .8) or 0)
+                              if s.get('hand_rest') and options['hand'] is not None else 0.)
+    options['hand_rest_corner'] = s.get('hand_rest_corner') or 'Bottom right'
     from frame_render import LAYERS
     options['layers'] = LAYERS.get(s.get('export_layers') or '', 'all')
     # Recorded pencil / brush / eraser sounds (paths, '' = built-in sound).

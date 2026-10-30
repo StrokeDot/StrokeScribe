@@ -31,7 +31,8 @@ DEFAULT_TRANSITION_SECONDS = 1.2
 # Output settings shared by all scenes (taken from the scene being edited).
 GLOBAL_SETTINGS = ('res', 'fps', 'webm', 'webm_quality', 'mov', 'mp4', 'mp4_background', 'keep_png',
                    'sound_on', 'sound_volume', 'fast_export', 'preview_background', 'background_color',
-                   'sound_pencil_file', 'sound_brush_file', 'sound_eraser_file')
+                   'sound_pencil_file', 'sound_brush_file', 'sound_eraser_file',
+                   'hand_rest', 'hand_rest_corner', 'hand_rest_travel')       # exp.143
 
 
 def transition_seconds(kind, seconds, last=False):
@@ -276,6 +277,27 @@ def _paint_titles(folder, fps, titles, world, views, writer):
         writer.write(image, path)
 
 
+def _resting_options(lay, elements, seconds, hidden=()):
+    """exp.143: the options to draw the waiting hand with at `seconds` of a video on tracks
+    (None while an element's own hand draws or travels, or when it does not wait)."""
+    from frame_render import hand_window
+    chosen = None
+    for it in lay.items:
+        if it.k in hidden:
+            continue
+        e = elements[it.k]
+        if not e['options'].get('hand_travel'):
+            continue
+        window = hand_window(e['drawing'], e['options'])
+        if window is None:
+            continue
+        if chosen is None or it.start <= seconds:
+            chosen = e['options']
+        if it.start - 1e-6 <= seconds < it.start + window[0] - 1e-6:
+            return None
+    return chosen
+
+
 def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False,
                     titles=None, cameras=None):
     """The whole video when elements are on tracks: every frame is one moment of the
@@ -330,6 +352,10 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
                 state = replace(state, active=active, finished=[k for k in state.finished if k not in hidden],
                                 top=active[-1][0] if active else -1)
             image = timeline_render.compose(world, lay, state, elements, width, height, titles=titles, seconds=i / fps)
+            rest = _resting_options(lay, elements, i / fps, hidden)
+            if rest is not None:                     # exp.143: the hand waiting in its corner
+                from frame_render import paint_rest_hand
+                image = paint_rest_hand(image, rest)
             writer.write(image, folder / f'frame_{i:06d}.png')
             progress(i + 1, total)
             if interrupted():
@@ -474,6 +500,9 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                         display_opts['width'],display_opts['height']=width,height
                         output=composite_element(under,scene['drawing'],
                             i/max(1,len(frames)-1),display_opts,camera)
+                        from frame_render import resting, paint_rest_hand
+                        if display_opts.get('hand_travel') and resting(scene['drawing'],display_opts,i/max(1,len(frames)-1)):
+                            output=paint_rest_hand(output,display_opts)      # exp.143
                     else:
                         output=stack(under,QImage(str(frame)),
                             options.get('blend_mode','Normal'),
@@ -510,6 +539,11 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                     view = board.join_view(all_frames, k, kind, t, aspect, scene['move_seconds'],
                                            leaving=scene_camera(k), arriving=scene_camera(k + 1))
                     image = world.view(view, width, height, upto=k + 1)
+                if options.get('hand_travel') and layers != 'art':
+                    # exp.143: the hand waits in its corner while the camera moves.
+                    from frame_render import paint_rest_hand
+                    image = paint_rest_hand(image, dict(options, width=width, height=height,
+                        hand_scale=float(options.get('hand_scale', .75)) / max(.25, float(options.get('artwork_scale', 1.)))))
                 if kind in board.SCREEN_KINDS and not last:
                     views.append(None)
                 else:
