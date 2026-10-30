@@ -208,6 +208,7 @@ class StageTimeline(QFrame):
     camera_done=Signal(str)
     camera_edit=Signal(str)             # double-click: its settings
     camera_action=Signal(str,str)       # id, a kind / 'delete'
+    camera_lane=Signal(str,int)         # exp.138: a moving camera dragged onto another row
     camera_add=Signal(str,float)        # exp.128: double-click on a camera row: kind ('' = ask), seconds
     overlay_toggled=Signal(str)         # exp.117: Ctrl+click on a text clip: add it to / take it out of the choice
     text_track_toggled=Signal(int)      # exp.117: a text track's hide button   # whole video: another element's text / picture (k, id)
@@ -335,25 +336,31 @@ class StageTimeline(QFrame):
     def _cam_lanes(self):
         """exp.136 (the user): moving camera clips that overlap go on rows of their own, so
         each one can be seen and touched. {clip id or ('mark', k): row}."""
-        marks=[(float(s),float(l),('mark',k)) for k,s,l,_ in (getattr(self,'cam_marks',()) or ())]
-        clips=[(float(c['start']),float(c['duration']),c['id']) for c in (getattr(self,'cam_clips',()) or ())
-               if c.get('kind')!='Fixed camera']
-        ends=[]; lanes={}
-        for start,length,key in sorted(marks+clips,key=lambda e: (e[0],str(e[2]))):
-            for i,end in enumerate(ends):
-                if start>=end-1e-6:
-                    ends[i]=start+length; lanes[key]=i; break
-            else:
-                ends.append(start+length); lanes[key]=len(ends)-1
+        # exp.138 (the user, like Filmora): each clip keeps its own row ('lane'); the higher
+        # row wins where they overlap. The elements' own zooms sit on the lowest row.
+        lanes={('mark',k):0 for k,_,_,_ in (getattr(self,'cam_marks',()) or ())}
+        for c in getattr(self,'cam_clips',()) or ():
+            if c.get('kind')!='Fixed camera':
+                lanes[c['id']]=int(c.get('lane',0) or 0)
         return lanes
 
     def _cam_lane_count(self):
+        """The rows in use and one empty row on top (to drag a camera onto)."""
         lanes=self._cam_lanes()
-        return max(1,(max(lanes.values())+1) if lanes else 1)
+        if not any(not isinstance(k,tuple) for k in lanes): return 1
+        return max(lanes.values())+2
 
     def _moving_lane(self, i):
+        """Row i (0 = the lowest); higher rows are drawn higher, like the tracks."""
         cam=self._camera_rect()
-        return QRectF(cam.left(),cam.top()+self.CAM_ROW*(1+i)+1,cam.width(),self.CAM_ROW-2)
+        row=self._cam_lane_count()-1-int(i)
+        return QRectF(cam.left(),cam.top()+self.CAM_ROW*(1+row)+1,cam.width(),self.CAM_ROW-2)
+
+    def _lane_at(self, y):
+        for i in range(self._cam_lane_count()):
+            r=self._moving_lane(i)
+            if r.top()-1<=y<=r.bottom()+1: return i
+        return None
 
     def lanes(self):
         """Track rows shown: the tracks in use (by elements and texts) plus an empty one on
@@ -599,7 +606,7 @@ class StageTimeline(QFrame):
         (exp.123: Fixed camera = the moves between pages; Moving camera = zooms and pans)."""
         hover=getattr(self,'_hover',None)
         p.setFont(small)
-        for row,text in ((self._fixed_row(),'Fixed camera'),(self._moving_lane(0),'Moving camera')):
+        for row,text in ((self._fixed_row(),'Fixed camera'),(self._moving_lane(self._cam_lane_count()-1),'Moving camera')):
             self._draw_icon(p,'camera',QPointF(18,row.center().y()),c['muted'],13)
             p.setPen(QColor(c['muted']))
             p.drawText(QRectF(30,row.top()-2,self.HEADER-34,row.height()+4),
@@ -1427,6 +1434,10 @@ class StageTimeline(QFrame):
                 else:
                     start,length=max(0.,min(total-.2,start0+shift)),length0
                 self.camera_changed.emit(clip['id'],round(start,2),round(length,2))
+                if part!='end' and clip.get('kind')!='Fixed camera':
+                    lane=self._lane_at(pos.y())
+                    if lane is not None and lane!=int(clip.get('lane',0) or 0):
+                        self.camera_lane.emit(clip['id'],lane)
                 self.setToolTip(f'{clip.get("kind","Camera")}: {start:.1f} s → {start+length:.1f} s '
                                 f'({length:.1f} s: longer = slower)')
                 event.accept(); return
@@ -3496,6 +3507,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.overlay_toggled.connect(lambda oid: w.toggle_overlay(oid))
     w.stage_timeline.camera_selected.connect(lambda cid: w.select_camera(cid))
     w.stage_timeline.camera_changed.connect(lambda cid,start,length: w.move_camera_clip(cid,start,length))
+    w.stage_timeline.camera_lane.connect(lambda cid,lane: w.move_camera_lane(cid,lane))
     w.stage_timeline.camera_done.connect(lambda cid: w.camera_clip_done(cid))
     w.stage_timeline.camera_edit.connect(lambda cid: w.edit_camera_clip(cid))
     w.stage_timeline.camera_action.connect(lambda cid,action: w.camera_clip_action(cid,action))
