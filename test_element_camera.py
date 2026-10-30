@@ -248,6 +248,22 @@ class WindowTests(unittest.TestCase):
         w.move_camera_lane(b['id'], 0); w.move_camera_lane(a['id'], 2)
         self.assertEqual(a['lane'], 2)
         self.assertEqual(tl._clip_at(tl._clip_rect(a).center())[0]['id'], a['id'])
+        # exp.139: dragging a camera with the mouse, the rows stay where they are (it used to
+        # climb: each new row on top pushed the others down under the mouse).
+        from PySide6.QtCore import QPoint, Qt
+        from PySide6.QtTest import QTest
+        rows = tl._cam_lane_count()
+        r = tl._clip_rect(b)
+        top = tl._moving_lane(rows - 1)
+        QTest.mousePress(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(int(r.center().x()), int(r.center().y())))
+        for _ in range(3):
+            QTest.mouseMove(tl, QPoint(int(r.center().x()), int(top.center().y())))
+            self.app.processEvents()
+        self.assertEqual(tl._cam_lane_count(), rows)                  # still while dragging
+        self.assertEqual(b['lane'], rows - 1)                          # on the row under the mouse
+        QTest.mouseRelease(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(int(r.center().x()), int(top.center().y())))
+        self.app.processEvents()
+        self.assertEqual(b['lane'], rows - 1)
 
     def test_a_camera_clip_only_touches_its_own_stretch(self):
         """exp.125: changing a camera clip makes only its own stretch of ready frames old."""
