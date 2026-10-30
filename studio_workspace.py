@@ -346,6 +346,8 @@ class StageTimeline(QFrame):
 
     def _cam_lane_count(self):
         """The rows in use and one empty row on top (to drag a camera onto)."""
+        if getattr(self,'_lanes_frozen',None):
+            return self._lanes_frozen        # exp.139: rows stay still while a camera is dragged
         lanes=self._cam_lanes()
         if not any(not isinstance(k,tuple) for k in lanes): return 1
         return max(lanes.values())+2
@@ -1374,6 +1376,7 @@ class StageTimeline(QFrame):
                 self.selected_overlay=None; self.selected_overlays=set()
             self.selected_camera=clip['id']; self.camera_selected.emit(clip['id'])
             self._frozen=self.total()
+            self._lanes_frozen=self._cam_lane_count()    # exp.139: like the element tracks
             self._drag=('camclip',clip,part,pos.x(),float(clip['start']),float(clip['duration']),self._px_per_sec())
             self.update(); event.accept(); return
         move=self._move_at(pos) if event.button()==Qt.MouseButton.LeftButton else None
@@ -1565,7 +1568,7 @@ class StageTimeline(QFrame):
     def mouseDoubleClickEvent(self,event):
         if self.locked or event.button()!=Qt.MouseButton.LeftButton:
             event.accept();return
-        self._drag=None;self._frozen=None
+        self._drag=None;self._frozen=None;self._lanes_frozen=None
         clip,_=self._clip_at(event.position())
         if clip is not None:
             self.camera_edit.emit(clip['id']);event.accept();return
@@ -1612,6 +1615,7 @@ class StageTimeline(QFrame):
             self.overlay_done.emit(self._drag[1].get('id'))
         if self._drag and self._drag[0]=='camclip':
             self._frozen=None
+            self._lanes_frozen=None; self._fit_height(); self.update()
             self.camera_done.emit(self._drag[1]['id'])
         if self._drag and self._drag[0]=='edge':
             self._frozen=None
