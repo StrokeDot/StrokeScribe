@@ -1133,7 +1133,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def camera_menu(self,at=None):
         from PySide6.QtWidgets import QMenu
-        from camera_clips import MOVING, CUSTOM, FIXED
+        from camera_clips import MENU as MOVING, CUSTOM, FIXED      # exp.142: zoom in, zoom out
         menu=QMenu(self)
         # exp.136 (the user): the fixed camera is the one of the elements; + Add camera adds
         # moving cameras (they go, stay, and come back).
@@ -1291,8 +1291,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if clip is None: return
         dialog=QDialog(self); dialog.setWindowTitle('Moving camera')
         form=QFormLayout(dialog)
-        kind=QComboBox(); kind.addItems(['Zoom to a spot' if k==camera_clips.CUSTOM else k for k in camera_clips.MOVING])
-        kind.setCurrentIndex(max(0,list(camera_clips.MOVING).index(clip['kind'])) if clip.get('kind') in camera_clips.MOVING else 0)
+        kinds=list(camera_clips.MENU)+([clip['kind']] if clip.get('kind') not in camera_clips.MENU else [])
+        kind=QComboBox(); kind.addItems(['Zoom to a spot' if k==camera_clips.CUSTOM else k for k in kinds])
+        kind.setCurrentIndex(kinds.index(clip['kind']) if clip.get('kind') in kinds else 0)
         form.addRow(help_label('Kind','What the camera does: zoom in, slide (pan), or zoom to a spot you choose. '
                                'It always comes back to where it was.'),kind)
         def number(value,low,high):
@@ -1305,6 +1306,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         form.addRow(help_label('Going','How long it takes to get there. Longer = slower.'),go)
         form.addRow(help_label('Stays','How long it stays there.'),stay)
         form.addRow(help_label('Back','How long it takes to come back. Longer = slower.'),back)
+        def single(*_):             # exp.142: a zoom out is one move (from close, opening out)
+            out=kinds[kind.currentIndex()]==camera_clips.ZOOM_OUT
+            for box in (stay,back):
+                box.setVisible(not out); form.labelForField(box).setVisible(not out)
+            form.labelForField(go).setText('Opening' if out else 'Going')
+        kind.currentIndexChanged.connect(single); single()
         where=QComboBox(); where.addItems(['As it is','Pick on preview'])
         form.addRow(help_label('Where','Pick on preview: after OK a dashed frame shows on the picture. Drag it '
                                'where the camera should look; mouse wheel = closer / further.'),where)
@@ -1318,12 +1325,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if wants['delete']:
             return self.camera_clip_action(cid,'delete')
         self.record_structure('camera clip settings')
-        new_kind=camera_clips.MOVING[kind.currentIndex()]
+        new_kind=kinds[kind.currentIndex()]
         if new_kind!=clip.get('kind'):
             camera_clips.set_kind(clip,new_kind)
         clip['start']=round(start.value(),2)
-        clip['in_s'],clip['out_s']=round(go.value(),2),round(back.value(),2)
-        clip['duration']=round(go.value()+stay.value()+back.value(),2)
+        if new_kind==camera_clips.ZOOM_OUT:
+            clip['in_s']=clip['duration']=round(go.value(),2)
+        else:
+            clip['in_s'],clip['out_s']=round(go.value(),2),round(back.value(),2)
+            clip['duration']=round(go.value()+stay.value()+back.value(),2)
         camera_clips.fit(clip)
         self.project_changes.mark_changed()
         if where.currentIndex()==1:

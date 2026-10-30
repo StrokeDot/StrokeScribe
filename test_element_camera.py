@@ -229,7 +229,7 @@ class WindowTests(unittest.TestCase):
         menu = self.w.camera_menu()
         texts = [a.text() for a in menu.actions()]
         self.assertNotIn('Reframe', texts)                         # exp.136: moving cameras only
-        self.assertIn('Zoom in', texts)
+        self.assertEqual(texts, ['Zoom in', 'Zoom out'])           # exp.142
 
     def test_overlapping_moving_cameras_get_rows_of_their_own(self):
         w = self.w

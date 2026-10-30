@@ -34,7 +34,9 @@ CUSTOM = 'Move to a spot'      # exp.121 (was 'Custom'): drag the frame where th
 # camera or the next move between pages); the others (moving camera) go, stay a moment and
 # come back.
 FIXED = 'Fixed camera'
-MOVING = ('Zoom in', 'Pan left', 'Pan right', 'Pan up', 'Pan down', CUSTOM)
+ZOOM_OUT = 'Zoom out'      # exp.142: starts close and opens out to the normal frame
+MENU = ('Zoom in', ZOOM_OUT)   # exp.142 (the user): + Add camera offers these two
+MOVING = ('Zoom in', ZOOM_OUT, 'Pan left', 'Pan right', 'Pan up', 'Pan down', CUSTOM)
 KINDS = MOVING + (FIXED,)
 FOREVER = 1e9
 REST = (1., .5, .5)
@@ -48,7 +50,7 @@ def new_clip(kind='Zoom in', start=0., duration=None):
     """A camera clip: `in_s` seconds to get there, it holds, `out_s` seconds back to the
     normal frame; `duration` is the whole clip (in + hold + out)."""
     if duration is None:
-        duration = IN_SECONDS if kind == FIXED else IN_SECONDS + HOLD_SECONDS + OUT_SECONDS
+        duration = IN_SECONDS if kind == FIXED else 2. if kind == ZOOM_OUT else IN_SECONDS + HOLD_SECONDS + OUT_SECONDS
     total = float(duration)
     clip = dict(id=uuid.uuid4().hex[:10], kind=kind, start=round(float(start), 2),
                 duration=round(max(.4, total), 2), in_s=IN_SECONDS, out_s=OUT_SECONDS,
@@ -60,7 +62,7 @@ def new_clip(kind='Zoom in', start=0., duration=None):
 
 def fit(clip):
     """In and back times fit in the clip (each at least .1 s; the hold can be 0)."""
-    if clip.get('kind') == FIXED:          # only the way there: then it stays
+    if clip.get('kind') in (FIXED, ZOOM_OUT):     # only one move (there / opening out)
         d = round(max(.2, float(clip.get('duration', IN_SECONDS))), 2)
         clip['duration'], clip['in_s'], clip['out_s'] = d, d, 0.
         return clip
@@ -100,6 +102,7 @@ def presets(kind):
         'Pan down': ((PAN_ZOOM, .5, .5 - side), (PAN_ZOOM, .5, .5 + side)),
         CUSTOM: (None, (1.6, .5, .5)),
         FIXED: (None, (1.6, .5, .5)),
+        ZOOM_OUT: (None, (1.6, .5, .5)),
     }.get(kind, (None, (1.6, .5, .5)))
 
 
@@ -127,13 +130,16 @@ def combine(base, clip):
 
 
 def set_kind(clip, kind):
-    """A clip changed to another kind (fixed <-> moving: its times start again)."""
-    was = fixed(clip)
+    """A clip changed to another kind: a single move (fixed, zoom out) or go-stay-back; its
+    times start again when it changes between the two."""
+    single = (FIXED, ZOOM_OUT)
+    was = clip.get('kind') in single
     clip['kind'] = kind
     clip['from'], clip['to'] = presets(kind)
-    if fixed(clip) and not was:
-        clip['duration'] = float(clip.get('in_s', IN_SECONDS))
-    elif was and not fixed(clip):
+    if kind in single and not was:
+        clip['duration'] = float(clip.get('in_s', IN_SECONDS)) if kind == FIXED else 2.
+        clip['in_s'] = clip['duration']
+    elif was and kind not in single:
         clip['in_s'], clip['out_s'] = IN_SECONDS, OUT_SECONDS
         clip['duration'] = IN_SECONDS + HOLD_SECONDS + OUT_SECONDS
     return fit(clip)
@@ -216,6 +222,8 @@ def framing_at(clips, seconds, moves=()):
     b = max(.05, float(clip.get('out_s', OUT_SECONDS)))
     local = t - start
     to = tuple(clip.get('to') or REST)
+    if clip.get('kind') == ZOOM_OUT:            # exp.142: from close, opening out
+        return mix(to, rest, _ease(local / a))
     there = tuple(clip['from']) if clip.get('from') else to      # where the hold begins
     if local < a:
         return mix(rest, there, _ease(local / a))
