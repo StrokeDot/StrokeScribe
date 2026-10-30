@@ -211,7 +211,22 @@ class WindowTests(unittest.TestCase):
 
     def test_add_camera_offers_reframe_and_moving(self):
         menu = self.w.camera_menu()
-        self.assertEqual([a.text() for a in menu.actions()], ['Reframe', 'Moving camera'])
+        texts = [a.text() for a in menu.actions()]
+        self.assertNotIn('Reframe', texts)                         # exp.136: moving cameras only
+        self.assertIn('Zoom in', texts)
+
+    def test_overlapping_moving_cameras_get_rows_of_their_own(self):
+        w = self.w
+        w.position = 0.; w.refresh()
+        a = w.add_camera_clip('Zoom in', at=0.)
+        b = w.add_camera_clip('Pan left', at=1.)
+        w.select_camera(None); self.app.processEvents()
+        tl = w.stage_timeline
+        ra, rb = tl._clip_rect(a), tl._clip_rect(b)
+        self.assertFalse(ra.intersects(rb))                          # both can be touched
+        self.assertEqual(tl._cam_lane_count(), 2)
+        self.assertGreater(tl.CAM_H, 2 * tl.CAM_ROW)
+        self.assertEqual(tl._clip_at(rb.center())[0]['id'], b['id'])
 
     def test_a_camera_clip_only_touches_its_own_stretch(self):
         """exp.125: changing a camera clip makes only its own stretch of ready frames old."""

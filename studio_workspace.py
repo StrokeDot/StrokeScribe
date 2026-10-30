@@ -325,7 +325,35 @@ class StageTimeline(QFrame):
         self.update()
 
     # ------------------------------------------------------------ tracks (whole video)
-    CAM_H=46.            # exp.123: two camera rows: Fixed camera (page moves), Moving camera (clips)
+    CAM_ROW=23.          # exp.136: one camera row; Moving camera grows a row per overlapping clip
+
+    @property
+    def CAM_H(self):
+        """exp.123/136: Fixed camera (page moves) + as many Moving camera rows as needed."""
+        return self.CAM_ROW*(1+self._cam_lane_count())
+
+    def _cam_lanes(self):
+        """exp.136 (the user): moving camera clips that overlap go on rows of their own, so
+        each one can be seen and touched. {clip id or ('mark', k): row}."""
+        marks=[(float(s),float(l),('mark',k)) for k,s,l,_ in (getattr(self,'cam_marks',()) or ())]
+        clips=[(float(c['start']),float(c['duration']),c['id']) for c in (getattr(self,'cam_clips',()) or ())
+               if c.get('kind')!='Fixed camera']
+        ends=[]; lanes={}
+        for start,length,key in sorted(marks+clips,key=lambda e: (e[0],str(e[2]))):
+            for i,end in enumerate(ends):
+                if start>=end-1e-6:
+                    ends[i]=start+length; lanes[key]=i; break
+            else:
+                ends.append(start+length); lanes[key]=len(ends)-1
+        return lanes
+
+    def _cam_lane_count(self):
+        lanes=self._cam_lanes()
+        return max(1,(max(lanes.values())+1) if lanes else 1)
+
+    def _moving_lane(self, i):
+        cam=self._camera_rect()
+        return QRectF(cam.left(),cam.top()+self.CAM_ROW*(1+i)+1,cam.width(),self.CAM_ROW-2)
 
     def lanes(self):
         """Track rows shown: the tracks in use (by elements and texts) plus an empty one on
@@ -559,18 +587,19 @@ class StageTimeline(QFrame):
 
     def _fixed_row(self):
         cam=self._camera_rect()
-        return QRectF(cam.left(),cam.top(),cam.width(),cam.height()/2-1)
+        return QRectF(cam.left(),cam.top(),cam.width(),self.CAM_ROW-1)
 
     def _moving_row(self):
+        """All the Moving camera rows together."""
         cam=self._camera_rect()
-        return QRectF(cam.left(),cam.top()+cam.height()/2+1,cam.width(),cam.height()/2-1)
+        return QRectF(cam.left(),cam.top()+self.CAM_ROW+1,cam.width(),cam.height()-self.CAM_ROW-1)
 
     def _paint_fixed_header(self, p, c, small):
         """Top left: the zoom buttons over the track names, and the two camera rows' names
         (exp.123: Fixed camera = the moves between pages; Moving camera = zooms and pans)."""
         hover=getattr(self,'_hover',None)
         p.setFont(small)
-        for row,text in ((self._fixed_row(),'Fixed camera'),(self._moving_row(),'Moving camera')):
+        for row,text in ((self._fixed_row(),'Fixed camera'),(self._moving_lane(0),'Moving camera')):
             self._draw_icon(p,'camera',QPointF(18,row.center().y()),c['muted'],13)
             p.setPen(QColor(c['muted']))
             p.drawText(QRectF(30,row.top()-2,self.HEADER-34,row.height()+4),
@@ -588,15 +617,15 @@ class StageTimeline(QFrame):
         if x1-x0<22: mid=(x0+x1)/2; x0,x1=mid-11,mid+11
         return QRectF(x0+1,cam.top()+1,x1-x0-2,cam.height()-2)
 
-    def _cam_rect(self, start, length):
-        cam=self._moving_row()
+    def _cam_rect(self, start, length, k=None):
+        cam=self._moving_lane(self._cam_lanes().get(('mark',k),0)) if k is not None else self._moving_lane(0)
         x0,x1=self._x(start),self._x(start+length)
         if x1-x0<22: x1=x0+22
         return QRectF(x0+1,cam.top()+3,x1-x0-2,cam.height()-6)
 
     def _element_camera_at(self, pos):
         for k,start,length,until in getattr(self,'cam_marks',()) or ():
-            if self._cam_rect(start,length).contains(pos): return k
+            if self._cam_rect(start,length,k).contains(pos): return k
         return None
 
     def _clip_rect(self, clip, start=None, length=None):
@@ -605,7 +634,7 @@ class StageTimeline(QFrame):
             start=float(clip['start']) if start is None else start
             length=float(clip['duration']) if length is None else length
             return self._move_chip(start,length)
-        cam=self._moving_row()
+        cam=self._moving_lane(self._cam_lanes().get(clip['id'],0))
         start=float(clip['start']) if start is None else start
         length=float(clip['duration']) if length is None else length
         x0,x1=self._x(start),self._x(start+length)
@@ -1102,7 +1131,7 @@ class StageTimeline(QFrame):
         for k,start,length,until in getattr(self,'cam_marks',()) or ():
             # exp.115: an element's own camera (zoom): an outlined bar; the part after the
             # camera move that took over from it is faded.
-            r=self._cam_rect(start,length)
+            r=self._cam_rect(start,length,k)
             lit=getattr(self,'_hover',None)==('cam',k)
             edge=QColor(c['accent']); fill=QColor(c['accent']); fill.setAlpha(110 if lit else 60)
             p.setPen(QPen(edge,1.2)); p.setBrush(fill); p.drawRoundedRect(r,4,4)
@@ -1540,8 +1569,6 @@ class StageTimeline(QFrame):
             self.element_camera_clicked.emit(own);event.accept();return
         if self.items and pos.x()>=self.LEFT and self.total()>0:
             seconds=max(0.,self._sec(pos.x()))
-            if self._fixed_row().contains(pos):
-                self.camera_add.emit('Fixed camera',seconds);event.accept();return     # a reframe there
             if self._moving_row().contains(pos):
                 self.camera_add.emit('',seconds);event.accept();return
         item,_=self._overlay_at(event.position())
