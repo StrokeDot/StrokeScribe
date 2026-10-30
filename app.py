@@ -1216,6 +1216,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         tl.cam_holds={c['id']:min(camera_clips.until(c,moves,tl.cam_clips),self.video_length() if tl.cam_clips else 0.)
                       for c in tl.cam_clips}
         tl.selected_camera=getattr(self,'selected_camera',None)
+        tl.hand_marks=self.hand_marks()                 # exp.147
         lanes=tl._cam_lane_count()
         if lanes!=getattr(tl,'_cam_lanes_seen',None):     # exp.136: more Moving camera rows
             tl._cam_lanes_seen=lanes; tl._fit_height()
@@ -1229,7 +1230,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         start=float(at) if at is not None else (self.video_seconds() if self.position<.999 else 0.)
         total=max(.5,self.video_length())
         clip=camera_clips.new_clip(kind,min(start,max(0.,total-.5)))
-        if not camera_clips.fixed(clip):                # exp.138: a free Moving camera row
+        if kind==camera_clips.HAND:                     # exp.147: on the Hand row
+            clip['side']='Right'
+            if hasattr(self,'hand_rest') and not self.hand_rest.isChecked():
+                self.hand_rest.setChecked(True)          # it moves the waiting hand
+        elif not camera_clips.fixed(clip):                # exp.138: a free Moving camera row
             clip['lane']=camera_clips.free_lane(self.cameras,float(clip['start']),camera_clips.until(clip))
         self.record_structure('add camera clip')
         self.cameras.append(clip)
@@ -1282,6 +1287,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         clip=self.find_camera(cid)
         if clip is not None and camera_clips.fixed(clip):
             return self.edit_fixed_camera(cid)
+        if clip is not None and clip.get('kind')==camera_clips.HAND:
+            return self.edit_hand_clip(cid)
         if clip is not None:
             return self.edit_moving_camera(cid)
 
@@ -3743,6 +3750,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         for k in range(len(self.scenes)):
             drawing,options,seconds,camera=self.preview_scene(k,width,height)
             camera=self.video_camera(k,camera,seconds)          # exp.119: the camera clips
+            options=dict(options,**self.hand_video(k))           # exp.147: the Hand row
             elements.append(dict(drawing=drawing,options=options,camera=camera,
                                  transition=self.scenes[k]['transition'],
                                  move_seconds=self.scenes[k]['transition_seconds']))
@@ -3765,7 +3773,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             camera=self.video_camera(k,camera,seconds)          # exp.119: the camera clips
             from artwork_compositor import composite_element
             under=self.scene_base(k,width,height,f,camera)
-            return composite_element(under,drawing,f,options,camera)
+            return composite_element(under,drawing,f,dict(options,**self.hand_video(k)),camera)
         world=self.preview_world(width,height)
         if self.preview_scene(k,width,height)[1].get('layers')=='hand':
             from PySide6.QtGui import QImage
@@ -4979,6 +4987,76 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         return dict(hand_rest=self.hand_rest.isChecked(),hand_rest_corner=self.hand_rest_corner.currentText(),
                     hand_rest_travel=self.hand_rest_travel.value())
 
+    def hand_video(self,k):
+        """exp.147: render options for the Hand row: its clips (the hand slides out of the
+        picture and back) and where element k starts in the whole video."""
+        import camera_clips
+        sig=camera_clips.hand_signature(getattr(self,'cameras',()))
+        if not sig: return {}
+        start=0.
+        if k is not None:
+            try:
+                start=self.timeline_layout().items[k].start if self.all_scenes() else (self.element_start() if len(self.scenes)>1 else 0.)
+            except Exception:
+                start=0.
+        return dict(hand_away=sig,hand_video_start=start)
+
+    def hand_marks(self):
+        """exp.147: for the Hand row: each element's (start, glide in, drawing, glide back)."""
+        if not self.all_scenes() or not getattr(self,'hand_rest',None) or not self.hand_rest.isChecked():
+            return []
+        from frame_render import travel_plan
+        marks=[]
+        try:
+            lay=self.timeline_layout(); hidden=self.hidden_elements()
+            for it in lay.items:
+                if it.k in hidden: continue
+                drawing,opts,_,_=self.preview_scene(it.k,960,540)
+                plan=travel_plan(drawing,opts)
+                if plan is not None:
+                    marks.append((it.start,plan[0],plan[1],plan[2]))
+        except Exception:
+            return []
+        return marks
+
+    def edit_hand_clip(self,cid):
+        """exp.147: the hand leaves the picture: when, how fast, how long, which side."""
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QComboBox, QDoubleSpinBox
+        import camera_clips
+        clip=self.find_camera(cid)
+        if clip is None: return
+        dialog=QDialog(self); dialog.setWindowTitle('Hand leaves')
+        form=QFormLayout(dialog)
+        def number(value,low,high):
+            box=QDoubleSpinBox(); box.setRange(low,high); box.setSingleStep(.1); box.setDecimals(1)
+            box.setSuffix(' s'); box.setValue(float(value)); return box
+        a,b=float(clip.get('in_s',1.2)),float(clip.get('out_s',1.2))
+        start=number(clip['start'],0,3600)
+        go=number(a,.1,30); away=number(max(0.,float(clip['duration'])-a-b),0,600); back=number(b,.1,30)
+        side=QComboBox(); side.addItems(list(camera_clips.SIDES)); side.setCurrentText(clip.get('side') or 'Right')
+        form.addRow(help_label('Starts','When the hand starts to leave (seconds of the video).'),start)
+        form.addRow(help_label('Going out','How long it takes to slide out of the picture.'),go)
+        form.addRow(help_label('Away','How long it stays out of the picture.'),away)
+        form.addRow(help_label('Coming back','How long it takes to slide back to its corner.'),back)
+        form.addRow(help_label('Side','Where it goes out.'),side)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
+        remove=buttons.addButton('Delete',QDialogButtonBox.ButtonRole.DestructiveRole)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        wants={'delete':False}
+        remove.clicked.connect(lambda: (wants.update(delete=True),dialog.accept()))
+        if dialog.exec()!=QDialog.DialogCode.Accepted: return
+        if wants['delete']:
+            return self.camera_clip_action(cid,'delete')
+        self.record_structure('hand clip')
+        clip['start']=round(start.value(),2)
+        clip['in_s'],clip['out_s']=round(go.value(),2),round(back.value(),2)
+        clip['duration']=round(go.value()+away.value()+back.value(),2)
+        clip['side']=side.currentText()
+        camera_clips.fit(clip)
+        self.project_changes.mark_changed()
+        self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
+
     def hand_rest_changed(self,*args):
         self._scene_cache={}; self._base_cache=OrderedDict()
         if getattr(self,'_restoring',False) or getattr(self,'_entering_scene',False) or not self.drawing:
@@ -5009,7 +5087,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if window is None: return None
             if self.position*window[1]<window[0]-1e-6: return None
         layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
-        return paint_rest_hand(layer,dict(options,layers='all'))
+        return paint_rest_hand(layer,dict(options,layers='all',**self.hand_video(None)),seconds)
 
     def segment_fingerprint(self,where,k):
         """The fingerprint of one segment of the current view (see preview_cache)."""

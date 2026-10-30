@@ -332,6 +332,11 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
             item = lay.items[len(elements)]
             camera = camera_clips.wrap(camera, item.start, cameras, [(m.start, m.end) for m in lay.moves],
                                        item.length)
+        if cameras:
+            import camera_clips
+            hand_sig = camera_clips.hand_signature(cameras)       # exp.147: the Hand row
+            if hand_sig:
+                options.update(hand_away=hand_sig, hand_video_start=lay.items[len(elements)].start)
         elements.append(dict(drawing=p['drawing'], options=options, camera=camera,
                              transition=p['transition'], move_seconds=p['move_seconds']))
     total = max(1, round(lay.total * fps))
@@ -355,7 +360,7 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
             rest = _resting_options(lay, elements, i / fps, hidden)
             if rest is not None:                     # exp.143: the hand waiting in its corner
                 from frame_render import paint_rest_hand
-                image = paint_rest_hand(image, rest)
+                image = paint_rest_hand(image, rest, i / fps)
             writer.write(image, folder / f'frame_{i:06d}.png')
             progress(i + 1, total)
             if interrupted():
@@ -432,8 +437,11 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
             starts.append(at / fps); at += c
             moves.append((at / fps, (at + j) / fps)); at += j
         sig = camera_clips.signature(cameras)
+        hand_sig = camera_clips.hand_signature(cameras)          # exp.147: the Hand row
         for k, p in enumerate(prepared):
             p['options'] = dict(p['options'], video_camera=(starts[k], sig, tuple(moves)))
+            if hand_sig:
+                p['options'].update(hand_away=hand_sig, hand_video_start=starts[k])
     total = sum(counts) + sum(joins)
     done = 0
     index = 0
@@ -543,7 +551,8 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                     # exp.143: the hand waits in its corner while the camera moves.
                     from frame_render import paint_rest_hand
                     image = paint_rest_hand(image, dict(options, width=width, height=height,
-                        hand_scale=float(options.get('hand_scale', .75)) / max(.25, float(options.get('artwork_scale', 1.)))))
+                        hand_scale=float(options.get('hand_scale', .75)) / max(.25, float(options.get('artwork_scale', 1.)))),
+                        index / fps)
                 if kind in board.SCREEN_KINDS and not last:
                     views.append(None)
                 else:
