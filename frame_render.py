@@ -65,6 +65,9 @@ def _core(drawing, fraction, opts, camera_path=None, camera_fraction=None):
         return _core_body(drawing, fraction, opts, camera_path, camera_fraction, None)
     got = {}
     frame = _core_body(drawing, fraction, opts, camera_path, camera_fraction, got)
+    if travel[0] == 'in':
+        # Nothing drawn yet: the picture at 0 (the pen's first point came from a tiny step in).
+        frame = _core_body(drawing, 0., opts, camera_path, camera_fraction, {})
     return _paint_travel(frame, got, travel, opts)
 
 
