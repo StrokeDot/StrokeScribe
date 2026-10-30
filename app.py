@@ -424,17 +424,10 @@ class ReadyFrames:
 
 
 def help_label(text, tip):
-    """exp.135 (the user): a short word with a ? that explains it (hover or click), instead
-    of long sentences in the windows."""
-    from PySide6.QtWidgets import QToolButton, QToolTip
-    from PySide6.QtGui import QCursor
-    box=QWidget(); line=QHBoxLayout(box); line.setContentsMargins(0,0,0,0); line.setSpacing(4)
-    line.addWidget(QLabel(text))
-    ask=QToolButton(); ask.setText('?'); ask.setAutoRaise(True); ask.setToolTip(tip)
-    ask.setFixedSize(18,18); ask.setCursor(Qt.CursorShape.WhatsThisCursor)
-    ask.clicked.connect(lambda: QToolTip.showText(QCursor.pos(),tip,ask))
-    line.addWidget(ask); line.addStretch(1)
-    return box
+    """A row name; its explanation shows when the mouse rests on it (exp.137: no ? buttons,
+    the user did not want them)."""
+    label=QLabel(text); label.setToolTip(tip)
+    return label
 
 
 class Window(SourceEditing,ArtworkWorkflow,QMainWindow):

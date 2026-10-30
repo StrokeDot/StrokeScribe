@@ -204,10 +204,11 @@ class WindowTests(unittest.TestCase):
 
     def test_short_words_with_a_question_mark(self):
         from app import help_label
-        from PySide6.QtWidgets import QLabel, QToolButton
-        box = help_label('Time', 'How long it takes.')
-        self.assertEqual(box.findChild(QLabel).text(), 'Time')
-        self.assertEqual(box.findChild(QToolButton).toolTip(), 'How long it takes.')
+        from PySide6.QtWidgets import QToolButton
+        label = help_label('Time', 'How long it takes.')
+        self.assertEqual(label.text(), 'Time')
+        self.assertEqual(label.toolTip(), 'How long it takes.')
+        self.assertIsNone(label.findChild(QToolButton))              # exp.137: no ? button
 
     def test_add_camera_offers_reframe_and_moving(self):
         menu = self.w.camera_menu()
