@@ -1123,6 +1123,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     # ------------------------------------------------------------ camera track (exp.119)
     def add_camera_at(self,kind,seconds):
         """exp.128: double-click on a camera row of the timeline: a camera there."""
+        if kind=='hand':                     # exp.148: the Hand row: what the hand does there
+            from PySide6.QtWidgets import QMenu
+            from PySide6.QtGui import QCursor
+            menu=QMenu(self)
+            menu.addAction('Hand leaves the picture',lambda: self.add_camera_clip('Hand leaves',at=seconds))
+            menu.addAction('Hide the hand',lambda: self.add_camera_clip('Hand hidden',at=seconds))
+            return menu.exec(QCursor.pos())
         if kind: return self.add_camera_clip(kind,at=seconds)
         return self.add_camera_menu(None,at=seconds)
 
@@ -1230,9 +1237,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         start=float(at) if at is not None else (self.video_seconds() if self.position<.999 else 0.)
         total=max(.5,self.video_length())
         clip=camera_clips.new_clip(kind,min(start,max(0.,total-.5)))
-        if kind==camera_clips.HAND:                     # exp.147: on the Hand row
+        if kind in camera_clips.HAND_KINDS:              # exp.147/148: on the Hand row
             clip['side']='Right'
-            if hasattr(self,'hand_rest') and not self.hand_rest.isChecked():
+            if kind==camera_clips.HAND and hasattr(self,'hand_rest') and not self.hand_rest.isChecked():
                 self.hand_rest.setChecked(True)          # it moves the waiting hand
         elif not camera_clips.fixed(clip):                # exp.138: a free Moving camera row
             clip['lane']=camera_clips.free_lane(self.cameras,float(clip['start']),camera_clips.until(clip))
@@ -1287,7 +1294,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         clip=self.find_camera(cid)
         if clip is not None and camera_clips.fixed(clip):
             return self.edit_fixed_camera(cid)
-        if clip is not None and clip.get('kind')==camera_clips.HAND:
+        if clip is not None and clip.get('kind') in camera_clips.HAND_KINDS:
             return self.edit_hand_clip(cid)
         if clip is not None:
             return self.edit_moving_camera(cid)
@@ -5025,7 +5032,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import camera_clips
         clip=self.find_camera(cid)
         if clip is None: return
-        dialog=QDialog(self); dialog.setWindowTitle('Hand leaves')
+        hide=clip.get('kind')==camera_clips.HIDE        # exp.148: the hand fades away
+        dialog=QDialog(self); dialog.setWindowTitle('Hide the hand' if hide else 'Hand leaves')
         form=QFormLayout(dialog)
         def number(value,low,high):
             box=QDoubleSpinBox(); box.setRange(low,high); box.setSingleStep(.1); box.setDecimals(1)
@@ -5034,11 +5042,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         start=number(clip['start'],0,3600)
         go=number(a,.1,30); away=number(max(0.,float(clip['duration'])-a-b),0,600); back=number(b,.1,30)
         side=QComboBox(); side.addItems(list(camera_clips.SIDES)); side.setCurrentText(clip.get('side') or 'Right')
-        form.addRow(help_label('Starts','When the hand starts to leave (seconds of the video).'),start)
-        form.addRow(help_label('Going out','How long it takes to slide out of the picture.'),go)
-        form.addRow(help_label('Away','How long it stays out of the picture.'),away)
-        form.addRow(help_label('Coming back','How long it takes to slide back to its corner.'),back)
-        form.addRow(help_label('Side','Where it goes out.'),side)
+        form.addRow(help_label('Starts','When it starts (seconds of the video).'),start)
+        form.addRow(help_label('Fading out' if hide else 'Going out','How long it takes to go.'),go)
+        form.addRow(help_label('Hidden' if hide else 'Away','How long it stays away.'),away)
+        form.addRow(help_label('Fading in' if hide else 'Coming back','How long it takes to come back.'),back)
+        if not hide:
+            form.addRow(help_label('Side','Where it goes out.'),side)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         remove=buttons.addButton('Delete',QDialogButtonBox.ButtonRole.DestructiveRole)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)

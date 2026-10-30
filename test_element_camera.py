@@ -159,6 +159,10 @@ class HandTravelTimingTests(unittest.TestCase):
         self.assertLess(cc.away_at([clip], 6.)[0], 1.)
         self.assertIsNone(cc.framing_at([clip], 4.))               # not a camera
         self.assertEqual(cc.from_hand_signature(cc.hand_signature([clip]))[0]['side'], 'Bottom')
+        hide = cc.new_clip(cc.HIDE, 1.)
+        self.assertEqual(cc.hidden_at([hide], 2.), 1.)
+        self.assertEqual(cc.hidden_at([hide], .5), 0.)
+        self.assertEqual(cc.away_at([hide], 2.)[0], 0.)              # hiding is not leaving
 
     def test_phases(self):
         # exp.143: the hand comes from its corner (0.5 s), draws (2 s), goes back (0.5 s).
@@ -225,6 +229,22 @@ class HandRestTests(unittest.TestCase):
         travelling = dict(drawing=drawing, options=self.options(layers='all'))
         state = State('page', current=1, active=[(1, .8), (0, .99)], top=0)
         self.assertEqual(_hand_element(state, [travelling, holding], {0: 0, 1: 1}), 0)   # going back
+
+    def test_the_hand_can_be_hidden_while_it_draws(self):
+        # exp.148: a 'Hand hidden' clip on the Hand row: no hand at all, even while drawing.
+        import camera_clips as cc
+        from engine import import_svg
+        from frame_render import compose_frame
+        drawing = import_svg(HERE / 'samples' / 'drawing.svg')
+        o = self.options(); o.pop('hand_travel'); o.pop('hand_rest_here')
+        def hand_pixels(frame):
+            return sum(1 for x in range(0, frame.width(), 4) for y in range(0, frame.height(), 4)
+                       if frame.pixelColor(x, y).alpha() > 0)
+        self.assertGreater(hand_pixels(compose_frame(drawing, .5, o)), 0)      # drawing: a hand
+        clip = cc.new_clip(cc.HIDE, .5); clip['duration'] = 1.; cc.fit(clip)
+        o['hand_away'] = cc.hand_signature([clip])
+        self.assertEqual(hand_pixels(compose_frame(drawing, .5, o)), 0)        # hidden at 1 s
+        self.assertGreater(hand_pixels(compose_frame(drawing, .9, o)), 0)      # back at 1.8 s
 
     def test_the_waiting_hand_slides_out(self):
         import camera_clips as cc
