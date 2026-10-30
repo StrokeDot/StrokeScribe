@@ -260,7 +260,8 @@ class WindowTests(unittest.TestCase):
             QTest.mouseMove(tl, QPoint(int(r.center().x()), int(top.center().y())))
             self.app.processEvents()
         self.assertEqual(tl._cam_lane_count(), rows)                  # still while dragging
-        self.assertEqual(b['lane'], rows - 1)                          # on the row under the mouse
+        self.assertIsNotNone(tl._cam_ghost)                            # exp.140: a dashed copy shows where
+        self.assertEqual(tl._cam_ghost[2], rows - 1)                   # on the row under the mouse
         QTest.mouseRelease(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(int(r.center().x()), int(top.center().y())))
         self.app.processEvents()
         self.assertEqual(b['lane'], rows - 1)
