@@ -243,10 +243,11 @@ class WindowTests(unittest.TestCase):
         self.assertEqual((a['lane'], b['lane']), (0, 1))
         self.assertEqual(tl._cam_lane_count(), 3)                    # and an empty row on top
         self.assertLess(rb.top(), ra.top())                           # the higher row is drawn higher
-        w.move_camera_lane(b['id'], 0); w.move_camera_lane(a['id'], 2)
-        self.assertEqual(a['lane'], 2)
         self.assertGreater(tl.CAM_H, 2 * tl.CAM_ROW)
         self.assertEqual(tl._clip_at(rb.center())[0]['id'], b['id'])
+        w.move_camera_lane(b['id'], 0); w.move_camera_lane(a['id'], 2)
+        self.assertEqual(a['lane'], 2)
+        self.assertEqual(tl._clip_at(tl._clip_rect(a).center())[0]['id'], a['id'])
 
     def test_a_camera_clip_only_touches_its_own_stretch(self):
         """exp.125: changing a camera clip makes only its own stretch of ready frames old."""
