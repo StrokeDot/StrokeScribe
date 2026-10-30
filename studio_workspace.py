@@ -334,7 +334,7 @@ class StageTimeline(QFrame):
     @property
     def CAM_H(self):
         """exp.123/136: Fixed camera (page moves) + as many Moving camera rows as needed."""
-        return self.CAM_ROW*(1+self._cam_lane_count())
+        return self.CAM_ROW*(1+self._cam_lane_count()+(1 if self.items else 0))   # exp.147: + the Hand row
 
     def _cam_lanes(self):
         """exp.136 (the user): moving camera clips that overlap go on rows of their own, so
@@ -343,7 +343,7 @@ class StageTimeline(QFrame):
         # row wins where they overlap. The elements' own zooms sit on the lowest row.
         lanes={('mark',k):0 for k,_,_,_ in (getattr(self,'cam_marks',()) or ())}
         for c in getattr(self,'cam_clips',()) or ():
-            if c.get('kind')!='Fixed camera':
+            if c.get('kind') not in ('Fixed camera','Hand leaves'):
                 lanes[c['id']]=int(c.get('lane',0) or 0)
         return lanes
 
@@ -361,6 +361,11 @@ class StageTimeline(QFrame):
         cam=self._camera_rect()
         row=self._cam_lane_count()-1-int(i)
         return QRectF(cam.left(),cam.top()+self.CAM_ROW*(1+row)+1,cam.width(),self.CAM_ROW-2)
+
+    def _hand_row(self):
+        """exp.147: the Hand row, under the Moving camera rows."""
+        cam=self._camera_rect()
+        return QRectF(cam.left(),cam.top()+self.CAM_ROW*(1+self._cam_lane_count())+1,cam.width(),self.CAM_ROW-2)
 
     def _lane_at(self, y):
         count=self._cam_lane_count()
@@ -608,14 +613,16 @@ class StageTimeline(QFrame):
     def _moving_row(self):
         """All the Moving camera rows together."""
         cam=self._camera_rect()
-        return QRectF(cam.left(),cam.top()+self.CAM_ROW+1,cam.width(),cam.height()-self.CAM_ROW-1)
+        return QRectF(cam.left(),cam.top()+self.CAM_ROW+1,cam.width(),self.CAM_ROW*self._cam_lane_count()-1)
 
     def _paint_fixed_header(self, p, c, small):
         """Top left: the zoom buttons over the track names, and the two camera rows' names
         (exp.123: Fixed camera = the moves between pages; Moving camera = zooms and pans)."""
         hover=getattr(self,'_hover',None)
         p.setFont(small)
-        for row,text in ((self._fixed_row(),'Fixed camera'),(self._moving_lane(self._cam_lane_count()-1),'Moving camera')):
+        rows=[(self._fixed_row(),'Fixed camera'),(self._moving_lane(self._cam_lane_count()-1),'Moving camera')]
+        if self.items: rows.append((self._hand_row(),'Hand'))
+        for row,text in rows:
             self._draw_icon(p,'camera',QPointF(18,row.center().y()),c['muted'],13)
             p.setPen(QColor(c['muted']))
             p.drawText(QRectF(30,row.top()-2,self.HEADER-34,row.height()+4),
@@ -650,7 +657,7 @@ class StageTimeline(QFrame):
             start=float(clip['start']) if start is None else start
             length=float(clip['duration']) if length is None else length
             return self._move_chip(start,length)
-        cam=self._moving_lane(self._cam_lanes().get(clip['id'],0))
+        cam=self._hand_row() if clip.get('kind')=='Hand leaves' else self._moving_lane(self._cam_lanes().get(clip['id'],0))
         start=float(clip['start']) if start is None else start
         length=float(clip['duration']) if length is None else length
         x0,x1=self._x(start),self._x(start+length)
@@ -1140,6 +1147,19 @@ class StageTimeline(QFrame):
         p.drawRoundedRect(self._fixed_row(),5,5)
         for i in range(self._cam_lane_count()):              # exp.140: one row per line, like the tracks
             p.drawRoundedRect(self._moving_lane(i),5,5)
+        if self.items:
+            p.drawRoundedRect(self._hand_row(),5,5)
+            p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
+            row=self._hand_row()
+            for start,lead,busy,tail in getattr(self,'hand_marks',()) or ():
+                # exp.147: each element's hand: glides in, draws, glides back (faint)
+                for a,b,alpha in ((start,start+lead,60),(start+lead,start+lead+busy,110),
+                                  (start+lead+busy,start+lead+busy+tail,60)):
+                    if b-a<=1e-6: continue
+                    col=QColor(c['hold']); col.setAlpha(alpha)
+                    p.setPen(Qt.PenStyle.NoPen); p.setBrush(col)
+                    p.drawRect(QRectF(self._x(a),row.top()+row.height()*.35,max(1.,self._x(b)-self._x(a)),row.height()*.3))
+            p.restore()
         p.save(); p.setClipRect(area)
         for t in range(self.lanes()):
             p.drawRoundedRect(self._track_rect(t),9,9)
@@ -1182,7 +1202,7 @@ class StageTimeline(QFrame):
                 p.drawRoundedRect(r,4,4)
                 self._draw_icon(p,'camera',r.center(),'#FFFFFF' if lit else c['text'],12)
                 continue
-            fill=QColor(c['paint']); fill.setAlpha(235 if chosen else 190)
+            fill=QColor(c['hold'] if clip.get('kind')=='Hand leaves' else c['paint']); fill.setAlpha(235 if chosen else 190)
             p.setPen(QPen(QColor('white') if chosen else fill.lighter(130),2 if chosen else 1)); p.setBrush(fill)
             p.drawRoundedRect(r,5,5)
             # exp.124: getting there / stays / coming back: the two ramps are lighter.
@@ -1288,7 +1308,7 @@ class StageTimeline(QFrame):
                 if clip.get('kind')=='Fixed camera':
                     r=self._move_chip(start,float(clip['duration']))
                 else:
-                    row=self._moving_lane(lane)
+                    row=self._hand_row() if clip.get('kind')=='Hand leaves' else self._moving_lane(lane)
                     x0,x1=self._x(start),self._x(start+float(clip['duration']))
                     r=QRectF(x0+1,row.top()+1,max(10.,x1-x0-2),row.height()-2)
                 p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
@@ -1324,7 +1344,7 @@ class StageTimeline(QFrame):
                 menu=QMenu(self)
                 menu.addAction('Settings…',lambda: self.camera_edit.emit(cid))
                 menu.addSeparator()
-                for kind in (KINDS if clip.get('kind')!='Fixed camera' else ()):
+                for kind in (KINDS if clip.get('kind') not in ('Fixed camera','Hand leaves') else ()):
                     a=menu.addAction(kind,lambda kind=kind: self.camera_action.emit(cid,kind))
                     a.setCheckable(True); a.setChecked(kind==clip.get('kind'))
                 menu.addSeparator()
@@ -1482,7 +1502,7 @@ class StageTimeline(QFrame):
                     if abs(pos.x()-x0)<4 and self._cam_ghost is None and abs(pos.y()-self._drag_y0)<4:
                         event.accept(); return
                     lane=int(clip.get('lane',0) or 0)
-                    if clip.get('kind')!='Fixed camera':
+                    if clip.get('kind') not in ('Fixed camera','Hand leaves'):
                         under=self._lane_at(pos.y())
                         if under is not None: lane=under
                     self._cam_ghost=(clip['id'],round(start,2),lane)
@@ -1639,6 +1659,8 @@ class StageTimeline(QFrame):
             seconds=max(0.,self._sec(pos.x()))
             if self._moving_row().contains(pos):
                 self.camera_add.emit('',seconds);event.accept();return
+            if self._hand_row().contains(pos):
+                self.camera_add.emit('Hand leaves',seconds);event.accept();return     # exp.147
         item,_=self._overlay_at(event.position())
         if item is not None:
             self.overlay_edit.emit(item.get('id'));event.accept();return
@@ -1677,7 +1699,7 @@ class StageTimeline(QFrame):
             if ghost is not None:
                 _,start,lane=ghost
                 self.camera_changed.emit(clip['id'],start,float(clip['duration']))
-                if clip.get('kind')!='Fixed camera' and lane!=int(clip.get('lane',0) or 0):
+                if clip.get('kind') not in ('Fixed camera','Hand leaves') and lane!=int(clip.get('lane',0) or 0):
                     self.camera_lane.emit(clip['id'],lane)
             self._lanes_frozen=None; self._fit_height(); self.update()
             self.camera_done.emit(clip['id'])
@@ -3054,8 +3076,14 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.hand_rest_travel=w.number(.2,5,.8,.1); w.hand_rest_travel.setSuffix(' s')
     w.hand_rest_travel.setToolTip('How long the hand takes to glide from the corner to the drawing (and back).')
     h.addRow('Glide',w.hand_rest_travel)
+    w.hand_leave_add=QPushButton('+ Hand leaves the picture')
+    w.hand_leave_add.setToolTip('At the playhead: the waiting hand slides out of the picture, stays away, and '
+                                'comes back (Hand row of the timeline; or double-click the Hand row).')
+    w.hand_leave_add.clicked.connect(lambda checked=False: w.add_camera_clip('Hand leaves'))
+    h.addRow('',w.hand_leave_add)
     def _rest_rows(on):
         h.setRowVisible(w.hand_rest_corner,bool(on)); h.setRowVisible(w.hand_rest_travel,bool(on))
+        h.setRowVisible(w.hand_leave_add,bool(on))
     w.hand_rest.toggled.connect(_rest_rows); _rest_rows(False)
     w.hand_rest.toggled.connect(lambda on: w.hand_rest_changed())
     w.hand_rest_corner.currentIndexChanged.connect(lambda i: w.hand_rest_changed())

@@ -150,6 +150,16 @@ class CameraClipTests(unittest.TestCase):
 
 
 class HandTravelTimingTests(unittest.TestCase):
+    def test_the_hand_leaves_and_comes_back(self):
+        # exp.147: a Hand row clip: slides out over 'in_s', stays away, back over 'out_s'.
+        import camera_clips as cc
+        clip = cc.new_clip(cc.HAND, 2.); clip['side'] = 'Bottom'
+        self.assertEqual(cc.away_at([clip], 1.), (0., 'Right'))
+        self.assertEqual(cc.away_at([clip], 4.), (1., 'Bottom'))
+        self.assertLess(cc.away_at([clip], 6.)[0], 1.)
+        self.assertIsNone(cc.framing_at([clip], 4.))               # not a camera
+        self.assertEqual(cc.from_hand_signature(cc.hand_signature([clip]))[0]['side'], 'Bottom')
+
     def test_phases(self):
         # exp.143: the hand comes from its corner (0.5 s), draws (2 s), goes back (0.5 s).
         from frame_render import travel_phase
@@ -215,6 +225,17 @@ class HandRestTests(unittest.TestCase):
         travelling = dict(drawing=drawing, options=self.options(layers='all'))
         state = State('page', current=1, active=[(1, .8), (0, .99)], top=0)
         self.assertEqual(_hand_element(state, [travelling, holding], {0: 0, 1: 1}), 0)   # going back
+
+    def test_the_waiting_hand_slides_out(self):
+        import camera_clips as cc
+        from frame_render import rest_rect
+        o = self.options()
+        clip = cc.new_clip(cc.HAND, 0.); clip['side'] = 'Right'
+        o['hand_away'] = cc.hand_signature([clip])
+        home = rest_rect(320, 180, o, 10.)
+        out = rest_rect(320, 180, o, 2.)
+        self.assertGreaterEqual(out.x(), 320)                         # out of the picture
+        self.assertLess(home.x(), 320)
 
     def test_the_window_shows_the_waiting_hand(self):
         from app import Window
@@ -350,6 +371,19 @@ class WindowTests(unittest.TestCase):
         QTest.mouseRelease(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier, QPoint(int(r.center().x()), int(top.center().y())))
         self.app.processEvents()
         self.assertEqual(b['lane'], rows - 1)
+
+    def test_hand_row_clip(self):
+        w = self.w
+        w.position = 0.; w.refresh()
+        clip = w.add_camera_clip('Hand leaves', at=1.)
+        w.select_camera(None); self.app.processEvents()
+        tl = w.stage_timeline
+        self.assertTrue(w.hand_rest.isChecked())
+        self.assertTrue(tl._hand_row().contains(tl._clip_rect(clip).center()))
+        self.assertEqual(tl._cam_lane_count(), 1)                    # not a camera row
+        self.assertIn('hand_away', w.hand_video(0))
+        data = w.project_state()
+        self.assertEqual(data['cameras'][0]['kind'], 'Hand leaves')
 
     def test_a_camera_clip_only_touches_its_own_stretch(self):
         """exp.125: changing a camera clip makes only its own stretch of ready frames old."""

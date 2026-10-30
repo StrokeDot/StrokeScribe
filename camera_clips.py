@@ -35,7 +35,9 @@ CUSTOM = 'Move to a spot'      # exp.121 (was 'Custom'): drag the frame where th
 # come back.
 FIXED = 'Fixed camera'
 ZOOM_OUT = 'Zoom out'      # exp.142: starts close and opens out to the normal frame
-MENU = ('Zoom in', ZOOM_OUT)   # exp.142 (the user): + Add camera offers these two
+MENU = ('Zoom in', ZOOM_OUT)
+HAND = 'Hand leaves'       # exp.147: on the Hand row: the waiting hand slides out of the picture and back
+SIDES = ('Right', 'Bottom', 'Left')   # exp.142 (the user): + Add camera offers these two
 MOVING = ('Zoom in', ZOOM_OUT, 'Pan left', 'Pan right', 'Pan up', 'Pan down', CUSTOM)
 KINDS = MOVING + (FIXED,)
 FOREVER = 1e9
@@ -103,6 +105,7 @@ def presets(kind):
         CUSTOM: (None, (1.6, .5, .5)),
         FIXED: (None, (1.6, .5, .5)),
         ZOOM_OUT: (None, (1.6, .5, .5)),
+        HAND: (None, REST),
     }.get(kind, (None, (1.6, .5, .5)))
 
 
@@ -148,7 +151,7 @@ def set_kind(clip, kind):
 def free_lane(clips, start, end, skip=None):
     """exp.138: the lowest Moving camera row with nothing between start and end."""
     lane = 0
-    while any(int(c.get('lane', 0) or 0) == lane and c is not skip and not fixed(c)
+    while any(int(c.get('lane', 0) or 0) == lane and c is not skip and moving(c)
               and float(c['start']) < end - 1e-6 and until(c) > start + 1e-6 for c in clips):
         lane += 1
     return lane
@@ -157,13 +160,52 @@ def free_lane(clips, start, end, skip=None):
 def assign_lanes(clips):
     """Clips from before exp.138 (no row): each on the lowest row where it fits, as they
     were shown."""
-    if all('lane' in c or fixed(c) for c in clips):
+    if all('lane' in c or not moving(c) for c in clips):
         return False
     placed = [c for c in clips if 'lane' in c]
-    for c in sorted((c for c in clips if 'lane' not in c and not fixed(c)), key=lambda c: float(c['start'])):
+    for c in sorted((c for c in clips if 'lane' not in c and moving(c)), key=lambda c: float(c['start'])):
         c['lane'] = free_lane(placed, float(c['start']), until(c))
         placed.append(c)
     return True
+
+
+def moving(clip):
+    """A clip on the Moving camera rows (not a fixed camera, not the hand's)."""
+    return clip.get('kind') not in (FIXED, HAND)
+
+
+def hand_clips(clips):
+    return [c for c in clips or () if c.get('kind') == HAND]
+
+
+def away_at(clips, seconds):
+    """exp.147: (how far out of the picture the waiting hand is: 0 in its corner .. 1 out,
+    side) at `seconds` of the video."""
+    t = float(seconds)
+    best, side = 0., 'Right'
+    for c in hand_clips(clips):
+        start, total = float(c['start']), max(.4, float(c.get('duration', 4.4)))
+        if not start <= t < start + total:
+            continue
+        a = max(.05, float(c.get('in_s', IN_SECONDS)))
+        b = max(.05, float(c.get('out_s', OUT_SECONDS)))
+        local = t - start
+        e = _ease(local / a) if local < a else (_ease((total - local) / b) if local > total - b else 1.)
+        if e >= best:
+            best, side = e, c.get('side') or 'Right'
+    return best, side
+
+
+def hand_signature(clips):
+    """Plain data of the hand clips (for render options and fingerprints)."""
+    return tuple((c.get('id'), round(float(c['start']), 4), round(float(c['duration']), 4),
+                  round(float(c.get('in_s', IN_SECONDS)), 4), round(float(c.get('out_s', OUT_SECONDS)), 4),
+                  c.get('side') or 'Right') for c in hand_clips(clips))
+
+
+def from_hand_signature(sig):
+    return [dict(id=i, kind=HAND, start=s, duration=d, in_s=a, out_s=b, side=side)
+            for i, s, d, a, b, side in sig or ()]
 
 
 def fixed(clip):
@@ -210,7 +252,7 @@ def framing_at(clips, seconds, moves=()):
     clips = list(clips or ())
     fixeds = [c for c in clips if fixed(c)]
     base = _fixed_at(fixeds, t, moves) if fixeds else None
-    live = [c for c in clips if not fixed(c) and float(c['start']) <= t + 1e-9 and t < until(c)]
+    live = [c for c in clips if moving(c) and float(c['start']) <= t + 1e-9 and t < until(c)]
     if not live:
         return base
     rest = base or REST

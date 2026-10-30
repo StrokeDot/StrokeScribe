@@ -347,21 +347,21 @@ class WindowTests(unittest.TestCase):
         self.assertTrue(row.contains(tl._overlay_rect(a).center()))
         self.assertGreater(tl.lanes(), max(a['track'], b['track']))
         # Plain click chooses one; Ctrl+click adds; a click on an element clears the texts.
-        r = tl._overlay_rect(a)
+        def into_view(rect_of):              # exp.147: more camera rows: scroll the row into view
+            area, r = tl._tracks_area(), rect_of()
+            if not area.contains(r.center()) and tl.vbar.isVisible():
+                tl.vbar.setValue(int(max(0, tl.y_off + r.center().y() - area.center().y())))
+                tl.y_off = float(tl.vbar.value()); tl.update(); self.app.processEvents()
+            return rect_of()
+        r = into_view(lambda: tl._overlay_rect(a))
         QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
                          QPoint(int(r.center().x()), int(r.center().y())))
         self.assertEqual({o['id'] for o in w.chosen_overlays()}, {a['id']})
-        r = tl._overlay_rect(b)
-        area = tl._tracks_area()
-        if not area.contains(r.center()):                 # exp.131: scroll it into view first
-            tl.vbar.setValue(0); tl.y_off = 0.; tl.update(); self.app.processEvents()
-            r = tl._overlay_rect(b)
+        r = into_view(lambda: tl._overlay_rect(b))
         QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier,
                          QPoint(int(r.center().x()), int(r.center().y())))
         self.assertEqual({o['id'] for o in w.chosen_overlays()}, {a['id'], b['id']})
-        if tl.vbar.isVisible():
-            tl.vbar.setValue(tl.vbar.maximum()); tl.update(); self.app.processEvents()
-        block = tl._item_rect(tl.items[0])
+        block = into_view(lambda: tl._item_rect(tl.items[0]))
         QTest.mouseClick(tl, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
                          QPoint(int(block.center().x()), int(block.center().y())))
         self.app.processEvents()

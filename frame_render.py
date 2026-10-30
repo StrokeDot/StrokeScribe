@@ -311,7 +311,7 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
         elif phase == 'out':
             inner_t = hand_end * (1 - TRAVEL_EPS)        # the pen where it stopped
         if phase:
-            inner['_travel'] = (phase, p)
+            inner['_travel'] = (phase, p, float(options.get('hand_video_start', 0) or 0) + t)
         camera = _FixedCamera(camera_path, fraction) if camera_path is not None else None
         return _compose_raw_frame(drawing, inner_t / max(1e-9, inner_total), inner, camera)
     opts, erase, base_fraction, progress = split_erase(drawing, fraction, options)
@@ -383,7 +383,9 @@ def compose_frame(drawing, fraction, options, camera_path=None):
     else:
         frame = _compose_raw_frame(drawing,fraction,options,camera_path)
     if options.get('hand_rest_here') and options.get('hand_travel') and resting(drawing, options, fraction):
-        frame = paint_rest_hand(frame, options)     # exp.143: waiting in its corner
+        window = hand_window(drawing, options)
+        seconds = float(options.get('hand_video_start', 0) or 0) + float(fraction) * (window[1] if window else 0.)
+        frame = paint_rest_hand(frame, options, seconds)     # exp.143: waiting in its corner
     return frame
 
 
@@ -571,8 +573,9 @@ class _FixedCamera:
         return getattr(self.camera, name)
 
 
-def rest_rect(width, height, options):
-    """Where the waiting hand is on a frame of this size."""
+def rest_rect(width, height, options, seconds=None):
+    """Where the waiting hand is on a frame of this size (exp.147: at `seconds` of the
+    video it may be sliding out of the picture, Hand row)."""
     from PySide6.QtCore import QRectF
     hand = options.get('hand')
     if hand is None or hand.isNull():
@@ -581,14 +584,27 @@ def rest_rect(width, height, options):
     hh = hw * hand.height() / max(1, hand.width())
     ax, ay = options.get('anchor', (.1, .1))
     fx, fy = REST_CORNERS.get(options.get('hand_rest_corner') or 'Bottom right', REST_CORNERS['Bottom right'])
-    return QRectF(fx * width - float(ax) * hw, fy * height - float(ay) * hh, hw, hh)
+    rect = QRectF(fx * width - float(ax) * hw, fy * height - float(ay) * hh, hw, hh)
+    if options.get('hand_away') and seconds is not None:
+        import camera_clips
+        e, side = camera_clips.away_at(camera_clips.from_hand_signature(options['hand_away']), seconds)
+        if e > 0:
+            dx = dy = 0.
+            if side == 'Bottom':
+                dy = (height - rect.y() + 4) * e
+            elif side == 'Left':
+                dx = -(rect.right() + 4) * e
+            else:
+                dx = (width - rect.x() + 4) * e
+            rect.translate(dx, dy)
+    return rect
 
 
-def paint_rest_hand(frame, options):
+def paint_rest_hand(frame, options, seconds=None):
     """The hand waiting in its corner, painted on (a copy of) the frame."""
     if frame is None or options.get('layers', 'all') == 'art':
         return frame
-    rect = rest_rect(frame.width(), frame.height(), options)
+    rect = rest_rect(frame.width(), frame.height(), options, seconds)
     if rect is None:
         return frame
     from PySide6.QtGui import QPainter
@@ -606,9 +622,9 @@ def _paint_travel(frame, got, travel, opts):
     from PySide6.QtGui import QPainter
     if frame is None or opts.get('layers', 'all') == 'art':
         return frame
-    phase, p = travel
+    phase, p = travel[0], travel[1]
     w, h = frame.width(), frame.height()
-    corner = rest_rect(w, h, opts)
+    corner = rest_rect(w, h, opts, travel[2] if len(travel) > 2 else None)
     image = opts.get('hand')
     target = None
     if got.get('hands'):
