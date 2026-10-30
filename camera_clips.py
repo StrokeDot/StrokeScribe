@@ -37,6 +37,8 @@ FIXED = 'Fixed camera'
 ZOOM_OUT = 'Zoom out'      # exp.142: starts close and opens out to the normal frame
 MENU = ('Zoom in', ZOOM_OUT)
 HAND = 'Hand leaves'       # exp.147: on the Hand row: the waiting hand slides out of the picture and back
+HIDE = 'Hand hidden'       # exp.148: on the Hand row: the hand fades away (also while drawing) and back
+HAND_KINDS = (HAND, HIDE)
 SIDES = ('Right', 'Bottom', 'Left')   # exp.142 (the user): + Add camera offers these two
 MOVING = ('Zoom in', ZOOM_OUT, 'Pan left', 'Pan right', 'Pan up', 'Pan down', CUSTOM)
 KINDS = MOVING + (FIXED,)
@@ -53,11 +55,15 @@ def new_clip(kind='Zoom in', start=0., duration=None):
     normal frame; `duration` is the whole clip (in + hold + out)."""
     if duration is None:
         duration = IN_SECONDS if kind == FIXED else 2. if kind == ZOOM_OUT else IN_SECONDS + HOLD_SECONDS + OUT_SECONDS
+    if kind == HIDE and duration == IN_SECONDS + HOLD_SECONDS + OUT_SECONDS:
+        duration = 2.6
     total = float(duration)
     clip = dict(id=uuid.uuid4().hex[:10], kind=kind, start=round(float(start), 2),
                 duration=round(max(.4, total), 2), in_s=IN_SECONDS, out_s=OUT_SECONDS,
                 to=None, **{'from': None})
     clip['from'], clip['to'] = presets(kind)
+    if kind == HIDE:                     # a quick fade out and in
+        clip['in_s'] = clip['out_s'] = .3
     fit(clip)
     return clip
 
@@ -106,6 +112,7 @@ def presets(kind):
         FIXED: (None, (1.6, .5, .5)),
         ZOOM_OUT: (None, (1.6, .5, .5)),
         HAND: (None, REST),
+        HIDE: (None, REST),
     }.get(kind, (None, (1.6, .5, .5)))
 
 
@@ -171,11 +178,27 @@ def assign_lanes(clips):
 
 def moving(clip):
     """A clip on the Moving camera rows (not a fixed camera, not the hand's)."""
-    return clip.get('kind') not in (FIXED, HAND)
+    return clip.get('kind') not in (FIXED, HAND, HIDE)
 
 
-def hand_clips(clips):
-    return [c for c in clips or () if c.get('kind') == HAND]
+def hand_clips(clips, kinds=HAND_KINDS):
+    return [c for c in clips or () if c.get('kind') in kinds]
+
+
+def _ramp(c, t):
+    """0..1 through a go / stay / back clip at `t` (0 outside it)."""
+    start, total = float(c['start']), max(.2, float(c.get('duration', 4.4)))
+    if not start <= t < start + total:
+        return 0.
+    a = max(.05, float(c.get('in_s', IN_SECONDS)))
+    b = max(.05, float(c.get('out_s', OUT_SECONDS)))
+    local = t - start
+    return _ease(local / a) if local < a else (_ease((total - local) / b) if local > total - b else 1.)
+
+
+def hidden_at(clips, seconds):
+    """exp.148: how hidden the hand is at `seconds`: 0 shown .. 1 hidden."""
+    return max([_ramp(c, float(seconds)) for c in hand_clips(clips, (HIDE,))] or [0.])
 
 
 def away_at(clips, seconds):
@@ -183,7 +206,7 @@ def away_at(clips, seconds):
     side) at `seconds` of the video."""
     t = float(seconds)
     best, side = 0., 'Right'
-    for c in hand_clips(clips):
+    for c in hand_clips(clips, (HAND,)):
         start, total = float(c['start']), max(.4, float(c.get('duration', 4.4)))
         if not start <= t < start + total:
             continue
@@ -200,12 +223,12 @@ def hand_signature(clips):
     """Plain data of the hand clips (for render options and fingerprints)."""
     return tuple((c.get('id'), round(float(c['start']), 4), round(float(c['duration']), 4),
                   round(float(c.get('in_s', IN_SECONDS)), 4), round(float(c.get('out_s', OUT_SECONDS)), 4),
-                  c.get('side') or 'Right') for c in hand_clips(clips))
+                  c.get('side') or 'Right', c.get('kind', HAND)) for c in hand_clips(clips))
 
 
 def from_hand_signature(sig):
-    return [dict(id=i, kind=HAND, start=s, duration=d, in_s=a, out_s=b, side=side)
-            for i, s, d, a, b, side in sig or ()]
+    return [dict(id=r[0], start=r[1], duration=r[2], in_s=r[3], out_s=r[4], side=r[5],
+                 kind=r[6] if len(r) > 6 else HAND) for r in sig or ()]
 
 
 def fixed(clip):

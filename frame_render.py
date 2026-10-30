@@ -61,13 +61,23 @@ def _core(drawing, fraction, opts, camera_path=None, camera_fraction=None):
     hand travels to / from its corner (opts['_travel']), the hand is drawn on the finished
     frame, between the corner and where the pen is."""
     travel = opts.get('_travel')
-    if travel is None:
+    hidden = _hidden(opts, opts.get('_video_t'))
+    if travel is None and hidden <= 0:
         return _core_body(drawing, fraction, opts, camera_path, camera_fraction, None)
     got = {}
     frame = _core_body(drawing, fraction, opts, camera_path, camera_fraction, got)
+    if travel is None:                   # exp.148: the hand fading away (Hand row)
+        return _paint_travel(frame, got, (None, 0., opts.get('_video_t')), opts)
     if travel[0] == 'in':
         # Nothing drawn yet: the picture at 0 (the pen's first point came from a tiny step in).
         frame = _core_body(drawing, 0., opts, camera_path, camera_fraction, {})
+    elif not got.get('hands') and len(travel) > 3 and travel[3] is not None:
+        # exp.148: no hand where it stopped painting (a painting with no hand at the very
+        # end): it goes back from the last point of the lines.
+        last = {}
+        _core_body(drawing, travel[3], opts, camera_path, camera_fraction, last)
+        if last.get('hands'):
+            got = last
     return _paint_travel(frame, got, travel, opts)
 
 
@@ -310,10 +320,18 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
             inner_t = hand_end * TRAVEL_EPS              # the pen on the first point
         elif phase == 'out':
             inner_t = hand_end * (1 - TRAVEL_EPS)        # the pen where it stopped
+        video_t = float(options.get('hand_video_start', 0) or 0) + t
+        inner['_video_t'] = video_t
         if phase:
-            inner['_travel'] = (phase, p, float(options.get('hand_video_start', 0) or 0) + t)
+            lines_end = max(.001, float(options.get('duration', 4) or 4)) * (1 - TRAVEL_EPS)
+            inner['_travel'] = (phase, p, video_t,
+                                min(1., lines_end / max(1e-9, inner_total)) if phase == 'out' else None)
         camera = _FixedCamera(camera_path, fraction) if camera_path is not None else None
         return _compose_raw_frame(drawing, inner_t / max(1e-9, inner_total), inner, camera)
+    if options.get('hand_away') and '_video_t' not in options:
+        # exp.148: the moment in the video (the Hand row can hide the hand while it draws).
+        options = dict(options, _video_t=float(options.get('hand_video_start', 0) or 0)
+                       + max(0., min(1., float(fraction))) * timeline_seconds(drawing, options))
     opts, erase, base_fraction, progress = split_erase(drawing, fraction, options)
     items = opts.get('overlays') if opts.get('layers', 'all') != 'hand' else None
     if items:
@@ -605,12 +623,14 @@ def paint_rest_hand(frame, options, seconds=None):
     if frame is None or options.get('layers', 'all') == 'art':
         return frame
     rect = rest_rect(frame.width(), frame.height(), options, seconds)
-    if rect is None:
+    shown = 1. - _hidden(options, seconds)
+    if rect is None or shown <= 0:
         return frame
     from PySide6.QtGui import QPainter
     out = frame.copy()
     p = QPainter(out)
     p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    p.setOpacity(shown)
     p.drawImage(rect, options['hand'])
     p.end()
     return out
@@ -623,8 +643,12 @@ def _paint_travel(frame, got, travel, opts):
     if frame is None or opts.get('layers', 'all') == 'art':
         return frame
     phase, p = travel[0], travel[1]
+    seconds = travel[2] if len(travel) > 2 else None
+    shown = 1. - _hidden(opts, seconds)
+    if shown <= 0:
+        return frame                     # exp.148: hidden (Hand row)
     w, h = frame.width(), frame.height()
-    corner = rest_rect(w, h, opts, travel[2] if len(travel) > 2 else None)
+    corner = rest_rect(w, h, opts, seconds)
     image = opts.get('hand')
     target = None
     if got.get('hands'):
@@ -639,6 +663,10 @@ def _paint_travel(frame, got, travel, opts):
             x -= max(0, min(bw - w, int(round(cx * bw - w / 2))))
             y -= max(0, min(bh - h, int(round(cy * bh - h / 2))))
         target = QRectF(x, y, r.width() * f, r.height() * f)
+    if phase is None:                    # the hand where it draws, only fading
+        if target is None or image is None or image.isNull():
+            return frame
+        corner = target
     if image is None or image.isNull() or corner is None:
         return frame
     if target is None:
@@ -651,6 +679,15 @@ def _paint_travel(frame, got, travel, opts):
     out = frame.copy()
     painter = QPainter(out)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    painter.setOpacity(shown)
     painter.drawImage(rect, image)
     painter.end()
     return out
+
+
+def _hidden(options, seconds):
+    """exp.148: 0..1, how hidden the hand is at `seconds` of the video (Hand row)."""
+    if seconds is None or not options.get('hand_away'):
+        return 0.
+    import camera_clips
+    return camera_clips.hidden_at(camera_clips.from_hand_signature(options['hand_away']), seconds)

@@ -136,6 +136,7 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
     tracks = {it.k: it.track for it in lay.items}
     waiting = sorted(titles or (), key=lambda o: int(o.get('track', 0)))
     hand_k = _hand_element(state, elements, tracks)
+    hand_layer = None
     for k, fraction in state.active:
         under = [o for o in waiting if int(o.get('track', 0)) < tracks.get(k, 0)]
         if under:
@@ -150,6 +151,10 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
         out = world.put(out, art, world.frames[k], view, opts.get('blend_mode', 'Normal'),
                         opts.get('artwork_opacity', 100))
         if k == hand_k and opts.get('layers', 'all') != 'art':
-            hand = element_frame(el['drawing'], opts, fraction, w, h, 'hand')
-            out = world.put(out, hand, world.frames[k], view)
-    return _texts(out, waiting, seconds, world, view)
+            hand_layer = (element_frame(el['drawing'], opts, fraction, w, h, 'hand'), world.frames[k])
+    out = _texts(out, waiting, seconds, world, view)
+    if hand_layer is not None:
+        # exp.148 (the user): the hand is always over everything (it was drawn under the
+        # pictures of higher tracks, e.g. under a book).
+        out = world.put(out, hand_layer[0], hand_layer[1], view)
+    return out
