@@ -310,7 +310,7 @@ class WindowTests(unittest.TestCase):
         ra, rb = tl._clip_rect(a), tl._clip_rect(b)
         self.assertFalse(ra.intersects(rb))                          # both can be touched
         self.assertEqual((a['lane'], b['lane']), (0, 1))
-        self.assertEqual(tl._cam_lane_count(), 3)                    # and an empty row on top
+        self.assertEqual(tl._cam_lane_count(), 2)                    # exp.145: no empty row
         self.assertLess(rb.top(), ra.top())                           # the higher row is drawn higher
         self.assertGreater(tl.CAM_H, 2 * tl.CAM_ROW)
         self.assertEqual(tl._clip_at(rb.center())[0]['id'], b['id'])
