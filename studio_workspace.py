@@ -348,12 +348,13 @@ class StageTimeline(QFrame):
         return lanes
 
     def _cam_lane_count(self):
-        """The rows in use and one empty row on top (to drag a camera onto)."""
+        """The rows in use (exp.145, the user: no empty row; drag a camera above the top
+        row to make a new one, like the tracks)."""
         if getattr(self,'_lanes_frozen',None):
             return self._lanes_frozen        # exp.139: rows stay still while a camera is dragged
         lanes=self._cam_lanes()
         if not any(not isinstance(k,tuple) for k in lanes): return 1
-        return max(lanes.values())+2
+        return max(lanes.values())+1
 
     def _moving_lane(self, i):
         """Row i (0 = the lowest); higher rows are drawn higher, like the tracks."""
@@ -362,9 +363,12 @@ class StageTimeline(QFrame):
         return QRectF(cam.left(),cam.top()+self.CAM_ROW*(1+row)+1,cam.width(),self.CAM_ROW-2)
 
     def _lane_at(self, y):
-        for i in range(self._cam_lane_count()):
+        count=self._cam_lane_count()
+        for i in range(count):
             r=self._moving_lane(i)
             if r.top()-1<=y<=r.bottom()+1: return i
+        if y<self._moving_lane(count-1).top():
+            return count                   # above the top row: a new row (after letting go)
         return None
 
     def lanes(self):
@@ -1471,6 +1475,9 @@ class StageTimeline(QFrame):
                 else:
                     # exp.140 (the user): moved like an element: a dashed copy shows where it
                     # goes (time and row); it moves there when the mouse is let go.
+                    # exp.145 (the user): moved up or down it keeps its time, until the mouse
+                    # clearly goes sideways.
+                    if abs(pos.x()-x0)<10: shift=0.
                     start,length=max(0.,min(total-.2,start0+shift)),length0
                     if abs(pos.x()-x0)<4 and self._cam_ghost is None and abs(pos.y()-self._drag_y0)<4:
                         event.accept(); return
@@ -1491,6 +1498,7 @@ class StageTimeline(QFrame):
                 total=self._room() if self.items else (self._frozen or self.total()) if self.scene_segments else 1e6
                 start,length,track=start0,length0,track0
                 if part=='move':
+                    if self.items and abs(pos.x()-x0)<10: shift=0.     # exp.145: up/down keeps its time
                     start=max(0.,min(total-.1,start0+shift))
                     if self.items:          # exp.118: onto the element track under the mouse
                         track=track0
