@@ -1142,13 +1142,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from PySide6.QtWidgets import QMenu
         from camera_clips import MOVING, CUSTOM, FIXED
         menu=QMenu(self)
-        # exp.132 (the user): Reframe = the camera goes to another spot of the page and stays,
-        # like a move to the next element but without one; the moving cameras come back.
-        menu.addAction('Reframe',lambda: self.add_camera_clip(FIXED,at=at))
-        moving=menu.addMenu('Moving camera')
+        # exp.136 (the user): the fixed camera is the one of the elements; + Add camera adds
+        # moving cameras (they go, stay, and come back).
         for kind in MOVING:
             text=('Zoom to a spot you choose' if kind==CUSTOM else kind)
-            moving.addAction(text,lambda kind=kind: self.add_camera_clip(kind,at=at))
+            menu.addAction(text,lambda kind=kind: self.add_camera_clip(kind,at=at))
         return menu
 
     def find_camera(self,cid):
@@ -1220,6 +1218,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         tl.cam_holds={c['id']:min(camera_clips.until(c,moves,tl.cam_clips),self.video_length() if tl.cam_clips else 0.)
                       for c in tl.cam_clips}
         tl.selected_camera=getattr(self,'selected_camera',None)
+        lanes=tl._cam_lane_count()
+        if lanes!=getattr(tl,'_cam_lanes_seen',None):     # exp.136: more Moving camera rows
+            tl._cam_lanes_seen=lanes; tl._fit_height()
         tl.update()
 
     def add_camera_clip(self,kind='Zoom in',at=None):
@@ -1271,8 +1272,59 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         clip=self.find_camera(cid)
         if clip is not None and camera_clips.fixed(clip):
             return self.edit_fixed_camera(cid)
-        self.select_camera(cid)
-        if hasattr(self,'show_left_panel'): self.show_left_panel('camera')
+        if clip is not None:
+            return self.edit_moving_camera(cid)
+
+    def edit_moving_camera(self,cid):
+        """exp.136 (the user): double-click a moving camera: its own window, like the fixed
+        ones (short words, a ? for each)."""
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QComboBox, QDoubleSpinBox
+        import camera_clips
+        clip=self.find_camera(cid)
+        if clip is None: return
+        dialog=QDialog(self); dialog.setWindowTitle('Moving camera')
+        form=QFormLayout(dialog)
+        kind=QComboBox(); kind.addItems(['Zoom to a spot' if k==camera_clips.CUSTOM else k for k in camera_clips.MOVING])
+        kind.setCurrentIndex(max(0,list(camera_clips.MOVING).index(clip['kind'])) if clip.get('kind') in camera_clips.MOVING else 0)
+        form.addRow(help_label('Kind','What the camera does: zoom in, slide (pan), or zoom to a spot you choose. '
+                               'It always comes back to where it was.'),kind)
+        def number(value,low,high):
+            box=QDoubleSpinBox(); box.setRange(low,high); box.setSingleStep(.1); box.setDecimals(1)
+            box.setSuffix(' s'); box.setValue(float(value)); return box
+        a,b=float(clip.get('in_s',1.2)),float(clip.get('out_s',1.2))
+        start=number(clip['start'],0,3600)
+        go=number(a,.1,30); stay=number(max(0.,float(clip['duration'])-a-b),0,600); back=number(b,.1,30)
+        form.addRow(help_label('Starts','When it begins (seconds of the video).'),start)
+        form.addRow(help_label('Going','How long it takes to get there. Longer = slower.'),go)
+        form.addRow(help_label('Stays','How long it stays there.'),stay)
+        form.addRow(help_label('Back','How long it takes to come back. Longer = slower.'),back)
+        where=QComboBox(); where.addItems(['As it is','Pick on preview'])
+        form.addRow(help_label('Where','Pick on preview: after OK a dashed frame shows on the picture. Drag it '
+                               'where the camera should look; mouse wheel = closer / further.'),where)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
+        remove=buttons.addButton('Delete',QDialogButtonBox.ButtonRole.DestructiveRole)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        wants={'delete':False}
+        remove.clicked.connect(lambda: (wants.update(delete=True),dialog.accept()))
+        if dialog.exec()!=QDialog.DialogCode.Accepted: return
+        if wants['delete']:
+            return self.camera_clip_action(cid,'delete')
+        self.record_structure('camera clip settings')
+        new_kind=camera_clips.MOVING[kind.currentIndex()]
+        if new_kind!=clip.get('kind'):
+            camera_clips.set_kind(clip,new_kind)
+        clip['start']=round(start.value(),2)
+        clip['in_s'],clip['out_s']=round(go.value(),2),round(back.value(),2)
+        clip['duration']=round(go.value()+stay.value()+back.value(),2)
+        camera_clips.fit(clip)
+        self.project_changes.mark_changed()
+        if where.currentIndex()==1:
+            self.select_camera(cid)
+            self.status.setText('Drag the dashed frame on the preview to where the camera looks (mouse wheel: '
+                                'closer / further). Click an empty spot of the timeline when it is right.')
+        else:
+            self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
 
     def edit_fixed_camera(self,cid):
         """exp.129 (the user): a fixed camera opens the same window as the moves between pages:
