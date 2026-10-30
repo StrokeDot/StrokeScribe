@@ -1128,11 +1128,7 @@ class StageTimeline(QFrame):
             if clip.get('kind')=='Fixed camera':
                 # exp.129 (the user): a fixed camera looks like the moves between pages (a grey
                 # chip with a camera) and a thin line while it stays there.
-                hold=self.cam_holds.get(clip['id'])
-                if hold is not None and hold>float(clip['start'])+float(clip['duration'])+1e-3:
-                    line=QColor(c['border_strong']); y=r.center().y(); x1=self._x(hold)
-                    p.setPen(QPen(line,2)); p.drawLine(QPointF(r.right()+1,y),QPointF(x1,y))
-                    p.drawLine(QPointF(x1,r.top()+5),QPointF(x1,r.bottom()-5))
+                # exp.135: no line after it (the user found it confusing)
                 lit=chosen or getattr(self,'_hover',None)==('camclip',clip['id'])
                 p.setPen(QPen(QColor('white'),1.5) if chosen else Qt.PenStyle.NoPen)
                 p.setBrush(QColor(c['accent'] if lit else c['border_strong']))
