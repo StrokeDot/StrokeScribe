@@ -19,7 +19,7 @@ PALETTES = {
         accent_a='#7444F0', accent_b='#4C42DE', brand='#9A82FF',
         selection='#2D2760', monitor='#0C0D0F', monitor_frame='#26282C',
         draw='#6E4FF2', paint='#22A88F', hold='#D4A044', erase='#E06A86', clip_text='#FFFFFF',
-        ruler='#8A8A8A', track='#26282D',   # exp.141: rows stand out from the panel overlay='#0E0E0ECC', tooltip='#2C2C2C',
+        ruler='#8A8A8A', track='#26282D', overlay='#0E0E0ECC', tooltip='#2C2C2C',
         wordmark='#F2F2F2', checker_a='#E9ECEF', checker_b='#D3D8DD',
         preview_dark='#242B35', good='#3FB950', bad='#F06A6A',
     ),
