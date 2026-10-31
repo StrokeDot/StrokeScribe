@@ -623,7 +623,7 @@ class StageTimeline(QFrame):
         rows=[(self._fixed_row(),'Fixed camera'),(self._moving_lane(self._cam_lane_count()-1),'Moving camera')]
         if self.items: rows.append((self._hand_row(),'Hand'))
         for row,text in rows:
-            self._draw_icon(p,'camera',QPointF(18,row.center().y()),c['muted'],13)
+            self._draw_icon(p,'hand' if text=='Hand' else 'camera',QPointF(18,row.center().y()),c['muted'],13)
             p.setPen(QColor(c['muted']))
             p.drawText(QRectF(30,row.top()-2,self.HEADER-34,row.height()+4),
                        Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,text)
@@ -1153,8 +1153,8 @@ class StageTimeline(QFrame):
             row=self._hand_row()
             for start,lead,busy,tail in getattr(self,'hand_marks',()) or ():
                 # exp.147: each element's hand: glides in, draws, glides back (faint)
-                for a,b,alpha in ((start,start+lead,60),(start+lead,start+lead+busy,110),
-                                  (start+lead+busy,start+lead+busy+tail,60)):
+                for a,b,alpha in ((start,start+lead,120),(start+lead,start+lead+busy,210),
+                                  (start+lead+busy,start+lead+busy+tail,120)):
                     if b-a<=1e-6: continue
                     col=QColor(c['hold']); col.setAlpha(alpha)
                     p.setPen(Qt.PenStyle.NoPen); p.setBrush(col)
@@ -1215,7 +1215,8 @@ class StageTimeline(QFrame):
             p.drawPolygon(QPolygonF([QPointF(r.left(),r.bottom()),QPointF(r.left()+a,r.top()),QPointF(r.left()+a,r.bottom())]))
             p.drawPolygon(QPolygonF([QPointF(r.right()-b,r.top()),QPointF(r.right(),r.bottom()),QPointF(r.right()-b,r.bottom())]))
             p.restore()
-            self._draw_icon(p,'camera',QPointF(r.left()+10,r.center().y()),'#FFFFFF',11)
+            self._draw_icon(p,'hand' if clip.get('kind') in ('Hand leaves','Hand hidden') else 'camera',
+                            QPointF(r.left()+10,r.center().y()),'#FFFFFF',11)
             hold=self.cam_holds.get(clip['id']) if clip.get('kind')=='Fixed camera' else None
             if hold is not None and hold>float(clip['start'])+float(clip['duration'])+1e-3:
                 # It stays there: a line to where it stops (the next fixed camera / page move).
