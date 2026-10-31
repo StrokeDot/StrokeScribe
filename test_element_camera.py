@@ -291,6 +291,22 @@ class HandRestTests(unittest.TestCase):
         self.assertEqual((lead, back), (2., .3))
         self.assertEqual(apply_glide(self.options(), {})['hand_travel'], .5)       # the Hand panel's
 
+    def test_ways_for_the_hand_to_go(self):
+        # exp.164 (the user): different versions of how the hand goes in and out.
+        from frame_render import glide_point, GLIDE_STYLES
+        from scenes import apply_glide
+        a, b = (0., 100.), (100., 100.)
+        for style in GLIDE_STYLES:
+            x, y = glide_point(a, b, 0., style)
+            self.assertAlmostEqual(x, 0.); self.assertAlmostEqual(y, 100.)
+            x, y = glide_point(a, b, 1., style)
+            self.assertAlmostEqual(x, 100.); self.assertAlmostEqual(y, 100.)
+        self.assertLess(glide_point(a, b, .5, 'Curve')[1], 90.)               # along an arc, upwards
+        self.assertGreater(glide_point(a, b, .8, 'Overshoot')[0], 100.)       # a little past
+        self.assertGreater(glide_point(a, b, .3, 'Quick start')[0], glide_point(a, b, .3, 'Slow start')[0])
+        o = apply_glide(self.options(), {'glide': (1., 1., 'Curve', 'Steady')})
+        self.assertEqual((o['hand_glide_style_in'], o['hand_glide_style_out']), ('Curve', 'Steady'))
+
     def test_the_pencil_stays_on_its_line_during_a_zoom(self):
         # exp.160 (the user): the hand draws where the lines come out, wherever the camera
         # shows them (exp.155 put it where they would be with no camera: out of step).

@@ -5062,8 +5062,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         go from its corner to the drawing, and to go back."""
         from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QDoubleSpinBox
         if not 0<=k<len(self.scenes): return
-        glide=self.scenes[k].get('glide') or (0.,0.)
+        glide=tuple(self.scenes[k].get('glide') or (0.,0.))+('Smooth','Smooth')
         settings={'hand_glide_in':glide[0],'hand_glide_out':glide[1]}
+        from frame_render import GLIDE_STYLES
+        from PySide6.QtWidgets import QComboBox
+        def style(value):
+            box=QComboBox(); box.addItems(list(GLIDE_STYLES))
+            box.setCurrentText(value if value in GLIDE_STYLES else 'Smooth'); return box
         default=float(self.hand_rest_travel.value())
         dialog=QDialog(self); dialog.setWindowTitle(f'Hand: element {k+1}')
         form=QFormLayout(dialog)
@@ -5071,14 +5076,20 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             box=QDoubleSpinBox(); box.setRange(.1,10.); box.setSingleStep(.1); box.setDecimals(1); box.setSuffix(' s')
             box.setValue(float(value or 0) or default); return box
         go=number(settings.get('hand_glide_in')); back=number(settings.get('hand_glide_out'))
+        how_in=style(glide[2]); how_out=style(glide[3])
+        tip=('Smooth: starts and ends gently. Steady: the same speed all the way. Quick start: fast, then '
+             'slows down. Slow start: slow, then fast. Overshoot: goes a little past and settles. Curve: '
+             'along an arc. Swoop: fast along an arc.')
         form.addRow(help_label('To the drawing','How long the hand takes to go from its corner to the first line.'),go)
+        form.addRow(help_label('How',tip),how_in)
         form.addRow(help_label('Back','How long the hand takes to go back to its corner after drawing.'),back)
+        form.addRow(help_label('How ',tip),how_out)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return
         self.record_structure('hand glide')
-        self.scenes[k]['glide']=(round(go.value(),2),round(back.value(),2))
+        self.scenes[k]['glide']=(round(go.value(),2),round(back.value(),2),how_in.currentText(),how_out.currentText())
         self.project_changes.mark_changed()
         self.__dict__.pop('_memo',None)
         self.hand_rest_changed()
