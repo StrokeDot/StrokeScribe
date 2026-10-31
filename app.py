@@ -1272,8 +1272,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if clip is None: return
         if getattr(self,'_cam_recorded',None)!=cid:
             self.record_structure('move camera clip'); self._cam_recorded=cid
+        import camera_clips
+        old=float(clip['start'])
+        if camera_clips.fixed(clip) and abs(float(start)-old)>1e-3:
+            # exp.168 (the user): a fixed camera moved along the timeline moves everything
+            # after it (elements, cameras, texts) by the same time.
+            self.push_after(old,float(start)-old)
+            self.fill_scenes()
         clip['start'],clip['duration']=round(float(start),2),round(max(.4,float(length)),2)
-        import camera_clips; camera_clips.fit(clip)
+        camera_clips.fit(clip)
         self.project_changes.mark_changed()
         self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
 
@@ -1757,7 +1764,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             top=max([tracks[k] for k,_ in state_at(lay,seconds).active if k not in hidden],default=-1)
         except Exception:
             return shown,[]
-        return [o for o in shown if int(o.get('track',0))>=top],[o for o in shown if int(o.get('track',0))<top]
+        # exp.168 (the user): nothing is above the hand: every text goes into the picture (on its
+        # track, under the elements of higher tracks), and the hand is drawn over all of it.
+        return [],list(shown)
 
     def move_overlay_clip(self,oid,start,duration,track):
         item=self.find_overlay(oid)
@@ -5124,8 +5133,21 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if abs(delta)<1e-4: return
         eps=1e-3
         moved=0
+        # exp.168: an element that follows the one before it (no start of its own) moves too
+        # when it starts after `when` and the one before it stays (it gets its own start).
+        starts={}
+        try:
+            starts={it.k:it.start for it in self.timeline_layout().items}
+        except Exception:
+            pass
+        for j,scene in enumerate(self.scenes):
+            if j==skip or scene.get('start') is not None or j not in starts: continue
+            before_stays=j==0 or starts.get(j-1,0.)<when-eps
+            if starts[j]>=when-eps and before_stays:
+                scene['start']=round(max(0.,starts[j]+delta),3); scene['_pushed']=True; moved+=1
         for j,scene in enumerate(self.scenes):
             if j==skip or scene.get('start') is None: continue
+            if scene.pop('_pushed',False): continue
             if float(scene['start'])>=when-eps:
                 scene['start']=round(max(0.,float(scene['start'])+delta),3); moved+=1
         for clip in getattr(self,'cameras',[]) or []:

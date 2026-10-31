@@ -559,3 +559,18 @@ class PushAfterTests(unittest.TestCase):
         self.assertEqual(scenes[2]['start'], 12.)
         self.assertEqual(w.cameras[0]['start'], 14.)
         self.assertEqual(calls, ['move camera'])
+
+
+@unittest.skipIf(SKIP, 'needs Qt')
+class PushFollowersTests(unittest.TestCase):
+    def test_an_element_that_follows_moves_too(self):
+        # exp.168: an element without its own start (it follows the one before) moves with
+        # the rest when the one before it stays.
+        from types import SimpleNamespace
+        from app import Window
+        from timeline_model import layout
+        scenes = [dict(start=None), dict(start=None), dict(start=None)]
+        w = SimpleNamespace(scenes=scenes, cameras=[], overlays=[], status=SimpleNamespace(setText=lambda t: None))
+        w.timeline_layout = lambda: layout([3., 3., 3.], [1., 1., 0.], [None] * 3, [0, 0, 0])
+        Window.push_after(w, 4., 2.)
+        self.assertEqual([s['start'] for s in scenes], [None, 6., None])     # the third follows it
