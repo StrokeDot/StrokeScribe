@@ -1329,31 +1329,48 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 box.setVisible(not out); form.labelForField(box).setVisible(not out)
             form.labelForField(go).setText('Opening' if out else 'Going')
         kind.currentIndexChanged.connect(single); single()
-        # exp.157 (the user): where the zoom goes, as numbers: how close, and the X / Y of the
-        # middle of the view (0 % = left / top of the page, 100 % = right / bottom).
-        from PySide6.QtWidgets import QSpinBox, QHBoxLayout, QWidget, QCheckBox
+        # exp.157/158 (the user): where the zoom goes: how close and the X / Y of the middle of
+        # the view, on sliders; the dashed frame on the preview moves while you slide.
+        from PySide6.QtWidgets import QSlider, QHBoxLayout, QWidget
         z0,x0,y0=tuple(clip.get('to') or (1.6,.5,.5))
-        close=QDoubleSpinBox(); close.setRange(1.,5.); close.setSingleStep(.1); close.setDecimals(2)
-        close.setSuffix(' x'); close.setValue(float(z0))
-        form.addRow(help_label('How close','1 x = the whole page; 2 x = twice as close.'),close)
-        def percent(v):
-            box=QSpinBox(); box.setRange(0,100); box.setSuffix(' %'); box.setValue(int(round(float(v)*100))); return box
-        px,py=percent(x0),percent(y0)
-        row=QWidget(); hl=QHBoxLayout(row); hl.setContentsMargins(0,0,0,0)
-        hl.addWidget(QLabel('X')); hl.addWidget(px); hl.addWidget(QLabel('Y')); hl.addWidget(py)
-        form.addRow(help_label('Where','The middle of what the camera looks at: X from left (0 %) to right '
-                               '(100 %), Y from top (0 %) to bottom (100 %).'),row)
-        pick=QCheckBox('Then drag it on the preview')
-        pick.setToolTip('After OK a dashed frame shows on the picture: drag it where the camera should look; '
-                        'mouse wheel = closer / further.')
-        form.addRow('',pick)
+        original_to=tuple(clip.get('to') or (1.6,.5,.5))
+        def slider(low,high,value,text):
+            box=QWidget(); hl=QHBoxLayout(box); hl.setContentsMargins(0,0,0,0)
+            bar=QSlider(Qt.Orientation.Horizontal); bar.setRange(low,high); bar.setValue(int(round(value)))
+            bar.setMinimumWidth(180)
+            label=QLabel(); label.setMinimumWidth(48)
+            bar.valueChanged.connect(lambda v: label.setText(text(v))); label.setText(text(bar.value()))
+            hl.addWidget(bar,1); hl.addWidget(label)
+            return box,bar
+        close_row,close=slider(100,500,float(z0)*100,lambda v: f'{v/100:.2f} x')
+        x_row,px=slider(0,100,float(x0)*100,lambda v: f'{v} %')
+        y_row,py=slider(0,100,float(y0)*100,lambda v: f'{v} %')
+        form.addRow(help_label('How close','1 x = the whole page; 2 x = twice as close.'),close_row)
+        form.addRow(help_label('Left / right','Where the camera looks, from the left (0 %) to the right (100 %).'),x_row)
+        form.addRow(help_label('Up / down','Where the camera looks, from the top (0 %) to the bottom (100 %).'),y_row)
+        def framing():
+            z=close.value()/100.; half=.5/max(1.,z)
+            return (round(z,3),max(half,min(1-half,px.value()/100.)),max(half,min(1-half,py.value()/100.)))
+        previous_selected=getattr(self,'selected_camera',None)
+        self.selected_camera=cid                         # the dashed frame shows on the preview
+        def live(*_):
+            if kinds[kind.currentIndex()] in ('Zoom in',camera_clips.ZOOM_OUT,camera_clips.CUSTOM):
+                clip['to']=framing()
+                for bar,v in ((px,clip['to'][1]),(py,clip['to'][2])):     # the frame stays on the page
+                    if bar.value()!=int(round(v*100)): bar.setValue(int(round(v*100)))
+            self.canvas.update()
+        for bar in (close,px,py): bar.valueChanged.connect(live)
+        self.canvas.update()
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         remove=buttons.addButton('Delete',QDialogButtonBox.ButtonRole.DestructiveRole)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
         wants={'delete':False}
         remove.clicked.connect(lambda: (wants.update(delete=True),dialog.accept()))
-        if dialog.exec()!=QDialog.DialogCode.Accepted: return
+        accepted=dialog.exec()==QDialog.DialogCode.Accepted
+        clip['to']=original_to                           # as it was (undo keeps it)
+        if not accepted:
+            self.selected_camera=previous_selected; self.canvas.update(); return
         if wants['delete']:
             return self.camera_clip_action(cid,'delete')
         self.record_structure('camera clip settings')
@@ -1368,15 +1385,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             clip['duration']=round(go.value()+stay.value()+back.value(),2)
         camera_clips.fit(clip)
         if new_kind in ('Zoom in',camera_clips.ZOOM_OUT,camera_clips.CUSTOM):
-            z=round(close.value(),3); half=.5/max(1.,z)
-            clip['to']=(z,max(half,min(1-half,px.value()/100.)),max(half,min(1-half,py.value()/100.)))
+            clip['to']=framing()
         self.project_changes.mark_changed()
-        if pick.isChecked():
-            self.select_camera(cid)
-            self.status.setText('Drag the dashed frame on the preview to where the camera looks (mouse wheel: '
-                                'closer / further). Click an empty spot of the timeline when it is right.')
-        else:
-            self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
+        self.select_camera(cid)                      # stays chosen: its frame can be dragged too
+        self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
 
     def edit_fixed_camera(self,cid):
         """exp.129 (the user): a fixed camera opens the same window as the moves between pages:
