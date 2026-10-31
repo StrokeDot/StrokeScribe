@@ -360,7 +360,7 @@ class StageTimeline(QFrame):
     def _hand_over(self):
         """exp.155 (the user, like Filmora): the Hand row sits over the camera rows (the
         cameras do not move or size the hand) unless it was dragged under them."""
-        return bool(self.items) and not getattr(self,'hand_under',False)
+        return bool(self.items)          # exp.160: always on top
 
     def _moving_lane(self, i):
         """Row i (0 = the lowest); higher rows are drawn higher, like the tracks."""
@@ -1689,14 +1689,7 @@ class StageTimeline(QFrame):
     def mouseReleaseEvent(self,event):
         if self._drag and self._drag[0]=='handrow':
             self._drag=None; self.unsetCursor()
-            y=event.position().y()
-            cams=self._fixed_row().united(self._moving_row())
-            under=getattr(self,'hand_under',False)
-            if not under and y>cams.center().y():
-                self.hand_place.emit(True)
-            elif under and y<cams.center().y():
-                self.hand_place.emit(False)
-            self.update(); event.accept(); return
+            self.update(); event.accept(); return       # exp.160: the Hand row stays on top
         if self._drag and self._drag[0]=='block':
             _,k,x0,y0,start0,track0,px_per_sec,moved=self._drag
             self._frozen=None
@@ -3106,6 +3099,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.hand_under.setToolTip('Off: the hand is over the cameras, the zooms never move it. On: the zooms '
                             'move the hand with the drawing. You can also drag the Hand row of the timeline.')
     h.addRow('Camera',w.hand_under)
+    h.setRowVisible(w.hand_under,False)          # exp.160: the pencil always stays on its line
     w.hand_under.toggled.connect(lambda on: w.hand_rest_changed())
     w.hand_leave_add=QPushButton('+ Hand leaves the picture')
     w.hand_leave_add.setToolTip('At the playhead: the waiting hand slides out of the picture, stays away, and '

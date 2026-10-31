@@ -219,12 +219,11 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
             layer = element_frame(el['drawing'], opts, fraction, w, h, 'hand')   # eraser, move-in hand
             spec = last_hand_spec()
             place = (x, y, w, h)
-            if not opts.get('hand_under'):
-                # exp.155 (the user, like Filmora): the hand is over the cameras: placed on the
-                # page as if there were no camera, so a zoom never moves or sizes it.
-                if view_fn is not None:
-                    place = world.place(world.frames[k], view_fn(state, True), width, height)
-            elif spec is not None and spec.get('phase') in ('in', 'out') and view_fn is not None and seconds is not None:
+            # exp.160 (the user): the pencil is always on the line it draws, wherever the camera
+            # shows it (exp.155 placed it as if there were no camera: during a zoom the hand drew
+            # in one place and the lines came out in another). Its size never changes, and on its
+            # way to and from the corner it goes straight, not chasing the camera (exp.154).
+            if spec is not None and spec.get('phase') in ('in', 'out') and view_fn is not None and seconds is not None:
                 target = _glide_target(world, lay, elements, k, fraction, spec['phase'], seconds, view_fn, width, height)
                 if target is not None:
                     spec = dict(spec, screen_target=target)

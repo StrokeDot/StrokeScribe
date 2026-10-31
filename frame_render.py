@@ -851,8 +851,6 @@ def paint_hand_spec(frame, spec, options, place=None):
     if shown <= 0:
         return frame
     tip = spec.get('tip')
-    if not options.get('hand_under') and spec.get('tip_plain') is not None:
-        tip = spec['tip_plain']          # exp.155: over the cameras (place: the page with no camera)
     if tip is not None:
         fw, fh = spec['frame']
         if place is not None:
