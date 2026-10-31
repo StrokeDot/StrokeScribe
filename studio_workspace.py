@@ -1171,7 +1171,12 @@ class StageTimeline(QFrame):
             p.drawRoundedRect(self._hand_row(),5,5)
             p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
             row=self._hand_row()
-            for start,lead,busy,tail,*_ in getattr(self,'hand_marks',()) or ():
+            for start,lead,busy,tail,*rest in getattr(self,'hand_marks',()) or ():
+                if rest and rest[0]==getattr(self,'selected_hand',None):
+                    # exp.165: the chosen one: a white edge, like a chosen element or camera
+                    p.setPen(QPen(QColor('white'),1.5)); p.setBrush(Qt.BrushStyle.NoBrush)
+                    p.drawRoundedRect(QRectF(self._x(start)-1,row.top()+row.height()*.2,
+                                             self._x(start+lead+busy+tail)-self._x(start)+2,row.height()*.6),3,3)
                 # exp.147: each element's hand: glides in, draws, glides back (faint)
                 for a,b,alpha in ((start,start+lead,120),(start+lead,start+lead+busy,210),
                                   (start+lead+busy,start+lead+busy+tail,120)):
@@ -1412,6 +1417,16 @@ class StageTimeline(QFrame):
             event.accept(); return
         if event.button()!=Qt.MouseButton.LeftButton or self.total()<=0:
             return super().mousePressEvent(event)
+        # exp.165 (the user): an element's bar on the Hand row is chosen (white edge) like the
+        # elements and the cameras; double-click opens its window.
+        hand_k=self._hand_mark_at(pos) if self.items else None
+        if hand_k is not None:
+            self.selected_hand=hand_k
+            if self.selected_camera:
+                self.selected_camera=None; self.camera_selected.emit('')
+            self.update(); event.accept(); return
+        if getattr(self,'selected_hand',None) is not None:
+            self.selected_hand=None; self.update()
         other=self._other_at(pos) if not self._overlay_at(pos)[0] else None
         if other is not None:
             self.other_overlay_clicked.emit(other[0],str(other[1].get('id')))
