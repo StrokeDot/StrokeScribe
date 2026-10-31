@@ -280,23 +280,29 @@ def _paint_titles(folder, fps, titles, world, views, writer):
 def _resting_options(lay, elements, seconds, hidden=()):
     """exp.143: the options to draw the waiting hand with at `seconds` of a video on tracks
     (None while an element's own hand draws or travels, or when it does not wait)."""
-    from frame_render import hand_window, hand_busy_at
+    from frame_render import hand_window, rest_out
     chosen = None
+    others = []
     for it in lay.items:
         if it.k in hidden:
             continue
         e = elements[it.k]
-        if hand_busy_at(e['drawing'], e['options'], seconds - it.start):
-            return None                  # exp.152: another hand (e.g. carrying a picture in) shows
-        if not e['options'].get('hand_travel'):
-            continue
-        window = hand_window(e['drawing'], e['options'])
+        window = hand_window(e['drawing'], e['options']) if e['options'].get('hand_travel') else None
         if window is None:
+            # exp.153: another hand (carrying a picture in): the waiting hand slides out of
+            # the picture and back (exp.152 made it vanish and pop back).
+            others.append((e['drawing'], e['options'], it.start))
             continue
         if chosen is None or it.start <= seconds:
             chosen = e['options']
         if it.start - 1e-6 <= seconds < it.start + window[0] - 1e-6:
             return None
+    if chosen is not None:
+        out = rest_out(others, seconds)
+        if out >= 1.:
+            return None
+        if out > 0:
+            chosen = dict(chosen, _rest_out=out)
     return chosen
 
 

@@ -688,19 +688,51 @@ def rest_rect(width, height, options, seconds=None):
     ax, ay = options.get('anchor', (.1, .1))
     fx, fy = REST_CORNERS.get(options.get('hand_rest_corner') or 'Bottom right', REST_CORNERS['Bottom right'])
     rect = QRectF(fx * width - float(ax) * hw, fy * height - float(ay) * hh, hw, hh)
+    e, side = 0., 'Bottom'
     if options.get('hand_away') and seconds is not None:
         import camera_clips
         e, side = camera_clips.away_at(camera_clips.from_hand_signature(options['hand_away']), seconds)
-        if e > 0:
-            dx = dy = 0.
-            if side == 'Bottom':
-                dy = (height - rect.y() + 4) * e
-            elif side == 'Left':
-                dx = -(rect.right() + 4) * e
-            else:
-                dx = (width - rect.x() + 4) * e
-            rect.translate(dx, dy)
+    out = float(options.get('_rest_out', 0) or 0)      # exp.153: making way for another hand
+    if out > e:
+        e, side = out, 'Bottom'
+    if e > 0:
+        dx = dy = 0.
+        if side == 'Bottom':
+            dy = (height - rect.y() + 4) * e
+        elif side == 'Left':
+            dx = -(rect.right() + 4) * e
+        else:
+            dx = (width - rect.x() + 4) * e
+        rect.translate(dx, dy)
     return rect
+
+
+REST_SLIDE = .45     # seconds the waiting hand takes to slide out of the picture and back
+
+
+def rest_out(items, seconds):
+    """exp.153 (the user: the hand vanished and popped back, it should move out of the
+    picture and back in): 0..1, how far the waiting hand has slid out of the picture to make
+    way for another hand (a hand carrying a picture in) at `seconds` of the video.
+
+    items: (drawing, options, start seconds) of the elements whose hand does not travel
+    from the corner (those use the waiting hand itself)."""
+    best = 0.
+    steps = 9
+    for drawing, opts, start in items:
+        local = seconds - start
+        total = timeline_seconds(drawing, opts)
+        if local < -REST_SLIDE or local > total + REST_SLIDE:
+            continue
+        if hand_busy_at(drawing, opts, local):
+            return 1.
+        for i in range(1, steps + 1):
+            d = REST_SLIDE * i / steps
+            if hand_busy_at(drawing, opts, local + d) or hand_busy_at(drawing, opts, local - d):
+                e = 1. - d / REST_SLIDE
+                best = max(best, e * e * (3 - 2 * e))
+                break
+    return best
 
 
 def paint_rest_hand(frame, options, seconds=None):
@@ -778,17 +810,13 @@ def _crop_spec(spec, frame, zoom, cx, cy):
 
 
 def _paint_move_hand(frame, spec, tip, shown, options):
-    """The move-in hand at `tip` (screen pixels). exp.152 (the user: the hand always has the
-    same size): as big as the drawing hand when there is one, else its own share of the width."""
+    """The move-in hand at `tip` (screen pixels), its own size (Hand tab) on the screen: the
+    camera does not zoom it. (exp.152 made it as big as the drawing hand: far too big.)"""
     from PySide6.QtCore import QPointF, QRectF
     from PySide6.QtGui import QPainter
     import move_in
     image = spec['image']
-    if options.get('hand') is not None:
-        hw = frame.width() * float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.)
-    else:
-        hw = float(spec.get('share', .35)) * frame.width()
-    hw = max(1., hw)
+    hw = max(1., float(spec.get('share', .35)) * frame.width())
     hh = hw * image.height() / max(1, image.width())
     out = frame.copy()
     painter = QPainter(out)
