@@ -844,6 +844,43 @@ def _paint_move_hand(frame, spec, tip, shown, options):
     return out
 
 
+# exp.164 (the user): different ways for the hand to go to the drawing and back.
+GLIDE_STYLES = ('Smooth', 'Steady', 'Quick start', 'Slow start', 'Overshoot', 'Curve', 'Swoop')
+
+
+def _glide_ease(p, style):
+    p = max(0., min(1., float(p)))
+    if style == 'Steady':
+        return p
+    if style in ('Quick start', 'Swoop'):
+        return 1 - (1 - p) ** 3
+    if style == 'Slow start':
+        return p ** 3
+    if style == 'Overshoot':                 # goes a little past and settles back
+        c1 = 1.70158; c3 = c1 + 1
+        return 1 + c3 * (p - 1) ** 3 + c1 * (p - 1) ** 2
+    return p * p * (3 - 2 * p)               # Smooth
+
+
+def glide_point(a, b, p, style='Smooth'):
+    """Where the hand is at p (0..1) of its way from a to b, in this style. Curve and Swoop
+    go along an arc (bulging up) instead of a straight line."""
+    e = _glide_ease(p, style)
+    x = a[0] + (b[0] - a[0]) * e
+    y = a[1] + (b[1] - a[1]) * e
+    if style in ('Curve', 'Swoop'):
+        import math
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        length = math.hypot(dx, dy)
+        if length > 1e-6:
+            bulge = .25 * length * math.sin(math.pi * max(0., min(1., e)))
+            nx, ny = -dy / length, dx / length          # perpendicular
+            if ny > 0:                                  # always bulge upwards
+                nx, ny = -nx, -ny
+            x += nx * bulge; y += ny * bulge
+    return (x, y)
+
+
 def paint_hand_spec(frame, spec, options, place=None):
     """exp.149: draw the hand on the screen picture `frame`: at the pen tip (mapped through
     `place` = (x, y, w, h) of the element's picture on the screen, None: the whole frame),
@@ -879,10 +916,10 @@ def paint_hand_spec(frame, spec, options, place=None):
         ax, ay = options.get('anchor', (.1, .1))
         home = (corner.x() + float(ax) * corner.width(), corner.y() + float(ay) * corner.height())
         target = spec.get('screen_target') or (tip if tip is not None else home)
-        e = max(0., min(1., float(spec.get('p') or 0.)))
-        e = e * e * (3 - 2 * e)
+        p = max(0., min(1., float(spec.get('p') or 0.)))
+        style = options.get('hand_glide_style_in' if phase == 'in' else 'hand_glide_style_out') or 'Smooth'
         a, b = (home, target) if phase == 'in' else (target, home)
-        tip = (a[0] + (b[0] - a[0]) * e, a[1] + (b[1] - a[1]) * e)
+        tip = glide_point(a, b, p, style)
         image, anchor, ratio = hand, (float(ax), float(ay)), 1.
     if tip is None or image is None or image.isNull():
         return frame

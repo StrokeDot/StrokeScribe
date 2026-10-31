@@ -190,10 +190,13 @@ def apply_glide(options, scene):
     drawing and back (its bar on the Hand row); none: the Glide of the Hand panel."""
     glide = scene.get('glide') if scene else None
     if glide and options.get('hand_travel'):
-        a, b = (float(v or 0) for v in glide)
+        a, b = (float(v or 0) for v in glide[:2])
         base = options['hand_travel']
         options['hand_travel'] = a or base
         options['hand_travel_out'] = b or base
+        if len(glide) > 3:                          # exp.164: how it moves
+            options['hand_glide_style_in'] = glide[2] or 'Smooth'
+            options['hand_glide_style_out'] = glide[3] or 'Smooth'
     return options
 
 
