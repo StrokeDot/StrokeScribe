@@ -145,6 +145,23 @@ class RenderTests(unittest.TestCase):
         spec = _crop_spec(dict(tip=(75., 25.)), frame, 2., .5, .5)
         self.assertEqual(spec['tip'], (100., 25.))                 # the camera moves the hand, never sizes it
 
+    def test_the_waiting_hand_slides_out_for_the_carrying_hand(self):
+        """exp.153 (the user): the waiting hand vanished and popped back when a hand carried
+        a picture in; it slides out of the picture and back instead."""
+        from frame_render import rest_out, REST_SLIDE, rest_rect
+        d = self.drawing()
+        o = self.options(entrance='Slide from bottom', move_hand=self.green_hand(), move_hand_grip=(.5, 0.),
+                         move_hand_size=.1)
+        items = [(d, o, 5.)]
+        self.assertEqual(rest_out(items, 5.5), 1.)                         # carrying: out
+        self.assertEqual(rest_out(items, 5. - REST_SLIDE - .1), 0.)        # long before: in its corner
+        half = rest_out(items, 5. - REST_SLIDE / 2)
+        self.assertTrue(0. < half < 1.)                                    # sliding, not jumping
+        self.assertEqual(rest_out(items, 30.), 0.)                         # back
+        r = dict(hand=self.green_hand(), hand_scale=.2, anchor=(.1, .1))
+        self.assertGreater(rest_rect(480, 270, dict(r, _rest_out=half)).y(), rest_rect(480, 270, r).y())
+        self.assertGreater(rest_rect(480, 270, dict(r, _rest_out=1.)).y(), 270)   # out of the picture
+
     def test_picture_and_hand_in_step_in_separate_layers(self):
         """exp.102: the whole video draws the picture ("art") and the hand in two passes.
         The art pass moved the picture without the hand's timing, so in the whole video

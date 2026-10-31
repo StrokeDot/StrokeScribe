@@ -5077,28 +5077,30 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         drawing or travelling, or when the hand does not wait in a corner)."""
         if not getattr(self,'hand_rest',None) or not self.hand_rest.isChecked() or self.board_mode() or not self.drawing:
             return None
-        from frame_render import hand_window, paint_rest_hand, hand_busy_at
+        from frame_render import hand_window, paint_rest_hand, rest_out
+        out=0.
         if self.all_scenes():
             lay=self.timeline_layout(); hidden=self.hidden_elements()
-            options=None
+            options=None; others=[]
             for it in lay.items:
                 if it.k in hidden: continue
                 drawing,opts,_,_=self.preview_scene(it.k,960,540)        # its timing (as the timeline)
-                if hand_busy_at(drawing,opts,seconds-it.start):
-                    return None                     # exp.152: one hand only (a hand carrying a picture in)
                 window=hand_window(drawing,opts)
-                if window is None: continue
+                if window is None:
+                    others.append((drawing,opts,it.start)); continue     # exp.153: slides out for it
                 if options is None or it.start<=seconds: options=opts
                 if it.start-1e-6<=seconds<it.start+window[0]-1e-6:
                     return None                     # this element's own hand
             if options is None: return None
+            out=rest_out(others,seconds)
+            if out>=1.: return None
         else:
             drawing,options,_,_=self.preview_scene(self.scene_index,960,540)
             window=hand_window(drawing,options)
             if window is None: return None
             if self.position*window[1]<window[0]-1e-6: return None
         layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
-        return paint_rest_hand(layer,dict(options,layers='all',**self.hand_video(None)),seconds)
+        return paint_rest_hand(layer,dict(options,layers='all',_rest_out=out,**self.hand_video(None)),seconds)
 
     def segment_fingerprint(self,where,k):
         """The fingerprint of one segment of the current view (see preview_cache)."""
