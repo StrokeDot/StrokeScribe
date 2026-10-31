@@ -215,6 +215,7 @@ class StageTimeline(QFrame):
     overlay_toggled=Signal(str)         # exp.117: Ctrl+click on a text clip: add it to / take it out of the choice
     text_track_toggled=Signal(int)      # exp.117: a text track's hide button   # whole video: another element's text / picture (k, id)
     move_clicked=Signal(int)            # whole video: a camera move clicked (the move after element k)
+    move_shift=Signal(int,float)        # exp.167: a camera move dragged (k, seconds): the elements after it move too
     element_flag=Signal(int,str)        # whole video: one element's 'mute' or 'hide' (right-click menu)
 
     stage_source_edit=Signal(str,int)   # Draw/Paint source editor, exact clicked element
@@ -1207,6 +1208,8 @@ class StageTimeline(QFrame):
         for k,label,start,secs in self.moves or ():
             # A camera move: a camera drawn as a picture (not a word, so no font can cut it).
             # exp.111: click it to change how and how long the camera moves.
+            if self._drag and self._drag[0]=='movechip' and self._drag[1]==k:
+                start=max(0.,start+self._drag[4])             # exp.167: being dragged
             r=self._move_chip(start,secs)
             lit=getattr(self,'_hover',None)==('move',k)
             p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['accent'] if lit else c['border_strong']))
@@ -1474,7 +1477,9 @@ class StageTimeline(QFrame):
             self.update(); event.accept(); return
         move=self._move_at(pos) if event.button()==Qt.MouseButton.LeftButton else None
         if move is not None:
-            self.move_clicked.emit(move)
+            # exp.167 (the user): drag a camera move along the timeline (the elements after it
+            # go with it); a click without dragging opens its window as before.
+            self._drag=('movechip',move,pos.x(),self._px_per_sec(),0.)
             event.accept(); return
         own=self._element_camera_at(pos) if event.button()==Qt.MouseButton.LeftButton else None
         if own is not None:
@@ -1524,6 +1529,11 @@ class StageTimeline(QFrame):
         pos=event.position()
         if self._drag and event.buttons() & Qt.MouseButton.LeftButton:
             kind=self._drag[0]
+            if kind=='movechip':
+                _,k,x0,pps,_=self._drag
+                self._drag=('movechip',k,x0,pps,(pos.x()-x0)/max(1e-6,pps))
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                self.update(); event.accept(); return
             if kind=='camclip':
                 _,clip,part,x0,start0,length0,px_per_sec=self._drag
                 shift=(pos.x()-x0)/px_per_sec
@@ -1715,6 +1725,14 @@ class StageTimeline(QFrame):
         super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self,event):
+        if self._drag and self._drag[0]=='movechip':
+            _,k,x0,pps,shift=self._drag
+            self._drag=None; self.unsetCursor()
+            if abs(event.position().x()-x0)<4:
+                self.move_clicked.emit(k)
+            else:
+                self.move_shift.emit(k,float(shift))
+            self.update(); event.accept(); return
         if self._drag and self._drag[0]=='handrow':
             self._drag=None; self.unsetCursor()
             self.update(); event.accept(); return       # exp.160: the Hand row stays on top
@@ -3675,6 +3693,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.overlay_dropped.connect(lambda path,seconds: w.add_overlay_picture(path,at=seconds))
     w.stage_timeline.element_clicked.connect(lambda k: w.timeline_element_clicked(k))
     w.stage_timeline.move_clicked.connect(lambda k: w.edit_camera_move(k))
+    w.stage_timeline.move_shift.connect(lambda k,shift: w.shift_camera_move(k,shift))
     w.stage_timeline.element_camera_clicked.connect(lambda k: w.edit_element_camera(k))
     w.stage_timeline.other_overlay_clicked.connect(lambda k,oid: w.go_to_overlay(k,oid))
     w.stage_timeline.overlay_toggled.connect(lambda oid: w.toggle_overlay(oid))
