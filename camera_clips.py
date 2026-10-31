@@ -93,8 +93,10 @@ def upgrade(clip):
         clip.pop('back', None)
         if clip.get('kind') == 'Zoom out':
             clip['kind'], clip['from'], clip['to'] = 'Zoom in', None, (1.6, .5, .5)
-        if clip.get('kind') == 'Custom':
-            clip['kind'] = CUSTOM
+    if clip.get('kind') in ('Custom', CUSTOM):
+        # exp.157 (the user): only Zoom in and Zoom out; a "zoom to a spot" is a zoom in with
+        # its own place (X, Y) and closeness. It looks exactly the same.
+        clip['kind'] = 'Zoom in'
     return fit(clip)
 
 
