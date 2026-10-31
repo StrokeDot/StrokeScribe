@@ -27,9 +27,11 @@ def composite_element(base, drawing, fraction, options, camera_path=None):
     from frame_render import _compose_raw_frame
     from scenes import stack
 
+    from frame_render import _set_spec, last_hand_spec, paint_hand_spec
     layers = options.get('layers', 'all')
+    _set_spec(None)
     if layers == 'hand':
-        return _compose_raw_frame(drawing, fraction, options, camera_path)
+        return paint_hand_spec(_compose_raw_frame(drawing, fraction, options, camera_path), last_hand_spec(), options)
     art_opts = dict(options, layers='art', ghost=0)
     artwork = _compose_raw_frame(drawing, fraction, art_opts, camera_path)
     if base is None:
@@ -41,4 +43,6 @@ def composite_element(base, drawing, fraction, options, camera_path=None):
         hand_opts = dict(options, layers='hand', ghost=0, background=False)
         hand = _compose_raw_frame(drawing, fraction, hand_opts, camera_path)
         result = stack(result, hand, 'Normal', 100)
+        # exp.149: the drawing hand on top, at its own size (whatever the camera's zoom)
+        result = paint_hand_spec(result, last_hand_spec(), options)
     return result

@@ -17,7 +17,8 @@ def element_frame(drawing, options, fraction, width, height, layers):
     """One element alone at `fraction` of its own time, `width` x `height`, layers 'art' or 'hand'."""
     from frame_render import compose_frame
     opts = {k: v for k, v in options.items() if k not in ('fps', 'audio', 'workers')}
-    opts.update(width=max(2, int(round(width))), height=max(2, int(round(height))), layers=layers, ghost=0)
+    opts.update(width=max(2, int(round(width))), height=max(2, int(round(height))), layers=layers, ghost=0,
+                _hand_later=True)            # exp.149: the page draws the hand (screen size)
     if layers == 'hand':
         opts['background'] = False
     return compose_frame(drawing, max(0., min(1., fraction)), opts)
@@ -151,10 +152,15 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
         out = world.put(out, art, world.frames[k], view, opts.get('blend_mode', 'Normal'),
                         opts.get('artwork_opacity', 100))
         if k == hand_k and opts.get('layers', 'all') != 'art':
-            hand_layer = (element_frame(el['drawing'], opts, fraction, w, h, 'hand'), world.frames[k])
+            from frame_render import last_hand_spec
+            layer = element_frame(el['drawing'], opts, fraction, w, h, 'hand')   # eraser, move-in hand
+            hand_layer = (layer, world.frames[k], last_hand_spec(), (x, y, w, h), opts)
     out = _texts(out, waiting, seconds, world, view)
     if hand_layer is not None:
         # exp.148 (the user): the hand is always over everything (it was drawn under the
-        # pictures of higher tracks, e.g. under a book).
-        out = world.put(out, hand_layer[0], hand_layer[1], view)
+        # pictures of higher tracks, e.g. under a book). exp.149: on the screen, its own size.
+        from frame_render import paint_hand_spec
+        layer, frame, spec, place, opts = hand_layer
+        out = world.put(out, layer, frame, view)
+        out = paint_hand_spec(out, spec, dict(opts, width=width, height=height), place)
     return out
