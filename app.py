@@ -5077,13 +5077,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         drawing or travelling, or when the hand does not wait in a corner)."""
         if not getattr(self,'hand_rest',None) or not self.hand_rest.isChecked() or self.board_mode() or not self.drawing:
             return None
-        from frame_render import hand_window, paint_rest_hand
+        from frame_render import hand_window, paint_rest_hand, hand_busy_at
         if self.all_scenes():
             lay=self.timeline_layout(); hidden=self.hidden_elements()
             options=None
             for it in lay.items:
                 if it.k in hidden: continue
                 drawing,opts,_,_=self.preview_scene(it.k,960,540)        # its timing (as the timeline)
+                if hand_busy_at(drawing,opts,seconds-it.start):
+                    return None                     # exp.152: one hand only (a hand carrying a picture in)
                 window=hand_window(drawing,opts)
                 if window is None: continue
                 if options is None or it.start<=seconds: options=opts
