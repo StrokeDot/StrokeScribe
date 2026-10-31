@@ -3794,8 +3794,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         world=self.preview_world(width,height)
         elements=[]
         for k in range(len(self.scenes)):
-            drawing,options,seconds,camera=self.preview_scene(k,width,height)
-            camera=self.video_camera(k,camera,seconds)          # exp.119: the camera clips
+            # exp.169: its own length in `length` (it was `seconds`, which replaced the moment
+            # shown: the texts were drawn as at the last element's length, the first one too
+            # early and the later ones never).
+            drawing,options,length,camera=self.preview_scene(k,width,height)
+            camera=self.video_camera(k,camera,length)            # exp.119: the camera clips
             options=dict(options,**self.hand_video(k))           # exp.147: the Hand row
             elements.append(dict(drawing=drawing,options=options,camera=camera,
                                  transition=self.scenes[k]['transition'],
