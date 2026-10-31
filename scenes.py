@@ -32,7 +32,7 @@ DEFAULT_TRANSITION_SECONDS = 1.2
 GLOBAL_SETTINGS = ('res', 'fps', 'webm', 'webm_quality', 'mov', 'mp4', 'mp4_background', 'keep_png',
                    'sound_on', 'sound_volume', 'fast_export', 'preview_background', 'background_color',
                    'sound_pencil_file', 'sound_brush_file', 'sound_eraser_file',
-                   'hand_rest', 'hand_rest_corner', 'hand_rest_travel')       # exp.143
+                   'hand_rest', 'hand_rest_corner', 'hand_rest_travel', 'hand_under')       # exp.143/155
 
 
 def transition_seconds(kind, seconds, last=False):

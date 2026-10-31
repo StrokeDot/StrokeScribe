@@ -68,6 +68,7 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     options['hand_travel'] = (float(s.get('hand_rest_travel', .8) or 0)
                               if s.get('hand_rest') and options['hand'] is not None else 0.)
     options['hand_rest_corner'] = s.get('hand_rest_corner') or 'Bottom right'
+    options['hand_under'] = bool(s.get('hand_under'))          # exp.155: Hand row under the cameras
     from frame_render import LAYERS
     options['layers'] = LAYERS.get(s.get('export_layers') or '', 'all')
     # Recorded pencil / brush / eraser sounds (paths, '' = built-in sound).

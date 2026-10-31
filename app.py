@@ -1223,6 +1223,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         tl.cam_holds={c['id']:min(camera_clips.until(c,moves,tl.cam_clips),self.video_length() if tl.cam_clips else 0.)
                       for c in tl.cam_clips}
         tl.selected_camera=getattr(self,'selected_camera',None)
+        tl.hand_under=self.hand_under.isChecked() if hasattr(self,'hand_under') else False     # exp.155
         tl.hand_marks=self.hand_marks()                 # exp.147
         lanes=tl._cam_lane_count()
         if lanes!=getattr(tl,'_cam_lanes_seen',None):     # exp.136: more Moving camera rows
@@ -2124,7 +2125,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                       'image_style','image_animation_style','clean_faint',
                       'erase_mode','erase_time','erase_size','eraser',
                       'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export','export_layers','clean_color','export_done_sound',
-                      'move_hand','move_hand_size','move_hand_gx','move_hand_gy','hand_rest','hand_rest_corner','hand_rest_travel',
+                      'move_hand','move_hand_size','move_hand_gx','move_hand_gy','hand_rest','hand_rest_corner','hand_rest_travel','hand_under',
                       'cam_start_zoom','cam_start_x','cam_start_y','cam_end_zoom','cam_end_x','cam_end_y','cam_begin','cam_time',
                       'ink_on','ink_edges','ink_edge_size','ink_removal','ink_strength','ink_colour','look_colour_on','look_temperature','look_tint','look_saturation','look_light_on','look_exposure','look_brightness','look_contrast','look_highlights','look_shadows','look_whites','look_blacks')
 
@@ -4992,7 +4993,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """exp.143: the hand waiting in a corner, for every element of the video."""
         if not hasattr(self,'hand_rest'): return {}
         return dict(hand_rest=self.hand_rest.isChecked(),hand_rest_corner=self.hand_rest_corner.currentText(),
-                    hand_rest_travel=self.hand_rest_travel.value())
+                    hand_rest_travel=self.hand_rest_travel.value(),
+                    hand_under=self.hand_under.isChecked() if hasattr(self,'hand_under') else False)
 
     def hand_video(self,k):
         """exp.147: render options for the Hand row: its clips (the hand slides out of the

@@ -43,6 +43,13 @@ def view_of(world, lay, state, elements):
     return view
 
 
+def plain_view(world, state):
+    """exp.155: the view with no camera at all (no zoom, no pan): the page shown."""
+    if state.kind == 'move':
+        return world.frames[min(state.move + 1, len(world.frames) - 1)] if state.t >= .5 else world.frames[state.move]
+    return world.frames[state.current]
+
+
 def compose(world, lay, state, elements, width, height, titles=None, seconds=None, view_scale=1., view_pan=(0., 0.)):
     """The whole video at this moment, width x height.
 
@@ -62,8 +69,8 @@ def compose(world, lay, state, elements, width, height, titles=None, seconds=Non
             a = _page(world, lay, state, elements, world.frames[k], width, height)
             b = _page(world, lay, state, elements, world.frames[k + 1], width, height)
             return _texts(transition_frame(a, b, kind, state.t), titles, seconds)
-    def view_fn(st):
-        v = view_of(world, lay, st, elements)
+    def view_fn(st, plain=False):
+        v = plain_view(world, st) if plain else view_of(world, lay, st, elements)
         if view_scale > 1.:              # exp.121: the preview stepped back (Ctrl + wheel)
             w = v[2] * view_scale        # exp.122: and moved around by dragging it
             v = (v[0] + view_pan[0] * w, v[1] + view_pan[1] * w * world.aspect, w)
@@ -211,11 +218,17 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
             from frame_render import last_hand_spec
             layer = element_frame(el['drawing'], opts, fraction, w, h, 'hand')   # eraser, move-in hand
             spec = last_hand_spec()
-            if spec is not None and spec.get('phase') in ('in', 'out') and view_fn is not None and seconds is not None:
+            place = (x, y, w, h)
+            if not opts.get('hand_under'):
+                # exp.155 (the user, like Filmora): the hand is over the cameras: placed on the
+                # page as if there were no camera, so a zoom never moves or sizes it.
+                if view_fn is not None:
+                    place = world.place(world.frames[k], view_fn(state, True), width, height)
+            elif spec is not None and spec.get('phase') in ('in', 'out') and view_fn is not None and seconds is not None:
                 target = _glide_target(world, lay, elements, k, fraction, spec['phase'], seconds, view_fn, width, height)
                 if target is not None:
                     spec = dict(spec, screen_target=target)
-            hand_layer = (layer, world.frames[k], spec, (x, y, w, h), opts)
+            hand_layer = (layer, world.frames[k], spec, place, opts)
     out = _texts(out, waiting, seconds, world, view)
     if hand_layer is not None:
         # exp.148 (the user): the hand is always over everything (it was drawn under the
