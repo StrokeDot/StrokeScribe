@@ -185,6 +185,18 @@ def thumbnail(drawing, options, width=192):
 
 # ------------------------------------------------------------ whole video
 
+def apply_glide(options, scene):
+    """exp.163 (the user): an element's own time for the hand to go from its corner to the
+    drawing and back (its bar on the Hand row); none: the Glide of the Hand panel."""
+    glide = scene.get('glide') if scene else None
+    if glide and options.get('hand_travel'):
+        a, b = (float(v or 0) for v in glide)
+        base = options['hand_travel']
+        options['hand_travel'] = a or base
+        options['hand_travel_out'] = b or base
+    return options
+
+
 def plan(scenes, hand=None, overrides=None):
     """Prepared scenes: [{drawing, options, seconds, transition, transition_seconds, move_seconds, frame}].
 
@@ -194,6 +206,7 @@ def plan(scenes, hand=None, overrides=None):
     out = []
     for i, scene in enumerate(scenes):
         drawing, options, settings = job_from_state(scene['state'], hand, overrides)
+        apply_glide(options, scene)                # exp.163: its own way to the drawing and back
         last = i == len(scenes) - 1
         kind = scene.get('transition', DEFAULT_TRANSITION)
         move = float(scene.get('transition_seconds', DEFAULT_TRANSITION_SECONDS))
@@ -667,7 +680,8 @@ def scenes_from_project(data):
                         uid=item.get('uid'), rev=item.get('rev'),
                         start=item.get('start'), track=item.get('track') or 0,
                         hidden=bool(item.get('hidden')), muted=bool(item.get('muted')),
-                        thumb_png=item.get('thumb_png')))
+                        thumb_png=item.get('thumb_png'),
+                        glide=tuple(item['glide']) if item.get('glide') else None))
     return out
 
 
@@ -679,7 +693,8 @@ def scenes_to_project(main_state, scene_list, index):
                                transition_seconds=s['transition_seconds'], name=s.get('name'),
                                board=s.get('board'), uid=s.get('uid'), rev=s.get('rev'),
                                start=s.get('start'), track=s.get('track') or 0,
-                               hidden=bool(s.get('hidden')), muted=bool(s.get('muted')))
+                               hidden=bool(s.get('hidden')), muted=bool(s.get('muted')),
+                               glide=list(s['glide']) if s.get('glide') else None)
                           for k, s in enumerate(scene_list)]
         data['scene_index'] = index
     elif scene_list:

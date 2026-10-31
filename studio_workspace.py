@@ -209,6 +209,7 @@ class StageTimeline(QFrame):
     camera_edit=Signal(str)             # double-click: its settings
     camera_action=Signal(str,str)       # id, a kind / 'delete'
     camera_lane=Signal(str,int)         # exp.138: a moving camera dragged onto another row
+    hand_glide_edit=Signal(int)         # exp.163: an element's bar on the Hand row
     hand_place=Signal(bool)            # exp.155: the Hand row dragged under (True) / over (False) the cameras
     camera_add=Signal(str,float)        # exp.128: double-click on a camera row: kind ('' = ask), seconds
     overlay_toggled=Signal(str)         # exp.117: Ctrl+click on a text clip: add it to / take it out of the choice
@@ -374,6 +375,15 @@ class StageTimeline(QFrame):
         if self._hand_over():
             return QRectF(cam.left(),cam.top()+1,cam.width(),self.CAM_ROW-2)
         return QRectF(cam.left(),cam.top()+self.CAM_ROW*(1+self._cam_lane_count())+1,cam.width(),self.CAM_ROW-2)
+
+    def _hand_mark_at(self, pos):
+        """exp.163: the element whose bar on the Hand row is under `pos`, or None."""
+        if not self._hand_row().contains(pos): return None
+        for mark in getattr(self,'hand_marks',()) or ():
+            if len(mark)<5: continue
+            start,lead,busy,tail,k=mark[:5]
+            if self._x(start)-2<=pos.x()<=self._x(start+lead+busy+tail)+2: return k
+        return None
 
     def _lane_at(self, y):
         count=self._cam_lane_count()
@@ -1161,7 +1171,7 @@ class StageTimeline(QFrame):
             p.drawRoundedRect(self._hand_row(),5,5)
             p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
             row=self._hand_row()
-            for start,lead,busy,tail in getattr(self,'hand_marks',()) or ():
+            for start,lead,busy,tail,*_ in getattr(self,'hand_marks',()) or ():
                 # exp.147: each element's hand: glides in, draws, glides back (faint)
                 for a,b,alpha in ((start,start+lead,120),(start+lead,start+lead+busy,210),
                                   (start+lead+busy,start+lead+busy+tail,120)):
@@ -1674,6 +1684,9 @@ class StageTimeline(QFrame):
             if self._moving_row().contains(pos):
                 self.camera_add.emit('',seconds);event.accept();return
             if self._hand_row().contains(pos):
+                k=self._hand_mark_at(pos)
+                if k is not None:
+                    self.hand_glide_edit.emit(k);event.accept();return      # exp.163: its way there and back
                 self.camera_add.emit('hand',seconds);event.accept();return     # exp.147/148: what the hand does
         item,_=self._overlay_at(event.position())
         if item is not None:
@@ -3653,6 +3666,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.camera_selected.connect(lambda cid: w.select_camera(cid))
     w.stage_timeline.camera_changed.connect(lambda cid,start,length: w.move_camera_clip(cid,start,length))
     w.stage_timeline.camera_lane.connect(lambda cid,lane: w.move_camera_lane(cid,lane))
+    w.stage_timeline.hand_glide_edit.connect(lambda k: w.edit_hand_glide(k))
     w.stage_timeline.hand_place.connect(lambda under: w.hand_under.setChecked(bool(under)))
     w.stage_timeline.camera_done.connect(lambda cid: w.camera_clip_done(cid))
     w.stage_timeline.camera_edit.connect(lambda cid: w.edit_camera_clip(cid))

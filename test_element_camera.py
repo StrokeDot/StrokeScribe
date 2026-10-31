@@ -280,6 +280,17 @@ class HandRestTests(unittest.TestCase):
         self.assertAlmostEqual(zoomed.width(), still.width())
         self.assertGreater(zoomed.x(), still.x()); self.assertGreater(zoomed.y(), still.y())
 
+    def test_each_element_has_its_own_way_there_and_back(self):
+        # exp.163 (the user): click the bar on the Hand row: to the drawing, back.
+        from engine import import_svg
+        from frame_render import travel_plan
+        from scenes import apply_glide
+        drawing = import_svg(HERE / 'samples' / 'drawing.svg')
+        o = apply_glide(self.options(), {'glide': (2., .3)})
+        lead, _, back = travel_plan(drawing, o)[:3]
+        self.assertEqual((lead, back), (2., .3))
+        self.assertEqual(apply_glide(self.options(), {})['hand_travel'], .5)       # the Hand panel's
+
     def test_the_pencil_stays_on_its_line_during_a_zoom(self):
         # exp.160 (the user): the hand draws where the lines come out, wherever the camera
         # shows them (exp.155 put it where they would be with no camera: out of step).
