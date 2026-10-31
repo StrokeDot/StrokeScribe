@@ -50,6 +50,16 @@ def plain_view(world, state):
     return world.frames[state.current]
 
 
+def page_place(world, lay, state, elements, width, height, view_scale=1., view_pan=(0., 0.)):
+    """exp.161: (x, y, w, h) of the page on the screen at this moment (the camera's zooms
+    move and size it); the waiting hand keeps its spot on it."""
+    v = view_of(world, lay, state, elements)
+    if view_scale > 1.:
+        w = v[2] * view_scale
+        v = (v[0] + view_pan[0] * w, v[1] + view_pan[1] * w * world.aspect, w)
+    return world.place(plain_view(world, state), v, width, height)
+
+
 def compose(world, lay, state, elements, width, height, titles=None, seconds=None, view_scale=1., view_pan=(0., 0.)):
     """The whole video at this moment, width x height.
 
@@ -220,13 +230,10 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
             spec = last_hand_spec()
             place = (x, y, w, h)
             # exp.160 (the user): the pencil is always on the line it draws, wherever the camera
-            # shows it (exp.155 placed it as if there were no camera: during a zoom the hand drew
-            # in one place and the lines came out in another). Its size never changes, and on its
-            # way to and from the corner it goes straight, not chasing the camera (exp.154).
-            if spec is not None and spec.get('phase') in ('in', 'out') and view_fn is not None and seconds is not None:
-                target = _glide_target(world, lay, elements, k, fraction, spec['phase'], seconds, view_fn, width, height)
-                if target is not None:
-                    spec = dict(spec, screen_target=target)
+            # shows it. exp.161: its corner is a spot of the page too, so on its way between them
+            # the hand is carried by the camera like the page (its size never changes).
+            if spec is not None and spec.get('phase') in ('in', 'out') and view_fn is not None:
+                opts = dict(opts, _rest_place=world.place(plain_view(world, state), view_fn(state), width, height))
             hand_layer = (layer, world.frames[k], spec, place, opts)
     out = _texts(out, waiting, seconds, world, view)
     if hand_layer is not None:

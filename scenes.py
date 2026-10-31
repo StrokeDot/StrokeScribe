@@ -368,7 +368,8 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
             rest = _resting_options(lay, elements, i / fps, hidden)
             if rest is not None:                     # exp.143: the hand waiting in its corner
                 from frame_render import paint_rest_hand
-                image = paint_rest_hand(image, rest, i / fps)
+                place = timeline_render.page_place(world, lay, state, elements, width, height)   # exp.161: on the page
+                image = paint_rest_hand(image, rest, i / fps, place)
             writer.write(image, folder / f'frame_{i:06d}.png')
             progress(i + 1, total)
             if interrupted():
