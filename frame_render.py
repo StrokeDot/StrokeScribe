@@ -310,13 +310,14 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
     plan = travel_plan(drawing, options) if options.get('hand_travel') else None
     if plan is not None:
         # exp.143: the hand comes from its corner before drawing and goes back after it.
-        lead, hand_end, tail, inner_total, inner = plan
-        t = max(0., min(1., float(fraction))) * (inner_total + lead + tail)
-        inner_t, phase, p = travel_phase(t, lead, hand_end, tail)
+        lead, hand_end, tail, inner_total, inner, hand_start = plan
+        t = max(0., min(1., float(fraction))) * (inner_total - hand_start + lead + tail)
+        inner_t, phase, p = travel_phase(t, lead, hand_end, tail, hand_start)
         if phase == 'in':
-            inner_t = hand_end * TRAVEL_EPS              # the pen on the first point
+            # the pen on the first point it really paints (exp.151)
+            inner_t = hand_start + (hand_end - hand_start) * TRAVEL_EPS
         elif phase == 'out':
-            inner_t = hand_end * (1 - TRAVEL_EPS)        # the pen where it stopped
+            inner_t = hand_end - (hand_end - hand_start) * TRAVEL_EPS     # the pen where it stopped
         video_t = float(options.get('hand_video_start', 0) or 0) + t
         inner['_video_t'] = video_t
         if phase:
@@ -467,7 +468,7 @@ def timeline_seconds(drawing, options):
     if options.get('hand_travel'):
         plan = travel_plan(drawing, options)
         if plan is not None:                 # exp.143: + the hand's way there and back
-            return plan[3] + plan[0] + plan[2]
+            return plan[3] - plan[5] + plan[0] + plan[2]
         options = {k: v for k, v in options.items() if k != 'hand_travel'}
     erase = options.get('erase')
     if erase and erase.get('mode'):
@@ -523,14 +524,65 @@ def travel_plan(drawing, options):
         return None
     inner = {k: v for k, v in options.items() if k not in ('hand_travel', 'hand_rest_here')}
     inner_total = timeline_seconds(drawing, inner)
-    return travel, min(hand_seconds(drawing, inner), inner_total), travel, inner_total, inner
+    hand_end = min(hand_seconds(drawing, inner), inner_total)
+    hand_start = 0.
+    window = _paint_window(drawing, inner)
+    if window is not None:
+        # exp.151 (the user: the hand moved before anything appeared): a painting starts
+        # where the brush first really paints (its first move to the picture is the glide),
+        # and ends where it last paints.
+        first, last = window
+        if getattr(drawing, 'image_animation', None) == 'paint_only' and getattr(drawing, 'source_kind', None) == 'image':
+            hand_start = max(0., min(first, hand_end * .9))
+        hand_end = max(hand_start + .05, min(hand_end, last))
+    return travel, hand_end, travel, inner_total, inner, hand_start
 
 
-def travel_phase(t, lead, hand_end, tail):
-    """(element time without the travel, 'in' / 'out' / None, 0..1 through the travel)."""
+_WINDOW = {}
+
+
+def _paint_window(drawing, options):
+    """(first, last): seconds of the element (without the travel) when the painting hand
+    first and last really paints, for the planned paintings (adaptive, painter, rows...)."""
+    image = options.get('final_image')
+    mode = options.get('reveal_mode')
+    if image is None or image.isNull() or mode not in ('adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag', 'painter'):
+        return None
+    if options.get('painting_hand') is None:
+        return None
+    key = (id(drawing), image.cacheKey(), mode, options.get('brush_width'), options.get('stroke_spacing'),
+           options.get('duration'), options.get('fade_duration'))
+    if key in _WINDOW:
+        return _WINDOW[key]
+    try:
+        from adaptive_hand import plan_for
+        drawing.paint_method = mode
+        bw, sp = float(options.get('brush_width', .14)), float(options.get('stroke_spacing', .55))
+        plan = plan_for(drawing, image, bw, sp)     # made once (the painting needs it anyway)
+        painting = [s for s in plan.segments if s.painting]
+        if not painting or plan.total <= 0:
+            return None
+        paint_only = getattr(drawing, 'image_animation', None) == 'paint_only' and \
+            getattr(drawing, 'source_kind', None) == 'image'
+        base = 0. if paint_only else max(.001, float(options.get('duration', 4) or 4))
+        fade = max(.001, float(options.get('fade_duration', .4)))
+        first = base + painting[0].start / plan.total * .98 * fade
+        last = base + painting[-1].end / plan.total * .98 * fade
+    except Exception:
+        return None
+    if len(_WINDOW) > 64:
+        _WINDOW.clear()
+    _WINDOW[key] = (first, last)
+    return first, last
+
+
+def travel_phase(t, lead, hand_end, tail, hand_start=0.):
+    """(element time without the travel, 'in' / 'out' / None, 0..1 through the travel).
+    hand_start: the element's own time where the hand starts (exp.151: before it, a
+    painting's first glide to the picture, skipped: the travel is the glide)."""
     if t < lead:
-        return 0., 'in', t / max(1e-9, lead)
-    t -= lead
+        return hand_start, 'in', t / max(1e-9, lead)
+    t = t - lead + hand_start
     if t < hand_end:
         return t, None, 0.
     if t < hand_end + tail:
@@ -544,8 +596,8 @@ def hand_window(drawing, options):
     plan = travel_plan(drawing, options)
     if plan is None:
         return None
-    lead, hand_end, tail, inner_total, _ = plan
-    return lead + hand_end + tail, inner_total + lead + tail
+    lead, hand_end, tail, inner_total, _, hand_start = plan
+    return lead + hand_end - hand_start + tail, inner_total - hand_start + lead + tail
 
 
 def hand_busy(drawing, options, fraction):

@@ -195,13 +195,13 @@ def track(drawing, options, total_seconds, rate=30.):
         plan = travel_plan(drawing, options)
         if plan is not None:
             # exp.143: no pen sound while the hand travels to / from its corner.
-            lead, hand_end, tail, inner_total, inner = plan
+            lead, hand_end, tail, inner_total, inner, hand_start = plan
             inner_track = track(drawing, inner, inner_total, rate)
             n = len(inner_track) - 1
             out = []
             for i in range(count):
                 t = i / (count - 1) * total_seconds
-                inner_t, phase, _ = travel_phase(t, lead, hand_end, tail)
+                inner_t, phase, _ = travel_phase(t, lead, hand_end, tail, hand_start)
                 if phase:
                     out.append((t, PenSample(None, None)))
                 else:

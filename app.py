@@ -5021,7 +5021,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 drawing,opts,_,_=self.preview_scene(it.k,960,540)
                 plan=travel_plan(drawing,opts)
                 if plan is not None:
-                    marks.append((it.start,plan[0],plan[1],plan[2]))
+                    marks.append((it.start,plan[0],plan[1]-plan[5],plan[2]))
         except Exception:
             return []
         return marks
