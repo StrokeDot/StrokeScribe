@@ -62,11 +62,13 @@ def compose(world, lay, state, elements, width, height, titles=None, seconds=Non
             a = _page(world, lay, state, elements, world.frames[k], width, height)
             b = _page(world, lay, state, elements, world.frames[k + 1], width, height)
             return _texts(transition_frame(a, b, kind, state.t), titles, seconds)
-    view = view_of(world, lay, state, elements)
-    if view_scale > 1.:                  # exp.121: the preview stepped back (Ctrl + wheel)
-        w = view[2] * view_scale         # exp.122: and moved around by dragging it
-        view = (view[0] + view_pan[0] * w, view[1] + view_pan[1] * w * world.aspect, w)
-    return _page(world, lay, state, elements, view, width, height, titles, seconds)
+    def view_fn(st):
+        v = view_of(world, lay, st, elements)
+        if view_scale > 1.:              # exp.121: the preview stepped back (Ctrl + wheel)
+            w = v[2] * view_scale        # exp.122: and moved around by dragging it
+            v = (v[0] + view_pan[0] * w, v[1] + view_pan[1] * w * world.aspect, w)
+        return v
+    return _page(world, lay, state, elements, view_fn(state), width, height, titles, seconds, view_fn)
 
 
 def page_of(lay, seconds):
@@ -131,6 +133,43 @@ def _hand_element(state, elements, tracks):
     return max(busy, key=lambda k: (tracks.get(k, 0), k))
 
 
+def _glide_target(world, lay, elements, k, fraction, phase, seconds, view_fn, width, height):
+    """exp.154 (the user: while the camera zooms and nothing is drawn yet, the hand must not
+    follow the camera): where on the screen the pen will be when the drawing starts (the way
+    in) or was when it stopped (the way back). The hand glides straight between its corner
+    and that point; it used to aim at the first point as the camera showed it at each moment,
+    so during a zoom it chased the camera."""
+    from frame_render import travel_plan, timeline_seconds, last_hand_spec
+    from timeline_model import state_at
+    el = elements[k]
+    drawing, opts = el['drawing'], el['options']
+    try:
+        plan = travel_plan(drawing, opts)
+        if plan is None:
+            return None
+        lead, hand_end, tail, inner_total, _, hand_start = plan
+        total = timeline_seconds(drawing, opts)
+        t = float(fraction) * total
+        eps = .02
+        when = lead + eps if phase == 'in' else lead + hand_end - hand_start - eps
+        st = state_at(lay, max(0., seconds + when - t))
+        f = dict(st.active).get(k)
+        if f is None:
+            return None
+        view = view_fn(st)
+        x, y, w, h = world.place(world.frames[k], view, width, height)
+        if w < 2:
+            return None
+        element_frame(drawing, opts, f, w, h, 'hand')
+        spec = last_hand_spec()
+        if spec is None or spec.get('tip') is None or spec.get('phase') in ('in', 'out'):
+            return None
+        fw, fh = spec['frame']
+        return (x + spec['tip'][0] * w / max(1, fw), y + spec['tip'][1] * h / max(1, fh))
+    except Exception:
+        return None
+
+
 def _drawing_now(state, elements, k):
     """True when element k's hand is drawing, painting or travelling now."""
     from frame_render import hand_busy
@@ -141,7 +180,7 @@ def _drawing_now(state, elements, k):
     return False
 
 
-def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None):
+def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None, view_fn=None):
     skip = set(range(len(elements))) - set(state.finished)
     out = world.view(view, width, height, upto=len(elements), skip=skip)
     tracks = {it.k: it.track for it in lay.items}
@@ -171,7 +210,12 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
         if k == hand_k and opts.get('layers', 'all') != 'art':
             from frame_render import last_hand_spec
             layer = element_frame(el['drawing'], opts, fraction, w, h, 'hand')   # eraser, move-in hand
-            hand_layer = (layer, world.frames[k], last_hand_spec(), (x, y, w, h), opts)
+            spec = last_hand_spec()
+            if spec is not None and spec.get('phase') in ('in', 'out') and view_fn is not None and seconds is not None:
+                target = _glide_target(world, lay, elements, k, fraction, spec['phase'], seconds, view_fn, width, height)
+                if target is not None:
+                    spec = dict(spec, screen_target=target)
+            hand_layer = (layer, world.frames[k], spec, (x, y, w, h), opts)
     out = _texts(out, waiting, seconds, world, view)
     if hand_layer is not None:
         # exp.148 (the user): the hand is always over everything (it was drawn under the

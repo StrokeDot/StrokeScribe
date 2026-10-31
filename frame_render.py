@@ -864,7 +864,7 @@ def paint_hand_spec(frame, spec, options, place=None):
             return frame
         ax, ay = options.get('anchor', (.1, .1))
         home = (corner.x() + float(ax) * corner.width(), corner.y() + float(ay) * corner.height())
-        target = tip if tip is not None else home
+        target = spec.get('screen_target') or (tip if tip is not None else home)
         e = max(0., min(1., float(spec.get('p') or 0.)))
         e = e * e * (3 - 2 * e)
         a, b = (home, target) if phase == 'in' else (target, home)
