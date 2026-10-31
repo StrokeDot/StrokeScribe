@@ -124,6 +124,27 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(counts(compose_frame(d, .6, dict(o, entrance='Fade')))[1].sum(), 0)   # slides only
         self.assertEqual(counts(compose_frame(d, .6, dict(o, move_hand=None)))[1].sum(), 0)
 
+    def test_the_carrying_hand_does_not_zoom_and_counts_as_the_hand(self):
+        """exp.152 (the user): the hand never zooms with the camera, and a picture sliding
+        in without a hand does not take the hand away from a picture being drawn."""
+        import numpy as np
+        from frame_render import compose_frame, hand_busy, _crop_spec
+        d = self.drawing()
+        o = self.options(entrance='Slide from bottom', move_hand=self.green_hand(), move_hand_grip=(.5, 0.),
+                         move_hand_size=.1, offset=(0., -.3))
+        self.assertTrue(hand_busy(d, o, .3))                       # carrying the picture in
+        self.assertFalse(hand_busy(d, o, 1.))                      # gone
+        self.assertFalse(hand_busy(d, dict(o, move_hand=None, hand=self.green_hand()), .3))   # no carrying hand
+        green = counts(compose_frame(d, .6, o))[1]
+        cols = np.nonzero(green.any(0))[0]
+        self.assertAlmostEqual(cols.max() - cols.min() + 1, 480 * .1, delta=3)   # its own size on the screen
+        from PySide6.QtGui import QImage
+        frame = QImage(100, 50, QImage.Format.Format_ARGB32_Premultiplied)
+        spec = _crop_spec(dict(tip=(50., 25.)), frame, 2., .5, .5)
+        self.assertEqual(spec['tip'], (50., 25.))                  # the middle stays the middle
+        spec = _crop_spec(dict(tip=(75., 25.)), frame, 2., .5, .5)
+        self.assertEqual(spec['tip'], (100., 25.))                 # the camera moves the hand, never sizes it
+
     def test_picture_and_hand_in_step_in_separate_layers(self):
         """exp.102: the whole video draws the picture ("art") and the hand in two passes.
         The art pass moved the picture without the hand's timing, so in the whole video

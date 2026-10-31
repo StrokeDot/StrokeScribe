@@ -131,6 +131,16 @@ def _hand_element(state, elements, tracks):
     return max(busy, key=lambda k: (tracks.get(k, 0), k))
 
 
+def _drawing_now(state, elements, k):
+    """True when element k's hand is drawing, painting or travelling now."""
+    from frame_render import hand_busy
+    for j, f in state.active:
+        if j == k:
+            o = elements[k]['options']
+            return o.get('layers', 'all') != 'art' and hand_busy(elements[k]['drawing'], o, f)
+    return False
+
+
 def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None):
     skip = set(range(len(elements))) - set(state.finished)
     out = world.view(view, width, height, upto=len(elements), skip=skip)
@@ -138,7 +148,14 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
     waiting = sorted(titles or (), key=lambda o: int(o.get('track', 0)))
     hand_k = _hand_element(state, elements, tracks)
     hand_layer = None
-    for k, fraction in state.active:
+    active = list(state.active)
+    if _drawing_now(state, elements, hand_k):
+        # exp.152 (the user): the picture the hand is drawing is always seen while it draws:
+        # it comes over the other pictures on the page (a nun on a lower track was drawn
+        # under a book that was still sliding in, so her lines were hidden and the hand
+        # drew nothing). When its hand is done, it goes back to its track's place.
+        active = [a for a in active if a[0] != hand_k] + [a for a in active if a[0] == hand_k]
+    for k, fraction in active:
         under = [o for o in waiting if int(o.get('track', 0)) < tracks.get(k, 0)]
         if under:
             out = _texts(out, under, seconds, world, view)

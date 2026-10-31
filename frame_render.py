@@ -294,8 +294,13 @@ def _entering(drawing, fraction, opts, kind, lines_only=False):
         point = move_in.hand_position(move_in.alpha_box(art), side, p, (ex + dx, ey + dy))
         if frame is art:
             frame = art.copy()
-        move_in.draw_hand(frame, opts['move_hand'], opts.get('move_hand_grip') or move_in.DEFAULT_GRIP,
-                          float(opts.get('move_hand_size', .35)), point, side)
+        # exp.152: the move-in hand is a screen hand too (the camera zoomed it with the
+        # picture): recorded here, painted on the screen at its own size.
+        _set_spec(dict(frame=(frame.width(), frame.height()), kind='move',
+                       tip=(point[0] * frame.width(), point[1] * frame.height()),
+                       image=opts['move_hand'], anchor=tuple(opts.get('move_hand_grip') or move_in.DEFAULT_GRIP),
+                       share=float(opts.get('move_hand_size', .35)), side=side, phase=None, p=0.,
+                       seconds=opts.get('_video_t')))
     return frame
 
 
@@ -346,11 +351,14 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
                 float(opts.get('duration', 4) or 0):
             frame = _core(drawing, base_fraction, opts, camera_path, fraction)    # the colours are painted
         elif entrance != 'draw':
+            _set_spec(None)
             frame = _entering(drawing, base_fraction, opts, entrance, lines_only)
             if camera_path is not None and getattr(camera_path, 'clips', None):
                 # exp.126: an element that moves in follows the camera clips too (it stayed
                 # unzoomed while everything around it zoomed in).
-                frame = _camera_view(frame, *camera_path.at(fraction))
+                view = camera_path.at(fraction)
+                frame = _camera_view(frame, *view)
+                _set_spec(_crop_spec(last_hand_spec(), frame, *view))
         else:
             frame = _core(drawing, base_fraction, opts, camera_path, fraction)
     elif erase.get('mode') in EXITS:
@@ -601,10 +609,27 @@ def hand_window(drawing, options):
 
 
 def hand_busy(drawing, options, fraction):
-    """exp.146: True while this element's hand draws, paints or travels."""
-    if options.get('hand') is None:
+    """exp.146: True while this element's hand draws, paints, travels or carries the
+    picture in. exp.152: an element that slides/fades in without a hand is NOT busy (it
+    used to count as busy for its whole time, so a sliding book on a higher track took the
+    hand away from the nun being drawn under it: the nun's lines appeared with no hand)."""
+    if options.get('hand') is None and options.get('move_hand') is None:
         return False
     try:
+        entrance = options.get('entrance') or 'draw'
+        if entrance != 'draw':
+            import move_in
+            plain = timeline_seconds(drawing, dict(options, pause=0))
+            t = float(fraction) * timeline_seconds(drawing, options)
+            length = move_seconds(options)
+            if t < length:
+                return 0. < t and move_in.carried(dict(options, layers='all'), ENTRANCES.get(entrance, entrance)
+                                                  if entrance in ENTRANCES else entrance) is not None
+            if move_in.part_of(options) == move_in.PART_LINES and options.get('hand') is not None:
+                return t < min(plain, hand_seconds(drawing, options))
+            return False
+        if options.get('hand') is None:
+            return False
         if options.get('hand_travel'):
             window = hand_window(drawing, options)
             if window is not None:
@@ -613,6 +638,14 @@ def hand_busy(drawing, options, fraction):
         return 0. < float(fraction) * total < hand_seconds(drawing, options)
     except Exception:
         return False
+
+
+def hand_busy_at(drawing, options, local_seconds):
+    """hand_busy at `local_seconds` from the element's start."""
+    total = timeline_seconds(drawing, options)
+    if total <= 0 or local_seconds < 0 or local_seconds > total:
+        return False
+    return hand_busy(drawing, options, local_seconds / total)
 
 
 def resting(drawing, options, fraction):
@@ -732,6 +765,43 @@ def _spec_from(got, opts, frame, travel):
     return spec
 
 
+def _crop_spec(spec, frame, zoom, cx, cy):
+    """The spec's pen tip after _camera_view(frame, zoom, cx, cy)."""
+    if spec is None or spec.get('tip') is None or zoom <= 1.0001:
+        return spec
+    w, h = frame.width(), frame.height()
+    vw, vh = w / zoom, h / zoom
+    left = min(max(0., cx * w - vw / 2), w - vw)
+    top = min(max(0., cy * h - vh / 2), h - vh)
+    x, y = spec['tip']
+    return dict(spec, tip=((x - left) * zoom, (y - top) * zoom))
+
+
+def _paint_move_hand(frame, spec, tip, shown, options):
+    """The move-in hand at `tip` (screen pixels). exp.152 (the user: the hand always has the
+    same size): as big as the drawing hand when there is one, else its own share of the width."""
+    from PySide6.QtCore import QPointF, QRectF
+    from PySide6.QtGui import QPainter
+    import move_in
+    image = spec['image']
+    if options.get('hand') is not None:
+        hw = frame.width() * float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.)
+    else:
+        hw = float(spec.get('share', .35)) * frame.width()
+    hw = max(1., hw)
+    hh = hw * image.height() / max(1, image.width())
+    out = frame.copy()
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    painter.setOpacity(shown)
+    painter.translate(QPointF(tip[0], tip[1]))
+    painter.rotate(move_in.ANGLES[spec['side']])
+    gx, gy = spec.get('anchor') or move_in.DEFAULT_GRIP
+    painter.drawImage(QRectF(-gx * hw, -gy * hh, hw, hh), image)
+    painter.end()
+    return out
+
+
 def paint_hand_spec(frame, spec, options, place=None):
     """exp.149: draw the hand on the screen picture `frame`: at the pen tip (mapped through
     `place` = (x, y, w, h) of the element's picture on the screen, None: the whole frame),
@@ -753,6 +823,10 @@ def paint_hand_spec(frame, spec, options, place=None):
             tip = (px + tip[0] * pw / max(1, fw), py + tip[1] * ph / max(1, fh))
         elif (fw, fh) != (W, H):
             tip = (tip[0] * W / max(1, fw), tip[1] * H / max(1, fh))
+    if spec.get('kind') == 'move':
+        if tip is None or spec.get('image') is None or spec['image'].isNull():
+            return frame
+        return _paint_move_hand(frame, spec, tip, shown, options)
     image, anchor, ratio = spec.get('image'), spec.get('anchor'), float(spec.get('ratio') or 1.)
     phase = spec.get('phase')
     if phase in ('in', 'out'):

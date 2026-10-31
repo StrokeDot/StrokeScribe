@@ -230,6 +230,22 @@ class HandRestTests(unittest.TestCase):
         state = State('page', current=1, active=[(1, .8), (0, .99)], top=0)
         self.assertEqual(_hand_element(state, [travelling, holding], {0: 0, 1: 1}), 0)   # going back
 
+    def test_the_picture_being_drawn_is_seen_over_a_sliding_one(self):
+        # exp.152 (the user): a nun drawn on a lower track under a book still sliding in
+        # had her lines hidden; the hand must always follow the drawing.
+        from engine import import_svg
+        from timeline_model import State
+        from timeline_render import _hand_element, _drawing_now
+        drawing = import_svg(HERE / 'samples' / 'drawing.svg')
+        hand = self.options()['hand']
+        nun = dict(drawing=drawing, options=dict(duration=2., hand=hand))
+        book = dict(drawing=drawing, options=dict(duration=2., hand=hand, entrance='Slide from top'))
+        state = State('page', current=1, active=[(0, .3), (1, .5)], top=1)
+        self.assertEqual(_hand_element(state, [nun, book], {0: 1, 1: 4}), 0)   # the hand is the nun's
+        self.assertTrue(_drawing_now(state, [nun, book], 0))                    # so she comes over the book
+        state = State('page', current=1, active=[(0, 1.), (1, .5)], top=1)
+        self.assertFalse(_drawing_now(state, [nun, book], 0))                   # done: back in her place
+
     def test_the_hand_can_be_hidden_while_it_draws(self):
         # exp.148: a 'Hand hidden' clip on the Hand row: no hand at all, even while drawing.
         import camera_clips as cc
