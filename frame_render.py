@@ -494,8 +494,8 @@ def timeline_seconds(drawing, options):
 # there smoothly to the first line, and goes back after the drawing. The way there and
 # back is added to the element's time (the drawing keeps its speed).
 
-REST_CORNERS = {'Bottom right': (.80, .86), 'Right': (.90, .55), 'Bottom': (.55, .92),
-                'Bottom left': (.24, .90)}
+REST_CORNERS = {'Bottom right': (.74, .80), 'Right': (.86, .55), 'Bottom': (.55, .88),
+                'Bottom left': (.26, .86)}   # exp.149: more of the hand in the picture
 TRAVEL_EPS = 1e-3
 
 
