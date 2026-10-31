@@ -107,8 +107,9 @@ def bounds(all_frames, aspect=9 / 16, margin=.06):
 def sub_view(frame, zoom, cx, cy, aspect=9 / 16):
     """Camera follow inside a frame: (zoom, centre as fractions of the frame) → a view."""
     fx, fy, w = frame
-    if zoom <= 1.0001:
+    if abs(zoom - 1.) <= 1e-4:
         return frame
+    # exp.159 (the user, like VideoScribe): zoom < 1 looks further away than the page.
     return (fx - w / 2 + cx * w, fy - w * aspect / 2 + cy * w * aspect, w / zoom)
 
 

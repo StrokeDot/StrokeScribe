@@ -144,6 +144,21 @@ class CameraClipTests(unittest.TestCase):
         self.assertEqual(spot['to'], (1.33, .4, .48))
         self.assertEqual(cc.MENU, ('Zoom in', 'Zoom out'))
 
+    def test_zoom_out_goes_further_than_the_page(self):
+        # exp.159 (the user, like VideoScribe): a zoom out goes further away, stays, comes back.
+        import camera_clips as cc
+        import board
+        clip = cc.new_clip(cc.ZOOM_OUT, 1.)
+        self.assertLess(clip['to'][0], 1.)
+        z, x, y = cc.framing_at([clip], 1. + clip['in_s'] + .5)
+        self.assertAlmostEqual(z, clip['to'][0])                     # stays there
+        self.assertEqual(cc.framing_at([clip], 1. + clip['duration'] + .1), None)   # back
+        self.assertGreater(board.sub_view((0., 0., 1.), .5, .5, .5)[2], 1.)       # sees more than the page
+        old = dict(cc.new_clip('Zoom in', 0.), kind=cc.ZOOM_OUT, out_s=0.)
+        cc.upgrade(old)
+        self.assertGreater(old['out_s'], 0); self.assertLess(old['to'][0], 1.)
+        self.assertEqual(cc.keep_in((20., .5, .5))[0], cc.NEAR)
+
     def test_video_camera_combines_with_the_element_camera_and_pickles(self):
         import pickle
         import camera_clips as cc
