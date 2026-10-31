@@ -209,6 +209,7 @@ class StageTimeline(QFrame):
     camera_edit=Signal(str)             # double-click: its settings
     camera_action=Signal(str,str)       # id, a kind / 'delete'
     camera_lane=Signal(str,int)         # exp.138: a moving camera dragged onto another row
+    hand_place=Signal(bool)            # exp.155: the Hand row dragged under (True) / over (False) the cameras
     camera_add=Signal(str,float)        # exp.128: double-click on a camera row: kind ('' = ask), seconds
     overlay_toggled=Signal(str)         # exp.117: Ctrl+click on a text clip: add it to / take it out of the choice
     text_track_toggled=Signal(int)      # exp.117: a text track's hide button   # whole video: another element's text / picture (k, id)
@@ -356,15 +357,22 @@ class StageTimeline(QFrame):
         if not any(not isinstance(k,tuple) for k in lanes): return 1
         return max(lanes.values())+1
 
+    def _hand_over(self):
+        """exp.155 (the user, like Filmora): the Hand row sits over the camera rows (the
+        cameras do not move or size the hand) unless it was dragged under them."""
+        return bool(self.items) and not getattr(self,'hand_under',False)
+
     def _moving_lane(self, i):
         """Row i (0 = the lowest); higher rows are drawn higher, like the tracks."""
         cam=self._camera_rect()
-        row=self._cam_lane_count()-1-int(i)
+        row=self._cam_lane_count()-1-int(i)+(1 if self._hand_over() else 0)
         return QRectF(cam.left(),cam.top()+self.CAM_ROW*(1+row)+1,cam.width(),self.CAM_ROW-2)
 
     def _hand_row(self):
-        """exp.147: the Hand row, under the Moving camera rows."""
+        """exp.147: the Hand row; exp.155: over the cameras, or under them when dragged there."""
         cam=self._camera_rect()
+        if self._hand_over():
+            return QRectF(cam.left(),cam.top()+1,cam.width(),self.CAM_ROW-2)
         return QRectF(cam.left(),cam.top()+self.CAM_ROW*(1+self._cam_lane_count())+1,cam.width(),self.CAM_ROW-2)
 
     def _lane_at(self, y):
@@ -608,12 +616,14 @@ class StageTimeline(QFrame):
 
     def _fixed_row(self):
         cam=self._camera_rect()
-        return QRectF(cam.left(),cam.top(),cam.width(),self.CAM_ROW-1)
+        top=cam.top()+(self.CAM_ROW if self._hand_over() else 0.)
+        return QRectF(cam.left(),top,cam.width(),self.CAM_ROW-1)
 
     def _moving_row(self):
         """All the Moving camera rows together."""
         cam=self._camera_rect()
-        return QRectF(cam.left(),cam.top()+self.CAM_ROW+1,cam.width(),self.CAM_ROW*self._cam_lane_count()-1)
+        top=cam.top()+self.CAM_ROW*(2 if self._hand_over() else 1)+1
+        return QRectF(cam.left(),top,cam.width(),self.CAM_ROW*self._cam_lane_count()-1)
 
     def _paint_fixed_header(self, p, c, small):
         """Top left: the zoom buttons over the track names, and the two camera rows' names
@@ -1445,6 +1455,9 @@ class StageTimeline(QFrame):
         if own is not None:
             self.element_camera_clicked.emit(own)
             event.accept(); return
+        if self.items and pos.x()<self.LEFT and self._hand_row().top()-1<=pos.y()<=self._hand_row().bottom()+1:
+            self._drag=('handrow',pos.y()); self.setCursor(Qt.CursorShape.ClosedHandCursor)
+            event.accept(); return            # exp.155: drag the Hand row over / under the cameras
         if self.items and pos.x()<self.LEFT and not self._tracks_area().contains(pos):
             event.accept(); return
         if self.items and pos.x()<self.LEFT:
@@ -1674,6 +1687,16 @@ class StageTimeline(QFrame):
         super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self,event):
+        if self._drag and self._drag[0]=='handrow':
+            self._drag=None; self.unsetCursor()
+            y=event.position().y()
+            cams=self._fixed_row().united(self._moving_row())
+            under=getattr(self,'hand_under',False)
+            if not under and y>cams.center().y():
+                self.hand_place.emit(True)
+            elif under and y<cams.center().y():
+                self.hand_place.emit(False)
+            self.update(); event.accept(); return
         if self._drag and self._drag[0]=='block':
             _,k,x0,y0,start0,track0,px_per_sec,moved=self._drag
             self._frozen=None
@@ -3077,6 +3100,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.hand_rest_travel=w.number(.2,5,.8,.1); w.hand_rest_travel.setSuffix(' s')
     w.hand_rest_travel.setToolTip('How long the hand takes to glide from the corner to the drawing (and back).')
     h.addRow('Glide',w.hand_rest_travel)
+    # exp.155 (the user, like Filmora): the hand is over the cameras: their zooms never move or
+    # size it. Under them, the zooms move it with the drawing. (Or drag the Hand row.)
+    w.hand_under=QCheckBox('Under the cameras')
+    w.hand_under.setToolTip('Off: the hand is over the cameras, the zooms never move it. On: the zooms '
+                            'move the hand with the drawing. You can also drag the Hand row of the timeline.')
+    h.addRow('Camera',w.hand_under)
+    w.hand_under.toggled.connect(lambda on: w.hand_rest_changed())
     w.hand_leave_add=QPushButton('+ Hand leaves the picture')
     w.hand_leave_add.setToolTip('At the playhead: the waiting hand slides out of the picture, stays away, and '
                                 'comes back (Hand row of the timeline; or double-click the Hand row).')
@@ -3629,6 +3659,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.camera_selected.connect(lambda cid: w.select_camera(cid))
     w.stage_timeline.camera_changed.connect(lambda cid,start,length: w.move_camera_clip(cid,start,length))
     w.stage_timeline.camera_lane.connect(lambda cid,lane: w.move_camera_lane(cid,lane))
+    w.stage_timeline.hand_place.connect(lambda under: w.hand_under.setChecked(bool(under)))
     w.stage_timeline.camera_done.connect(lambda cid: w.camera_clip_done(cid))
     w.stage_timeline.camera_edit.connect(lambda cid: w.edit_camera_clip(cid))
     w.stage_timeline.camera_action.connect(lambda cid,action: w.camera_clip_action(cid,action))

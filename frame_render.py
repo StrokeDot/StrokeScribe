@@ -298,6 +298,7 @@ def _entering(drawing, fraction, opts, kind, lines_only=False):
         # picture): recorded here, painted on the screen at its own size.
         _set_spec(dict(frame=(frame.width(), frame.height()), kind='move',
                        tip=(point[0] * frame.width(), point[1] * frame.height()),
+                       tip_plain=(point[0] * frame.width(), point[1] * frame.height()),
                        image=opts['move_hand'], anchor=tuple(opts.get('move_hand_grip') or move_in.DEFAULT_GRIP),
                        share=float(opts.get('move_hand_size', .35)), side=side, phase=None, p=0.,
                        seconds=opts.get('_video_t')))
@@ -782,6 +783,12 @@ def _spec_from(got, opts, frame, travel):
         ox, oy = got['offset']
         x = bw / 2 + (r.x() - bw / 2) * f + round(ox * bw)
         y = bh / 2 + (r.y() - bh / 2) * f + round(oy * bh)
+        own0 = getattr(image, 'own_tip', None)
+        ax0, ay0 = own0 if own0 is not None else opts.get('anchor', (.1, .1))
+        # exp.155: the pen as if there were no camera (the hand over the cameras: their
+        # zooms never move it), in this frame's pixels.
+        spec['tip_plain'] = ((x + float(ax0) * r.width() * f) * w / max(1, bw),
+                             (y + float(ay0) * r.height() * f) * h / max(1, bh))
         if got['zoom'] > 1.0001:                     # the camera's crop (camera.crop)
             cx, cy = got['centre']
             x -= max(0, min(bw - w, int(round(cx * bw - w / 2))))
@@ -844,6 +851,8 @@ def paint_hand_spec(frame, spec, options, place=None):
     if shown <= 0:
         return frame
     tip = spec.get('tip')
+    if not options.get('hand_under') and spec.get('tip_plain') is not None:
+        tip = spec['tip_plain']          # exp.155: over the cameras (place: the page with no camera)
     if tip is not None:
         fw, fh = spec['frame']
         if place is not None:
