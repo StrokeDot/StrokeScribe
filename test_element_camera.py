@@ -522,3 +522,20 @@ class WindowTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipIf(SKIP, 'needs Qt')
+class PushAfterTests(unittest.TestCase):
+    def test_a_longer_hand_moves_everything_after_it(self):
+        # exp.166 (the user): more time for the hand to go and come back moves the elements,
+        # cameras and texts after it later.
+        from types import SimpleNamespace
+        from app import Window
+        status = SimpleNamespace(text='', setText=lambda t: setattr(status, 'text', t))
+        w = SimpleNamespace(scenes=[dict(start=0.), dict(start=5.), dict(start=None)],
+                            cameras=[dict(start=2.), dict(start=6.)], overlays=[dict(start=1.), dict(start=7.)],
+                            status=status)
+        Window.push_after(w, 5., 1.5, skip=0)
+        self.assertEqual([s['start'] for s in w.scenes], [0., 6.5, None])
+        self.assertEqual([c['start'] for c in w.cameras], [2., 7.5])
+        self.assertEqual([o['start'] for o in w.overlays], [1., 8.5])

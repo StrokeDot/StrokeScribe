@@ -5089,11 +5089,37 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         form.addRow(buttons)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return
         self.record_structure('hand glide')
+        before=next((it for it in self.timeline_layout().items if it.k==k),None)
         self.scenes[k]['glide']=(round(go.value(),2),round(back.value(),2),how_in.currentText(),how_out.currentText())
         self.project_changes.mark_changed()
-        self.__dict__.pop('_memo',None)
+        self.__dict__.pop('_memo',None); self._scene_cache={}
+        if before is not None:
+            after=next((it for it in self.timeline_layout().items if it.k==k),None)
+            if after is not None:
+                self.push_after(before.end,after.length-before.length,skip=k)
         self.hand_rest_changed()
         self.sync_camera_timeline()
+
+    def push_after(self,when,delta,skip=None):
+        """exp.166 (the user): an element that takes longer (its hand going to the drawing or
+        back) moves everything after it later by the same time: the elements placed after it,
+        the cameras (and the moves between pages, which follow the elements) and the texts."""
+        if abs(delta)<1e-4: return
+        eps=1e-3
+        moved=0
+        for j,scene in enumerate(self.scenes):
+            if j==skip or scene.get('start') is None: continue
+            if float(scene['start'])>=when-eps:
+                scene['start']=round(max(0.,float(scene['start'])+delta),3); moved+=1
+        for clip in getattr(self,'cameras',[]) or []:
+            if float(clip.get('start',0))>=when-eps:
+                clip['start']=round(max(0.,float(clip['start'])+delta),2); moved+=1
+        for item in getattr(self,'overlays',[]) or []:
+            if float(item.get('start',0) or 0)>=when-eps:
+                item['start']=round(max(0.,float(item.get('start',0) or 0)+delta),2); moved+=1
+        self.__dict__.pop('_memo',None)
+        if moved:
+            self.status.setText(f'Everything after it moved {"later" if delta>0 else "earlier"} by {abs(delta):.1f} s.')
 
     def edit_hand_clip(self,cid):
         """exp.147: the hand leaves the picture: when, how fast, how long, which side."""
