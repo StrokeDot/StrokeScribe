@@ -50,14 +50,31 @@ def plain_view(world, state):
     return world.frames[state.current]
 
 
+def fixed_view(world, lay, state, elements):
+    """exp.162 (the user): what the Fixed camera shows (its moves and the moves between pages),
+    without the Moving camera's zooms: the waiting hand's corner is a corner of this view, so a
+    fixed camera leaves the hand in the corner of the picture and a zoom carries it."""
+    import board
+    import camera_clips
+    if state.kind == 'move':
+        return view_of(world, lay, state, elements)
+    k = state.current
+    camera = elements[k].get('camera')
+    clips = [c for c in (getattr(camera, 'clips', None) or ()) if camera_clips.fixed(c)]
+    if not clips:
+        return world.frames[k]
+    cam = camera_clips.VideoCamera(None, camera.start, clips, camera.moves, camera.total)
+    return board.sub_view(world.frames[k], *cam.at(dict(state.active).get(k, 1.)), world.aspect)
+
+
 def page_place(world, lay, state, elements, width, height, view_scale=1., view_pan=(0., 0.)):
-    """exp.161: (x, y, w, h) of the page on the screen at this moment (the camera's zooms
-    move and size it); the waiting hand keeps its spot on it."""
+    """exp.161/162: (x, y, w, h) on the screen of what the Fixed camera shows: the Moving
+    camera's zooms move and size it; the waiting hand keeps its corner on it."""
     v = view_of(world, lay, state, elements)
     if view_scale > 1.:
         w = v[2] * view_scale
         v = (v[0] + view_pan[0] * w, v[1] + view_pan[1] * w * world.aspect, w)
-    return world.place(plain_view(world, state), v, width, height)
+    return world.place(fixed_view(world, lay, state, elements), v, width, height)
 
 
 def compose(world, lay, state, elements, width, height, titles=None, seconds=None, view_scale=1., view_pan=(0., 0.)):
@@ -233,7 +250,7 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
             # shows it. exp.161: its corner is a spot of the page too, so on its way between them
             # the hand is carried by the camera like the page (its size never changes).
             if spec is not None and spec.get('phase') in ('in', 'out') and view_fn is not None:
-                opts = dict(opts, _rest_place=world.place(plain_view(world, state), view_fn(state), width, height))
+                opts = dict(opts, _rest_place=world.place(fixed_view(world, lay, state, elements), view_fn(state), width, height))
             hand_layer = (layer, world.frames[k], spec, place, opts)
     out = _texts(out, waiting, seconds, world, view)
     if hand_layer is not None:
