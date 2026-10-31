@@ -111,12 +111,24 @@ class ArtworkWorkflow:
         return LABELS.get(choice) if ok else None
 
     def new_project(self):
+        # exp.156: each step in the log (the user: New Project did nothing, with no message).
+        import applog
+        applog.info('New Project: asked')
         if self._artwork_busy():
+            applog.info('New Project: waiting for an import/export to finish')
             QMessageBox.information(self,'New Project','Finish or cancel the current import/export first.')
             return False
         if not self.confirm_leave_project('create a New Project'):
+            applog.info('New Project: not made (the unsaved changes were not saved or discarded)')
+            self.status.setText('New Project: cancelled.')
             return False
-        self._reset_artwork_project()
+        try:
+            self._reset_artwork_project()
+        except Exception as exc:
+            applog.error('New Project could not be made',exc)
+            QMessageBox.warning(self,'New Project',f'The new project could not be made: {str(exc)[:300]}')
+            return False
+        applog.info('New Project: made')
         return True
 
     def _reset_artwork_project(self):
