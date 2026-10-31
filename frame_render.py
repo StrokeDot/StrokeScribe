@@ -478,7 +478,7 @@ def timeline_seconds(drawing, options):
         plan = travel_plan(drawing, options)
         if plan is not None:                 # exp.143: + the hand's way there and back
             return plan[3] - plan[5] + plan[0] + plan[2]
-        options = {k: v for k, v in options.items() if k != 'hand_travel'}
+        options = {k: v for k, v in options.items() if k not in ('hand_travel', 'hand_travel_out')}
     erase = options.get('erase')
     if erase and erase.get('mode'):
         base = {k: v for k, v in options.items() if k != 'erase'}
@@ -512,7 +512,7 @@ TRAVEL_EPS = 1e-3
 def hand_seconds(drawing, options):
     """When the hand stops (seconds of the element without the travel): the end of the
     painting when a hand paints the colours, else the end of the lines."""
-    base = {k: v for k, v in options.items() if k not in ('erase', 'hand_travel')}
+    base = {k: v for k, v in options.items() if k not in ('erase', 'hand_travel', 'hand_travel_out')}
     base['pause'] = 0
     image = options.get('final_image')
     paints = (image is not None and not image.isNull() and options.get('painting_hand') is not None
@@ -531,7 +531,7 @@ def travel_plan(drawing, options):
     hand = options.get('hand')
     if travel <= 0 or hand is None or (options.get('entrance') or 'draw') != 'draw':
         return None
-    inner = {k: v for k, v in options.items() if k not in ('hand_travel', 'hand_rest_here')}
+    inner = {k: v for k, v in options.items() if k not in ('hand_travel', 'hand_travel_out', 'hand_rest_here')}
     inner_total = timeline_seconds(drawing, inner)
     hand_end = min(hand_seconds(drawing, inner), inner_total)
     hand_start = 0.
@@ -544,7 +544,8 @@ def travel_plan(drawing, options):
         if getattr(drawing, 'image_animation', None) == 'paint_only' and getattr(drawing, 'source_kind', None) == 'image':
             hand_start = max(0., min(first, hand_end * .9))
         hand_end = max(hand_start + .05, min(hand_end, last))
-    return travel, hand_end, travel, inner_total, inner, hand_start
+    back = float(options.get('hand_travel_out', 0) or 0) or travel     # exp.163: its own way back
+    return travel, hand_end, back, inner_total, inner, hand_start
 
 
 _WINDOW = {}

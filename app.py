@@ -3221,14 +3221,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             options['hand_scale']/=options['artwork_scale']
             options['width'],options['height']=width,height
             options['ghost']=.22
+            from scenes import apply_glide
+            apply_glide(options,self.scenes[k])                  # exp.163: its own way there and back
             memo[key]=(self.drawing,options,seconds_of(self.drawing,options),self.preview_camera(options))
             return memo[key]
         state=self.scenes[k]['state']
         rest=self.hand_rest_settings()             # exp.143: the same for every element
-        key=(id(state),width,height,over,tuple(sorted(rest.items())))
+        key=(id(state),width,height,over,tuple(sorted(rest.items())),tuple(self.scenes[k].get('glide') or ()))
         cached=self._scene_cache.get(id(state))
         if cached is None or cached[0]!=key:
             drawing,options,_=job_from_state(state,self.hand,overrides=rest)
+            from scenes import apply_glide
+            apply_glide(options,self.scenes[k])                  # exp.163: its own way there and back
             options.pop('fps',None); options.pop('audio',None)
             if over: options['background']=False
             options['hand_scale']/=options['artwork_scale']
@@ -5048,10 +5052,37 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 drawing,opts,_,_=self.preview_scene(it.k,960,540)
                 plan=travel_plan(drawing,opts)
                 if plan is not None:
-                    marks.append((it.start,plan[0],plan[1]-plan[5],plan[2]))
+                    marks.append((it.start,plan[0],plan[1]-plan[5],plan[2],it.k))
         except Exception:
             return []
         return marks
+
+    def edit_hand_glide(self,k):
+        """exp.163 (the user): click an element's bar on the Hand row: how long the hand takes to
+        go from its corner to the drawing, and to go back."""
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QDoubleSpinBox
+        if not 0<=k<len(self.scenes): return
+        glide=self.scenes[k].get('glide') or (0.,0.)
+        settings={'hand_glide_in':glide[0],'hand_glide_out':glide[1]}
+        default=float(self.hand_rest_travel.value())
+        dialog=QDialog(self); dialog.setWindowTitle(f'Hand: element {k+1}')
+        form=QFormLayout(dialog)
+        def number(value):
+            box=QDoubleSpinBox(); box.setRange(.1,10.); box.setSingleStep(.1); box.setDecimals(1); box.setSuffix(' s')
+            box.setValue(float(value or 0) or default); return box
+        go=number(settings.get('hand_glide_in')); back=number(settings.get('hand_glide_out'))
+        form.addRow(help_label('To the drawing','How long the hand takes to go from its corner to the first line.'),go)
+        form.addRow(help_label('Back','How long the hand takes to go back to its corner after drawing.'),back)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec()!=QDialog.DialogCode.Accepted: return
+        self.record_structure('hand glide')
+        self.scenes[k]['glide']=(round(go.value(),2),round(back.value(),2))
+        self.project_changes.mark_changed()
+        self.__dict__.pop('_memo',None)
+        self.hand_rest_changed()
+        self.sync_camera_timeline()
 
     def edit_hand_clip(self,cid):
         """exp.147: the hand leaves the picture: when, how fast, how long, which side."""

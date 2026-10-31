@@ -67,6 +67,11 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     # exp.143: the hand waits in a corner between drawings (its way there and back is added).
     options['hand_travel'] = (float(s.get('hand_rest_travel', .8) or 0)
                               if s.get('hand_rest') and options['hand'] is not None else 0.)
+    if options['hand_travel']:
+        # exp.163 (the user): each element can have its own way to the drawing and back
+        # (click its bar on the Hand row); 0 = the Glide of the Hand panel.
+        options['hand_travel'] = float(s.get('hand_glide_in', 0) or 0) or options['hand_travel']
+        options['hand_travel_out'] = float(s.get('hand_glide_out', 0) or 0) or options['hand_travel']
     options['hand_rest_corner'] = s.get('hand_rest_corner') or 'Bottom right'
     options['hand_under'] = bool(s.get('hand_under'))          # exp.155: Hand row under the cameras
     from frame_render import LAYERS
