@@ -135,6 +135,15 @@ class CameraClipTests(unittest.TestCase):
         self.assertEqual((old['in_s'], old['out_s'], old['duration']), (1.5, 1.5, 5.))
         self.assertEqual(old['kind'], 'Zoom in')
 
+    def test_a_zoom_to_a_spot_is_a_zoom_in_with_its_place(self):
+        # exp.157 (the user): only Zoom in and Zoom out; a "zoom to a spot" keeps its place.
+        import camera_clips as cc
+        spot = cc.new_clip(cc.CUSTOM, 2.); spot['to'] = (1.33, .4, .48)
+        cc.upgrade(spot)
+        self.assertEqual(spot['kind'], 'Zoom in')
+        self.assertEqual(spot['to'], (1.33, .4, .48))
+        self.assertEqual(cc.MENU, ('Zoom in', 'Zoom out'))
+
     def test_video_camera_combines_with_the_element_camera_and_pickles(self):
         import pickle
         import camera_clips as cc

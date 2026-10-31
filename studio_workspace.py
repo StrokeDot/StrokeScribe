@@ -1349,7 +1349,7 @@ class StageTimeline(QFrame):
             clip,_=self._clip_at(pos)
             if clip is not None:
                 from PySide6.QtWidgets import QMenu
-                from camera_clips import MOVING as KINDS
+                from camera_clips import MENU as KINDS          # exp.157: Zoom in, Zoom out
                 cid=clip['id']
                 self.selected_camera=cid; self.camera_selected.emit(cid); self.update()
                 menu=QMenu(self)
@@ -3411,7 +3411,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     from camera_clips import KINDS as _KINDS
     cf=form_layout(); cb.addLayout(cf)
     w.cam_clip_form=cf
-    from camera_clips import MOVING as _MOVING
+    from camera_clips import MENU as _MOVING          # exp.157: Zoom in, Zoom out
     w.cam_clip_kind=QComboBox(); w.cam_clip_kind.addItems(list(_MOVING)); cf.addRow('Kind',w.cam_clip_kind)
     w.cam_clip_start=w.number(0,3600,0,.1); w.cam_clip_start.setDecimals(1); w.cam_clip_start.setSuffix(' s')
     cf.addRow('Starts at',w.cam_clip_start)

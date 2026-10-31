@@ -1148,12 +1148,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         # exp.136 (the user): the fixed camera is the one of the elements; + Add camera adds
         # moving cameras (they go, stay, and come back).
         for kind in MOVING:
-            text=('Zoom to a spot you choose' if kind==CUSTOM else kind)
-            menu.addAction(text,lambda kind=kind: self.add_camera_clip(kind,at=at))
+            menu.addAction(kind,lambda kind=kind: self.add_camera_clip(kind,at=at))
         return menu
 
     def find_camera(self,cid):
-        if any('in_s' not in c for c in getattr(self,'cameras',[])):
+        if any('in_s' not in c or c.get('kind') in ('Custom',__import__('camera_clips').CUSTOM) for c in getattr(self,'cameras',[])):
             import camera_clips                          # exp.124: in / hold / back
             for c in self.cameras: camera_clips.upgrade(c)
         return next((c for c in getattr(self,'cameras',[]) if c.get('id')==cid),None)
@@ -1310,10 +1309,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         dialog=QDialog(self); dialog.setWindowTitle('Moving camera')
         form=QFormLayout(dialog)
         kinds=list(camera_clips.MENU)+([clip['kind']] if clip.get('kind') not in camera_clips.MENU else [])
-        kind=QComboBox(); kind.addItems(['Zoom to a spot' if k==camera_clips.CUSTOM else k for k in kinds])
+        kind=QComboBox(); kind.addItems(kinds)
         kind.setCurrentIndex(kinds.index(clip['kind']) if clip.get('kind') in kinds else 0)
-        form.addRow(help_label('Kind','What the camera does: zoom in, slide (pan), or zoom to a spot you choose. '
-                               'It always comes back to where it was.'),kind)
+        form.addRow(help_label('Kind','Zoom in: goes close to the place below, stays, and comes back.\n'
+                               'Zoom out: starts close at the place below and opens out.'),kind)
         def number(value,low,high):
             box=QDoubleSpinBox(); box.setRange(low,high); box.setSingleStep(.1); box.setDecimals(1)
             box.setSuffix(' s'); box.setValue(float(value)); return box
@@ -1330,9 +1329,24 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 box.setVisible(not out); form.labelForField(box).setVisible(not out)
             form.labelForField(go).setText('Opening' if out else 'Going')
         kind.currentIndexChanged.connect(single); single()
-        where=QComboBox(); where.addItems(['As it is','Pick on preview'])
-        form.addRow(help_label('Where','Pick on preview: after OK a dashed frame shows on the picture. Drag it '
-                               'where the camera should look; mouse wheel = closer / further.'),where)
+        # exp.157 (the user): where the zoom goes, as numbers: how close, and the X / Y of the
+        # middle of the view (0 % = left / top of the page, 100 % = right / bottom).
+        from PySide6.QtWidgets import QSpinBox, QHBoxLayout, QWidget, QCheckBox
+        z0,x0,y0=tuple(clip.get('to') or (1.6,.5,.5))
+        close=QDoubleSpinBox(); close.setRange(1.,5.); close.setSingleStep(.1); close.setDecimals(2)
+        close.setSuffix(' x'); close.setValue(float(z0))
+        form.addRow(help_label('How close','1 x = the whole page; 2 x = twice as close.'),close)
+        def percent(v):
+            box=QSpinBox(); box.setRange(0,100); box.setSuffix(' %'); box.setValue(int(round(float(v)*100))); return box
+        px,py=percent(x0),percent(y0)
+        row=QWidget(); hl=QHBoxLayout(row); hl.setContentsMargins(0,0,0,0)
+        hl.addWidget(QLabel('X')); hl.addWidget(px); hl.addWidget(QLabel('Y')); hl.addWidget(py)
+        form.addRow(help_label('Where','The middle of what the camera looks at: X from left (0 %) to right '
+                               '(100 %), Y from top (0 %) to bottom (100 %).'),row)
+        pick=QCheckBox('Then drag it on the preview')
+        pick.setToolTip('After OK a dashed frame shows on the picture: drag it where the camera should look; '
+                        'mouse wheel = closer / further.')
+        form.addRow('',pick)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         remove=buttons.addButton('Delete',QDialogButtonBox.ButtonRole.DestructiveRole)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
@@ -1353,8 +1367,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             clip['in_s'],clip['out_s']=round(go.value(),2),round(back.value(),2)
             clip['duration']=round(go.value()+stay.value()+back.value(),2)
         camera_clips.fit(clip)
+        if new_kind in ('Zoom in',camera_clips.ZOOM_OUT,camera_clips.CUSTOM):
+            z=round(close.value(),3); half=.5/max(1.,z)
+            clip['to']=(z,max(half,min(1-half,px.value()/100.)),max(half,min(1-half,py.value()/100.)))
         self.project_changes.mark_changed()
-        if where.currentIndex()==1:
+        if pick.isChecked():
             self.select_camera(cid)
             self.status.setText('Drag the dashed frame on the preview to where the camera looks (mouse wheel: '
                                 'closer / further). Click an empty spot of the timeline when it is right.')
@@ -1445,7 +1462,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if clip is None: return
         self._filling_camera=True
         try:
-            self.cam_clip_kind.setCurrentText(clip.get('kind') if clip.get('kind')!='Custom' else __import__('camera_clips').CUSTOM)
+            self.cam_clip_kind.setCurrentText(clip.get('kind') if clip.get('kind') not in ('Custom',__import__('camera_clips').CUSTOM) else 'Zoom in')
             self.cam_clip_start.setValue(float(clip['start']))
             a,b=float(clip.get('in_s',1.2)),float(clip.get('out_s',1.2))
             self.cam_clip_in.setValue(a); self.cam_clip_out.setValue(b)
@@ -1475,7 +1492,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             QTimer.singleShot(1500,lambda: setattr(self,'_cam_recorded',None))
         import camera_clips
         if what=='kind':
+            to=clip.get('to')
             camera_clips.set_kind(clip,self.cam_clip_kind.currentText())
+            if to and clip['kind'] in camera_clips.MENU: clip['to']=tuple(to)     # exp.157: keeps its place
         else:
             clip['start']=round(self.cam_clip_start.value(),2)
             a,b,hold=self.cam_clip_in.value(),self.cam_clip_out.value(),self.cam_clip_hold.value()
@@ -1485,9 +1504,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             get=lambda key: tuple(self.cam_clip_fields[(key,n)].value()/100. for n in ('zoom','x','y'))
             clip['to']=get('to')
             if clip.get('from') is not None: clip['from']=get('from')
-            if clip.get('kind') not in (camera_clips.CUSTOM,camera_clips.FIXED) and (clip['to'],clip['from'])!=camera_clips.presets(clip['kind']) \
-                    and clip.get('from') is None:
-                clip['kind']=camera_clips.CUSTOM
+            # exp.157: a zoom keeps its kind wherever it looks (no more "zoom to a spot")
         self.project_changes.mark_changed()
         self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
 
@@ -1517,8 +1534,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             z,x,y=start
             half=.5/max(1.,z)
             clip['to']=(z,max(half,min(1-half,x+dx)),max(half,min(1-half,y+dy)))
-            from camera_clips import CUSTOM
-            if clip.get('kind') not in (CUSTOM,'Zoom in'): clip['kind']=CUSTOM
+            if clip.get('kind') not in ('Zoom in','Zoom out','Fixed camera'): clip['kind']='Zoom in'   # exp.157
         else:
             self._cam_drag=None; self.project_changes.mark_changed()
         self.fill_camera_panel(); self.sync_camera_timeline(); self.canvas.update()
@@ -3409,8 +3425,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             z,cx,cy=clip.get('to') or (1.,.5,.5)
             z=max(1.,min(5.,z*(1.08**steps))); half=.5/z
             clip['to']=(round(z,3),max(half,min(1-half,cx)),max(half,min(1-half,cy)))
-            from camera_clips import CUSTOM
-            if clip.get('kind') not in (CUSTOM,'Zoom in'): clip['kind']=CUSTOM
+            if clip.get('kind') not in ('Zoom in','Zoom out','Fixed camera'): clip['kind']='Zoom in'   # exp.157
             self.project_changes.mark_changed()
             self.fill_camera_panel(); self.sync_camera_timeline(); self.canvas.update()
             return True
