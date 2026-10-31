@@ -539,3 +539,23 @@ class PushAfterTests(unittest.TestCase):
         self.assertEqual([s['start'] for s in w.scenes], [0., 6.5, None])
         self.assertEqual([c['start'] for c in w.cameras], [2., 7.5])
         self.assertEqual([o['start'] for o in w.overlays], [1., 8.5])
+
+    def test_dragging_a_camera_move_moves_the_elements_after_it(self):
+        # exp.167 (the user): drag a move between pages: everything after it goes with it.
+        from types import SimpleNamespace
+        from app import Window
+        from timeline_model import layout
+        scenes = [dict(start=None), dict(start=None), dict(start=10.)]
+        status = SimpleNamespace(setText=lambda t: None)
+        calls = []
+        w = SimpleNamespace(scenes=scenes, cameras=[dict(start=12.)], overlays=[], status=status,
+                            project_changes=SimpleNamespace(mark_changed=lambda: None))
+        w.timeline_layout = lambda: layout([3., 3., 3.], [1., 1., 0.], [s['start'] for s in scenes], [0, 0, 0])
+        w.record_structure = lambda what: calls.append(what)
+        w.push_after = lambda *a, **k: Window.push_after(w, *a, **k)
+        w.fill_scenes = w.sync_camera_timeline = w.refresh = lambda: None
+        Window.shift_camera_move(w, 0, 2.)          # the move to element 2 (starts at 4 s)
+        self.assertEqual(scenes[1]['start'], 6.)
+        self.assertEqual(scenes[2]['start'], 12.)
+        self.assertEqual(w.cameras[0]['start'], 14.)
+        self.assertEqual(calls, ['move camera'])

@@ -5100,6 +5100,23 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.hand_rest_changed()
         self.sync_camera_timeline()
 
+    def shift_camera_move(self,k,shift):
+        """exp.167 (the user): a move between pages dragged along the timeline: the element it
+        goes to and everything after it (elements, cameras, texts) move by the same time."""
+        lay=self.timeline_layout()
+        target=next((it for it in lay.items if it.k==k+1),None)
+        if target is None or abs(shift)<1e-3: return
+        shift=max(-target.start,float(shift))
+        if abs(shift)<1e-3: return
+        self.record_structure('move camera')
+        old=target.start
+        if self.scenes[k+1].get('start') is None:
+            self.scenes[k+1]['start']=round(old+shift,3)
+        self.push_after(old,shift,skip=k+1 if self.scenes[k+1].get('start') is not None and
+                        abs(float(self.scenes[k+1]['start'])-(old+shift))<1e-3 else None)
+        self.project_changes.mark_changed()
+        self.fill_scenes(); self.sync_camera_timeline(); self.refresh()
+
     def push_after(self,when,delta,skip=None):
         """exp.166 (the user): an element that takes longer (its hand going to the drawing or
         back) moves everything after it later by the same time: the elements placed after it,
