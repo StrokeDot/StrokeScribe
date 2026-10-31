@@ -677,7 +677,7 @@ class _FixedCamera:
         return getattr(self.camera, name)
 
 
-def rest_rect(width, height, options, seconds=None):
+def rest_rect(width, height, options, seconds=None, place=None):
     """Where the waiting hand is on a frame of this size (exp.147: at `seconds` of the
     video it may be sliding out of the picture, Hand row)."""
     from PySide6.QtCore import QRectF
@@ -688,7 +688,12 @@ def rest_rect(width, height, options, seconds=None):
     hh = hw * hand.height() / max(1, hand.width())
     ax, ay = options.get('anchor', (.1, .1))
     fx, fy = REST_CORNERS.get(options.get('hand_rest_corner') or 'Bottom right', REST_CORNERS['Bottom right'])
-    rect = QRectF(fx * width - float(ax) * hw, fy * height - float(ay) * hh, hw, hh)
+    # exp.161 (the user): the corner belongs to the page, not to the screen: when the camera
+    # zooms, the waiting hand stays at its spot of the page (it can leave the picture), at its
+    # own size. place = (x, y, w, h) of the page on the screen (None: the whole screen).
+    place = place if place is not None else options.get('_rest_place')
+    px, py, pw, ph = place if place is not None else (0., 0., float(width), float(height))
+    rect = QRectF(px + fx * pw - float(ax) * hw, py + fy * ph - float(ay) * hh, hw, hh)
     e, side = 0., 'Bottom'
     if options.get('hand_away') and seconds is not None:
         import camera_clips
@@ -736,11 +741,12 @@ def rest_out(items, seconds):
     return best
 
 
-def paint_rest_hand(frame, options, seconds=None):
-    """The hand waiting in its corner, painted on (a copy of) the frame."""
+def paint_rest_hand(frame, options, seconds=None, place=None):
+    """The hand waiting in its corner, painted on (a copy of) the frame (place: the page on
+    the screen, exp.161)."""
     if frame is None or options.get('layers', 'all') == 'art':
         return frame
-    rect = rest_rect(frame.width(), frame.height(), options, seconds)
+    rect = rest_rect(frame.width(), frame.height(), options, seconds, place)
     shown = 1. - _hidden(options, seconds)
     if rect is None or shown <= 0:
         return frame

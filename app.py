@@ -5127,7 +5127,30 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if window is None: return None
             if self.position*window[1]<window[0]-1e-6: return None
         layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
-        return paint_rest_hand(layer,dict(options,layers='all',_rest_out=out,**self.hand_video(None)),seconds)
+        place=self.page_place_at(width,height,seconds) if self.all_scenes() else None     # exp.161: on the page
+        return paint_rest_hand(layer,dict(options,layers='all',_rest_out=out,**self.hand_video(None)),seconds,place)
+
+    def page_place_at(self,width,height,seconds):
+        """exp.161: where the page is on the screen at `seconds` (camera zooms included)."""
+        try:
+            lay=self.timeline_layout(width,height)
+            if lay.sequential and not self.zoomed_out(): return None
+            import timeline_render
+            from timeline_model import state_at
+            world=self.preview_world(width,height)
+            elements=[]
+            for k in range(len(self.scenes)):
+                drawing,options,secs,camera=self.preview_scene(k,width,height)
+                elements.append(dict(drawing=drawing,options=options,camera=self.video_camera(k,camera,secs),
+                                     transition=self.scenes[k]['transition'],
+                                     move_seconds=self.scenes[k]['transition_seconds']))
+            zoom=self.zoomed_out()
+            return timeline_render.page_place(world,lay,state_at(lay,max(0.,float(seconds))),elements,width,height,
+                                              self.preview_zoom_out if zoom else 1.,
+                                              getattr(self,'preview_pan',(0.,0.)) if zoom else (0.,0.))
+        except Exception as exc:
+            import applog; applog.error('Where the page is (the waiting hand)',exc)
+            return None
 
     def segment_fingerprint(self,where,k):
         """The fingerprint of one segment of the current view (see preview_cache)."""

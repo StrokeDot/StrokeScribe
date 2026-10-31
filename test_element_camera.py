@@ -270,6 +270,16 @@ class HandRestTests(unittest.TestCase):
         state = State('page', current=1, active=[(0, 1.), (1, .5)], top=1)
         self.assertFalse(_drawing_now(state, [nun, book], 0))                   # done: back in her place
 
+    def test_the_waiting_hand_keeps_its_spot_on_the_page(self):
+        # exp.161 (the user): the corner is a spot of the page: when the camera zooms in, the
+        # waiting hand goes with the page (it can leave the picture), at its own size.
+        from frame_render import rest_rect
+        o = self.options()
+        still = rest_rect(320, 180, o)
+        zoomed = rest_rect(320, 180, o, place=(-160., -90., 640., 360.))     # 2 x, on the middle
+        self.assertAlmostEqual(zoomed.width(), still.width())
+        self.assertGreater(zoomed.x(), still.x()); self.assertGreater(zoomed.y(), still.y())
+
     def test_the_pencil_stays_on_its_line_during_a_zoom(self):
         # exp.160 (the user): the hand draws where the lines come out, wherever the camera
         # shows them (exp.155 put it where they would be with no camera: out of step).
