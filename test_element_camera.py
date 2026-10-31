@@ -270,21 +270,18 @@ class HandRestTests(unittest.TestCase):
         state = State('page', current=1, active=[(0, 1.), (1, .5)], top=1)
         self.assertFalse(_drawing_now(state, [nun, book], 0))                   # done: back in her place
 
-    def test_the_hand_over_the_cameras_is_not_moved_by_a_zoom(self):
-        # exp.155 (the user, like Filmora): a zoom does not move the hand over the cameras;
-        # under them (Hand row dragged under) it stays on the zoomed drawing.
+    def test_the_pencil_stays_on_its_line_during_a_zoom(self):
+        # exp.160 (the user): the hand draws where the lines come out, wherever the camera
+        # shows them (exp.155 put it where they would be with no camera: out of step).
         from PySide6.QtGui import QImage, QColor
         from frame_render import paint_hand_spec
         hand = QImage(20, 20, QImage.Format.Format_ARGB32_Premultiplied); hand.fill(QColor('red'))
         frame = QImage(200, 100, QImage.Format.Format_ARGB32_Premultiplied); frame.fill(0)
         spec = dict(frame=(200, 100), tip=(150., 80.), tip_plain=(100., 50.), image=hand, anchor=(0., 0.),
                     ratio=1., phase=None, p=0., seconds=None)
-        o = dict(hand=hand, hand_scale=.05, artwork_scale=1.)
-        over = paint_hand_spec(frame, spec, o)
-        self.assertEqual(over.pixelColor(102, 52).alpha(), 255)          # where it is with no camera
-        self.assertEqual(over.pixelColor(152, 82).alpha(), 0)
-        under = paint_hand_spec(frame, spec, dict(o, hand_under=True))
-        self.assertEqual(under.pixelColor(152, 82).alpha(), 255)         # on the zoomed drawing
+        out = paint_hand_spec(frame, spec, dict(hand=hand, hand_scale=.05, artwork_scale=1.))
+        self.assertEqual(out.pixelColor(152, 82).alpha(), 255)          # on the zoomed line
+        self.assertEqual(out.pixelColor(102, 52).alpha(), 0)
 
     def test_the_hand_can_be_hidden_while_it_draws(self):
         # exp.148: a 'Hand hidden' clip on the Hand row: no hand at all, even while drawing.
