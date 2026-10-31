@@ -11,9 +11,25 @@ from PySide6.QtGui import QImage, QPainter, QPainterPath, QPen, QColor
 from engine import render
 
 
-def load_color_image(filename):
-    """Load a PNG without changing its colors; crop only transparent margins."""
+def load_color_image(filename, clean=False):
+    """Load a PNG without changing its colors; crop only transparent margins.
+
+    clean: make the transparency complete first (png_cleanup): a painted
+    checkerboard or plain sheet behind the artwork and faint leftovers become
+    transparent."""
     filename = Path(filename)
+    if clean:
+        from png_cleanup import clean_background
+        with Image.open(filename) as im:
+            if im.format != 'PNG':
+                raise ValueError('Choose a PNG image (preferably with transparency).')
+            cleaned = clean_background(im.convert('RGBA'))
+        bbox = cleaned.getchannel('A').point(lambda value: 255 if value >= 8 else 0).getbbox()
+        if bbox is None:
+            raise ValueError('The PNG contains no visible artwork.')
+        cleaned = cleaned.crop(bbox)
+        data = cleaned.tobytes('raw', 'RGBA')
+        return QImage(data, cleaned.width, cleaned.height, QImage.Format.Format_RGBA8888).copy()
     with Image.open(filename) as im:
         if im.format != 'PNG':
             raise ValueError('Choose a PNG image (preferably with transparency).')
@@ -26,6 +42,54 @@ def load_color_image(filename):
         raise ValueError('Could not load the PNG file.')
     left, top, right, bottom = bbox
     return qimage.copy(left, top, right - left, bottom - top)
+
+
+def clean_qimage(image):
+    """A colored picture (QImage) with complete transparency (png_cleanup), cropped."""
+    if image is None or image.isNull():
+        return image
+    from png_cleanup import clean_background
+    rgba = image.convertToFormat(QImage.Format.Format_RGBA8888)
+    pil = Image.frombuffer('RGBA', (rgba.width(), rgba.height()), bytes(rgba.constBits()),
+                           'raw', 'RGBA', rgba.bytesPerLine(), 1)
+    cleaned = clean_background(pil)
+    bbox = cleaned.getchannel('A').point(lambda value: 255 if value >= 8 else 0).getbbox()
+    if bbox is None:
+        return image                    # nothing would be left: keep the picture as it is
+    cleaned = cleaned.crop(bbox)
+    return QImage(cleaned.tobytes('raw', 'RGBA'), cleaned.width, cleaned.height,
+                  QImage.Format.Format_RGBA8888).copy()
+
+
+_PROJECT_COLORS = {}
+
+
+def project_color(data):
+    """(original, prepared) colour pictures of a saved SVG element, or (None, None).
+
+    The same preparation everywhere (editing one element, the whole video, export):
+    with "Clean the PNG's background" on (the default) the picture is cleaned and
+    cropped to its content, because the colours are fitted to the drawing's lines.
+    Using the uncropped picture squeezed its transparent margins in as well, so in
+    the whole video the colours came out smaller and shifted against the lines."""
+    b64 = data.get('color_png')
+    if not b64:
+        return None, None
+    clean = bool((data.get('settings') or {}).get('clean_color', True))
+    key = (hash(b64), len(b64), clean)
+    if key not in _PROJECT_COLORS:
+        from projects import qimage_from_b64
+        original = qimage_from_b64(b64)
+        prepared = original
+        if clean and original is not None:
+            try:
+                prepared = clean_qimage(original)
+            except Exception:
+                prepared = original
+        if len(_PROJECT_COLORS) > 12:
+            _PROJECT_COLORS.pop(next(iter(_PROJECT_COLORS)))
+        _PROJECT_COLORS[key] = (original, prepared)
+    return _PROJECT_COLORS[key]
 
 
 def timeline_duration(draw_duration, final_image=None, fade_duration=.4, hold_duration=.6):
@@ -197,18 +261,28 @@ def draw_hand(painter, tip, hand, width, hand_scale, anchor):
         return
     hand_w = width * hand_scale
     hand_h = hand_w * hand.height() / hand.width()
-    painter.drawImage(QRectF(tip[0]-anchor[0]*hand_w,tip[1]-anchor[1]*hand_h,
-                             hand_w,hand_h),hand)
+    from hand_layer import paint
+    paint(painter,QRectF(tip[0]-anchor[0]*hand_w,tip[1]-anchor[1]*hand_h,
+                         hand_w,hand_h),hand)
 
 
 def render_color_timeline(drawing, fraction, width=1920, height=1080,
                           duration=4, fade_duration=.4, hold_duration=.6,
                           final_image=None, thickness=1., hand=None,
                           hand_scale=.18, anchor=(.1,.1), reveal_mode='fade',
-                          brush_width=.14, painting_hand=None, stroke_spacing=.55):
-    """Show SVG drawing, then fade, serpentine, or endpoint-continuous painting."""
+                          brush_width=.14, painting_hand=None, stroke_spacing=.55,
+                          paper_cleanup=False,paper_tolerance=22,paper_softness=8):
+    """Show SVG drawing, then fade, brush, adaptive or zigzag painting."""
     if final_image is None or final_image.isNull():
         return render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)
+    if reveal_mode in ('adaptive','zigzag','rows','columns','short_zigzag','painter'):
+        # Zigzag sweep is a different brush ROUTE; the timed plan format,
+        # renderer, hand and guide retirement are shared with Adaptive.
+        drawing.paint_method=reveal_mode
+        reveal_mode='adaptive'
+    # Keep raw source for brush-plan geometry; clean the visible colour pixels only.
+    display_image=(__import__('paper_cleanup').clean_paper(final_image,paper_tolerance,paper_softness)
+                   if paper_cleanup and getattr(drawing,'source_kind',None)=='image' else None)
     image_animation=getattr(drawing,'image_animation',None)
     if getattr(drawing,'source_kind',None)=='image' and image_animation in ('draw_paint','paint_only'):
         # This is a choice of visible animation, not an AI recognition mode.
@@ -222,7 +296,8 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
             paint_progress=min(1.,elapsed/paint_length)
             return paint_frame(drawing,final_image,width,height,paint_progress,
                                thickness,brush_width,stroke_spacing,
-                               painting_hand,hand_scale,anchor,False)
+                               painting_hand,hand_scale,anchor,False,
+                               display_image=display_image)
         total=timeline_duration(duration,final_image,fade_duration,hold_duration)
         elapsed=max(0.,min(1.,float(fraction)))*total
         stroke_progress,paint_progress=timeline_state(elapsed,duration,fade_duration)
@@ -231,7 +306,8 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
                           hand,hand_scale,anchor)
         return paint_frame(drawing,final_image,width,height,paint_progress,
                            thickness,brush_width,stroke_spacing,
-                           painting_hand,hand_scale,anchor,True)
+                           painting_hand,hand_scale,anchor,True,
+                           display_image=display_image)
     total = timeline_duration(duration, final_image, fade_duration, hold_duration)
     elapsed = max(0., min(1., float(fraction))) * total
     stroke_progress, reveal_progress = timeline_state(elapsed,duration,fade_duration)
@@ -259,6 +335,7 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
             painter.end()
         return frame
 
+    from source_render import draw_source
     rect = artwork_rect(drawing,final_image,width,height)
     canvas = QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
     canvas.fill(Qt.GlobalColor.transparent)
@@ -267,7 +344,7 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
 
     if reveal_mode in ('brush','continue','guided','clean'):
         if reveal_progress >= 1:
-            painter.drawImage(rect, final_image)
+            draw_source(painter, rect, final_image)
             painter.end()
             return canvas
         # Preserve completed strokes until the paint sweep reaches them.
@@ -287,23 +364,19 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         painted.fill(Qt.GlobalColor.transparent)
         pp = QPainter(painted)
         pp.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        pp.drawImage(rect,final_image)
+        draw_source(pp,rect,final_image)
         pp.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
         pp.drawImage(0,0,mask)
         pp.end()
-        outline=render(drawing,1,width,height,thickness)
-        if reveal_mode == 'clean':
-            # Clean contour no longer clips the SVG to the source PNG shape;
-            # only genuinely visible painted pixels may replace SVG ink.
-            outline=replace_outlines_with_painted_pixels(outline,painted)
-        else:
-            # Preserve the existing guided/brush path reveal behavior until
-            # stray marks can be matched against the user's original PNG.
-            erase=QPainter(outline)
-            erase.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
-            erase.drawImage(0,0,mask)
-            erase.end()
-            over=QPainter(outline); over.drawImage(0,0,painted); over.end()
+        # The colored image and temporary SVG ink are distinct layers.
+        # Retire ink according to the same brush mask that reveals the PNG,
+        # even when imperfect SVG paths extend outside the PNG silhouette.
+        from svg_guide_cleanup import remove_svg_guides
+        outline=remove_svg_guides(render(drawing,1,width,height,thickness),
+                                  mask,final_image,rect)
+        over=QPainter(outline)
+        over.drawImage(0,0,painted)
+        over.end()
         painter.drawImage(0,0,outline)
         draw_hand(painter,tip,painting_hand,width,hand_scale,anchor)
     else:
@@ -311,6 +384,6 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         painter.setOpacity(1.-reveal_progress)
         painter.drawImage(0,0,render(drawing,1,width,height,thickness))
         painter.setOpacity(reveal_progress)
-        painter.drawImage(rect,final_image)
+        draw_source(painter,rect,final_image)
     painter.end()
     return canvas

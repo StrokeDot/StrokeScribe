@@ -4,7 +4,6 @@ from pathlib import Path
 from PIL import Image, ImageOps, UnidentifiedImageError
 from adaptive_hand import qimage, pil_image
 from image_regions import segment_regions
-from image_trace import trace_image
 
 SUPPORTED_FORMATS={'PNG','JPEG','WEBP','BMP'}
 @dataclass
@@ -16,7 +15,7 @@ class Reconstruction:
     detail: str
     filename: str
 
-def load_raster(filename):
+def load_raster(filename, with_box=False):
     try:
         with Image.open(filename) as source:
             if source.format not in SUPPORTED_FORMATS:
@@ -32,25 +31,138 @@ def load_raster(filename):
     if bbox is None:
         raise ValueError('The image is completely transparent.')
     # Opaque backgrounds are intentionally retained; this is not background removal.
+    if with_box:
+        return image.crop(bbox), (image.size, bbox)
     return image.crop(bbox)
 
-def reconstruct(filename,mode='auto_trace',detail='medium',ai_model='qwen3-vl:4b',ai_analysis=None,ai_profile='balanced'):
-    if mode not in ('auto_trace','stroke_reconstruction','ai_redraw'):
-        raise ValueError('Choose Auto Trace, Stroke Reconstruction, or AI Redraw.')
-    if detail not in ('low','medium','high'):
-        raise ValueError('Choose Low, Medium or High detail.')
-    original=load_raster(filename)
-    if mode=='ai_redraw':
-        from semantic_redraw import ai_guided_drawing, local_vision_analysis
-        analysis=ai_analysis if ai_analysis is not None else local_vision_analysis(original,ai_model,profile=ai_profile)
-        drawing,image=ai_guided_drawing(original,analysis,detail,profile=ai_profile)
-        return Reconstruction(drawing,image,drawing.image_regions,mode,detail,Path(filename).name)
-    regions=segment_regions(original,detail)
-    drawing=trace_image(original,regions,detail,mode)
-    # Optional metadata: existing SVG Drawings have no region map and use
-    # the unchanged contour/alpha planner.
+def line_art_drawing(original,detail='medium',style='clean'):
+    """Ordered pen strokes from the line art method (lineart.py)."""
+    from engine import Drawing, Stroke
+    from lineart import line_art_strokes
+    strokes,outlines=line_art_strokes(original,detail,style)
+    width=max(original.size)*.0025
+    named=[Stroke(('outline' if i<outlines else 'line')+f' {i+1}',points,'#303946',width)
+           for i,points in enumerate(strokes)]
+    if not named:
+        w,h=original.size
+        named=[Stroke('image perimeter',[(0,0),(w,0),(w,h),(0,h),(0,0)],'#303946',width)]
+    return Drawing(named,(0.,0.,float(original.width),float(original.height)),[
+        'Line art ('+('clean drawing' if style=='clean' else 'detailed')+'): pen strokes reconstructed from the image.',
+        'Strokes approximate an artist\'s drawing; original colors are painted afterwards.'])
+
+
+def guide_drawing(guide,detail='medium'):
+    """Pen strokes traced from an aligned line drawing (see ai_lineart)."""
+    from engine import Drawing, Stroke
+    from lineart import line_drawing_strokes
+    strokes,outlines=line_drawing_strokes(guide,detail)
+    width=max(guide.size)*.0025
+    named=[Stroke(('outline' if i<outlines else 'line')+f' {i+1}',points,'#303946',width)
+           for i,points in enumerate(strokes)]
+    if not named:
+        return line_art_drawing(guide,detail,'clean')
+    return Drawing(named,(0.,0.,float(guide.width),float(guide.height)),[
+        'Line art from an AI line drawing: each drawn line becomes one pen stroke.'])
+
+
+FAINT_ALPHA=64  # pixels under ~25% visible: background-removal leftovers
+
+
+def clean_faint_pixels(image, with_box=False):
+    """Make the transparency complete: painted checkerboards or plain sheets behind
+    the artwork and nearly invisible leftover pixels become fully transparent."""
+    from png_cleanup import clean_background
+    cleaned=clean_background(image)
+    alpha=cleaned.getchannel('A')
+    bbox=alpha.getbbox() or (0,0,image.width,image.height)
+    result=cleaned.crop(bbox)
+    return (result,bbox) if with_box else result
+
+
+def artist_drawing(original,detail='medium'):
+    """Layered 'Artist' animation: light guides, main lines, dark accents."""
+    from engine import Drawing, Stroke
+    from lineart import artist_strokes, ARTIST_COLORS, ARTIST_WIDTH
+    base=max(original.size)*.0025
+    counters={}
+    strokes=[]
+    for layer,points,pace in artist_strokes(original,detail):
+        counters[layer]=counters.get(layer,0)+1
+        strokes.append(Stroke(f'{layer} {counters[layer]}',points,ARTIST_COLORS[layer],
+                              base*ARTIST_WIDTH[layer],pace))
+    if not strokes:
+        return line_art_drawing(original,detail,'clean')
+    return Drawing(strokes,(0.,0.,float(original.width),float(original.height)),[
+        'Artist style: light guide shapes, then the main lines area by area '
+        '(densest detail last and slowest), then dark accents.'])
+
+
+def reconstruct(filename,mode='line_art',detail='medium',clean_faint=False,style='clean',
+                animation='standard',line_guide=None):
+    """Pen strokes + colours from an image.
+
+    line_guide: optional clean line drawing of the same image (for example
+    made by an AI model). It is lined up with the image and traced instead of
+    the image itself; the image still supplies the colours.
+    """
+    if mode!='line_art':
+        raise ValueError('Line art is the image method.')
+    if detail not in ('low','medium','high','max'):
+        raise ValueError('Choose Low, Medium, High or Max detail.')
+    original,(full_size,box)=load_raster(filename,with_box=True)
+    box2=None
+    if clean_faint:
+        original,box2=clean_faint_pixels(original,with_box=True)
+    regions=segment_regions(original,'high' if detail=='max' else detail)
+    if animation not in ('standard','artist'):
+        raise ValueError('Choose the Standard or Artist animation.')
+    source=original
+    guide_score=None
+    guide_fit=None
+    if line_guide is not None:
+        from ai_lineart import guide_image
+        guide=line_guide if isinstance(line_guide,Image.Image) else Image.open(line_guide)
+        guide=guide.convert('RGBA')
+        flat=Image.new('RGBA',guide.size,(255,255,255,255));flat.alpha_composite(guide)
+        # AI tools can return a different canvas aspect ratio. Try bounded,
+        # aspect-preserving center crop and padding; never stretch the guide.
+        ratio=flat.width/flat.height
+        target_ratio=full_size[0]/full_size[1]
+        modes=('fit',) if abs(ratio-target_ratio)<.001 else ('cover','contain')
+        candidates=[]
+        for fit_mode in modes:
+            if fit_mode=='cover':
+                framed=ImageOps.fit(flat,full_size,Image.Resampling.LANCZOS)
+            elif fit_mode=='contain':
+                small=ImageOps.contain(flat,full_size,Image.Resampling.LANCZOS)
+                framed=Image.new('RGBA',full_size,'white')
+                framed.alpha_composite(small,((full_size[0]-small.width)//2,(full_size[1]-small.height)//2))
+            else:
+                framed=flat.resize(full_size,Image.Resampling.LANCZOS)
+            framed=framed.crop(box)
+            if box2:framed=framed.crop(box2)
+            aligned,score=guide_image(original,framed)
+            candidates.append((score,fit_mode,aligned))
+        guide_score,guide_fit,source=max(candidates,key=lambda x:x[0])
+    if guide_score is not None:
+        drawing=guide_drawing(source,detail)
+    elif animation=='artist':
+        drawing=artist_drawing(source,detail)
+        style='clean'
+    else:
+        drawing=line_art_drawing(source,detail,style)
+    if guide_score is not None:
+        drawing.warnings=list(drawing.warnings)+[
+            'Strokes traced from the AI line drawing'+(
+                f' (lined up with the image, match {guide_score:.0%}).' if guide_score>0 else
+                ' (could not be lined up automatically; check that the lines match the colours).')]
+        drawing.line_guide_score=guide_score
+    drawing.source_frame=dict(source_size=list(full_size),crop=list(box),clean_crop=list(box2) if box2 else None,
+                              guide_fit=guide_fit,guide_score=guide_score)
+    drawing.line_style=style
+    drawing.animation_style=animation
     drawing.image_regions=regions
-    drawing.image_region_priority=mode=='stroke_reconstruction'
+    drawing.image_region_priority=True
     drawing.source_kind='image'
-    drawing.source_mode=mode
-    return Reconstruction(drawing,qimage(original),regions,mode,detail,Path(filename).name)
+    drawing.source_mode='line_art'
+    return Reconstruction(drawing,qimage(original),regions,'line_art',detail,Path(filename).name)

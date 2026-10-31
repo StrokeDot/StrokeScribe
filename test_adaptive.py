@@ -30,6 +30,61 @@ def fixture(size=80):
     return drawing,qimage(image)
 
 class AdaptiveTests(unittest.TestCase):
+    def test_final_frame_uses_high_quality_premultiplied_resize(self):
+        # A large detailed PNG shrunk into a small frame must be Lanczos
+        # filtered (as in a photo editor), not bilinear-sampled by Qt.
+        from source_render import pixel_rect
+        src=Image.new('RGBA',(400,400),(0,0,0,0))
+        p=ImageDraw.Draw(src)
+        for x in range(40,360,4):
+            p.line((x,40,x,360),fill=(30,20,10,255),width=2)
+        p.ellipse((60,60,340,340),outline=(240,230,200,255),width=3)
+        image=qimage(src)
+        d=Drawing([Stroke('frame',[(0,0),(400,0),(400,400),(0,400),(0,0)],width=1)],
+                  (0,0,400,400),[])
+        kwargs=dict(width=320,height=240,duration=1,fade_duration=4,
+                    hold_duration=0,final_image=image,reveal_mode='adaptive')
+        end=pil_image(render_color_timeline(d,1,**kwargs))
+        x,y,w,h=pixel_rect(artwork_rect(d,image,320,240))
+        # Lanczos can overshoot at hard edges; the app stores the result as
+        # straight RGBA, which clips those pixels, so compare after the same step.
+        want=(src.convert('RGBa').resize((w,h),Image.Resampling.LANCZOS)
+              .convert('RGBA').convert('RGBa'))
+        got=end.crop((x,y,x+w,y+h)).convert('RGBa')
+        diff=max(abs(a-b) for a,b in zip(want.tobytes(),got.tobytes()))
+        self.assertLessEqual(diff,3,'Final frame must equal the Lanczos-resized PNG')
+
+    def test_short_vertical_flicks_follow_original_adaptive_regions(self):
+        # A flick is a short REAL vertical brush stroke on the same per-region
+        # path; it must not use the one-region top-to-bottom band planner.
+        d,image=fixture(112)
+        d.paint_method='adaptive'
+        original=plan_for(d,image,.12,.55)
+        d.paint_method='short_zigzag'
+        short=plan_for(d,image,.12,.55)
+        self.assertEqual(short.labels,original.labels)
+        self.assertEqual(short.region_count,original.region_count)
+        self.assertGreater(short.region_count,1)
+        self.assertGreater(len(short.segments),len(original.segments))
+        flicks=[s for s in short.segments if s.painting
+                and abs(s.b[1]-s.a[1])>1.5
+                and abs(s.b[0]-s.a[0])<.1
+                and (s.end-s.start)<max(.05,abs(s.b[1]-s.a[1])*.2)]
+        self.assertGreater(len(flicks),2,'must produce quick vertical brush moves')
+        self.assertTrue(all(not rid or math.isfinite(short.arrival[i])
+                            for i,rid in enumerate(short.labels)))
+        self.assertTrue(any(not s.painting for s in short.segments))
+        self.assertEqual(short.mask(1).tobytes(),original.mask(1).tobytes())
+
+    def test_short_vertical_paint_is_selected_by_the_renderer(self):
+        d,image=fixture(80)
+        d.paint_method='short_zigzag'
+        short=plan_for(d,image)
+        d.paint_method='adaptive'
+        adaptive=plan_for(d,image)
+        self.assertNotEqual(len(short.segments),len(adaptive.segments))
+        self.assertEqual(short.region_count,adaptive.region_count)
+
     def test_regions_infill_and_coverage(self):
         for size in (24,112):
             d,image=fixture(size)
@@ -51,23 +106,88 @@ class AdaptiveTests(unittest.TestCase):
             radii={round(s.radius,2) for s in plan.segments if s.painting}
             if size==112: self.assertGreater(len(radii),1)
 
+    def test_faster_export_keeps_every_frame_pixel_identical(self):
+        # Speed-ups (fast PNG compression, reusing repeated frames) must not
+        # change a single exported pixel.
+        from color_reveal import timeline_duration
+        d,image=fixture(60)
+        opts=dict(duration=.4,fps=12,width=160,height=120,final_image=image,
+                  fade_duration=.6,hold_duration=.5,reveal_mode='adaptive')
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp)/'out'
+            count=export_frames(d,folder,**opts)
+            files=sorted(folder.glob('frame_*.png'))
+            self.assertEqual(len(files),count)
+            for i,path in enumerate(files):
+                expected=render_color_timeline(d,i/(count-1),160,120,.4,.6,.5,
+                    image,1.,None,.18,(.1,.1),'adaptive',.14,None,.55)
+                self.assertEqual(pil_image(QImage(str(path))).tobytes(),
+                                 pil_image(expected).tobytes(),f'frame {i}')
+            # The settled ending and hold repeat the final frame exactly.
+            last=files[-1].read_bytes()
+            self.assertGreater(sum(p.read_bytes()==last for p in files),3)
+
+    def test_hand_skips_nearly_invisible_leftover_pixels(self):
+        # Reported: the hand painted where the PNG looked empty. Background
+        # removal had left large areas only ~10% visible.
+        size=120
+        src=Image.new('RGBA',(size,size),(0,0,0,0))
+        p=ImageDraw.Draw(src)
+        p.rectangle((10,10,60,110),fill=(90,90,90,255))      # the real object
+        p.rectangle((75,10,115,110),fill=(200,200,200,25))   # faint leftovers
+        image=qimage(src)
+        d=Drawing([Stroke('edge',[(10,10),(60,10)],width=1)],(0,0,size,size),[])
+        plan=build_plan(d,image)
+        gw,gh=plan.size
+        faint_cells=[c for c in range(gw*gh) if int(80*gw/size)<=(c%gw)<=int(110*gw/size)
+                     and int(15*gh/size)<=(c//gw)<=int(105*gh/size)]
+        self.assertTrue(all(not plan.labels[c] for c in faint_cells), 'no brush there')
+        for seg in plan.segments:
+            if seg.painting:
+                self.assertLess(min(seg.a[0],seg.b[0]),int(75*gw/size),'hand stays on the object')
+        # The faint area still appears during painting, not only at the end.
+        self.assertTrue(all(math.isfinite(plan.arrival[c]) for c in faint_cells))
+        self.assertTrue(all(plan.arrival[c]<plan.total for c in faint_cells))
+
+    def test_hand_never_blinks_out_during_painting(self):
+        # Reported: the hand vanished for single frames at pen-up transfers
+        # and at the drawing-to-painting handoff. Sample every frame at 30fps.
+        d,image=fixture(80)
+        plan=build_plan(d,image)
+        self.assertTrue(any(not s.painting for s in plan.segments))
+        frames=300
+        missing=[i for i in range(frames)
+                 if plan.state(.98*i/frames)[1] is None]
+        self.assertEqual(missing,[],'Hand missing on painting frames')
+        hand=QImage(12,12,QImage.Format.Format_ARGB32); hand.fill(0xffff00ff)
+        kwargs=dict(width=320,height=240,duration=1.,fade_duration=3.,
+                    hold_duration=0,final_image=image,reveal_mode='adaptive',
+                    hand=hand,painting_hand=hand)
+        def has_hand(fraction):
+            px=pil_image(render_color_timeline(d,fraction,**kwargs)).convert('RGB')
+            return (255,0,255) in {c for _,c in px.getcolors(320*240)}
+        # Exact handoff frame (elapsed == drawing duration) and its neighbours.
+        for fraction in (.249,.25,.251):
+            self.assertTrue(has_hand(fraction),f'Hand missing at {fraction}')
+
     def test_brush_and_hand_share_clock_no_travel_paint(self):
         d,image=fixture(40); plan=build_plan(d,image)
         for seg in plan.segments[::max(1,len(plan.segments)//25)]:
             progress=.98*((seg.start+seg.end)/2)/plan.total
             active,tip=plan.state(progress)
             self.assertIs(active,seg)
-            if seg.painting:
-                self.assertAlmostEqual(tip[0],(seg.a[0]+seg.b[0])/2)
-                self.assertAlmostEqual(tip[1],(seg.a[1]+seg.b[1])/2)
-            else:
-                self.assertIsNone(tip)
+            # The hand follows the route on painting AND pen-up travel.
+            self.assertAlmostEqual(tip[0],(seg.a[0]+seg.b[0])/2)
+            self.assertAlmostEqual(tip[1],(seg.a[1]+seg.b[1])/2)
+            if not seg.painting:
+                # Travel moves the hand but never paints.
                 a=.98*(seg.start+.00001)/plan.total
                 b=.98*(seg.end-.00001)/plan.total
                 self.assertEqual(plan.mask(a).tobytes(),plan.mask(b).tobytes())
-        # Every arrival time belongs to a brush segment whose disk touches it.
+        # Every painted cell's arrival belongs to a brush segment touching it.
+        # (Faint, nearly invisible cells borrow a neighbour's time instead.)
         for cell,t in enumerate(plan.arrival):
-            if not math.isfinite(t): continue
+            if not math.isfinite(t) or not plan.labels[cell]: continue
             x,y=cell%plan.size[0]+.5,cell//plan.size[0]+.5
             matching=[]
             for s in plan.segments:
@@ -99,8 +219,9 @@ class AdaptiveTests(unittest.TestCase):
         self.assertEqual(pil_image(end).tobytes(),pil_image(almost).tobytes())
         expected=QImage(320,240,QImage.Format.Format_ARGB32_Premultiplied)
         expected.fill(Qt.GlobalColor.transparent)
-        p=QPainter(expected); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        p.drawImage(artwork_rect(d,image,320,240),image); p.end()
+        from source_render import draw_source
+        p=QPainter(expected)
+        draw_source(p,artwork_rect(d,image,320,240),image); p.end()
         self.assertEqual(pil_image(end).tobytes(),pil_image(expected).tobytes())
         # During painting, source PNG transparency must never erase SVG
         # contours that the brush has not replaced. Only the final settled
@@ -124,29 +245,42 @@ class AdaptiveTests(unittest.TestCase):
         # Turning off the overlay does not change the plan or mask.
         self.assertIs(plan,plan_for(d,image))
 
-    def test_unpainted_svg_contours_remain_in_clean_and_adaptive_modes(self):
+    def test_svg_contours_retire_locally_during_clean_and_adaptive_painting(self):
         # Traced paths commonly extend beyond a color PNG's silhouette.
-        # Their unpainted contours must remain visible during colorization.
+        # Painted guides must disappear as color arrives, while unpainted
+        # guides remain. The old test demanded ALL exterior ink persist until
+        # the final frame, which is precisely the defect this change fixes.
         d,image=fixture(80)
         kwargs=dict(width=320,height=240,duration=1.,fade_duration=3.,
                     hold_duration=0,final_image=image)
         baseline=pil_image(render(d,1,320,240)).getchannel('A')
         settled=pil_image(render_color_timeline(
             d,1,reveal_mode='adaptive',**kwargs)).getchannel('A')
-        # Deliberately examine lines that lie OUTSIDE final colored pixels:
-        # old clean/adaptive code removed all these at painting onset.
         candidates=[(x,y) for y in range(240) for x in range(320)
                     if baseline.getpixel((x,y))>180
                     and settled.getpixel((x,y))==0]
         self.assertGreater(len(candidates),10)
         for mode in ('clean','adaptive'):
-            for progress in (.08,.4,.8):
+            erased=[]
+            # .97 is the last painting moment before the settled PNG frame.
+            for progress in (.01,.4,.9,.97):
                 fraction=(1+3*progress)/4
                 alpha=pil_image(render_color_timeline(
                     d,fraction,reveal_mode=mode,**kwargs)).getchannel('A')
-                self.assertTrue(all(alpha.getpixel(p)>175 for p in candidates),
-                                f'{mode} removed an unpainted SVG outline at {progress:.0%}')
-        # Finished frame must always be the untouched original artwork.
+                erased.append(sum(alpha.getpixel(p)<90 for p in candidates))
+            self.assertGreater(erased[0],0,
+                               f'{mode} did not retire any painted SVG ink early')
+            self.assertLess(erased[0],len(candidates),
+                            f'{mode} erased every guide before painting it')
+            self.assertEqual(erased,sorted(erased),
+                             f'{mode} repainted a guide after removing it')
+            self.assertGreater(erased[-2],erased[0],
+                               f'{mode} postponed guide removal until the end')
+            # Reported as dark specks along the silhouette: no guide ink may
+            # wait for the final settled frame to disappear.
+            self.assertEqual(erased[-1],len(candidates),
+                             f'{mode} left guide ink until the final frame')
+        # Finished frame always contains precisely the original PNG.
         end=pil_image(render_color_timeline(d,1,reveal_mode='clean',**kwargs))
         self.assertEqual(end.getchannel('A').tobytes(),settled.tobytes())
 
