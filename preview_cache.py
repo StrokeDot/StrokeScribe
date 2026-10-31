@@ -71,6 +71,12 @@ def default_folder():
     return Path(base) / 'StrokeScribe' / 'preview-cache'
 
 
+try:
+    from version import APP_VERSION as _VERSION
+except Exception:                      # pragma: no cover
+    _VERSION = ''
+
+
 def digest(value):
     """A short, stable name for a fingerprint (any repr-able value)."""
     return hashlib.sha1(repr(value).encode('utf-8', 'replace')).hexdigest()[:24]
@@ -106,7 +112,9 @@ class SegmentCache:
     # ---------------------------------------------------------------- keys
     @staticmethod
     def name(segment, index, width):
-        return f'{digest(segment)}-{int(width)}-{int(index):06d}'
+        # exp.150: the app version is part of the name: frames made by an older version
+        # (an older way of drawing, e.g. the hand inside the picture) are never shown again.
+        return f'{digest((_VERSION, segment))}-{int(width)}-{int(index):06d}'
 
     # -------------------------------------------------------------- memory
     def get(self, segment, index, width):
