@@ -1152,7 +1152,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         return menu
 
     def find_camera(self,cid):
-        if any('in_s' not in c or c.get('kind') in ('Custom',__import__('camera_clips').CUSTOM) for c in getattr(self,'cameras',[])):
+        if any('in_s' not in c or c.get('kind') in ('Custom',__import__('camera_clips').CUSTOM)
+               or (c.get('kind')=='Zoom out' and not float(c.get('out_s',0) or 0)) for c in getattr(self,'cameras',[])):
             import camera_clips                          # exp.124: in / hold / back
             for c in self.cameras: camera_clips.upgrade(c)
         return next((c for c in getattr(self,'cameras',[]) if c.get('id')==cid),None)
@@ -1323,12 +1324,6 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         form.addRow(help_label('Going','How long it takes to get there. Longer = slower.'),go)
         form.addRow(help_label('Stays','How long it stays there.'),stay)
         form.addRow(help_label('Back','How long it takes to come back. Longer = slower.'),back)
-        def single(*_):             # exp.142: a zoom out is one move (from close, opening out)
-            out=kinds[kind.currentIndex()]==camera_clips.ZOOM_OUT
-            for box in (stay,back):
-                box.setVisible(not out); form.labelForField(box).setVisible(not out)
-            form.labelForField(go).setText('Opening' if out else 'Going')
-        kind.currentIndexChanged.connect(single); single()
         # exp.157/158 (the user): where the zoom goes: how close and the X / Y of the middle of
         # the view, on sliders; the dashed frame on the preview moves while you slide.
         from PySide6.QtWidgets import QSlider, QHBoxLayout, QWidget
@@ -1342,15 +1337,16 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             bar.valueChanged.connect(lambda v: label.setText(text(v))); label.setText(text(bar.value()))
             hl.addWidget(bar,1); hl.addWidget(label)
             return box,bar
-        close_row,close=slider(100,500,float(z0)*100,lambda v: f'{v/100:.2f} x')
+        # exp.159: from far away (.2 x: the page small in the middle) to very close (10 x)
+        close_row,close=slider(20,1000,float(z0)*100,lambda v: f'{v/100:.2f} x')
         x_row,px=slider(0,100,float(x0)*100,lambda v: f'{v} %')
         y_row,py=slider(0,100,float(y0)*100,lambda v: f'{v} %')
-        form.addRow(help_label('How close','1 x = the whole page; 2 x = twice as close.'),close_row)
+        form.addRow(help_label('How close','1 x = the whole page; 2 x = twice as close; 0.5 x = twice as far '
+                               '(more than the page).'),close_row)
         form.addRow(help_label('Left / right','Where the camera looks, from the left (0 %) to the right (100 %).'),x_row)
         form.addRow(help_label('Up / down','Where the camera looks, from the top (0 %) to the bottom (100 %).'),y_row)
         def framing():
-            z=close.value()/100.; half=.5/max(1.,z)
-            return (round(z,3),max(half,min(1-half,px.value()/100.)),max(half,min(1-half,py.value()/100.)))
+            return camera_clips.keep_in((close.value()/100.,px.value()/100.,py.value()/100.))
         previous_selected=getattr(self,'selected_camera',None)
         self.selected_camera=cid                         # the dashed frame shows on the preview
         def live(*_):
@@ -1360,6 +1356,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                     if bar.value()!=int(round(v*100)): bar.setValue(int(round(v*100)))
             self.canvas.update()
         for bar in (close,px,py): bar.valueChanged.connect(live)
+        def kind_changed(*_):          # exp.159: a zoom out goes further away, a zoom in closer
+            out=kinds[kind.currentIndex()]==camera_clips.ZOOM_OUT
+            if out and close.value()>=100: close.setValue(60)
+            elif not out and kinds[kind.currentIndex()]=='Zoom in' and close.value()<=100: close.setValue(160)
+        kind.currentIndexChanged.connect(kind_changed)
         self.canvas.update()
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         remove=buttons.addButton('Delete',QDialogButtonBox.ButtonRole.DestructiveRole)
@@ -1378,11 +1379,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if new_kind!=clip.get('kind'):
             camera_clips.set_kind(clip,new_kind)
         clip['start']=round(start.value(),2)
-        if new_kind==camera_clips.ZOOM_OUT:
-            clip['in_s']=clip['duration']=round(go.value(),2)
-        else:
-            clip['in_s'],clip['out_s']=round(go.value(),2),round(back.value(),2)
-            clip['duration']=round(go.value()+stay.value()+back.value(),2)
+        clip['in_s'],clip['out_s']=round(go.value(),2),round(back.value(),2)
+        clip['duration']=round(go.value()+stay.value()+back.value(),2)
         camera_clips.fit(clip)
         if new_kind in ('Zoom in',camera_clips.ZOOM_OUT,camera_clips.CUSTOM):
             clip['to']=framing()
@@ -1526,7 +1524,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if clip is None or self.canvas.frame is None or not self.all_scenes() or self.zoomed_out(): return None
         W,H=self.canvas.frame.width(),self.canvas.frame.height()
         z,x,y=clip.get('to') or (1.,.5,.5)
-        w,h=W/max(1.,z),H/max(1.,z)
+        w,h=W/max(.05,z),H/max(.05,z)            # exp.159: further than the page: bigger than it
         return (x*W-w/2,y*H-h/2,w,h)
 
     def drag_camera_frame(self,kind,dx,dy):
@@ -1544,8 +1542,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if start is None: return False
         if kind=='move':
             z,x,y=start
-            half=.5/max(1.,z)
-            clip['to']=(z,max(half,min(1-half,x+dx)),max(half,min(1-half,y+dy)))
+            import camera_clips
+            clip['to']=camera_clips.keep_in((z,x+dx,y+dy))
             if clip.get('kind') not in ('Zoom in','Zoom out','Fixed camera'): clip['kind']='Zoom in'   # exp.157
         else:
             self._cam_drag=None; self.project_changes.mark_changed()
@@ -3435,8 +3433,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self.record_structure('camera zoom'); self._cam_wheel=clip['id']
                 QTimer.singleShot(800,lambda: setattr(self,'_cam_wheel',None))
             z,cx,cy=clip.get('to') or (1.,.5,.5)
-            z=max(1.,min(5.,z*(1.08**steps))); half=.5/z
-            clip['to']=(round(z,3),max(half,min(1-half,cx)),max(half,min(1-half,cy)))
+            import camera_clips
+            clip['to']=camera_clips.keep_in((z*(1.08**steps),cx,cy))     # exp.159: .2 x .. 10 x
             if clip.get('kind') not in ('Zoom in','Zoom out','Fixed camera'): clip['kind']='Zoom in'   # exp.157
             self.project_changes.mark_changed()
             self.fill_camera_panel(); self.sync_camera_timeline(); self.canvas.update()
