@@ -176,3 +176,17 @@ class EmptyAreaGuideTests(unittest.TestCase):
         late = pixels(svg_guide_erase_mask(none, image, rect, EMPTY_FADE[1]))[corner[1], corner[0], 3]
         self.assertEqual(early, 0)
         self.assertEqual(late, 255)
+
+
+class DrawThenPaintEmptyAreaTests(unittest.TestCase):
+    """exp.174 (the user): in Draw, then Paint, lines where the picture is empty are gone
+    once most of the picture around them is painted, and at the latest at 70% of the painting."""
+
+    def test_empty_cells_go_early(self):
+        from image_painting import _empty_area_timing, EMPTY_LATEST
+        support = np.zeros((20, 40), bool); support[:, :20] = True       # right half empty
+        times = np.zeros((20, 40)); times[:, :20] = np.linspace(0., 99., 20)[None, :]
+        times[:, 19] = 100.                                               # a last small touch
+        when = _empty_area_timing(times, support, 100.)
+        self.assertTrue((when[:, 20:] <= 100. * EMPTY_LATEST + 1e-6).all())
+        self.assertLess(when[10, 21], 100.)                              # not the last touch
