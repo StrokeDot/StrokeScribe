@@ -280,3 +280,22 @@ class TimelineTests(unittest.TestCase):
         parts = dict(Window.stage_parts(dict(base, entrance='Fade')))
         self.assertEqual((parts['move'], parts['paint']), (2., 0.))
         self.assertNotIn('draw', parts)
+
+
+class InkAppearanceTests(unittest.TestCase):
+    """exp.178 (the user): Ink appearance, the picture soaks in like ink, no hand."""
+
+    def test_ink_grows_and_ends_whole(self):
+        import numpy as np
+        from PySide6.QtGui import QImage, QColor, QPainter
+        from frame_render import effect_frame, ENTRANCES
+        self.assertEqual(ENTRANCES['Ink appearance'], 'Ink')
+        art = QImage(200, 120, QImage.Format.Format_ARGB32_Premultiplied); art.fill(QColor(0, 0, 0, 0))
+        p = QPainter(art); p.fillRect(20, 20, 160, 80, QColor(40, 30, 20)); p.end()
+        def shown(frame):
+            f = frame.convertToFormat(QImage.Format.Format_RGBA8888)
+            return int((np.frombuffer(bytes(f.constBits()), np.uint8).reshape(120, 200, 4)[..., 3] > 128).sum())
+        a, b, c = shown(effect_frame(art, 'Ink', .2)), shown(effect_frame(art, 'Ink', .6)), shown(effect_frame(art, 'Ink', 1.))
+        self.assertLess(a, b); self.assertLess(b, c)
+        self.assertEqual(c, 160 * 80)
+        self.assertEqual(shown(effect_frame(art, 'Ink', 0.)), 0)

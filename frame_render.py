@@ -208,7 +208,7 @@ def erase_setup(drawing, opts, erase):
 ENTRANCES = {'Draw with the hand': 'draw', 'Fade in': 'Fade', 'Pop in': 'Pop', 'Zoom in': 'Zoom',
              'Spin in': 'Spin', 'Slide in from the left': 'Slide from left',
              'Slide in from the right': 'Slide from right', 'Slide in from the top': 'Slide from top',
-             'Slide in from the bottom': 'Slide from bottom'}
+             'Slide in from the bottom': 'Slide from bottom', 'Ink appearance': 'Ink'}
 EXITS = {'fade': 'Fade', 'pop': 'Pop', 'zoom': 'Zoom', 'spin': 'Spin', 'out-left': 'Slide from left',
          'out-right': 'Slide from right', 'out-top': 'Slide from top', 'out-bottom': 'Slide from bottom'}
 
@@ -243,6 +243,9 @@ def effect_frame(image, kind, p):
     import overlays
     if p >= 1:
         return image.copy()
+    if kind == 'Ink':                 # exp.178: soaks into the paper like ink (ink_appearance.py)
+        import ink_appearance
+        return ink_appearance.frame(image, p)
     opacity, dx, dy, scale, rotation = overlays._effect(kind, p)
     from PySide6.QtCore import QPointF, QRectF
     from PySide6.QtGui import QPainter
