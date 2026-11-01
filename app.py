@@ -6022,4 +6022,4 @@ if __name__=='__main__':
     if len(sys.argv)>1:
         try: window.set_drawing(import_svg(sys.argv[1]))
         except Exception as e: QMessageBox.warning(window,'Cannot import',str(e))
-    window.show(); sys.exit(app.exec())
+    window.showMaximized(); sys.exit(app.exec())
