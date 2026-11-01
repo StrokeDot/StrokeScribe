@@ -512,10 +512,15 @@ def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
 # whole square at once. The edge also catches on a fixed paper grain, so it is ragged and
 # grainy like a dry brush or charcoal, and the grain stays put on the paper while the edge
 # moves through it.
-SOFT_PAINT = True
+# exp.180 (the user: "add it as an option in painting, not as the default"): the paint look is
+# chosen per element (Paint look). Classic: the brush's squares, as before exp.177.
+PAINT_LOOKS = {'Classic': 'classic', 'Smooth brush': 'smooth', 'Ink appearance': 'ink'}
+# look: (fade-in share of the painting, how far the paper grain pushes the edge)
+LOOK_EDGE = {'smooth': (.01, .004), 'ink': (.025, .06)}
+SOFT_PAINT = True        # tests: False forces the classic squares
 SOFT_LIMIT = 1280        # the edge is worked out at most this many pixels across
-SOFT_FEATHER = .01       # a point fades in over this share of the painting (exp.179: a clean brush edge)
-SOFT_GRAIN = .004        # how far the paper grain pushes the edge (exp.179: hardly; the ink look is Ink appearance)
+SOFT_FEATHER = .01       # default fade-in share (when no look is given)
+SOFT_GRAIN = .004        # default grain share
 SOFT_ROUND = .8          # cells: how much the brush's grid of moments is rounded
 
 
@@ -564,27 +569,29 @@ def _soft_field(plan, image):
     return field
 
 
-def soft_paint_alpha(plan, image, progress):
+def soft_paint_alpha(plan, image, progress, look=None):
     """0..255 at the edge's working size: how painted every point is at this progress."""
     moments, grain = _soft_field(plan, image)
+    feather_share, grain_share = LOOK_EDGE.get(look, (SOFT_FEATHER, SOFT_GRAIN))
     clock = max(0., min(1., float(progress))) / .98 * plan.total
     if progress <= 0:
         return np.zeros(moments.shape, np.uint8)
     total = max(1e-9, float(plan.total))
-    feather = SOFT_FEATHER * total
+    feather = feather_share * total
     # The grain only moves the edge; a point is fully painted by the time the brush is
     # well past it (so nothing is left unpainted when the brush is done).
-    shift = SOFT_GRAIN * total * grain
+    shift = grain_share * total * grain
     amount = np.clip((clock - moments + shift + feather * .5) / feather, 0., 1.)
-    done = clock >= np.minimum(moments + SOFT_GRAIN * total + feather, total)
+    done = clock >= np.minimum(moments + grain_share * total + feather, total)
     amount[done] = 1.
     return np.asarray(np.rint(amount * 255), np.uint8)
 
 
 def adaptive_paint_mask(drawing,image,width,height,rect,progress,brush_width,stroke_spacing=.55):
     plan=plan_for(drawing,image,brush_width,stroke_spacing)
-    if SOFT_PAINT:
-        alpha=Image.fromarray(soft_paint_alpha(plan,image,progress),'L')
+    look=getattr(drawing,'paint_look','classic') or 'classic'
+    if SOFT_PAINT and look!='classic':
+        alpha=Image.fromarray(soft_paint_alpha(plan,image,progress,look),'L')
     else:
         alpha=plan.mask(progress)
         alpha=alpha.resize((image.width(),image.height()),Image.Resampling.NEAREST)
@@ -592,6 +599,7 @@ def adaptive_paint_mask(drawing,image,width,height,rect,progress,brush_width,str
     mask=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
     mask.fill(Qt.GlobalColor.transparent)
     painter=QPainter(mask)
+    # Classic: nearest-neighbour keeps the exact discrete footprint (as before exp.177).
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     painter.drawImage(rect,qimage(small)); painter.end()
     segment,tip=plan.state(progress)

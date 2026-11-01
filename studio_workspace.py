@@ -3038,6 +3038,14 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stroke_spacing=w.number(.2,.9,.55,.05)
     w.stroke_spacing.setToolTip('Lower values add more overlap between brush strokes.')
     a2.addRow('Stroke spacing',w.stroke_spacing)
+    # exp.180 (the user): how the paint appears where the brush passes; Classic as before.
+    from adaptive_hand import PAINT_LOOKS
+    w.paint_look=QComboBox(); w.paint_look.addItems(list(PAINT_LOOKS))
+    w.paint_look.setToolTip('Classic: the picture appears in small patches where the brush passes. '
+                            'Smooth brush: a smooth, clean edge that follows the brush. '
+                            'Ink appearance: the paint soaks in like ink, with a ragged, grainy edge.')
+    a2.addRow('Paint look',w.paint_look)
+    w.paint_look.currentIndexChanged.connect(lambda *_: w.refresh())
     w.color_hold=w.number(0,30,.6,.1);a2.addRow('Hold (s)',w.color_hold)
     # "Goes out" on / off: a switch for the Goes out list (Off, or the last way chosen).
     w.erase_on=QCheckBox('Exit',animation);w.erase_on.hide()
