@@ -3717,6 +3717,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.vertical_splitter.setStretchFactor(0,1)
     w.vertical_splitter.setStretchFactor(1,0)
     w.vertical_splitter.setSizes([620,250])
+    # exp.175 (the user: the preview shrank again every time Play was pressed): the split the
+    # user drags is kept; anything else that moves it is undone (and logged).
+    w.vertical_splitter.splitterMoved.connect(lambda *_: w.remember_split())
     footer=QHBoxLayout()
     w.status=label('Ready  •  Import → adjust → preview → export','status')
     w.status.setWordWrap(True)

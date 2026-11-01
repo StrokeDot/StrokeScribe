@@ -5759,6 +5759,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.playing=not self.playing; self.last=time.perf_counter(); self.sync_workspace()
         if self.playing: self.start_play_stats()
         else: self.log_play_stats()
+        self.keep_split('Play pressed')
         self.sync_preview_sound()
 
     # Play statistics in the log (exp.103): how many frames came ready-made and how long
@@ -5801,6 +5802,36 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self.board_mode(): self.preview_scope.setCurrentIndex(1)
         self.slider.setValue(0); self.playing=True; self.last=time.perf_counter(); self.sync_workspace()
         self.sync_preview_sound()
+    def remember_split(self):
+        """exp.175: the preview / timeline split the user dragged to."""
+        self._user_split=list(self.vertical_splitter.sizes())
+
+    def keep_split(self,why=''):
+        """exp.175 (the user: the preview shrank every time Play was pressed): put the split
+        back where the user left it when something else moved it, and say in the log what
+        moved it, so the cause can be found."""
+        want=getattr(self,'_user_split',None)
+        split=getattr(self,'vertical_splitter',None)
+        if not want or split is None: return
+        now=list(split.sizes())
+        if now==want or sum(now)!=sum(want): return
+        try:
+            import applog
+            top,bottom=split.widget(0),split.widget(1)
+            applog.info('Preview size changed by itself (%s): %s -> %s; smallest the preview area '
+                        'allows %d, smallest the timeline area allows %d (timeline %d..%d)' % (
+                            why,want,now,top.minimumSizeHint().height(),bottom.minimumSizeHint().height(),
+                            self.stage_timeline.minimumHeight(),self.stage_timeline.maximumHeight()))
+        except Exception:
+            pass
+        split.setSizes(want)
+        if list(split.sizes())!=want and not getattr(self,'_split_logged',False):
+            self._split_logged=True
+            try:
+                import applog; applog.info('Preview size: could not put it back, now %s' % list(split.sizes()))
+            except Exception:
+                pass
+
     def tick(self):
         if not self.playing or not self.drawing or self.busy: return
         view=getattr(self,'_view',None)
@@ -5810,6 +5841,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         stats=getattr(self,'_play_stats',None)
         began=time.perf_counter()
         self._playhead_only=True; self.refresh()
+        self.keep_split('playing')
         if stats is not None:
             spent=(time.perf_counter()-began)*1000
             stats['ticks']+=1; stats['ms']+=spent; stats['worst']=max(stats['worst'],spent)
