@@ -517,6 +517,11 @@ SOFT_LIMIT = 1280        # the edge is worked out at most this many pixels acros
 SOFT_FEATHER = .025      # a point fades in over this share of the painting
 SOFT_GRAIN = .06         # how far the paper grain pushes the edge (share of the painting)
 SOFT_ROUND = .8          # cells: how much the brush's grid of moments is rounded
+# Light first, dark last (off for now): where the brush passes, a pale first layer appears;
+# the darks build up over it a moment later (the darker, the later), like shading a drawing.
+SOFT_LAYERS = False
+LAYER_FIRST = .4         # the first layer: this much of the picture's strength
+LAYER_DELAY = .12        # the darkest parts reach full strength this share of the painting later
 
 
 def _grain(height, width, seed):
@@ -559,14 +564,18 @@ def _soft_field(plan, image):
     painted = cv2.resize(valid, (width, height), interpolation=cv2.INTER_NEAREST) > 0
     moments = np.where(painted & (up_w > 1e-4), up_t / np.maximum(up_w, 1e-4), late).astype(np.float32)
     grain = _grain(height, width, (gw * 7919 + gh * 104729 + len(plan.segments)) % (2 ** 32))
-    field = (moments, grain)
+    source = pil_image(image).convert('RGBA').resize((width, height), Image.Resampling.BILINEAR)
+    rgba = np.asarray(source, np.float32) / 255.
+    light = rgba[..., 0] * .299 + rgba[..., 1] * .587 + rgba[..., 2] * .114
+    darkness = np.clip((1. - light) * rgba[..., 3], 0., 1.).astype(np.float32)
+    field = (moments, grain, darkness)
     plan.__dict__['_soft_field'] = field
     return field
 
 
 def soft_paint_alpha(plan, image, progress):
     """0..255 at the edge's working size: how painted every point is at this progress."""
-    moments, grain = _soft_field(plan, image)
+    moments, grain, darkness = _soft_field(plan, image)
     clock = max(0., min(1., float(progress))) / .98 * plan.total
     if progress <= 0:
         return np.zeros(moments.shape, np.uint8)
@@ -578,6 +587,11 @@ def soft_paint_alpha(plan, image, progress):
     amount = np.clip((clock - moments + shift + feather * .5) / feather, 0., 1.)
     done = clock >= np.minimum(moments + SOFT_GRAIN * total + feather, total)
     amount[done] = 1.
+    if SOFT_LAYERS:
+        delay = LAYER_DELAY * total * darkness
+        second = np.clip((clock - moments - delay + shift + feather * .5) / (feather * 3), 0., 1.)
+        second[clock >= np.minimum(moments + delay + SOFT_GRAIN * total + feather * 3, total)] = 1.
+        amount = amount * (LAYER_FIRST + (1. - LAYER_FIRST) * second)
     return np.asarray(np.rint(amount * 255), np.uint8)
 
 
