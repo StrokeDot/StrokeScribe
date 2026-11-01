@@ -3049,6 +3049,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     a2.addRow('Paint look',w.paint_look)
     a2.setRowVisible(w.paint_look,False)      # exp.181: chosen in the Paint mode picker (with its preview)
     w.paint_look.currentIndexChanged.connect(lambda *_: w.refresh())
+    def _show_look(*_):
+        w.reveal_mode.look=w.paint_look.currentText(); w.reveal_mode.update()
+    w.paint_look.currentIndexChanged.connect(_show_look)
     w.color_hold=w.number(0,30,.6,.1);a2.addRow('Hold (s)',w.color_hold)
     # "Goes out" on / off: a switch for the Goes out list (Off, or the last way chosen).
     w.erase_on=QCheckBox('Exit',animation);w.erase_on.hide()
@@ -3964,6 +3967,18 @@ class PaintModeCombo(QComboBox):
         if self.picker is None:
             return super().showPopup()
         self.picker()
+
+    look = ''        # exp.183: the Paint look, shown after the mode when it is not Classic
+
+    def paintEvent(self, event):
+        """exp.183: the short name (Painter, Adaptive, Zigzag...) instead of the long one."""
+        from PySide6.QtWidgets import QStylePainter, QStyleOptionComboBox, QStyle
+        from paint_mode_dialog import short
+        painter = QStylePainter(self)
+        option = QStyleOptionComboBox(); self.initStyleOption(option)
+        option.currentText = short(self.currentText()) + (f'  ·  {self.look}' if self.look and self.look != 'Classic' else '')
+        painter.drawComplexControl(QStyle.ComplexControl.CC_ComboBox, option)
+        painter.drawControl(QStyle.ControlElement.CE_ComboBoxLabel, option)
 
 
 def side_toggle(box, tip):

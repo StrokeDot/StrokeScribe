@@ -44,6 +44,16 @@ GROUPS = (
     )),
 )
 DESCRIPTIONS = {text: about for _, modes in GROUPS for text, about in modes}
+# exp.183 (the user: "just Paint mode: Painter"): the short names shown (the long ones stay
+# the modes' names inside projects).
+SHORT = {'Adaptive Hand Painting': 'Adaptive', 'Adaptive — Short up/down strokes': 'Adaptive, short strokes',
+         'Painter — real parts, strokes follow the shape': 'Painter', 'Zigzag sweep': 'Zigzag',
+         'Top to bottom (rows)': 'Top to bottom', 'Left to right (columns)': 'Left to right',
+         'Brush painting': 'Brush'}
+
+
+def short(text):
+    return SHORT.get(text, text)
 
 PREVIEW_WIDTH = 400
 PREVIEW_FRAMES = 18
@@ -116,7 +126,7 @@ class PaintModeDialog(QDialog):
             font = header.font(); font.setBold(True); font.setPointSizeF(font.pointSizeF() * .85); header.setFont(font)
             self.list.addItem(header)
             for text in usable:
-                item = QListWidgetItem('    ' + text)
+                item = QListWidgetItem('    ' + short(text))
                 item.setData(Qt.ItemDataRole.UserRole, text)
                 self.list.addItem(item)
                 self.items[text] = item
@@ -136,7 +146,7 @@ class PaintModeDialog(QDialog):
         if not mode:
             return
         self.chosen = mode
-        self.title.setText(mode)
+        self.title.setText(short(mode))
         self.about.setText(DESCRIPTIONS.get(mode, ''))
         self.start_preview(mode)
 
