@@ -69,7 +69,7 @@ def main():
         if len(sys.argv)>1:
             stage('Loading drawing: '+sys.argv[1])
             window.set_drawing(import_svg(Path(sys.argv[1])))
-        window.showNormal(); window.raise_(); window.activateWindow()
+        window.showMaximized(); window.raise_(); window.activateWindow()   # exp.171: always full screen (it sometimes opened half off the screen)
         if len(sys.argv)<=1:
             window.show_home()          # exp.107: start on Home, not in a project
         window.close_to_home=True       # exp.109: X in a project goes back to Home
