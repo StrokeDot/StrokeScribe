@@ -597,11 +597,25 @@ def painting_done(drawing,image,progress,brush_width,stroke_spacing=.55):
     try:
         plan=plan_for(drawing,image,brush_width,stroke_spacing)
         last=max((s.end for s in plan.segments if s.painting),default=plan.total)
-        # (the frame held while the hand goes back is a hair before its last stroke, so the
-        # pen tip stays where it stopped: that counts as finished too)
-        return progress>=last/max(1e-9,plan.total)*.98-.005
+        return progress>=last/max(1e-9,plan.total)*.98-1e-6
     except Exception:
         return False
+
+
+def finished_tip(drawing,image,rect,progress,brush_width,stroke_spacing=.55):
+    """exp.182 (the user: the hand disappeared for a moment after the painting): where the
+    pen is on a finished frame (its last stroke), or None after the brush route."""
+    try:
+        plan=plan_for(drawing,image,brush_width,stroke_spacing)
+        _,tip=plan.state(progress)
+        painting=[s for s in plan.segments if s.painting]
+        last=painting[-1] if painting else None
+    except Exception:
+        return None
+    if last is not None and progress<=last.end/max(1e-9,plan.total)*.98+1e-3:
+        tip=last.b                              # the pen where its last stroke ended
+    if tip is None: return None
+    return (rect.x()+tip[0]*rect.width()/plan.size[0],rect.y()+tip[1]*rect.height()/plan.size[1])
 
 
 def adaptive_paint_mask(drawing,image,width,height,rect,progress,brush_width,stroke_spacing=.55):
@@ -640,6 +654,8 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         from source_render import draw_source
         draw_source(painter,rect,image)
+        draw_hand(painter,finished_tip(drawing,image,rect,progress,brush_width,stroke_spacing),
+                  hand,width,hand_scale,anchor)       # exp.182: the hand stays on its last stroke
         painter.end()
         return frame
     mask,tip=adaptive_paint_mask(drawing,image,width,height,rect,progress,

@@ -124,7 +124,12 @@ def paint_frame(drawing,image,width,height,progress,thickness,brush_width,
     # Plan.mask(.98) is complete; no extra line-erasing time is added.
     from adaptive_hand import painting_done
     if painting_done(drawing,image,progress,brush_width,stroke_spacing):     # exp.182: at the last stroke
-        return original_frame(drawing,visible,width,height)
+        result=original_frame(drawing,visible,width,height)
+        from adaptive_hand import finished_tip
+        tip=finished_tip(drawing,image,artwork_rect(drawing,image,width,height),progress,brush_width,stroke_spacing)
+        if tip is not None:                          # the hand stays on its last stroke
+            p=QPainter(result); draw_hand(p,tip,painting_hand,width,hand_scale,anchor); p.end()
+        return result
     rect=artwork_rect(drawing,image,width,height)
     mask,tip=adaptive_paint_mask(drawing,image,width,height,rect,progress,
                                  brush_width,stroke_spacing)

@@ -327,7 +327,10 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
             # the pen on the first point it really paints (exp.151)
             inner_t = hand_start + (hand_end - hand_start) * TRAVEL_EPS
         elif phase == 'out':
-            inner_t = hand_end - (hand_end - hand_start) * TRAVEL_EPS     # the pen where it stopped
+            # exp.182 (the user: the hand vanished, then the last lines went when it reached
+            # its corner): the moment of the last stroke itself. A hair before it the pen was
+            # often still on a lift to its last spot, and the painting was not finished.
+            inner_t = hand_end
         video_t = float(options.get('hand_video_start', 0) or 0) + t
         inner['_video_t'] = video_t
         if phase:
