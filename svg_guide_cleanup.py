@@ -22,14 +22,16 @@ _SUPPORT_CACHE = OrderedDict()
 # fraction of the artwork's longest side. About 2.5 adaptive grid cells.
 GUIDE_REACH = .012
 
-# exp.172 (the user: the painting looked finished but lines stayed until the very end): ink
-# where the picture is empty (nothing will ever be painted there) goes when the brush paints
-# anywhere this near it (share of the artwork's width), not only at its single nearest painted
-# point, which was often among the last dabs.
+# exp.172/173 (the user: the painting looked finished but lines stayed until the very end): ink
+# where the picture is empty (nothing will ever be painted there) goes as the picture AROUND it
+# gets painted: when this share of the picture within EMPTY_REACH (share of the artwork's
+# width) is painted, it starts to fade, and it is gone at the second share. It does not wait
+# for the last small touches nearby.
 EMPTY_REACH = .2
-# What is still left of it then fades out over this stretch of the painting (share of the
-# route), so no line is left once the painting is done.
-EMPTY_FADE = (.8, .95)
+EMPTY_DONE = (.45, .75)
+# Whatever is still left then fades out over this stretch of the painting (share of the
+# route), so no line is left near the end.
+EMPTY_FADE = (.7, .88)
 
 
 def grown_coverage(alpha, rect):
@@ -107,10 +109,16 @@ def svg_guide_erase_mask(coverage, image, rect, progress=None):
     lookup[labels[support]] = brush[support]
     source_coverage = lookup[labels]
     reach = max(1, int(round(gw * EMPTY_REACH)))
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1, 2 * reach + 1))
-    near = cv2.dilate(np.ascontiguousarray(np.where(support, brush, 0).astype(np.uint8)), kernel)
-    source_coverage = np.where(support, source_coverage,
-                               np.maximum(np.maximum(source_coverage, near), empty_fade(progress)))
+    box = (2 * reach + 1, 2 * reach + 1)
+    painted = cv2.boxFilter(np.where(support, brush, 0).astype(np.float32) / 255., -1, box,
+                            normalize=False, borderType=cv2.BORDER_CONSTANT)
+    around = cv2.boxFilter(support.astype(np.float32), -1, box, normalize=False,
+                           borderType=cv2.BORDER_CONSTANT)
+    done = np.where(around > 0, painted / np.maximum(around, 1e-6), 0.)
+    a, b = EMPTY_DONE
+    local = np.clip((done - a) / (b - a), 0., 1.) * 255
+    empty = np.maximum(np.maximum(source_coverage, local), empty_fade(progress)).astype(np.uint8)
+    source_coverage = np.where(support, source_coverage, empty)
 
     out_x = np.clip(np.floor((np.arange(width) + .5 - rect.left()) *
                              gw / max(.001, rect.width())).astype(np.int32),
