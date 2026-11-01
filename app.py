@@ -5404,7 +5404,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             involved=sorted({k for k,_ in state.active}|set(state.finished)|{state.current})
             import overlays as _ov
             low=self.titles_split((a+b)/2)[1]
-            under=repr([o for o in low if _ov.shown_until(o)>a and float(o.get('start',0))<b])
+            under=repr([o for o in low if float(o.get('start',0))<b and (_ov.shown_until(o)>a or o.get('kind')=='eraser')])   # exp.186: an eraser stays done
             fp=('tl',describe(lay,state,a),tuple(self.element_fingerprint(i) for i in involved),under,
                 self.cameras_signature(a,b),
                 tuple(sorted(self.hidden_elements())),
