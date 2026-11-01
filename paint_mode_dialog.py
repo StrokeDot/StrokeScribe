@@ -52,6 +52,9 @@ SHORT = {'Adaptive Hand Painting': 'Adaptive', 'Adaptive — Short up/down strok
          'Brush painting': 'Brush'}
 
 
+PAINTER = 'Painter — real parts, strokes follow the shape'
+
+
 def short(text):
     return SHORT.get(text, text)
 
@@ -69,6 +72,11 @@ class PaintModeDialog(QDialog):
         self.window_ = window
         self.chosen = current
         self.look = look            # exp.181: Paint look, chosen here too (with the preview)
+        # exp.184: Painter's parts, previewed here before they are used: 'colour' or 'ai'.
+        drawing = getattr(window, 'drawing', None)
+        self.ai_labels = getattr(drawing, 'ai_parts_image', None) if drawing is not None else None
+        self.parts = 'ai' if self.ai_labels is not None else 'colour'
+        self._parts_start = (self.parts, self.ai_labels)
         self._frames = {}           # (mode, look) -> [QPixmap]
         self._pending = None        # (mode, [fractions], index)
         self._shown = 0
@@ -94,6 +102,20 @@ class PaintModeDialog(QDialog):
         self.pause_button.setToolTip('Pause or play the preview (or click the preview).')
         self.pause_button.clicked.connect(lambda checked=False: self.toggle_pause())
         controls.addWidget(self.pause_button); controls.addStretch(1)
+        parts_row = QHBoxLayout(); side.addLayout(parts_row)
+        self.parts_label = QLabel('Parts')
+        self.parts_label.setToolTip('How Painter cuts the picture into the pieces it paints one by one.')
+        parts_row.addWidget(self.parts_label)
+        self.parts_buttons = {}
+        for key, name, tip in (('colour', 'Colour areas', 'Pieces where the colour or shade changes (the usual way).'),
+                               ('ai', 'AI parts', 'The AI finds the real objects (a face, a hat, a chair) and Painter '
+                                                  'paints object by object. The first time it downloads the AI (about '
+                                                  '2.4 GB).')):
+            button = QPushButton(name); button.setCheckable(True); button.setObjectName('subtle')
+            button.setToolTip(tip); button.setChecked(key == self.parts)
+            button.clicked.connect(lambda checked=False, k=key: self.set_parts(k))
+            parts_row.addWidget(button); self.parts_buttons[key] = button
+        parts_row.addStretch(1)
         # exp.181 (the user: "Paint look should be in the paint mode, showing the styles"):
         # how the paint appears where the brush passes, with the preview.
         from PySide6.QtWidgets import QButtonGroup
@@ -147,8 +169,51 @@ class PaintModeDialog(QDialog):
             return
         self.chosen = mode
         self.title.setText(short(mode))
+        for widget in [self.parts_label, *self.parts_buttons.values()]:
+            widget.setVisible(mode == PAINTER)            # Parts are Painter's
         self.about.setText(DESCRIPTIONS.get(mode, ''))
         self.start_preview(mode)
+
+    def set_parts(self, key):
+        if key == 'ai' and self.ai_labels is None:
+            for k, b in self.parts_buttons.items(): b.setChecked(k == self.parts)
+            def found(labels):
+                self.ai_labels = labels
+                self.set_parts('ai')
+            self.window_.find_ai_parts(on_found=found, parent=self)
+            return
+        self.parts = key
+        for k, b in self.parts_buttons.items(): b.setChecked(k == key)
+        if self.chosen:
+            self.start_preview(self.chosen)
+
+    def parts_changed(self):
+        return (self.parts, self.ai_labels if self.parts == 'ai' else None) != \
+            (self._parts_start[0], self._parts_start[1] if self._parts_start[0] == 'ai' else None)
+
+    def _key(self):
+        return (self.chosen, self.look, self.parts if self.chosen == PAINTER else '')
+
+    def _with_parts(self, mode, make):
+        """make() with this window's Parts on the element (only while it is made)."""
+        drawing = self.window_.drawing
+        if mode != PAINTER or drawing is None:
+            return make()
+        import hashlib
+        names = ('ai_parts_image', 'ai_parts_digest', 'ai_parts_count')
+        saved = {n: getattr(drawing, n) for n in names if hasattr(drawing, n)}
+        try:
+            for n in names:
+                if hasattr(drawing, n): delattr(drawing, n)
+            if self.parts == 'ai' and self.ai_labels is not None:
+                drawing.ai_parts_image = self.ai_labels
+                drawing.ai_parts_digest = hashlib.sha1(self.ai_labels.tobytes()).hexdigest()
+                drawing.ai_parts_count = int(self.ai_labels.info.get('parts') or 0) or None
+            return make()
+        finally:
+            for n in names:
+                if hasattr(drawing, n): delattr(drawing, n)
+            for n, v in saved.items(): setattr(drawing, n, v)
 
     def set_look(self, name):
         self.look = name
@@ -181,7 +246,7 @@ class PaintModeDialog(QDialog):
     def start_preview(self, mode):
         self.play_timer.stop(); self.render_timer.stop()
         self._shown = 0
-        key = (mode, self.look)
+        key = (mode, self.look, self.parts if mode == PAINTER else '')
         if key in self._frames and len(self._frames[key]) == PREVIEW_FRAMES:
             self.note.setText('')
             self.play(); return
@@ -202,14 +267,14 @@ class PaintModeDialog(QDialog):
             self.render_timer.stop(); return
         key, options, fractions = self._pending
         frames = self._frames[key]
-        if len(frames) >= len(fractions) or key != (self.chosen, self.look):
+        if len(frames) >= len(fractions) or key != self._key():
             self.render_timer.stop(); self._pending = None
-            if key == (self.chosen, self.look):
+            if key == self._key():
                 self.note.setText(''); self.play()
             return
         from frame_render import compose_frame
         try:
-            image = compose_frame(self.window_.drawing, fractions[len(frames)], options)
+            image = self._with_parts(key[0], lambda: compose_frame(self.window_.drawing, fractions[len(frames)], options))
         except Exception as exc:
             self.render_timer.stop(); self._pending = None
             self.preview.setText(f'No preview: {exc}'); return
@@ -237,11 +302,11 @@ class PaintModeDialog(QDialog):
         self.pause_button.setText('Play' if self.paused else 'Pause')
         if self.paused:
             self.play_timer.stop()
-        elif self._frames.get((self.chosen, self.look)) and self._pending is None:
+        elif self._frames.get(self._key()) and self._pending is None:
             self.play_timer.start()
 
     def play_next(self):
-        frames = self._frames.get((self.chosen, self.look)) or []
+        frames = self._frames.get(self._key()) or []
         if not frames:
             self.play_timer.stop(); return
         self.preview.setPixmap(frames[self._shown % len(frames)])

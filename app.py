@@ -4567,9 +4567,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def update_painter_parts(self):
         """The Parts row shows only for Painter: which parts it paints, and the AI button."""
         if not hasattr(self,'painter_parts_buttons'): return
+        # exp.184 (the user: preview it first, like the paint modes): Parts are chosen in the
+        # Paint mode window, with a preview; the row here only says which ones are used.
         painter=self.reveal_mode.currentText()==self.PAINTER_TEXT
-        self.paint_form.setRowVisible(self.painter_parts_note,painter)
-        self.paint_form.setRowVisible(self.painter_parts_buttons,painter)
+        self.paint_form.setRowVisible(self.painter_parts_note,False)
+        self.paint_form.setRowVisible(self.painter_parts_buttons,False)
         found=getattr(self.drawing,'ai_parts_image',None) if self.drawing is not None else None
         count=getattr(self.drawing,'ai_parts_count',None) if found is not None else None
         self.painter_parts_note.setText(
@@ -4585,29 +4587,31 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from adaptive_hand import pil_image
         return pil_image(image)
 
-    def find_ai_parts(self):
-        """Segment Anything finds the picture's parts (downloads the model the first time)."""
+    def find_ai_parts(self,on_found=None,parent=None):
+        """Segment Anything finds the picture's parts (downloads the model the first time).
+        on_found(labels): exp.184, the Paint mode window previews them before they are used."""
+        parent=parent or self
         import ai_engine, ai_parts, hashlib, threading
         if self.drawing is None: return
         picture=self.parts_picture()
         if picture is None:
-            QMessageBox.information(self,'Find real parts','This element has no colours to paint, so there are no parts to find.')
+            QMessageBox.information(parent,'Find real parts','This element has no colours to paint, so there are no parts to find.')
             return
         paths=ai_engine.Paths()
         if not ai_parts.engine_ready(paths):
-            QMessageBox.information(self,'Find real parts',
+            QMessageBox.information(parent,'Find real parts',
                 'The AI engine is not installed yet. Set it up once from the AI panel '
                 '(Create image with AI), then come back here.')
             return
         need=not ai_parts.model_ready(paths)
-        if need and QMessageBox.question(self,'Find real parts',
+        if need and QMessageBox.question(parent,'Find real parts',
                 f'The first time, StrokeScribe downloads Segment Anything by Meta '
                 f'({ai_parts.download_size_gb():.1f} GB, licence {ai_parts.LICENSE}). '
                 'After that it finds the parts of a picture in a few seconds on your graphics card.\n\n'
                 'Download it now?')!=QMessageBox.StandardButton.Yes:
             return
         from PySide6.QtWidgets import QProgressDialog
-        dialog=QProgressDialog('Finding the parts…','Cancel',0,0,self)
+        dialog=QProgressDialog('Finding the parts…','Cancel',0,0,parent)
         dialog.setWindowTitle('Find real parts');dialog.setMinimumDuration(0)
         dialog.setWindowModality(Qt.WindowModality.WindowModal)
         state=dict(done=False,error=None,labels=None,progress=None,text='Finding the parts…',cancel=False)
@@ -4639,12 +4643,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if state['error'] is not None:
                 if not isinstance(state['error'],(InterruptedError,ai_engine.Cancelled)) and not state['cancel']:
                     import applog;applog.error('Find real parts',state['error'])
-                    QMessageBox.warning(self,'Find real parts',str(state['error']))
+                    QMessageBox.warning(parent,'Find real parts',str(state['error']))
                 self.update_painter_parts();return
             labels=state['labels']
             if drawing is not self.drawing:          # the element changed meanwhile
                 self.update_painter_parts();return
-            self.set_ai_parts(labels)
+            if on_found is not None: on_found(labels)
+            else: self.set_ai_parts(labels)
         timer.timeout.connect(poll);timer.start()
         self._parts_timer=timer
 
@@ -4681,6 +4686,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if result and dialog.chosen and allowed(dialog.chosen):
                 combo.setCurrentIndex(combo.findText(dialog.chosen))
                 self.paint_look.setCurrentText(dialog.look)       # exp.181: chosen in the picker
+                if dialog.chosen==self.PAINTER_TEXT and dialog.parts_changed():
+                    self.set_ai_parts(dialog.ai_labels if dialog.parts=='ai' else None)   # exp.184
             self.paint_mode_dialog=None
             dialog.deleteLater()
         dialog.finished.connect(done)
