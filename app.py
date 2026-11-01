@@ -3758,6 +3758,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         length=lengths[self.scene_index]
         mine=dict(self.real_parts(self.scene_index,length,last_stroke=False))   # the settings' own times
         tl.lead=mine.pop('glide',0.)          # exp.176: the hand's glide in, before Draw
+        tl.hold_extra=max(0.,mine.get('hold',0.)-dict(self.stage_parts(options)).get('hold',0.))
         moving='move' in mine
         tl.update_state(mine['move' if moving else 'draw'],mine['paint'],mine['hold'],self.position,mine['erase'],
                         first='Move in' if moving else 'Draw')
@@ -4573,7 +4574,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         count=getattr(self.drawing,'ai_parts_count',None) if found is not None else None
         self.painter_parts_note.setText(
             f'Parts: {count or "the"} real parts found by the AI' if found is not None
-            else 'Parts: colour areas. "Find real parts" lets the AI find the objects instead.')
+            else 'Parts: colour areas. "AI parts" lets the AI find the real objects instead.')
         self.colour_parts_button.setEnabled(found is not None)
         self.find_parts_button.setEnabled(self.drawing is not None and not getattr(self,'_finding_parts',False))
 
@@ -4675,10 +4676,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             i=combo.findText(text)
             item=model.item(i) if i>=0 and hasattr(model,'item') else None
             return i>=0 and (item is None or item.isEnabled())
-        dialog=PaintModeDialog(self,combo.currentText(),allowed)
+        dialog=PaintModeDialog(self,combo.currentText(),allowed,self.paint_look.currentText())
         def done(result):
             if result and dialog.chosen and allowed(dialog.chosen):
                 combo.setCurrentIndex(combo.findText(dialog.chosen))
+                self.paint_look.setCurrentText(dialog.look)       # exp.181: chosen in the picker
             self.paint_mode_dialog=None
             dialog.deleteLater()
         dialog.finished.connect(done)
@@ -4835,7 +4837,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         elif key=='paint':
             (self.image_duration if self.is_image_artwork() else self.color_fade).setValue(seconds)
         elif key=='hold':
-            # The hold clip shows the colour hold plus the pause after the element.
+            # The hold clip shows the colour hold plus the pause after the element (and, since
+            # exp.176/181, the time the hand takes to go back, which is not a setting here).
+            seconds=max(0.,seconds-getattr(self.stage_timeline,'hold_extra',0.))
             if self.options().get('final_image') is not None:
                 self.color_hold.setValue(max(0.,seconds-self.pause_after.value()))
             else:
@@ -4932,10 +4936,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         image_source=self.is_image_artwork()
         settings=self.settings_state()
         if overrides: settings.update(overrides)
+        source=self.image_result.image if image_source and self.image_result else None
+        if source is not None and getattr(self,'_look_fast',False) and not self.all_scenes():
+            source=self._look_small(source,self.PREVIEW_WIDTH)       # exp.181: while a slider moves, a smaller copy
         options=options_from_settings(
             settings,self.drawing,
             color_image=None if image_source else self.final_image,hand=self.hand,
-            image_source=self.image_result.image if image_source and self.image_result else None,
+            image_source=source,
             image_mode=image_source)
         if not image_source and getattr(self.drawing,'svg_has_fill',False) and self.use_color.isChecked() and not self.color_path:
             from svg_appearance import render_appearance
@@ -5439,11 +5446,38 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def look_changed(self,slider=False):
         """Ink on the page / Colour / Light changed: the finished picture, no brush planning."""
         self._look_preview=True
-        if slider: self.schedule_refresh()
-        else: self.refresh()
+        if slider:
+            # exp.181 (the user: very laggy while changing colours): while the slider moves the
+            # look is worked out on a smaller copy of the picture (the preview is small anyway);
+            # when it stops, once more at full size.
+            self._look_fast=True
+            self.schedule_refresh()
+            if not hasattr(self,'_look_settle'):
+                self._look_settle=QTimer(self); self._look_settle.setSingleShot(True)
+                self._look_settle.timeout.connect(self._look_settled)
+            self._look_settle.start(450)
+        else:
+            self._look_fast=False
+            self.refresh()
+
+    def _look_settled(self):
+        self._look_fast=False
+        self._look_preview=True
+        self.refresh()
+
+    def _look_small(self,image,limit=1280):
+        """A copy of the picture at most `limit` pixels across (kept while it is the same)."""
+        if max(image.width(),image.height())<=limit: return image
+        key=image.cacheKey()
+        cached=getattr(self,'_look_small_cache',None)
+        if cached and cached[0]==key: return cached[1]
+        small=image.scaled(limit,limit,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation)
+        self._look_small_cache=(key,small)
+        return small
 
     def build_view(self):
         """Options and timeline for the current state (after any change)."""
+        self._last_change=time.perf_counter()    # exp.181: pre-render waits while you edit
         self.clear_frames(); self._view=None
         self.sync_workspace()
         if not self.drawing:
@@ -5476,7 +5510,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         paint_only=self.is_image_artwork() and self.image_animation.currentIndex()==1
         self.stage_timeline.editable={'paint','hold','erase'} if paint_only \
             else {'draw','paint','hold','erase'}
-        parts=dict(self.stage_parts(options))
+        # exp.181 (the user: in This element the glasses changed in "Hold"): the parts at their
+        # real times, with the hand's glide in first (it was left out, so Paint looked over
+        # while the hand was still painting).
+        parts=dict(self.real_parts(self.scene_index,self.timeline_length(),last_stroke=False))
+        self.stage_timeline.lead=parts.pop('glide',0.)
+        self.stage_timeline.hold_extra=max(0.,parts.get('hold',0.)-dict(self.stage_parts(options)).get('hold',0.))
         moving='move' in parts
         self.stage_timeline.update_state(parts['move' if moving else 'draw'],parts['paint'],parts['hold'],
             self.position,parts['erase'],first='Move in' if moving else 'Draw')
@@ -5592,10 +5631,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """When the preview is idle, make the next frames ready so Play is smooth."""
         if not hasattr(self,'prerender_timer'):
             self.prerender_timer=QTimer(self); self.prerender_timer.setSingleShot(True)
-            self.prerender_timer.timeout.connect(self.prerender_step)
+            self.prerender_timer.timeout.connect(self._prerender_tick)
         if not self._prerender_all:
             self._prerender_next=0          # idle: start again from the playhead
         self.prerender_timer.start(1 if self._prerender_all else 450)
+
+    def _prerender_tick(self):
+        """exp.181 (the user: very laggy while changing the picture's colours): the frames made
+        in the background are drawn on the same thread as the window, so while you are still
+        changing things they wait."""
+        if not self._prerender_all and time.perf_counter()-getattr(self,'_last_change',0.)<1.2:
+            self.prerender_timer.start(400); return
+        self.prerender_step()
 
     def prerender_step(self):
         view=getattr(self,'_view',None)
@@ -5613,6 +5660,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self.prerender_timer.start(200); return
         else:
             self._held_checks=0
+        # exp.181 (the user: very laggy while changing the picture's colours): the frames made
+        # in the background are drawn on the same thread as the window, so while you are still
+        # changing things it waits, and between frames it leaves the window time to answer.
         index,count=self.frame_index(self.position)
         if not self._prerender_all and self.segment_cache.memory_full(
                 self.PREVIEW_WIDTH*round(self.PREVIEW_WIDTH*view['ratio'])*4):
@@ -5663,7 +5713,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.update_prerender_button()
         else:
             self.schedule_render_bar()
-        self.prerender_timer.start(1)
+        self.prerender_timer.start(1 if self._prerender_all else 40)
 
     def ready_frames(self):
         """(frames ready, frames in the video) of the preview (for tests and the status)."""

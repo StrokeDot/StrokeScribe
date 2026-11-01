@@ -122,7 +122,8 @@ def paint_frame(drawing,image,width,height,progress,thickness,brush_width,
         empty.fill(Qt.GlobalColor.transparent)
         return empty
     # Plan.mask(.98) is complete; no extra line-erasing time is added.
-    if progress>=.98:
+    from adaptive_hand import painting_done
+    if painting_done(drawing,image,progress,brush_width,stroke_spacing):     # exp.182: at the last stroke
         return original_frame(drawing,visible,width,height)
     rect=artwork_rect(drawing,image,width,height)
     mask,tip=adaptive_paint_mask(drawing,image,width,height,rect,progress,

@@ -730,7 +730,7 @@ class StageTimeline(QFrame):
 
     def element_length(self):
         """Seconds of the edited element (its own parts)."""
-        return self.draw_seconds+self.paint_seconds+self.hold_seconds+self.erase_seconds
+        return getattr(self,'lead',0.)+self.draw_seconds+self.paint_seconds+self.hold_seconds+self.erase_seconds
 
     def _blocks(self):
         """Whole video: [(element number or None for a camera move, start, seconds, segment)]."""
@@ -856,7 +856,7 @@ class StageTimeline(QFrame):
 
     def _edges(self):
         """[(stage key, x of its right edge, seconds before it)] of the visible stage clips."""
-        out=[]; t=self.offset+(getattr(self,'lead',0.) if self.items or self.scene_segments else 0.)
+        out=[]; t=self.offset+getattr(self,'lead',0.)
         for key,secs in zip(self.STAGE_KEYS,(self.draw_seconds,self.paint_seconds,self.hold_seconds,self.erase_seconds)):
             if secs<=0: continue
             out.append((key,self._x(t+secs),t)); t+=secs
@@ -977,7 +977,8 @@ class StageTimeline(QFrame):
                 p.setBrush(QColor('#3BBF7A') if ready else QColor('#E5484D'))
                 p.drawRect(QRectF(x0,ruler_h-3,x1-x0,3))
         # Clips for each phase, like clips on an editor track.
-        stages=[(getattr(self,'first_label','Draw'),self.draw_seconds,c['draw']),
+        stages=[('Hand',getattr(self,'lead',0.),c['border_strong']),       # exp.181: the glide in
+                (getattr(self,'first_label','Draw'),self.draw_seconds,c['draw']),
                 ('Paint',self.paint_seconds,c['paint']),
                 ('Hold',self.hold_seconds,c['hold']),
                 ('Out',self.erase_seconds,c.get('erase','#D9667E'))]
@@ -3006,13 +3007,14 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.painter_parts_note=caption('Parts: colour areas')
     w.painter_parts_note.setWordWrap(True)
     a2.addRow('',w.painter_parts_note)
-    w.find_parts_button=QPushButton('Find real parts (AI)…')
-    w.find_parts_button.setToolTip('Segment Anything finds the real parts of this picture (a cushion, '
+    w.find_parts_button=QPushButton('AI parts…')      # exp.181: a short name (it was cut off)
+    w.find_parts_button.setToolTip('AI parts: Segment Anything finds the real parts of this picture (a face, '
                                    'a speaker, the band) for Painter. Runs once on your graphics card; '
                                    'the first time it downloads the model (about 2.4 GB).')
     w.find_parts_button.clicked.connect(lambda checked=False: w.find_ai_parts())
     w.colour_parts_button=QPushButton('Colour areas')
-    w.colour_parts_button.setToolTip('Forget the AI parts and paint by colour areas again.')
+    w.colour_parts_button.setToolTip('Colour areas: Painter splits the picture by its colours (the way it works '
+                                     'until you use AI parts). Click it to forget the AI parts and go back to this.')
     w.colour_parts_button.clicked.connect(lambda checked=False: w.forget_ai_parts())
     w.painter_parts_buttons=QWidget();w.painter_parts_buttons.setMinimumWidth(0)
     _row=QHBoxLayout(w.painter_parts_buttons);_row.setContentsMargins(0,0,0,0);_row.setSpacing(6)
@@ -3020,7 +3022,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
         _b.setMinimumWidth(0);_b.setSizePolicy(QSizePolicy.Policy.Expanding,QSizePolicy.Policy.Fixed)
         _row.addWidget(_b,1)
     a2.addRow('Parts',w.painter_parts_buttons)
-    w.image_paint_hint=caption('Image sources paint with Adaptive Hand Painting or Zigzag sweep. Original PNG colors are preserved.')
+    w.image_paint_hint=caption('Pictures keep their own colours; Paint mode chooses how the hand paints them.')
     a2.addRow(w.image_paint_hint)
     w.color_fade=w.number(0,20,.4,.1);a2.addRow('SVG paint time (s)',w.color_fade)
     a2.addRow('Image paint time (s)',w.image_duration)
@@ -3045,6 +3047,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
                             'Smooth brush: a smooth, clean edge that follows the brush. '
                             'Ink appearance: the paint soaks in like ink, with a ragged, grainy edge.')
     a2.addRow('Paint look',w.paint_look)
+    a2.setRowVisible(w.paint_look,False)      # exp.181: chosen in the Paint mode picker (with its preview)
     w.paint_look.currentIndexChanged.connect(lambda *_: w.refresh())
     w.color_hold=w.number(0,30,.6,.1);a2.addRow('Hold (s)',w.color_hold)
     # "Goes out" on / off: a switch for the Goes out list (Off, or the last way chosen).

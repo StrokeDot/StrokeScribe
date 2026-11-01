@@ -52,13 +52,14 @@ PREVIEW_FRAMES = 18
 class PaintModeDialog(QDialog):
     """Choose a paint mode. `allowed(text)` says whether a mode can be used for this element."""
 
-    def __init__(self, window, current, allowed=lambda text: True):
+    def __init__(self, window, current, allowed=lambda text: True, look='Classic'):
         super().__init__(window)
         self.setWindowTitle('Paint mode')
         self.setObjectName('paintModeDialog')
         self.window_ = window
         self.chosen = current
-        self._frames = {}           # mode -> [QPixmap]
+        self.look = look            # exp.181: Paint look, chosen here too (with the preview)
+        self._frames = {}           # (mode, look) -> [QPixmap]
         self._pending = None        # (mode, [fractions], index)
         self._shown = 0
         outer = QVBoxLayout(self)
@@ -83,6 +84,19 @@ class PaintModeDialog(QDialog):
         self.pause_button.setToolTip('Pause or play the preview (or click the preview).')
         self.pause_button.clicked.connect(lambda checked=False: self.toggle_pause())
         controls.addWidget(self.pause_button); controls.addStretch(1)
+        # exp.181 (the user: "Paint look should be in the paint mode, showing the styles"):
+        # how the paint appears where the brush passes, with the preview.
+        from PySide6.QtWidgets import QButtonGroup
+        from adaptive_hand import PAINT_LOOKS
+        controls.addWidget(QLabel('Paint look'))
+        self.look_group = QButtonGroup(self)
+        self.look_buttons = {}
+        for name in PAINT_LOOKS:
+            button = QPushButton(name); button.setCheckable(True); button.setObjectName('subtle')
+            button.setChecked(name == look)
+            self.look_group.addButton(button)
+            button.clicked.connect(lambda checked=False, n=name: self.set_look(n))
+            controls.addWidget(button); self.look_buttons[name] = button
         self.paused = False
         self.note = QLabel(''); self.note.setWordWrap(True); self.note.setObjectName('caption')
         side.addWidget(self.note)
@@ -92,16 +106,18 @@ class PaintModeDialog(QDialog):
         outer.addWidget(buttons)
         self.items = {}
         for group, modes in GROUPS:
+            # exp.181 (the user: "Brush painting doesn't do anything"): a mode this element
+            # cannot use is not listed (Brush painting is for SVG pictures only).
+            usable = [text for text, _ in modes if allowed(text)]
+            if not usable:
+                continue
             header = QListWidgetItem(group)
             header.setFlags(Qt.ItemFlag.NoItemFlags)
             font = header.font(); font.setBold(True); font.setPointSizeF(font.pointSizeF() * .85); header.setFont(font)
             self.list.addItem(header)
-            for text, _ in modes:
+            for text in usable:
                 item = QListWidgetItem('    ' + text)
                 item.setData(Qt.ItemDataRole.UserRole, text)
-                if not allowed(text):
-                    item.setFlags(Qt.ItemFlag.NoItemFlags)
-                    item.setToolTip('Not available for this element.')
                 self.list.addItem(item)
                 self.items[text] = item
         self.list.currentItemChanged.connect(lambda item, _old: self.select(item))
@@ -124,13 +140,20 @@ class PaintModeDialog(QDialog):
         self.about.setText(DESCRIPTIONS.get(mode, ''))
         self.start_preview(mode)
 
+    def set_look(self, name):
+        self.look = name
+        for n, button in self.look_buttons.items():
+            button.setChecked(n == name)
+        if self.chosen:
+            self.start_preview(self.chosen)
+
     # ------------------------------------------------------------ preview
     def preview_plan(self, mode):
         """(options, [fractions]) for a preview of `mode` on the edited element, or (None, note)."""
         w = self.window_
         if getattr(w, 'drawing', None) is None:
             return None, 'Add a picture to see a preview here.'
-        options = w.options(overrides={'reveal_mode': mode})
+        options = w.options(overrides={'reveal_mode': mode, 'paint_look': self.look})
         if options.get('final_image') is None:
             return None, 'This element has no colours to paint, so there is nothing to preview.'
         from frame_render import timeline_seconds
@@ -148,7 +171,8 @@ class PaintModeDialog(QDialog):
     def start_preview(self, mode):
         self.play_timer.stop(); self.render_timer.stop()
         self._shown = 0
-        if mode in self._frames and len(self._frames[mode]) == PREVIEW_FRAMES:
+        key = (mode, self.look)
+        if key in self._frames and len(self._frames[key]) == PREVIEW_FRAMES:
             self.note.setText('')
             self.play(); return
         try:
@@ -157,8 +181,8 @@ class PaintModeDialog(QDialog):
             options, fractions = None, f'No preview: {exc}'
         if options is None:
             self.preview.clear(); self.preview.setText(fractions); self.note.setText(''); return
-        self._frames[mode] = []
-        self._pending = (mode, options, fractions)
+        self._frames[key] = []
+        self._pending = (key, options, fractions)
         self.preview.setText('Preparing the preview…')
         self.note.setText('The first frame can take a few seconds while the brush route is planned.')
         QTimer.singleShot(30, self.render_timer.start)        # let the text show first
@@ -166,11 +190,11 @@ class PaintModeDialog(QDialog):
     def render_next(self):
         if self._pending is None:
             self.render_timer.stop(); return
-        mode, options, fractions = self._pending
-        frames = self._frames[mode]
-        if len(frames) >= len(fractions) or mode != self.chosen:
+        key, options, fractions = self._pending
+        frames = self._frames[key]
+        if len(frames) >= len(fractions) or key != (self.chosen, self.look):
             self.render_timer.stop(); self._pending = None
-            if mode == self.chosen:
+            if key == (self.chosen, self.look):
                 self.note.setText(''); self.play()
             return
         from frame_render import compose_frame
@@ -203,11 +227,11 @@ class PaintModeDialog(QDialog):
         self.pause_button.setText('Play' if self.paused else 'Pause')
         if self.paused:
             self.play_timer.stop()
-        elif self._frames.get(self.chosen) and self._pending is None:
+        elif self._frames.get((self.chosen, self.look)) and self._pending is None:
             self.play_timer.start()
 
     def play_next(self):
-        frames = self._frames.get(self.chosen) or []
+        frames = self._frames.get((self.chosen, self.look)) or []
         if not frames:
             self.play_timer.stop(); return
         self.preview.setPixmap(frames[self._shown % len(frames)])
