@@ -271,8 +271,9 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
                           final_image=None, thickness=1., hand=None,
                           hand_scale=.18, anchor=(.1,.1), reveal_mode='fade',
                           brush_width=.14, painting_hand=None, stroke_spacing=.55,
-                          paper_cleanup=False,paper_tolerance=22,paper_softness=8):
+                          paper_cleanup=False,paper_tolerance=22,paper_softness=8,paint_look='classic'):
     """Show SVG drawing, then fade, brush, adaptive or zigzag painting."""
+    drawing.paint_look=paint_look or 'classic'      # exp.180: Paint look (adaptive_hand.PAINT_LOOKS)
     if final_image is None or final_image.isNull():
         return render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)
     if reveal_mode in ('adaptive','zigzag','rows','columns','short_zigzag','painter'):

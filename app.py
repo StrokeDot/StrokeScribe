@@ -931,7 +931,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # historical full-opacity, no-cleanup defaults when switching.
             for name,default in (('artwork_opacity',100),('paper_cleanup',False),
                                  ('paper_tolerance',22),('paper_softness',8),('move_hand',False),
-                                 ('entrance_part','The whole picture'),
+                                 ('entrance_part','The whole picture'),('paint_look','Classic'),
                                  *__import__('picture_look').DEFAULTS.items()):
                 if name not in settings:
                     widget=getattr(self,name,None)
@@ -2152,7 +2152,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.refresh()
 
     # ------------------------------------------------------------ projects
-    PROJECT_SETTINGS=('duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
+    PROJECT_SETTINGS=('paint_look','duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
                       'use_color','preserve_colors','showhand','left_handed','paint_left_handed','entrance','entrance_part','pause_after','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
@@ -2594,6 +2594,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                        'paper_tolerance':22,'paper_softness':8,
                        # Older projects: slides came in without a hand.
                        'move_hand':False,'entrance_part':'The whole picture',
+                       'paint_look':'Classic',          # exp.180: Paint look (older projects: Classic)
                        # exp.115: the element's own camera (older projects: none).
                        'cam_start_zoom':100.,'cam_start_x':50.,'cam_start_y':50.,'cam_end_zoom':160.,
                        'cam_end_x':50.,'cam_end_y':50.,'cam_begin':0.,'cam_time':1.2,
