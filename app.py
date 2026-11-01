@@ -1606,6 +1606,51 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                             'effect. Drag it on the preview to place it, double-click its clip for more.')
         return item
 
+    def eraser_dialog(self,item=None):
+        """exp.186: what an Eraser clip erases, how, and for how long. None when cancelled."""
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QComboBox, QDoubleSpinBox
+        import eraser_clips
+        dialog=QDialog(self); dialog.setWindowTitle('Eraser')
+        form=QFormLayout(dialog)
+        target=QComboBox()
+        for k,s in enumerate(self.scenes):
+            target.addItem(f'{k+1} · {self.scene_label(k)}',s.get('uid'))
+        k0=eraser_clips.target_of(item,[dict(uid=s.get('uid')) for s in self.scenes]) if item else None
+        if k0 is None:
+            k0=self.scene_index           # the element being edited (chosen on the timeline)
+        target.setCurrentIndex(max(0,min(len(self.scenes)-1,int(k0))))
+        style=QComboBox(); style.addItems(list(eraser_clips.MODES))
+        if item: style.setCurrentText({v:k for k,v in eraser_clips.MODES.items()}.get(item.get('mode'),'Zigzag (follows the shapes)'))
+        length=QDoubleSpinBox(); length.setRange(.3,30.); length.setDecimals(1); length.setSingleStep(.5); length.setSuffix(' s')
+        length.setValue(float(item.get('duration',3.)) if item else 3.)
+        form.addRow(help_label('Erases','The element it rubs out (wherever it is on the board).'),target)
+        form.addRow(help_label('How','Zigzag: back and forth over the picture. Along the lines: follows the lines it drew.'),style)
+        form.addRow(help_label('How long','How long the erasing takes.'),length)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); form.addRow(buttons)
+        if dialog.exec()!=QDialog.DialogCode.Accepted: return None
+        k=target.currentIndex()
+        return dict(target=self.scenes[k].get('uid'),target_k=k,name=f'Erase {k+1} · {self.scene_label(k)}'[:40],
+                    mode=eraser_clips.MODES[style.currentText()],duration=round(length.value(),2))
+
+    def add_eraser(self):
+        """exp.186: an Eraser clip at the playhead (whole video)."""
+        import overlays
+        if not self.drawing: return None
+        if not self.all_scenes():
+            self.preview_scope.setCurrentIndex(1); self.app_events()
+        choice=self.eraser_dialog()
+        if choice is None: return None
+        item=overlays.new_eraser(choice['target'],choice['target_k'],choice['name'],mode=choice['mode'])
+        item=self.add_overlay(item)
+        item['duration']=choice['duration']
+        self.project_changes.mark_changed(); self.refresh()
+        self.status.setText('Eraser added. Drag it on the timeline to choose when; double-click it to change it.')
+        return item
+
+    def app_events(self):
+        QApplication.processEvents()
+
     def add_overlay_text(self):
         import overlays
         if not self.drawing: return None
@@ -1794,6 +1839,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import copy
         item=self.find_overlay(oid)
         if item is None: return
+        if item.get('kind')=='eraser':                  # exp.186
+            choice=self.eraser_dialog(item)
+            if choice is None: return
+            self.record_structure('edit eraser'); item.update(choice)
+            self.project_changes.mark_changed(); self.refresh(); return
         self.selected_overlay=oid
         before=copy.deepcopy(item)
         self.record_structure('text settings')
@@ -3826,7 +3876,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             drawing,options,length,camera=self.preview_scene(k,width,height)
             camera=self.video_camera(k,camera,length)            # exp.119: the camera clips
             options=dict(options,**self.hand_video(k))           # exp.147: the Hand row
-            elements.append(dict(drawing=drawing,options=options,camera=camera,
+            elements.append(dict(drawing=drawing,options=options,camera=camera,uid=self.scenes[k].get('uid'),
                                  transition=self.scenes[k]['transition'],
                                  move_seconds=self.scenes[k]['transition_seconds']))
         hidden=self.hidden_elements()
@@ -5080,7 +5130,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """exp.147: render options for the Hand row: its clips (the hand slides out of the
         picture and back) and where element k starts in the whole video."""
         import camera_clips
-        sig=camera_clips.hand_signature(getattr(self,'cameras',()))
+        sig=camera_clips.hand_signature(list(getattr(self,'cameras',()))+self.eraser_hand_clips())
         if not sig: return {}
         start=0.
         if k is not None:
@@ -5089,6 +5139,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             except Exception:
                 start=0.
         return dict(hand_away=sig,hand_video_start=start)
+
+    def eraser_hand_clips(self):
+        """exp.186: while an Eraser clip works on the page being shown, the waiting hand goes down."""
+        import eraser_clips, timeline_render
+        items=eraser_clips.clips(getattr(self,'overlays',()))
+        if not items or not self.all_scenes(): return []
+        try:
+            lay=self.timeline_layout()
+            return eraser_clips.hand_leaves(items,[dict(uid=s.get('uid')) for s in self.scenes],
+                                            self.board_frames(),lambda sec: timeline_render.page_of(lay,sec))
+        except Exception:
+            return []
 
     def hand_marks(self):
         """exp.147: for the Hand row: each element's (start, glide in, drawing, glide back)."""

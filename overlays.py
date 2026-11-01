@@ -47,6 +47,14 @@ def new_text(text='Your title', start=0., duration=3.):
                 effect_in='Slide from top', in_seconds=.5, effect_out=DEFAULT_OUT, out_seconds=.4, track=0)
 
 
+def new_eraser(target, target_k, name, start=0., duration=3., mode='zigzag', track=0):
+    """exp.186 (the user): an Eraser clip on the timeline, like a text: it rubs out one element
+    (target: its uid) on its page, between start and start + duration, whether or not the
+    camera shows it (eraser_clips.py)."""
+    return dict(id=uuid.uuid4().hex[:10], kind='eraser', name=name, target=target, target_k=int(target_k),
+                mode=mode, start=float(start), duration=float(duration), track=int(track))
+
+
 def image_item_from_file(path, start=0., duration=3.):
     """An image overlay from a PNG / JPG / WebP / SVG file (the picture is kept in the project)."""
     from pathlib import Path
@@ -231,6 +239,8 @@ def text_picture(item, line_px):
 
 def box(item, width, height):
     """(x, y, w, h) of the overlay in a width × height frame, without effects."""
+    if item.get('kind') == 'eraser':
+        return 0., 0., 0., 0.                     # exp.186: nothing on the screen to pick
     if item.get('kind') == 'text':
         line = float(item.get('size', .09)) * height
         img = text_picture(item, line)
@@ -251,6 +261,8 @@ def paint(frame, items, t):
     W, H = frame.width(), frame.height()
     p = None
     for item in sorted(items, key=lambda i: (int(i.get('track', 0)), float(i.get('start', 0)))):
+        if item.get('kind') == 'eraser':          # exp.186: not drawn on the screen (eraser_clips)
+            continue
         state = state_at(item, t)
         if state is None:
             continue

@@ -356,12 +356,15 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
             item = lay.items[len(elements)]
             camera = camera_clips.wrap(camera, item.start, cameras, [(m.start, m.end) for m in lay.moves],
                                        item.length)
-        if cameras:
-            import camera_clips
-            hand_sig = camera_clips.hand_signature(cameras)       # exp.147: the Hand row
-            if hand_sig:
-                options.update(hand_away=hand_sig, hand_video_start=lay.items[len(elements)].start)
-        elements.append(dict(drawing=p['drawing'], options=options, camera=camera,
+        import camera_clips, eraser_clips, timeline_render
+        uids = [s.get('uid') for s in scenes]
+        away = list(cameras or ()) + eraser_clips.hand_leaves(
+            titles, [dict(uid=u) for u in uids], [q['frame'] for q in prepared],
+            lambda sec: timeline_render.page_of(lay, sec))          # exp.186: the hand makes way
+        hand_sig = camera_clips.hand_signature(away)                 # exp.147: the Hand row
+        if hand_sig:
+            options.update(hand_away=hand_sig, hand_video_start=lay.items[len(elements)].start)
+        elements.append(dict(drawing=p['drawing'], options=options, camera=camera, uid=uids[len(elements)],
                              transition=p['transition'], move_seconds=p['move_seconds']))
     total = max(1, round(lay.total * fps))
     titles = with_holds(titles, [m.start for m in lay.moves], lay.total,
