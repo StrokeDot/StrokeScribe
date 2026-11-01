@@ -99,13 +99,17 @@ def compose(world, lay, state, elements, width, height, titles=None, seconds=Non
     drawn on higher tracks."""
     import board
     from scenes import transition_frame
+    # exp.186: Eraser clips come with the texts (they are clips on the tracks like them).
+    import eraser_clips
+    erasers = eraser_clips.at(titles, elements, seconds)
+    titles = [o for o in titles or () if o.get('kind') != 'eraser']
     if state.kind == 'move':
         k = state.move
         kind = elements[k].get('transition', 'Camera move')
         last = k == len(elements) - 1
         if kind in board.SCREEN_KINDS and not last and view_scale <= 1.:
-            a = _page(world, lay, state, elements, world.frames[k], width, height)
-            b = _page(world, lay, state, elements, world.frames[k + 1], width, height)
+            a = _page(world, lay, state, elements, world.frames[k], width, height, erasers=erasers)
+            b = _page(world, lay, state, elements, world.frames[k + 1], width, height, erasers=erasers)
             return _texts(transition_frame(a, b, kind, state.t), titles, seconds)
     def view_fn(st, plain=False):
         v = plain_view(world, st) if plain else view_of(world, lay, st, elements)
@@ -113,7 +117,7 @@ def compose(world, lay, state, elements, width, height, titles=None, seconds=Non
             w = v[2] * view_scale        # exp.122: and moved around by dragging it
             v = (v[0] + view_pan[0] * w, v[1] + view_pan[1] * w * world.aspect, w)
         return v
-    return _page(world, lay, state, elements, view_fn(state), width, height, titles, seconds, view_fn)
+    return _page(world, lay, state, elements, view_fn(state), width, height, titles, seconds, view_fn, erasers)
 
 
 def page_of(lay, seconds):
@@ -225,9 +229,34 @@ def _drawing_now(state, elements, k):
     return False
 
 
-def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None, view_fn=None):
-    skip = set(range(len(elements))) - set(state.finished)
+def _erasing(world, elements, erasers, view, out, width, height, state):
+    """exp.186: the elements Eraser clips are rubbing out (gone once their clip is over), with
+    the eraser on them. Worked out at one size, so a zoom or camera move does not plan the
+    eraser's route again."""
+    import eraser_clips
+    from PySide6.QtGui import QPainter
+    for k, (p, item) in sorted(erasers.items()):
+        if p >= 1. or (k not in state.finished and k not in dict(state.active)):
+            continue
+        x, y, w, h = world.place(world.frames[k], view, width, height)
+        if w < 2 or x > width or y > height or x + w < 0 or y + h < 0:
+            continue
+        el = elements[k]
+        q = eraser_clips.WORK_WIDTH           # one size for every zoom: the route is planned once
+        opts = eraser_clips.erase_options(el['options'], item)
+        f = eraser_clips.fraction_for(el['drawing'], opts, p)
+        # the picture and the eraser on it in one go (one eraser route for both)
+        art = element_frame(el['drawing'], opts, f, q, max(2, round(q * world.aspect)), 'all')
+        out = world.put(out, art, world.frames[k], view, el['options'].get('blend_mode', 'Normal'),
+                        el['options'].get('artwork_opacity', 100))
+    return out
+
+
+def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None, view_fn=None, erasers=None):
+    erasers = erasers or {}
+    skip = (set(range(len(elements))) - set(state.finished)) | set(erasers)
     out = world.view(view, width, height, upto=len(elements), skip=skip)
+    out = _erasing(world, elements, erasers, view, out, width, height, state)
     tracks = {it.k: it.track for it in lay.items}
     waiting = sorted(titles or (), key=lambda o: int(o.get('track', 0)))
     hand_k = _hand_element(state, elements, tracks)
@@ -240,6 +269,8 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
         # drew nothing). When its hand is done, it goes back to its track's place.
         active = [a for a in active if a[0] != hand_k] + [a for a in active if a[0] == hand_k]
     for k, fraction in active:
+        if k in erasers:
+            continue                      # exp.186: being erased (or gone): drawn by _erasing
         under = [o for o in waiting if int(o.get('track', 0)) < tracks.get(k, 0)]
         if under:
             out = _texts(out, under, seconds, world, view)

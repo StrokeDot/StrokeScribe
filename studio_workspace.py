@@ -1035,7 +1035,7 @@ class StageTimeline(QFrame):
                 p.drawRoundedRect(r,6,6)
                 if r.width()>30:
                     p.setPen(QColor(c['text'])); p.setFont(small)
-                    icon='T ' if item.get('kind')=='text' else '▣ '
+                    icon={'text':'T ','eraser':'⌫ '}.get(item.get('kind'),'▣ ')
                     p.drawText(r.adjusted(7,0,-6,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
                                f'{icon}{str(item.get("name") or "")[:30]}  ({k+1})')
             p.restore()
@@ -1048,14 +1048,14 @@ class StageTimeline(QFrame):
             for item in self.overlays:
                 r=self._overlay_rect(item).adjusted(1,2,-1,-2)
                 chosen=item.get('id')==self.selected_overlay or item.get('id') in self.selected_overlays
-                fill=QColor(colour if item.get('kind')!='text' else QColor(c.get('erase','#E06A86')))
+                fill=QColor('#8A8F98') if item.get('kind')=='eraser' else QColor(colour if item.get('kind')!='text' else QColor(c.get('erase','#E06A86')))
                 fill.setAlpha(235 if chosen else 185)
                 if int(item.get('track',0)) in self.text_hidden: fill.setAlpha(70)
                 p.setPen(QPen(QColor('white') if chosen else fill.lighter(130),2 if chosen else 1)); p.setBrush(fill)
                 p.drawRoundedRect(r,6,6)
                 if r.width()>30:
                     p.setPen(QColor('white')); p.setFont(small)
-                    icon='T ' if item.get('kind')=='text' else '▣ '
+                    icon={'text':'T ','eraser':'⌫ '}.get(item.get('kind'),'▣ ')
                     p.drawText(r.adjusted(7,0,-6,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
                                icon+str(item.get('name') or '')[:40])
             p.restore()
@@ -3582,6 +3582,15 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.add_text_overlay.setToolTip('Add a text. Put a title or label on top of this scene, with an entrance effect.')
     w.add_text_overlay.clicked.connect(lambda checked=False: w.add_overlay_text())
     timeline_head.addWidget(w.add_text_overlay)
+    # exp.186 (the user): an eraser is a clip of its own, put anywhere on the timeline.
+    w.add_eraser_clip=QPushButton(); w.add_eraser_clip.setObjectName('subtle')
+    w.add_eraser_clip.setIcon(plus_icon('trash')); w.add_eraser_clip.setIconSize(_QS(22,22))
+    w.add_eraser_clip.setFixedSize(38,32)
+    w.add_eraser_clip.setToolTip('Add an eraser. It rubs out one element at the playhead, like a clip you can '
+                                 'move: before or after a camera move. It also erases a page the camera is not '
+                                 'showing, so it is gone when you come back.')
+    w.add_eraser_clip.clicked.connect(lambda checked=False: w.add_eraser())
+    timeline_head.addWidget(w.add_eraser_clip)
     w.add_camera_clip_button=QPushButton(); w.add_camera_clip_button.setObjectName('subtle')
     w.add_camera_clip_button.setIcon(plus_icon('camera')); w.add_camera_clip_button.setIconSize(_QS(22,22))
     w.add_camera_clip_button.setFixedSize(38,32)
