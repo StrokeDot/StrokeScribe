@@ -373,7 +373,7 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         # even when imperfect SVG paths extend outside the PNG silhouette.
         from svg_guide_cleanup import remove_svg_guides
         outline=remove_svg_guides(render(drawing,1,width,height,thickness),
-                                  mask,final_image,rect)
+                                  mask,final_image,rect,reveal_progress)
         over=QPainter(outline)
         over.drawImage(0,0,painted)
         over.end()

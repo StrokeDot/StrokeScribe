@@ -556,7 +556,7 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
     p.end()
     from svg_guide_cleanup import remove_svg_guides
     outline=remove_svg_guides(render(drawing,1,width,height,thickness),
-                              mask,image,rect)
+                              mask,image,rect,progress/.98)
     # Assemble on a fresh premultiplied canvas, exactly like the settled
     # frame. Compositing onto the SVG layer's own image format rounded some
     # semi-transparent edge pixels, so a fully painted frame could differ
