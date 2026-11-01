@@ -506,15 +506,92 @@ def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
         _CACHE.move_to_end(key)
     return _CACHE[key]
 
+# exp.177 (the user: make the painting feel real, not squares switching on): the paint edge.
+# Every point of the picture gets its own moment the brush reaches it (the plan's grid of
+# moments, smoothed and blended between cells), and appears over a short moment instead of a
+# whole square at once. The edge also catches on a fixed paper grain, so it is ragged and
+# grainy like a dry brush or charcoal, and the grain stays put on the paper while the edge
+# moves through it.
+SOFT_PAINT = True
+SOFT_LIMIT = 1280        # the edge is worked out at most this many pixels across
+SOFT_FEATHER = .025      # a point fades in over this share of the painting
+SOFT_GRAIN = .06         # how far the paper grain pushes the edge (share of the painting)
+SOFT_ROUND = .8          # cells: how much the brush's grid of moments is rounded
+
+
+def _grain(height, width, seed):
+    """A fixed paper grain, -1..1: fine fibres over soft blotches (the same every frame)."""
+    import cv2
+    rng = np.random.default_rng(seed)
+    out = np.zeros((height, width), np.float32)
+    for scale, weight in ((2, .45), (6, .35), (24, .2)):
+        h, w = max(2, height // scale), max(2, width // scale)
+        layer = cv2.resize(rng.random((h, w), dtype=np.float32), (width, height),
+                           interpolation=cv2.INTER_CUBIC)
+        out += weight * layer
+    out -= out.mean()
+    return out / max(1e-6, float(np.abs(out).max()))
+
+
+def _soft_field(plan, image):
+    """(moments, grain) at the edge's working size, in the plan's own clock (cached)."""
+    cached = plan.__dict__.get('_soft_field')
+    if cached is not None:
+        return cached
+    iw, ih = image.width(), image.height()
+    scale = min(1., SOFT_LIMIT / max(1, iw, ih))
+    width, height = max(2, round(iw * scale)), max(2, round(ih * scale))
+    import cv2
+    gw, gh = plan.size
+    arrival = np.asarray(plan.arrival, np.float64).reshape(gh, gw)
+    valid = np.isfinite(arrival).astype(np.float32)
+    late = float(plan.total) * 1.05
+    times = np.where(valid > 0, arrival, 0.).astype(np.float32)
+    # Rounded and blended only between cells the brush paints (a cell it never paints must
+    # not make its neighbours late).
+    if SOFT_ROUND > 0:
+        times = cv2.GaussianBlur(times, (0, 0), SOFT_ROUND)
+        weight = cv2.GaussianBlur(valid, (0, 0), SOFT_ROUND)
+    else:
+        weight = valid.copy()
+    up_t = cv2.resize(times, (width, height), interpolation=cv2.INTER_LINEAR)
+    up_w = cv2.resize(weight, (width, height), interpolation=cv2.INTER_LINEAR)
+    painted = cv2.resize(valid, (width, height), interpolation=cv2.INTER_NEAREST) > 0
+    moments = np.where(painted & (up_w > 1e-4), up_t / np.maximum(up_w, 1e-4), late).astype(np.float32)
+    grain = _grain(height, width, (gw * 7919 + gh * 104729 + len(plan.segments)) % (2 ** 32))
+    field = (moments, grain)
+    plan.__dict__['_soft_field'] = field
+    return field
+
+
+def soft_paint_alpha(plan, image, progress):
+    """0..255 at the edge's working size: how painted every point is at this progress."""
+    moments, grain = _soft_field(plan, image)
+    clock = max(0., min(1., float(progress))) / .98 * plan.total
+    if progress <= 0:
+        return np.zeros(moments.shape, np.uint8)
+    total = max(1e-9, float(plan.total))
+    feather = SOFT_FEATHER * total
+    # The grain only moves the edge; a point is fully painted by the time the brush is
+    # well past it (so nothing is left unpainted when the brush is done).
+    shift = SOFT_GRAIN * total * grain
+    amount = np.clip((clock - moments + shift + feather * .5) / feather, 0., 1.)
+    done = clock >= np.minimum(moments + SOFT_GRAIN * total + feather, total)
+    amount[done] = 1.
+    return np.asarray(np.rint(amount * 255), np.uint8)
+
+
 def adaptive_paint_mask(drawing,image,width,height,rect,progress,brush_width,stroke_spacing=.55):
     plan=plan_for(drawing,image,brush_width,stroke_spacing)
-    alpha=plan.mask(progress)
-    alpha=alpha.resize((image.width(),image.height()),Image.Resampling.NEAREST)
+    if SOFT_PAINT:
+        alpha=Image.fromarray(soft_paint_alpha(plan,image,progress),'L')
+    else:
+        alpha=plan.mask(progress)
+        alpha=alpha.resize((image.width(),image.height()),Image.Resampling.NEAREST)
     small=Image.new('RGBA',alpha.size,(255,255,255,0)); small.putalpha(alpha)
     mask=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
     mask.fill(Qt.GlobalColor.transparent)
     painter=QPainter(mask)
-    # Nearest-neighbor keeps the exact discrete footprint at every resolution.
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     painter.drawImage(rect,qimage(small)); painter.end()
     segment,tip=plan.state(progress)

@@ -309,3 +309,24 @@ class AdaptiveTests(unittest.TestCase):
 
 if __name__=='__main__':
     unittest.main(verbosity=2)
+
+
+class SoftPaintEdgeTests(unittest.TestCase):
+    """exp.177 (the user: make the painting feel real): the paint edge is soft and grainy
+    instead of squares switching on, and everything is painted when the brush is done."""
+
+    def test_soft_edge_grows_and_finishes(self):
+        import numpy as np
+        from adaptive_hand import soft_paint_alpha
+        drawing, image = fixture()
+        plan = plan_for(drawing, image)
+        before = soft_paint_alpha(plan, image, 0.)
+        middle = soft_paint_alpha(plan, image, .5)
+        later = soft_paint_alpha(plan, image, .7)
+        done = soft_paint_alpha(plan, image, .98)
+        self.assertEqual(int(before.max()), 0)
+        self.assertTrue((later.astype(int) >= middle.astype(int)).all())     # never un-paints
+        painted = np.asarray(plan.mask(.98).resize((done.shape[1], done.shape[0]), Image.Resampling.NEAREST)) > 0
+        self.assertTrue((done[painted] == 255).all())                         # all done at the end
+        partial = ((middle > 0) & (middle < 255)).sum()
+        self.assertGreater(partial, 0)                                        # a soft edge, not squares
