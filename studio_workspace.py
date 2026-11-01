@@ -856,7 +856,7 @@ class StageTimeline(QFrame):
 
     def _edges(self):
         """[(stage key, x of its right edge, seconds before it)] of the visible stage clips."""
-        out=[]; t=self.offset
+        out=[]; t=self.offset+(getattr(self,'lead',0.) if self.items or self.scene_segments else 0.)
         for key,secs in zip(self.STAGE_KEYS,(self.draw_seconds,self.paint_seconds,self.hold_seconds,self.erase_seconds)):
             if secs<=0: continue
             out.append((key,self._x(t+secs),t)); t+=secs
@@ -1104,12 +1104,12 @@ class StageTimeline(QFrame):
                                  QPointF(play_x-6,ruler_h-6)]))
         p.end()
 
-    STAGE_NAMES={'draw':'Draw','paint':'Paint','hold':'Hold','erase':'Out','move':'Move in'}
+    STAGE_NAMES={'draw':'Draw','paint':'Paint','hold':'Hold','erase':'Out','move':'Move in','glide':'Hand'}
 
     def _paint_whole(self, p, c, clips, small):
         """Whole video: one block per element with its parts inside, camera moves between."""
         colours={'draw':c['draw'],'paint':c['paint'],'hold':c['hold'],'erase':c.get('erase','#D9667E'),
-                 'move':c['draw']}
+                 'move':c['draw'],'glide':c['border_strong']}
         p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
         bold=QFont(self.font()); bold.setPointSizeF(8.5); bold.setBold(True)
         for k,start,secs,seg in self._blocks():
@@ -1161,7 +1161,7 @@ class StageTimeline(QFrame):
         """Whole video on tracks: the Camera row with its moves, then one row per track
         (the top row is empty: drag an element there to put it on a new track)."""
         colours={'draw':c['draw'],'paint':c['paint'],'hold':c['hold'],'erase':c.get('erase','#D9667E'),
-                 'move':c['draw']}
+                 'move':c['draw'],'glide':c['border_strong']}
         cam=self._camera_rect()
         area=self._tracks_area()
         p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track']))
