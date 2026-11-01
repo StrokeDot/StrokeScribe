@@ -160,6 +160,7 @@ def split_erase(drawing, fraction, options):
 
 
 _ERASE_CACHE = {}
+_PER_FRAME = {'_video_t', '_travel', '_seconds'}
 
 
 def _erase_key(drawing, opts, erase):
@@ -176,7 +177,9 @@ def _erase_key(drawing, opts, erase):
             return tuple(sorted((str(k), simple(x)) for k, x in v.items()))
         return id(v)
     return (id(drawing), tuple(id(s) for s in drawing.strokes),
-            tuple(sorted((k, simple(v)) for k, v in opts.items())),
+            # exp.185 (the user: erasing is so laggy): the moment in the video changes every frame;
+            # in the key it made the eraser's route be planned again for every frame (1.4 s each).
+            tuple(sorted((k, simple(v)) for k, v in opts.items() if k not in _PER_FRAME)),
             erase.get('mode'), round(float(erase.get('size', .08)), 4))
 
 
