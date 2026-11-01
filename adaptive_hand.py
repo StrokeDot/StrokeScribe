@@ -514,8 +514,8 @@ def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
 # moves through it.
 SOFT_PAINT = True
 SOFT_LIMIT = 1280        # the edge is worked out at most this many pixels across
-SOFT_FEATHER = .025      # a point fades in over this share of the painting
-SOFT_GRAIN = .06         # how far the paper grain pushes the edge (share of the painting)
+SOFT_FEATHER = .01       # a point fades in over this share of the painting (exp.179: a clean brush edge)
+SOFT_GRAIN = .004        # how far the paper grain pushes the edge (exp.179: hardly; the ink look is Ink appearance)
 SOFT_ROUND = .8          # cells: how much the brush's grid of moments is rounded
 
 
