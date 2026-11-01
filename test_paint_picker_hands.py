@@ -76,9 +76,9 @@ class PickerTests(unittest.TestCase):
         for _ in range(400):
             self.app.processEvents()
             dialog.render_next()
-            if len(dialog._frames.get(mode, [])) >= 18:
+            if len(dialog._frames.get((mode, dialog.look), [])) >= 18:
                 break
-        self.assertEqual(len(dialog._frames[mode]), 18)
+        self.assertEqual(len(dialog._frames[(mode, dialog.look)]), 18)     # exp.181: per Paint look
         dialog.reject()
 
     def test_preview_can_be_paused(self):

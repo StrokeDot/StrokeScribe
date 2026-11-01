@@ -587,6 +587,23 @@ def soft_paint_alpha(plan, image, progress, look=None):
     return np.asarray(np.rint(amount * 255), np.uint8)
 
 
+def painting_done(drawing,image,progress,brush_width,stroke_spacing=.55):
+    """exp.182 (the user: when the hand reached its corner the last lines vanished): the
+    painting is finished at the hand's last brush stroke, not at the end of the paint time.
+    The hand goes back to its corner from there, and while it travels the frame is held at
+    that moment; it used to be a hair before 98%, so the last bits of pencil line stayed until
+    the hand was back."""
+    if progress>=.98: return True
+    try:
+        plan=plan_for(drawing,image,brush_width,stroke_spacing)
+        last=max((s.end for s in plan.segments if s.painting),default=plan.total)
+        # (the frame held while the hand goes back is a hair before its last stroke, so the
+        # pen tip stays where it stopped: that counts as finished too)
+        return progress>=last/max(1e-9,plan.total)*.98-.005
+    except Exception:
+        return False
+
+
 def adaptive_paint_mask(drawing,image,width,height,rect,progress,brush_width,stroke_spacing=.55):
     plan=plan_for(drawing,image,brush_width,stroke_spacing)
     look=getattr(drawing,'paint_look','classic') or 'classic'
@@ -616,7 +633,7 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
     # All cells were painted by the real stroke plan at 98%. Render the
     # settled original PNG directly rather than recompositing it over SVG
     # outlines; this preserves exact colors/alpha and avoids dark fringes.
-    if progress>=.98:
+    if painting_done(drawing,image,progress,brush_width,stroke_spacing):
         frame=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
         frame.fill(Qt.GlobalColor.transparent)
         painter=QPainter(frame)

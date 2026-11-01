@@ -5631,10 +5631,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """When the preview is idle, make the next frames ready so Play is smooth."""
         if not hasattr(self,'prerender_timer'):
             self.prerender_timer=QTimer(self); self.prerender_timer.setSingleShot(True)
-            self.prerender_timer.timeout.connect(self.prerender_step)
+            self.prerender_timer.timeout.connect(self._prerender_tick)
         if not self._prerender_all:
             self._prerender_next=0          # idle: start again from the playhead
         self.prerender_timer.start(1 if self._prerender_all else 450)
+
+    def _prerender_tick(self):
+        """exp.181 (the user: very laggy while changing the picture's colours): the frames made
+        in the background are drawn on the same thread as the window, so while you are still
+        changing things they wait."""
+        if not self._prerender_all and time.perf_counter()-getattr(self,'_last_change',0.)<1.2:
+            self.prerender_timer.start(400); return
+        self.prerender_step()
 
     def prerender_step(self):
         view=getattr(self,'_view',None)
@@ -5655,8 +5663,6 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         # exp.181 (the user: very laggy while changing the picture's colours): the frames made
         # in the background are drawn on the same thread as the window, so while you are still
         # changing things it waits, and between frames it leaves the window time to answer.
-        if not self._prerender_all and time.perf_counter()-getattr(self,'_last_change',0.)<1.2:
-            self.prerender_timer.start(400); return
         index,count=self.frame_index(self.position)
         if not self._prerender_all and self.segment_cache.memory_full(
                 self.PREVIEW_WIDTH*round(self.PREVIEW_WIDTH*view['ratio'])*4):
