@@ -158,3 +158,21 @@ class SVGGuideCoverageTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class EmptyAreaGuideTests(unittest.TestCase):
+    """exp.172 (the user: the painting looked finished but lines stayed until the very end):
+    guide ink where the picture is empty fades out before the painting is done."""
+
+    def test_empty_area_ink_is_gone_before_the_end(self):
+        from svg_guide_cleanup import EMPTY_FADE
+        drawing, image = svg_fixture()
+        width, height = 320, 240
+        rect = artwork_rect(drawing, image, width, height)
+        none = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied)
+        none.fill(Qt.GlobalColor.transparent)                 # nothing painted yet
+        corner = (int(rect.left() + 2), int(rect.top() + 2))  # empty in the picture
+        early = pixels(svg_guide_erase_mask(none, image, rect, 0.))[corner[1], corner[0], 3]
+        late = pixels(svg_guide_erase_mask(none, image, rect, EMPTY_FADE[1]))[corner[1], corner[0], 3]
+        self.assertEqual(early, 0)
+        self.assertEqual(late, 255)

@@ -22,6 +22,15 @@ _SUPPORT_CACHE = OrderedDict()
 # fraction of the artwork's longest side. About 2.5 adaptive grid cells.
 GUIDE_REACH = .012
 
+# exp.172 (the user: the painting looked finished but lines stayed until the very end): ink
+# where the picture is empty (nothing will ever be painted there) goes when the brush paints
+# anywhere this near it (share of the artwork's width), not only at its single nearest painted
+# point, which was often among the last dabs.
+EMPTY_REACH = .2
+# What is still left of it then fades out over this stretch of the painting (share of the
+# route), so no line is left once the painting is done.
+EMPTY_FADE = (.8, .95)
+
 
 def grown_coverage(alpha, rect):
     """Dilate a canvas-sized coverage alpha by GUIDE_REACH of the artwork."""
@@ -60,7 +69,15 @@ def _nearest_source_support(image):
     return nearest
 
 
-def svg_guide_erase_mask(coverage, image, rect):
+def empty_fade(progress):
+    """0..255: how much of the guide ink in empty areas has faded out at this progress."""
+    if progress is None:
+        return 0
+    a, b = EMPTY_FADE
+    return int(round(255 * max(0., min(1., (float(progress) - a) / (b - a)))))
+
+
+def svg_guide_erase_mask(coverage, image, rect, progress=None):
     """An erase mask driven by brush coverage, including misaligned SVG ink.
 
     For pixels over real source art, erasure follows the precise reveal mask.
@@ -89,6 +106,11 @@ def svg_guide_erase_mask(coverage, image, rect):
     lookup = np.zeros(int(labels.max()) + 1, dtype=np.uint8)
     lookup[labels[support]] = brush[support]
     source_coverage = lookup[labels]
+    reach = max(1, int(round(gw * EMPTY_REACH)))
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * reach + 1, 2 * reach + 1))
+    near = cv2.dilate(np.ascontiguousarray(np.where(support, brush, 0).astype(np.uint8)), kernel)
+    source_coverage = np.where(support, source_coverage,
+                               np.maximum(np.maximum(source_coverage, near), empty_fade(progress)))
 
     out_x = np.clip(np.floor((np.arange(width) + .5 - rect.left()) *
                              gw / max(.001, rect.width())).astype(np.int32),
@@ -102,9 +124,9 @@ def svg_guide_erase_mask(coverage, image, rect):
     return qimage(mask)
 
 
-def remove_svg_guides(outline, coverage, original, rect):
+def remove_svg_guides(outline, coverage, original, rect, progress=None):
     """Change only the temporary stroke layer, never the original PNG layer."""
-    erase = svg_guide_erase_mask(coverage, original, rect)
+    erase = svg_guide_erase_mask(coverage, original, rect, progress)
     painter = QPainter(outline)
     painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
     painter.drawImage(0, 0, erase)
