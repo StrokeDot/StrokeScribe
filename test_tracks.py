@@ -301,7 +301,8 @@ class WindowTests(unittest.TestCase):
         self.assertAlmostEqual(item['start'], round(w.position * lay.total, 2), places=1)
         self.assertEqual(w.preview_scope.currentIndex(), 1)
         w.refresh(); self.app.processEvents()
-        self.assertIsNotNone(w.canvas.titles_frame)                         # on the screen
+        # exp.168 (the user: nothing above the hand): the text is drawn in the picture, under the hand.
+        self.assertIn(item['id'], [o['id'] for o in w.titles_split(item['start'] + .1)[1]])
         # exp.114: asked while painting, the box never works out the timeline right there.
         from unittest import mock
         w._box_cache = None
@@ -391,7 +392,10 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(on_top, [])
         w.move_overlay_clip(text['id'], 0., 2., 3)     # Track 4: over it
         on_top, under = w.titles_split(.5)
-        self.assertEqual([o['id'] for o in on_top], [text['id']])
+        # exp.168 (the user: nothing above the hand): still drawn in the picture (over element 2,
+        # by its track), with the hand over it.
+        self.assertEqual(on_top, [])
+        self.assertEqual([o['id'] for o in under], [text['id']])
 
     def test_opening_a_project_shows_the_whole_video_from_the_start(self):
         import projects

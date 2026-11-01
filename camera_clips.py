@@ -339,7 +339,7 @@ class VideoCamera:
         if self.base is None:
             own = None
         elif hasattr(self.base, 'at_seconds'):
-            own = self.base.at_seconds(s)
+            own = self.base.at_seconds(min(s, self.total))   # exp.170: its own camera stops at its end
         else:
             own = self.base.at(max(0., min(1., s / self.total)))
         framing = combine(own, framing_at(self.clips, self.start + s, self.moves))

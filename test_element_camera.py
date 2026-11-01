@@ -574,3 +574,23 @@ class PushFollowersTests(unittest.TestCase):
         w.timeline_layout = lambda: layout([3., 3., 3.], [1., 1., 0.], [None] * 3, [0, 0, 0])
         Window.push_after(w, 4., 2.)
         self.assertEqual([s['start'] for s in scenes], [None, 6., None])     # the third follows it
+
+
+class ZoomBetweenElementsTests(unittest.TestCase):
+    """exp.170 (the user: a zoom got stuck between two elements, then jumped to its place):
+    in a gap after an element has finished, a zoom keeps going on the video's clock."""
+
+    def test_zoom_keeps_going_after_the_element_ends(self):
+        import camera_clips
+        from timeline_model import State
+        from timeline_render import camera_at
+        clip = {'id': 'z', 'kind': 'Zoom in', 'start': 9.6, 'duration': 4.4, 'in_s': 1.2, 'out_s': 1.2,
+                'to': [1.6, .4, .46], 'from': None, 'lane': 0}
+        cam = camera_clips.wrap(None, 7.09, [clip], [], 3.0)     # the element: 7.09 to 10.09
+        zooms = []
+        for when in (10.09, 10.3, 10.5, 10.79):
+            state = State('page', current=0, active=[], finished=[0], seconds=when)
+            zooms.append(camera_at(cam, state, 0)[0])
+        for a, b in zip(zooms, zooms[1:]):
+            self.assertGreater(b, a + 1e-3)                       # still zooming in the gap
+        self.assertAlmostEqual(zooms[-1], camera_at(cam, State('page', active=[(0, .5)], seconds=10.79), 0)[0])

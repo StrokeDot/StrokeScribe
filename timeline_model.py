@@ -94,6 +94,7 @@ class State:
     move: int = -1                # move: the move after element `move`
     t: float = 0.                 # move: 0..1 through it
     top: int = -1                 # page: the active element whose hand is shown (the top one)
+    seconds: float = None         # exp.170: the moment of the whole video (camera clips run on it)
 
 
 def state_at(lay, seconds):
@@ -116,11 +117,11 @@ def state_at(lay, seconds):
         end_move = m.k == last
         if (m.start <= s < m.end) or (end_move and m.start <= s):
             return State('move', move=m.k, t=max(0., min(1., (s - m.start) / max(1e-9, m.length))),
-                         active=active, finished=sorted(finished), top=top)
+                         active=active, finished=sorted(finished), top=top, seconds=s)
     started = [it for it in lay.items if it.start <= s + 1e-9] or \
         ([min(lay.items, key=lambda it: (it.start, it.k))] if lay.items else [])
     current = max(started, key=lambda it: (it.start, it.track, it.k)).k if started else 0
-    return State('page', current=current, active=active, finished=sorted(finished), top=top)
+    return State('page', current=current, active=active, finished=sorted(finished), top=top, seconds=s)
 
 
 def interval_at(lay, seconds):
