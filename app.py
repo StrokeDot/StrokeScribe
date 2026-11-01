@@ -3553,6 +3553,38 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 ('hold',(float(options.get('hold_duration',0)) if colour else 0.)+float(options.get('pause',0) or 0)),
                 ('erase',float(erase['seconds']) if erase else 0.)]
 
+    def real_parts(self,k,length,width=960,height=540,last_stroke=True):
+        """exp.176 (the user: on the timeline the hand went back before the painting ended):
+        element k's parts at their real times. The element also holds the hand's glide in
+        (before it draws) and the time it takes to go back; they used to be spread over Draw,
+        Paint and Hold by stretching them, so the Paint part ended later than the painting
+        really did. Now: Hand (glide in), Draw, Paint, Hold (the glide back is during it)."""
+        drawing,options,_,_=self.preview_scene(k,width,height)
+        parts=list(self.stage_parts(options))
+        try:
+            from frame_render import travel_plan
+            plan=travel_plan(drawing,options) if (options.get('entrance') or 'draw')=='draw' else None
+        except Exception:
+            plan=None
+        if plan is not None and plan[0]>0:
+            lead=float(plan[0])
+            rest=float(length)-lead-sum(v for _,v in parts)
+            if rest>=-1e-3:
+                parts=[('glide',lead)]+[(key,v+(rest if key=='hold' else 0.)) for key,v in parts]
+                # The painting is over at the hand's last stroke (the brush plan ends a little
+                # before the end of its time): Paint ends there, the rest is Hold, so the hand
+                # goes back exactly when Paint ends.
+                d=dict(parts); hand_end=float(plan[1])
+                if last_stroke and d.get('paint',0)>0 and d.get('draw',0)<hand_end<d.get('draw',0)+d['paint']:
+                    cut=d.get('draw',0)+d['paint']-hand_end
+                    parts=[(key,v-cut if key=='paint' else v+cut if key=='hold' else v) for key,v in parts]
+                if not any(key=='hold' for key,_ in parts) and rest>1e-3: parts.append(('hold',rest))
+                return parts
+        whole=sum(v for _,v in parts)
+        if whole>0 and abs(whole-length)>1e-3:
+            parts=[(key,v*length/whole) for key,v in parts]
+        return parts
+
     def timeline_layout(self,width=960,height=540):
         """When every element plays in the whole video (timeline_model): its own start and
         track, or right after the element before it (exp.104)."""
@@ -3573,10 +3605,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         lay=self.timeline_layout(width,height)
         items=[]
         for it in lay.items:
-            parts=self.stage_parts(self.preview_scene(it.k,width,height)[1])
-            whole=sum(v for _,v in parts)
-            if whole>0 and abs(whole-it.length)>1e-3:
-                parts=[(key,v*it.length/whole) for key,v in parts]
+            parts=self.real_parts(it.k,it.length,width,height)
             items.append((it.k,f'{it.k+1} · {self.scene_label(it.k)}',it.start,it.length,it.track,parts))
         moves=[(m.k,self.scenes[m.k]['transition'],m.start,m.length) for m in lay.moves]
         return items,moves
@@ -3708,10 +3737,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         lengths,joins=self.scene_timeline(width,height)
         segments=[]
         for n,(length,join) in enumerate(zip(lengths,joins)):
-            parts=self.stage_parts(self.preview_scene(n,width,height)[1])
-            whole=sum(v for _,v in parts)
-            if whole>0 and abs(whole-length)>1e-3:          # match the real length of the element
-                parts=[(key,v*length/whole) for key,v in parts]
+            parts=self.real_parts(n,length,width,height)     # exp.176: at their real times
             segments.append((f'{n+1} · {self.scene_label(n)}',length,'scene',parts))
             if join>0: segments.append((self.scenes[n]['transition'],join,'join',()))
         return segments,lengths,joins
@@ -3728,11 +3754,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         tl.cam_marks=self.element_camera_marks(items)
         tl.set_audio(self.timeline_audio())
         tl.editable={'draw','paint','hold','erase'} if self.duration.isEnabled() else {'paint','hold','erase'}
-        mine=dict(self.stage_parts(options))
         length=lengths[self.scene_index]
-        whole=sum(mine.values())
-        if whole>0 and abs(whole-length)>1e-3:
-            mine={k:v*length/whole for k,v in mine.items()}
+        mine=dict(self.real_parts(self.scene_index,length,last_stroke=False))   # the settings' own times
+        tl.lead=mine.pop('glide',0.)          # exp.176: the hand's glide in, before Draw
         moving='move' in mine
         tl.update_state(mine['move' if moving else 'draw'],mine['paint'],mine['hold'],self.position,mine['erase'],
                         first='Move in' if moving else 'Draw')
