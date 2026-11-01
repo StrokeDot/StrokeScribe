@@ -24,6 +24,18 @@ def element_frame(drawing, options, fraction, width, height, layers):
     return compose_frame(drawing, max(0., min(1., fraction)), opts)
 
 
+def camera_at(camera, state, k):
+    """exp.170 (the user: a zoom got stuck between two elements, then jumped): element k's
+    camera at this moment. The camera clips run on the video's own clock, so after the element
+    has finished (a gap before the next one) a zoom keeps going instead of waiting at the
+    element's last moment."""
+    import camera_clips
+    when = getattr(state, 'seconds', None)
+    if when is not None and isinstance(camera, camera_clips.VideoCamera):
+        return camera.at_seconds(max(0., float(when) - camera.start))
+    return camera.at(dict(state.active).get(k, 1.))
+
+
 def view_of(world, lay, state, elements):
     """The camera's view (cx, cy, w) on the board for this state."""
     import board
@@ -38,8 +50,7 @@ def view_of(world, lay, state, elements):
     view = frames[k]
     camera = elements[k].get('camera')
     if camera is not None:
-        fraction = dict(state.active).get(k, 1.)
-        view = board.sub_view(view, *camera.at(fraction), world.aspect)
+        view = board.sub_view(view, *camera_at(camera, state, k), world.aspect)
     return view
 
 
@@ -64,7 +75,7 @@ def fixed_view(world, lay, state, elements):
     if not clips:
         return world.frames[k]
     cam = camera_clips.VideoCamera(None, camera.start, clips, camera.moves, camera.total)
-    return board.sub_view(world.frames[k], *cam.at(dict(state.active).get(k, 1.)), world.aspect)
+    return board.sub_view(world.frames[k], *camera_at(cam, state, k), world.aspect)
 
 
 def page_place(world, lay, state, elements, width, height, view_scale=1., view_pan=(0., 0.)):
