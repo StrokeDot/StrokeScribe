@@ -125,8 +125,8 @@ def erase_options(options, item, hand=None):
         if tool == 'Pen hand' or not left:
             picture, spot = mirrored(picture), (1 - spot[0], spot[1])
         erase = dict(erase, image=picture, anchor=spot, width=size)
-    if not with_hand(item):
-        erase = dict(erase, image=None)
+    if not with_hand(item) or look.get('on') is False:
+        erase = dict(erase, image=None)          # exp.195: the Eraser hand switch (Hand panel)
     opts = {k: v for k, v in options.items() if k not in ('hand_travel', 'hand_travel_out', 'hand_rest_here',
                                                        'hand_away', '_video_t', 'pause', 'erase')}
     opts.update(erase=erase, pause=0.)

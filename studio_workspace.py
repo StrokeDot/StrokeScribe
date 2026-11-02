@@ -3290,15 +3290,19 @@ def build_workspace(w, Canvas, BRAND_ICON):
                                   'about 45%).')
     eh.addRow('Size',w.eraser_hand_size)
     w.eraser_hand_form=eh
+    w.eraser_hand_on=QCheckBox('Show while erasing'); w.eraser_hand_on.setChecked(True)
+    eh.addRow('',w.eraser_hand_on); eh.setRowVisible(w.eraser_hand_on,False)     # the switch on the header
+    w.eraser_hand_on.toggled.connect(lambda *_: (w.hand_rest_changed(),w.refresh()))
     def _eraser_rows(*_):
         eh.setRowVisible(w.eraser_hand_size,w.eraser_hand.currentText()!='Built-in eraser')
         w.update_eraser_hand_name()
     w.eraser_hand.currentIndexChanged.connect(_eraser_rows)
-    w.eraser_hand.currentIndexChanged.connect(lambda *_: w.refresh())
-    w.eraser_hand_size.valueChanged.connect(lambda *_: w.refresh())
+    w.eraser_hand.currentIndexChanged.connect(lambda *_: w.hand_rest_changed())
+    w.eraser_hand_size.valueChanged.connect(lambda *_: w.hand_rest_changed())
     w.section_draw_hand.attach_switch(w.showhand,'Show the hand while it draws the lines.')
     w.section_paint_hand.attach_switch(w.show_paint_hand,'Show the hand while it paints the colours.')
     w.section_move_hand.attach_switch(w.move_hand,'A hand carries the picture in on the Slide effects.')
+    w.section_erase_hand.attach_switch(w.eraser_hand_on,'Show the eraser hand while it rubs drawings out.')
     hand_l.addStretch(1)
     tabs.addTab(scroll_view(hand),'Hand')
 

@@ -1672,7 +1672,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.eraser_hand_path=self.keep_in_library('hands',name)
         self.eraser_hand.setCurrentText('My picture…')
         self.project_changes.mark_changed(); self.note_change()
-        self.update_eraser_hand_name(); self.show_hand_pictures(); self.refresh()
+        self.update_eraser_hand_name(); self.show_hand_pictures(); self.hand_rest_changed()
 
     def update_eraser_hand_name(self):
         if not hasattr(self,'eraser_hand_name'): return
@@ -2294,7 +2294,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.refresh()
 
     # ------------------------------------------------------------ projects
-    PROJECT_SETTINGS=('eraser_hand','eraser_hand_size','paint_look','duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
+    PROJECT_SETTINGS=('eraser_hand_on','eraser_hand','eraser_hand_size','paint_look','duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
                       'use_color','preserve_colors','showhand','left_handed','paint_left_handed','entrance','entrance_part','pause_after','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
@@ -2804,7 +2804,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                        # Older projects: slides came in without a hand.
                        'move_hand':False,'entrance_part':'The whole picture',
                        'paint_look':'Classic',          # exp.180: Paint look (older projects: Classic)
-                       'eraser_hand':'Built-in eraser','eraser_hand_size':45.,   # exp.192
+                       'eraser_hand':'Built-in eraser','eraser_hand_size':45.,'eraser_hand_on':True,   # exp.192/195
                        # exp.115: the element's own camera (older projects: none).
                        'cam_start_zoom':100.,'cam_start_x':50.,'cam_start_y':50.,'cam_end_zoom':160.,
                        'cam_end_x':50.,'cam_end_y':50.,'cam_begin':0.,'cam_time':1.2,
@@ -2834,7 +2834,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.hand=image; self.hand_builtin=builtin or False; self.hand_path=None
             self.hand_name.setText('Hand: '+(tools_kit.LABELS[builtin] if builtin else 'from project'))
         self.paint_hand_path=tools_kit.restore_paint_hand(settings.get('paint_hand_path'),data.get('paint_hand_png'))
-        self.eraser_hand_path=settings.get('eraser_hand_path')          # exp.192
+        if not getattr(self,'_entering_scene',False):                   # exp.195: one for the video
+            self.eraser_hand_path=settings.get('eraser_hand_path')          # exp.192
         if hasattr(self,'update_eraser_hand_name'): self.update_eraser_hand_name()
         self.paint_hand_tip=settings.get('paint_hand_tip')
         self.update_paint_hand_label()
@@ -5357,7 +5358,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def hand_rest_settings(self):
         """exp.143: the hand waiting in a corner, for every element of the video."""
         if not hasattr(self,'hand_rest'): return {}
-        return dict(hand_rest=self.hand_rest.isChecked(),hand_rest_corner=self.hand_rest_corner.currentText(),
+        eraser={}
+        if hasattr(self,'eraser_hand'):                      # exp.195: one eraser hand for the video
+            eraser=dict(eraser_hand=self.eraser_hand.currentText(),eraser_hand_size=self.eraser_hand_size.value(),
+                        eraser_hand_path=getattr(self,'eraser_hand_path',None),
+                        eraser_hand_on=self.eraser_hand_on.isChecked())
+        return dict(eraser,hand_rest=self.hand_rest.isChecked(),hand_rest_corner=self.hand_rest_corner.currentText(),
                     hand_rest_travel=self.hand_rest_travel.value(),
                     hand_under=self.hand_under.isChecked() if hasattr(self,'hand_under') else False)
 
