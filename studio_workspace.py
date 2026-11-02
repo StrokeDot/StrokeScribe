@@ -3288,17 +3288,20 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.eraser_hand_size=w.number(5,90,45,1);w.eraser_hand_size.setDecimals(0);w.eraser_hand_size.setSuffix('%')
     w.eraser_hand_size.setToolTip('Width of the eraser hand, as a share of the video width (the drawing hand is '
                                   'about 45%).')
-    eh.addRow('Size',w.eraser_hand_size)
+    # exp.196 (the user): a bar too, not only the number
+    _size_box=QWidget(); _sl=QHBoxLayout(_size_box); _sl.setContentsMargins(0,0,0,0); _sl.setSpacing(6)
+    _sl.addWidget(linked_slider(w.eraser_hand_size,5,90),1); _sl.addWidget(w.eraser_hand_size)
+    eh.addRow('Size',_size_box)
     w.eraser_hand_form=eh
     w.eraser_hand_on=QCheckBox('Show while erasing'); w.eraser_hand_on.setChecked(True)
     eh.addRow('',w.eraser_hand_on); eh.setRowVisible(w.eraser_hand_on,False)     # the switch on the header
-    w.eraser_hand_on.toggled.connect(lambda *_: (w.hand_rest_changed(),w.refresh()))
+    w.eraser_hand_on.toggled.connect(lambda *_: w.eraser_changed())
     def _eraser_rows(*_):
-        eh.setRowVisible(w.eraser_hand_size,w.eraser_hand.currentText()!='Built-in eraser')
+        eh.setRowVisible(_size_box,w.eraser_hand.currentText()!='Built-in eraser')
         w.update_eraser_hand_name()
     w.eraser_hand.currentIndexChanged.connect(_eraser_rows)
-    w.eraser_hand.currentIndexChanged.connect(lambda *_: w.hand_rest_changed())
-    w.eraser_hand_size.valueChanged.connect(lambda *_: w.hand_rest_changed())
+    w.eraser_hand.currentIndexChanged.connect(lambda *_: w.eraser_changed())
+    w.eraser_hand_size.valueChanged.connect(lambda *_: w.eraser_changed())
     w.section_draw_hand.attach_switch(w.showhand,'Show the hand while it draws the lines.')
     w.section_paint_hand.attach_switch(w.show_paint_hand,'Show the hand while it paints the colours.')
     w.section_move_hand.attach_switch(w.move_hand,'A hand carries the picture in on the Slide effects.')
