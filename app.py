@@ -3502,7 +3502,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if view is None:
             view=board.bounds(frames,aspect,margin=.12)
         self._board_map=(view,W,H)
-        image=world.view(view,W,H,upto=len(frames))
+        try:
+            moment=self.board_moment(world,view,W,H)
+        except Exception as exc:
+            import applog; applog.error('Board playing',exc); moment=None
+        image=moment[0] if moment is not None else world.view(view,W,H,upto=len(frames))
         p=QPainter(image); p.setRenderHint(QPainter.RenderHint.Antialiasing)
         # Camera path: from one frame to the next.
         centres=[world.place(f,view,W,H) for f in frames]
@@ -3525,6 +3529,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['accent'] if current else '#444A55'))
             p.drawRoundedRect(badge,11,11)
             p.setPen(QColor('white')); p.drawText(badge,Qt.AlignmentFlag.AlignCenter,label)
+        if moment is not None:
+            # exp.193: where the camera is now (what the video shows)
+            cx,cy,cw,ch=moment[1]
+            p.setPen(QPen(QColor('#FFB020'),3)); p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawRect(QRectF(cx,cy,cw,ch))
+            tag=QRectF(cx,cy-24,74,22)
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor('#FFB020')); p.drawRoundedRect(tag,6,6)
+            p.setPen(QColor('#1A1A1A')); p.drawText(tag,Qt.AlignmentFlag.AlignCenter,'Camera')
         # What the Board is for, on the board itself.
         hint=('BOARD: every element on one big page, seen from above. The camera flies along the dashed '
               'line.   Drag a frame to move it  •  mouse wheel on a frame: bigger / smaller (the camera '
@@ -3989,11 +4001,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         where,k,f=board.locate(lengths,joins,(self.position if fraction is None else fraction)*total)
         return self.whole_frame_at(where,k,f,width,height),k,lengths,joins
 
-    def timeline_frame(self,state,width,height,seconds=None,view_scale=1.,view_pan=(0.,0.)):
-        """Whole video with elements on tracks: one moment (timeline_render); texts under an
-        element of a higher track are drawn in it (the others: on the screen, titles_layer)."""
-        import timeline_render
-        world=self.preview_world(width,height)
+    def timeline_elements(self,width,height):
+        """The elements as timeline_render takes them (exp.193: also for the Board playing)."""
         elements=[]
         for k in range(len(self.scenes)):
             # exp.169: its own length in `length` (it was `seconds`, which replaced the moment
@@ -4005,6 +4014,41 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             elements.append(dict(drawing=drawing,options=options,camera=camera,uid=self.scenes[k].get('uid'),
                                  transition=self.scenes[k]['transition'],
                                  move_seconds=self.scenes[k]['transition_seconds']))
+        return elements
+
+    def board_moment(self,world,view,W,H):
+        """exp.193 (the user: on the Board, see the animation of the whole thing): the whole
+        video at the playhead seen from above (every page), and where the camera is. None at
+        the very start or the very end (the finished board is shown then)."""
+        if len(self.scenes)<2 or not (self.playing or 0.<self.position<1.): return None
+        import timeline_render
+        from timeline_model import state_at
+        aspect=self.board_aspect()
+        width,height=960,round(960*aspect)
+        lay=self.timeline_layout(width,height)
+        seconds=self.position*lay.total
+        state=state_at(lay,seconds)
+        elements=self.timeline_elements(width,height)
+        hidden=self.hidden_elements()
+        if hidden:
+            from dataclasses import replace
+            active=[(k,f) for k,f in state.active if k not in hidden]
+            state=replace(state,active=active,finished=[k for k in state.finished if k not in hidden],
+                          top=active[-1][0] if active else -1)
+        titles=[o for o in self.visible_titles() if o.get('kind')=='eraser']     # the erasers work here too
+        import eraser_clips
+        erasers=eraser_clips.at(titles,elements,seconds)
+        image=timeline_render._page(world,lay,state,elements,view,W,H,None,seconds,
+                                    lambda st,plain=False: view,erasers)
+        camera=timeline_render.view_of(world,lay,state,elements)
+        return image,world.place((camera[0],camera[1],camera[2]),view,W,H)
+
+    def timeline_frame(self,state,width,height,seconds=None,view_scale=1.,view_pan=(0.,0.)):
+        """Whole video with elements on tracks: one moment (timeline_render); texts under an
+        element of a higher track are drawn in it (the others: on the screen, titles_layer)."""
+        import timeline_render
+        world=self.preview_world(width,height)
+        elements=self.timeline_elements(width,height)
         hidden=self.hidden_elements()
         if hidden:
             from dataclasses import replace
@@ -6033,7 +6077,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self._playhead_only=True; self.refresh()
     def toggle(self):
         if not self.drawing or self.busy: return
-        if self.board_mode(): self.preview_scope.setCurrentIndex(1)
+        # exp.193: Play on the Board plays the whole video on the Board (seen from above)
         if self.position>=1: self.slider.setValue(0)
         self.playing=not self.playing; self.last=time.perf_counter(); self.sync_workspace()
         if self.playing: self.start_play_stats()
@@ -6115,6 +6159,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if not self.playing or not self.drawing or self.busy: return
         view=getattr(self,'_view',None)
         length=view['length'] if view is not None and view['token']==self._view_token() else self.timeline_length()
+        if self.board_mode(): length=self.timeline_layout().total      # exp.193: the whole video on the Board
         now=time.perf_counter(); self.position=min(1,self.position+(now-self.last)/max(1e-3,length)); self.last=now
         self.slider.blockSignals(True); self.slider.setValue(round(self.position*1000)); self.slider.blockSignals(False)
         stats=getattr(self,'_play_stats',None)
