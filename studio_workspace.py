@@ -198,6 +198,7 @@ class StageTimeline(QFrame):
     overlay_dropped=Signal(str,float)   # a picture file dropped on the overlay tracks, at seconds
     element_clicked=Signal(int)         # whole video: an element's block was clicked
     element_edit=Signal(int)            # whole video: an element's block was double-clicked
+    element_enter=Signal(int)           # exp.187: whole video: go into that element (This element)
     element_placed=Signal(int,float,int)   # whole video: an element dragged to a new start / track
     element_reset=Signal(int)           # whole video: back to "after the element before it", Track 1
     track_toggled=Signal(int,str)       # whole video: a track's 'mute' or 'hide' button
@@ -1717,6 +1718,12 @@ class StageTimeline(QFrame):
         item,_=self._overlay_at(event.position())
         if item is not None:
             self.overlay_edit.emit(item.get('id'));event.accept();return
+        if self.items or self.scene_segments:
+            # exp.187 (the user): in the whole video, a double-click on an element goes into it
+            # (This element); its Draw / Paint parts are edited from there.
+            k=self._block_at(event.position())
+            if k is not None:
+                self.element_enter.emit(k);event.accept();return
         source=self.source_at(event.position())
         if source is not None:
             self.stage_source_edit.emit(*source);event.accept();return
@@ -3731,6 +3738,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.camera_add.connect(lambda kind,seconds: w.add_camera_at(kind,seconds))
     w.stage_timeline.text_track_toggled.connect(lambda t: w.toggle_text_track(t))
     w.stage_timeline.element_edit.connect(lambda k: w.edit_element(k))
+    w.stage_timeline.element_enter.connect(lambda k: w.enter_element(k))
     w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))
     w.stage_timeline.element_reset.connect(lambda k: w.reset_element_time(k))
     w.stage_timeline.track_toggled.connect(lambda t,which: w.toggle_track(t,which))

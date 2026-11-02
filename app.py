@@ -2737,6 +2737,20 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.update_source_labels()
 
     # ------------------------------------------------------------ scenes
+    def enter_element(self,k):
+        """exp.187 (the user): double-click an element in the whole video: go into it. The
+        preview shows This element, with its own Draw / Paint / Hold parts to edit."""
+        if not 0<=k<len(self.scenes): return
+        if self.builder and self.builder.isRunning(): return
+        self.playing=False
+        if k!=self.scene_index:
+            self.select_scene(k)
+            if k!=self.scene_index: return
+        self.preview_scope.setCurrentIndex(0)
+        self.slider.setValue(0)
+        self.status.setText(f'Element {k+1}: double-click Draw or Paint to change them; '
+                            'Preview: Whole video to go back.')
+
     def edit_element(self,k):
         """The element's own settings window (Set / Cancel)."""
         if not self.drawing or not 0<=k<len(self.scenes): return
