@@ -59,9 +59,23 @@ _PICTURES = {}
 
 
 def _picture(path):
-    from PySide6.QtGui import QImage
+    """(picture, rubbing spot) of your own eraser picture: its plain background (black,
+    white...) made see-through, and the rubbing spot found like a pen tip (the point farthest
+    from where the arm comes in) (exp.190)."""
     if path not in _PICTURES:
-        _PICTURES[path] = QImage(str(path))
+        from PIL import Image
+        from adaptive_hand import qimage
+        import png_cleanup, hand_tip
+        try:
+            with Image.open(str(path)) as im:
+                clean = png_cleanup.clean_background(im.convert('RGBA'))
+            picture = qimage(clean)
+            tip = hand_tip.find_tip(picture)
+            spot = (tip[0], tip[1]) if tip else (.2, .85)
+        except Exception:
+            from PySide6.QtGui import QImage
+            picture, spot = QImage(str(path)), (.2, .85)
+        _PICTURES[path] = (picture, spot)
     return _PICTURES[path]
 
 
@@ -78,10 +92,10 @@ def erase_options(options, item, hand=None):
                                  'ay': (options.get('anchor') or (.08, .13))[1],
                                  'left_handed': bool(options.get('_left_handed'))}, pen)
     if tool == 'My picture…' and item.get('tool_path'):
-        picture = _picture(item['tool_path'])
+        picture, spot = _picture(item['tool_path'])
         if not picture.isNull():
-            erase = dict(erase, image=picture, anchor=tuple(item.get('tool_tip') or (.2, .85)),
-                         width=float(item.get('tool_size', .22)))
+            erase = dict(erase, image=picture, anchor=tuple(item.get('tool_tip') or spot),
+                         width=float(item.get('tool_size', .6)))
     opts = {k: v for k, v in options.items() if k not in ('hand_travel', 'hand_travel_out', 'hand_rest_here',
                                                        'hand_away', '_video_t', 'pause', 'erase')}
     opts.update(erase=erase, pause=0.)
