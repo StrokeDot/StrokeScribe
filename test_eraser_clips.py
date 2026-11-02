@@ -21,6 +21,8 @@ class EraserClipTests(unittest.TestCase):
         item = overlays.new_eraser('u2', 1, 'Erase 2', start=10., duration=2.)
         elements = [dict(uid='u1'), dict(uid='u2')]
         frames = [(0, 0, 1), (5, 0, 1)]
+        self.assertEqual(eraser_clips.hand_leaves([item], elements, frames, lambda s: 1), [])   # exp.197: stays
+        item['drawing_hand'] = 'leaves'
         shown = eraser_clips.hand_leaves([item], elements, frames, lambda s: 1)
         self.assertEqual(len(shown), 1)
         self.assertEqual(shown[0]['kind'], 'Hand leaves')
@@ -40,3 +42,16 @@ class EraserClipTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class EraserGlideTests(unittest.TestCase):
+    def test_glides_and_sides(self):
+        import eraser_clips, overlays
+        item = overlays.new_eraser('u1', 0, 'Erase 1', start=10., duration=2.)
+        elements = [dict(uid='u1')]
+        self.assertEqual(eraser_clips.glides([item], elements, 9.6)[0][2], 'in')
+        self.assertEqual(eraser_clips.glides([item], elements, 12.3)[0][2], 'out')
+        self.assertEqual(eraser_clips.glides([item], elements, 11.), [])
+        self.assertEqual(eraser_clips.side_of({}, item), 'left')                       # right-handed writer
+        self.assertEqual(eraser_clips.side_of({}, dict(item, eraser_in='same')), 'right')
+        self.assertEqual(eraser_clips.side_of({'eraser_tool': {'left': True}}, item), 'right')

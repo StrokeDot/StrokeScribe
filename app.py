@@ -1701,6 +1701,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         effect.setCurrentText((item or {}).get('effect') or 'Eraser')
         from PySide6.QtWidgets import QCheckBox
         hand=QCheckBox('With the eraser hand'); hand.setChecked((item or {}).get('hand',True) is not False)
+        drawing=QComboBox(); drawing.addItems(['Stays in its corner','Leaves the picture'])
+        drawing.setCurrentIndex(1 if (item or {}).get('drawing_hand')=='leaves' else 0)
+        held=QComboBox(); held.addItems(['The other hand','The same hand'])
+        held.setCurrentIndex(1 if (item or {}).get('eraser_in')=='same' else 0)
+        def one_hand(*_):
+            # one hand cannot be in its corner and erasing: the same hand means it leaves
+            if held.currentIndex()==1 and drawing.currentIndex()==0: drawing.setCurrentIndex(1)
+        held.currentIndexChanged.connect(one_hand)
+        drawing.currentIndexChanged.connect(lambda i: i==0 and held.currentIndex()==1 and held.setCurrentIndex(0))
         hand.setToolTip('The eraser hand (Hand panel > Eraser hand) rubs it out; the drawing hand goes down '
                         'meanwhile. Off: it is rubbed out with no hand.')
         length=QDoubleSpinBox(); length.setRange(.3,30.); length.setDecimals(1); length.setSingleStep(.5); length.setSuffix(' s')
@@ -1709,9 +1718,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         form.addRow(help_label('Goes out','The eraser rubs it out, or it goes away with an effect.'),effect)
         form.addRow(help_label('Eraser','Zigzag: back and forth over the picture. Along the lines: follows the lines it drew.'),style)
         form.addRow('',hand)
+        form.addRow(help_label('Drawing hand','While it erases, the hand with the pencil stays in its corner, or '
+                               'leaves the picture and comes back after.'),drawing)
+        form.addRow(help_label('Eraser in','The other hand (you write with the right, the left one erases; it comes '
+                               'from the bottom left), or the same hand (it puts the pencil down).'),held)
         def eraser_rows(*_):
             on=effect.currentText()=='Eraser'
             form.setRowVisible(style,on); form.setRowVisible(hand,on)
+            form.setRowVisible(drawing,on and hand.isChecked()); form.setRowVisible(held,on and hand.isChecked())
+        hand.toggled.connect(eraser_rows)
         effect.currentIndexChanged.connect(eraser_rows); eraser_rows()
         form.addRow(help_label('How long','How long the erasing takes.'),length)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
@@ -1721,7 +1736,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         verb='Erase' if effect.currentText()=='Eraser' else effect.currentText()
         return dict(target=self.scenes[k].get('uid'),target_k=k,name=f'{verb} {k+1} · {self.scene_label(k)}'[:40],
                     mode=eraser_clips.MODES[style.currentText()],duration=round(length.value(),2),
-                    effect=effect.currentText(),hand=hand.isChecked())
+                    effect=effect.currentText(),hand=hand.isChecked(),
+                    drawing_hand='leaves' if drawing.currentIndex()==1 else 'stays',
+                    eraser_in='same' if held.currentIndex()==1 else 'other')
 
     def add_eraser(self):
         """exp.186: an Eraser clip at the playhead (whole video)."""
@@ -1733,7 +1750,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if choice is None: return None
         item=overlays.new_eraser(choice['target'],choice['target_k'],choice['name'],mode=choice['mode'])
         item=self.add_overlay(item)
-        item.update(duration=choice['duration'],effect=choice['effect'],hand=choice['hand'])
+        item.update(duration=choice['duration'],effect=choice['effect'],hand=choice['hand'],
+                    drawing_hand=choice['drawing_hand'],eraser_in=choice['eraser_in'])
         self.project_changes.mark_changed(); self.refresh()
         self.status.setText('Eraser added. Drag it on the timeline to choose when; double-click it to change it.')
         return item
@@ -4129,7 +4147,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             o['_hand_zoom']=f
             el['options']=o
         image=timeline_render._page(world,lay,state,elements,view,W,H,None,seconds,
-                                    lambda st,plain=False: view,erasers)
+                                    lambda st,plain=False: view,erasers,eraser_clips.glides(titles,elements,seconds))
         return image,place
 
     def timeline_frame(self,state,width,height,seconds=None,view_scale=1.,view_pan=(0.,0.)):
@@ -5664,7 +5682,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             involved=sorted({k for k,_ in state.active}|set(state.finished)|{state.current})
             import overlays as _ov
             low=self.titles_split((a+b)/2)[1]
-            under=repr([o for o in low if float(o.get('start',0))<b and (_ov.shown_until(o)>a or o.get('kind')=='eraser')])   # exp.186: an eraser stays done
+            under=repr([o for o in low if (float(o.get('start',0))<b or (o.get('kind')=='eraser' and float(o.get('start',0))-.8<b))
+                        and (_ov.shown_until(o)>a or o.get('kind')=='eraser')])   # exp.186/197: an eraser stays done; its hand comes in before
             if 'eraser' in under: under+=repr(self.eraser_tool())          # exp.196: its hand
             fp=('tl',describe(lay,state,a),tuple(self.element_fingerprint(i) for i in involved),under,
                 self.cameras_signature(a,b),

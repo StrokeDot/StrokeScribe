@@ -65,6 +65,40 @@ def at(items, elements, seconds):
     return out
 
 
+GLIDE = .8          # exp.197: the eraser hand comes in before the clip and leaves after it (s)
+
+
+def leaves(item):
+    """exp.197: while it erases, the drawing hand leaves the picture (else it stays in its corner)."""
+    return item.get('drawing_hand') == 'leaves'
+
+
+def other_hand(item):
+    """exp.197: the eraser is held in the other hand (else the same hand as the pencil)."""
+    return item.get('eraser_in', 'other') != 'same'
+
+
+def glides(items, elements, seconds):
+    """exp.197: [(k, clip, 'in' | 'out', 0..1)]: an eraser hand on its way in (before its clip)
+    or out (after it), from / to the bottom edge on its own side."""
+    out = []
+    if seconds is None:
+        return out
+    t = float(seconds)
+    for item in clips(items):
+        if not with_hand(item):
+            continue
+        k = target_of(item, elements)
+        if k is None:
+            continue
+        start, end = float(item.get('start', 0)), float(item.get('start', 0)) + max(.2, float(item.get('duration', 3)))
+        if start - GLIDE <= t < start:
+            out.append((k, item, 'in', (t - (start - GLIDE)) / GLIDE))
+        elif end <= t < end + GLIDE:
+            out.append((k, item, 'out', (t - end) / GLIDE))
+    return out
+
+
 def tool_key(item):
     return (item.get('tool') or 'Built-in eraser', item.get('tool_path'))
 
@@ -91,6 +125,13 @@ def _picture(path):
             picture, spot = QImage(str(path)), (.2, .85)
         _PICTURES[path] = (picture, spot)
     return _PICTURES[path]
+
+
+def side_of(options, item):
+    """'left' / 'right': the side the eraser hand comes from (the hand that holds it)."""
+    look = options.get('eraser_tool') or {}
+    writes_left = bool(look.get('left'))
+    return ('right' if writes_left else 'left') if other_hand(item) else ('left' if writes_left else 'right')
 
 
 def erase_options(options, item, hand=None):
@@ -120,9 +161,10 @@ def erase_options(options, item, hand=None):
             picture = None
     if picture is not None:
         # the other hand: the pen hand as it writes, mirrored; your picture is taken as a right
-        # hand, so it is mirrored for a right-handed writer
+        # hand, so it is mirrored for a right-handed writer. exp.197: the same hand: as written.
         from tools_kit import mirrored
-        if tool == 'Pen hand' or not left:
+        mirror = (tool == 'Pen hand' or not left) if other_hand(item) else (tool != 'Pen hand' and left)
+        if mirror:
             picture, spot = mirrored(picture), (1 - spot[0], spot[1])
         erase = dict(erase, image=picture, anchor=spot, width=size)
     if not with_hand(item) or look.get('on') is False:
@@ -147,7 +189,7 @@ def hand_leaves(items, elements, frames, page_at):
     out = []
     for item in clips(items):
         k = target_of(item, elements)
-        if k is None or not with_hand(item):
+        if k is None or not with_hand(item) or not leaves(item):     # exp.197: only when it leaves
             continue
         start, length = float(item.get('start', 0)), max(.2, float(item.get('duration', 3)))
         try:
@@ -157,5 +199,6 @@ def hand_leaves(items, elements, frames, page_at):
         if shown is None or frames[shown] != frames[k]:
             continue                                  # not seen: nothing waits for it
         out.append(dict(id='eraser-' + str(item.get('id')), kind='Hand leaves', side='Bottom',
-                        start=max(0., start - OUT_S), duration=length + 2 * OUT_S, in_s=OUT_S, out_s=OUT_S))
+                        start=max(0., start - GLIDE - OUT_S), duration=length + 2 * (GLIDE + OUT_S),
+                        in_s=OUT_S, out_s=OUT_S))
     return out
