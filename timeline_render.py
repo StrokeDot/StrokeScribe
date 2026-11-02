@@ -263,10 +263,15 @@ def _erasing(world, elements, erasers, view, out, width, height, state):
         frame = eraser.erase_frame(hold, plan, p)
         frame = frame.copy() if frame is hold else frame
         point, _ = plan.state(p)
-        frame = eraser.draw_eraser(frame, point, tool.get('image'), tool.get('anchor', eraser.ERASER_TIP),
-                                   float(tool.get('width', .18)))
         out = world.put(out, frame, world.frames[k], view, el['options'].get('blend_mode', 'Normal'),
                         el['options'].get('artwork_opacity', 100))
+        if point is not None:
+            # exp.190: the eraser (or eraser hand) on the screen, at its own size, so an arm
+            # can reach past the picture's edge (it was cut off at the edge of the page)
+            spot = (x + point[0] * w / hold.width(), y + point[1] * h / hold.height())
+            out = out.copy() if out is not None else out
+            out = eraser.draw_eraser(out, spot, tool.get('image'), tool.get('anchor', eraser.ERASER_TIP),
+                                     float(tool.get('width', .18)))
     return out
 
 
