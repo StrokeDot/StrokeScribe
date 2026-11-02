@@ -279,7 +279,7 @@ def _erasing(world, elements, erasers, view, out, width, height, state):
             spot = (x + point[0] * w / hold.width(), y + point[1] * h / hold.height())
             out = out.copy() if out is not None else out
             out = eraser.draw_eraser(out, spot, tool.get('image'), tool.get('anchor', eraser.ERASER_TIP),
-                                     float(tool.get('width', .18)))
+                                     float(tool.get('width', .18)) * float(el['options'].get('_hand_zoom', 1.)))
     return out
 
 
