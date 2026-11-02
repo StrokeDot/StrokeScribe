@@ -1080,6 +1080,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def add_overlay(self,item):
         """Put a new text / picture on top at the playhead (on a free track)."""
         import overlays
+        if not self.all_scenes() and len(self.scenes)>1:
+            # exp.189: texts belong to the whole video: add them there (at this element's moment)
+            seconds=self.video_seconds()
+            self.preview_scope.setCurrentIndex(1); QApplication.processEvents()
+            try: self.position=min(1.,max(0.,seconds/max(1e-6,self.video_length())))
+            except Exception: pass
         total=max(.5,self.video_length())
         start=min(max(0.,self.video_seconds()),max(0.,total-.5))
         if self.position>=.999: start=0.
@@ -1112,12 +1118,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             offset=0. if (self.all_scenes() or len(self.scenes)<2) else -self.element_start()
         except Exception:
             offset=0.
-        key=(offset,tuple(id(o) for o in self.overlays),self.selected_overlay)
+        key=(offset,tuple(id(o) for o in self.overlays),self.selected_overlay,self.all_scenes())
         if force or key!=getattr(self,'_titles_key',None):
             self._titles_key=key
             tl.title_offset=offset
             tl.text_hidden=set(getattr(self,'text_hidden',set()))
-            tl.set_overlays(self.overlays,self.selected_overlay)
+            # exp.189 (the user: in This element only that element): the video's texts and
+            # erasers are on the Whole video timeline only.
+            alone=not self.all_scenes() and len(self.scenes)>1
+            tl.set_overlays([] if alone else self.overlays,self.selected_overlay)
             tl.selected_overlays=set(getattr(self,'selected_overlays',set()))
 
     # ------------------------------------------------------------ camera track (exp.119)
@@ -1573,6 +1582,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         `seconds`: the time of the frame shown (playing: the video frame, exp.126)."""
         import overlays
         if self.board_mode(): return None
+        if not self.all_scenes() and len(self.scenes)>1: return None     # exp.189: the element alone
         t=self.video_seconds() if seconds is None else float(seconds)
         shown=self.visible_titles() if self.zoomed_out() else self.titles_split(t)[0]
         if not shown or not any(overlays.state_at(o,t) is not None for o in shown): return None
@@ -5675,7 +5685,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         options['hand_scale']/=options['artwork_scale']
         options['ghost']=.22            # Hand only: still show faintly what is being written
         # Pictures of earlier scenes in this frame stay on the board under it.
-        page=self.drawn_over(self.scene_index) and options.get('layers')!='hand'
+        # exp.189 (the user): This element shows that element alone (not the pages under it).
+        page=False
         if page: options['background']=False
         self.schedule_render_bar()
         self._view=dict(all=False,options=options,page=page,ratio=ratio,length=self.timeline_length(),
