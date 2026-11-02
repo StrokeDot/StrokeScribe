@@ -32,7 +32,9 @@ DEFAULT_TRANSITION_SECONDS = 1.2
 GLOBAL_SETTINGS = ('res', 'fps', 'webm', 'webm_quality', 'mov', 'mp4', 'mp4_background', 'keep_png',
                    'sound_on', 'sound_volume', 'fast_export', 'preview_background', 'background_color',
                    'sound_pencil_file', 'sound_brush_file', 'sound_eraser_file',
-                   'hand_rest', 'hand_rest_corner', 'hand_rest_travel', 'hand_under')       # exp.143/155
+                   'hand_rest', 'hand_rest_corner', 'hand_rest_travel', 'hand_under',       # exp.143/155
+                   # exp.195: the eraser hand is one for the whole video (the Goes out clips)
+                   'eraser_hand', 'eraser_hand_size', 'eraser_hand_path', 'eraser_hand_on')
 
 
 def transition_seconds(kind, seconds, last=False):

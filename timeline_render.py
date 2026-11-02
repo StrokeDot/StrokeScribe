@@ -300,8 +300,6 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
         # drew nothing). When its hand is done, it goes back to its track's place.
         active = [a for a in active if a[0] != hand_k] + [a for a in active if a[0] == hand_k]
     for k, fraction in active:
-        if k in erasers:
-            continue                      # exp.186: being erased (or gone): drawn by _erasing
         under = [o for o in waiting if int(o.get('track', 0)) < tracks.get(k, 0)]
         if under:
             out = _texts(out, under, seconds, world, view)
@@ -311,9 +309,12 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
             continue
         el = elements[k]
         opts = el['options']
-        art = element_frame(el['drawing'], opts, fraction, w, h, 'art')
-        out = world.put(out, art, world.frames[k], view, opts.get('blend_mode', 'Normal'),
-                        opts.get('artwork_opacity', 100))
+        if k not in erasers:              # exp.186: being erased / gone: its picture is drawn by _erasing
+            art = element_frame(el['drawing'], opts, fraction, w, h, 'art')
+            out = world.put(out, art, world.frames[k], view, opts.get('blend_mode', 'Normal'),
+                            opts.get('artwork_opacity', 100))
+        # exp.196 (the user: the hand vanished when a Goes out clip began while it was still on
+        # its way back to the corner): its hand is still drawn.
         if k == hand_k and opts.get('layers', 'all') != 'art':
             from frame_render import last_hand_spec
             layer = element_frame(el['drawing'], opts, fraction, w, h, 'hand')   # eraser, move-in hand

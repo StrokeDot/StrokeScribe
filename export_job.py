@@ -58,7 +58,8 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     options['erase'] = erase_from_settings(s, hand)
     # exp.192: the Eraser hand (Hand panel) for the Eraser clips of this element
     options['eraser_tool'] = dict(kind=s.get('eraser_hand') or 'Built-in eraser', path=s.get('eraser_hand_path'),
-                                  size=float(s.get('eraser_hand_size', 45)) / 100., left=bool(s.get('left_handed')))
+                                  size=float(s.get('eraser_hand_size', 45)) / 100., left=bool(s.get('left_handed')),
+                                  on=s.get('eraser_hand_on', True) is not False)
     options['overlays'] = []                     # pictures / titles on top: added from the scene (overlays.py)
     from frame_render import ENTRANCES
     options['entrance'] = ENTRANCES.get(s.get('entrance') or '', 'draw')
