@@ -3068,6 +3068,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.section_out=Section('Exit (at the end)',switch=w.erase_on,
                           tip='How the element goes away at the end: an eraser, or an effect.')
     animation_l.addWidget(w.section_out)
+    w.section_out.hide()      # exp.192 (the user): ways out are clips on the timeline (Eraser / effects)
     a3=form_layout();w.section_out.body.addLayout(a3)
     from eraser import MODES as _EXITS
     w.erase_mode=QComboBox()
@@ -3266,6 +3267,35 @@ def build_workspace(w, Canvas, BRAND_ICON):
                            'Slide in from …), lets go, and leaves the way it came.')
     w.move_hand.setChecked(True);mh.addRow('',w.move_hand)
     mh.setRowVisible(w.move_hand,False)          # the switch on the section header
+    # 4. exp.192 (the user): the eraser hand, like the other hands: what rubs out the elements
+    # (Eraser clips on the timeline) and how big it is. A hand that erases is the other hand.
+    w.section_erase_hand=Section('Eraser hand',tip='What rubs the drawings out (the eraser clips on the timeline).')
+    hand_l.addWidget(w.section_erase_hand)
+    picture('erase',w.section_erase_hand.body)
+    eh=form_layout();w.section_erase_hand.body.addLayout(eh)
+    import eraser_clips as _ec
+    w.eraser_hand=QComboBox(); w.eraser_hand.addItems(list(_ec.TOOLS))
+    w.eraser_hand.setToolTip('The built-in eraser, the drawing hand (Pen hand), or your own picture (e.g. a hand '
+                             'holding an eraser). A hand that erases is the other hand of the one that writes.')
+    eh.addRow('Erases with',w.eraser_hand)
+    w.eraser_hand_choose=QPushButton('Choose picture…')
+    w.eraser_hand_choose.setToolTip('Your own picture of a hand holding an eraser (any plain background is removed; '
+                                    'the rubbing spot is found by itself).')
+    w.eraser_hand_choose.clicked.connect(lambda checked=False: w.choose_eraser_hand())
+    eh.addRow('',w.eraser_hand_choose)
+    w.eraser_hand_name=caption('')
+    eh.addRow('',w.eraser_hand_name)
+    w.eraser_hand_size=w.number(5,90,45,1);w.eraser_hand_size.setDecimals(0);w.eraser_hand_size.setSuffix('%')
+    w.eraser_hand_size.setToolTip('Width of the eraser hand, as a share of the video width (the drawing hand is '
+                                  'about 45%).')
+    eh.addRow('Size',w.eraser_hand_size)
+    w.eraser_hand_form=eh
+    def _eraser_rows(*_):
+        eh.setRowVisible(w.eraser_hand_size,w.eraser_hand.currentText()!='Built-in eraser')
+        w.update_eraser_hand_name()
+    w.eraser_hand.currentIndexChanged.connect(_eraser_rows)
+    w.eraser_hand.currentIndexChanged.connect(lambda *_: w.refresh())
+    w.eraser_hand_size.valueChanged.connect(lambda *_: w.refresh())
     w.section_draw_hand.attach_switch(w.showhand,'Show the hand while it draws the lines.')
     w.section_paint_hand.attach_switch(w.show_paint_hand,'Show the hand while it paints the colours.')
     w.section_move_hand.attach_switch(w.move_hand,'A hand carries the picture in on the Slide effects.')
@@ -3593,11 +3623,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     timeline_head.addWidget(w.add_text_overlay)
     # exp.186 (the user): an eraser is a clip of its own, put anywhere on the timeline.
     w.add_eraser_clip=QPushButton(); w.add_eraser_clip.setObjectName('subtle')
-    w.add_eraser_clip.setIcon(plus_icon('trash')); w.add_eraser_clip.setIconSize(_QS(22,22))
+    w.add_eraser_clip.setIcon(plus_icon('eraser')); w.add_eraser_clip.setIconSize(_QS(22,22))
     w.add_eraser_clip.setFixedSize(38,32)
-    w.add_eraser_clip.setToolTip('Add an eraser. It rubs out one element at the playhead, like a clip you can '
-                                 'move: before or after a camera move. It also erases a page the camera is not '
-                                 'showing, so it is gone when you come back.')
+    w.add_eraser_clip.setToolTip('Add a way out: an eraser (with or without the eraser hand) or an effect (fade, '
+                                 'pop, zoom, spin, move out). It works on one element at the playhead, like a clip '
+                                 'you can move: before or after a camera move, also on a page the camera is not showing.')
     w.add_eraser_clip.clicked.connect(lambda checked=False: w.add_eraser())
     timeline_head.addWidget(w.add_eraser_clip)
     w.add_camera_clip_button=QPushButton(); w.add_camera_clip_button.setObjectName('subtle')

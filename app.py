@@ -948,6 +948,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if settings.get('audio_path')!=self.audio_path:
                 self.set_audio(settings.get('audio_path'),refresh=False)
             self.paint_hand_path=settings.get('paint_hand_path')
+            self.eraser_hand_path=settings.get('eraser_hand_path')
             self.paint_hand_tip=settings.get('paint_hand_tip')
             self.update_paint_hand_label()
             self.move_hand_path=settings.get('move_hand_path')
@@ -1616,11 +1617,29 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                             'effect. Drag it on the preview to place it, double-click its clip for more.')
         return item
 
+    def choose_eraser_hand(self):
+        """exp.192: your own eraser hand picture (kept in the library)."""
+        name,_=QFileDialog.getOpenFileName(self,'Eraser hand (a hand holding an eraser…)','',
+                                           'Pictures (*.png *.webp *.jpg *.jpeg)')
+        if not name: return
+        self.eraser_hand_path=self.keep_in_library('hands',name)
+        self.eraser_hand.setCurrentText('My picture…')
+        self.project_changes.mark_changed(); self.note_change()
+        self.update_eraser_hand_name(); self.show_hand_pictures(); self.refresh()
+
+    def update_eraser_hand_name(self):
+        if not hasattr(self,'eraser_hand_name'): return
+        mine=self.eraser_hand.currentText()=='My picture…'
+        path=getattr(self,'eraser_hand_path',None)
+        self.eraser_hand_name.setText(('Picture: '+Path(path).stem) if mine and path else
+                                      ('Choose a picture below.' if mine else ''))
+        self.eraser_hand_form.setRowVisible(self.eraser_hand_choose,mine)
+
     def eraser_dialog(self,item=None):
         """exp.186: what an Eraser clip erases, how, and for how long. None when cancelled."""
         from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QComboBox, QDoubleSpinBox
         import eraser_clips
-        dialog=QDialog(self); dialog.setWindowTitle('Eraser')
+        dialog=QDialog(self); dialog.setWindowTitle('Goes out')
         form=QFormLayout(dialog)
         target=QComboBox()
         for k,s in enumerate(self.scenes):
@@ -1631,31 +1650,31 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         target.setCurrentIndex(max(0,min(len(self.scenes)-1,int(k0))))
         style=QComboBox(); style.addItems(list(eraser_clips.MODES))
         if item: style.setCurrentText({v:k for k,v in eraser_clips.MODES.items()}.get(item.get('mode'),'Zigzag (follows the shapes)'))
-        tool=QComboBox(); tool.addItems(list(eraser_clips.TOOLS))
-        tool.setCurrentText((item or {}).get('tool') or 'Built-in eraser')
-        picked={'path':(item or {}).get('tool_path')}
-        def choose(index):
-            if tool.currentText()!='My picture…': return
-            name,_=QFileDialog.getOpenFileName(dialog,'Eraser picture (a hand holding an eraser…)','',
-                                               'Pictures (*.png *.webp *.jpg *.jpeg)')
-            if name: picked['path']=self.keep_in_library('hands',name)
-            elif not picked['path']: tool.setCurrentText('Built-in eraser')
-        tool.currentIndexChanged.connect(choose)
+        effect=QComboBox(); effect.addItems(list(eraser_clips.EFFECTS))
+        effect.setCurrentText((item or {}).get('effect') or 'Eraser')
+        from PySide6.QtWidgets import QCheckBox
+        hand=QCheckBox('With the eraser hand'); hand.setChecked((item or {}).get('hand',True) is not False)
+        hand.setToolTip('The eraser hand (Hand panel > Eraser hand) rubs it out; the drawing hand goes down '
+                        'meanwhile. Off: it is rubbed out with no hand.')
         length=QDoubleSpinBox(); length.setRange(.3,30.); length.setDecimals(1); length.setSingleStep(.5); length.setSuffix(' s')
         length.setValue(float(item.get('duration',3.)) if item else 3.)
-        form.addRow(help_label('Erases','The element it rubs out (wherever it is on the board).'),target)
-        form.addRow(help_label('How','Zigzag: back and forth over the picture. Along the lines: follows the lines it drew.'),style)
-        form.addRow(help_label('Eraser','What rubs it out: the eraser, the drawing hand (Pen hand), or your own '
-                               'picture, e.g. a hand holding an eraser (its rubbing spot is near its bottom left).'),tool)
+        form.addRow(help_label('Element','The element that goes away (wherever it is on the board).'),target)
+        form.addRow(help_label('Goes out','The eraser rubs it out, or it goes away with an effect.'),effect)
+        form.addRow(help_label('Eraser','Zigzag: back and forth over the picture. Along the lines: follows the lines it drew.'),style)
+        form.addRow('',hand)
+        def eraser_rows(*_):
+            on=effect.currentText()=='Eraser'
+            form.setRowVisible(style,on); form.setRowVisible(hand,on)
+        effect.currentIndexChanged.connect(eraser_rows); eraser_rows()
         form.addRow(help_label('How long','How long the erasing takes.'),length)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); form.addRow(buttons)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return None
         k=target.currentIndex()
-        return dict(target=self.scenes[k].get('uid'),target_k=k,name=f'Erase {k+1} · {self.scene_label(k)}'[:40],
+        verb='Erase' if effect.currentText()=='Eraser' else effect.currentText()
+        return dict(target=self.scenes[k].get('uid'),target_k=k,name=f'{verb} {k+1} · {self.scene_label(k)}'[:40],
                     mode=eraser_clips.MODES[style.currentText()],duration=round(length.value(),2),
-                    tool=tool.currentText() if (tool.currentText()!='My picture…' or picked['path']) else 'Built-in eraser',
-                    tool_path=picked['path'] if tool.currentText()=='My picture…' else None)
+                    effect=effect.currentText(),hand=hand.isChecked())
 
     def add_eraser(self):
         """exp.186: an Eraser clip at the playhead (whole video)."""
@@ -1667,7 +1686,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if choice is None: return None
         item=overlays.new_eraser(choice['target'],choice['target_k'],choice['name'],mode=choice['mode'])
         item=self.add_overlay(item)
-        item.update(duration=choice['duration'],tool=choice['tool'],tool_path=choice['tool_path'])
+        item.update(duration=choice['duration'],effect=choice['effect'],hand=choice['hand'])
         self.project_changes.mark_changed(); self.refresh()
         self.status.setText('Eraser added. Drag it on the timeline to choose when; double-click it to change it.')
         return item
@@ -2226,7 +2245,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.refresh()
 
     # ------------------------------------------------------------ projects
-    PROJECT_SETTINGS=('paint_look','duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
+    PROJECT_SETTINGS=('eraser_hand','eraser_hand_size','paint_look','duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
                       'use_color','preserve_colors','showhand','left_handed','paint_left_handed','entrance','entrance_part','pause_after','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
@@ -2731,6 +2750,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                        # Older projects: slides came in without a hand.
                        'move_hand':False,'entrance_part':'The whole picture',
                        'paint_look':'Classic',          # exp.180: Paint look (older projects: Classic)
+                       'eraser_hand':'Built-in eraser','eraser_hand_size':45.,   # exp.192
                        # exp.115: the element's own camera (older projects: none).
                        'cam_start_zoom':100.,'cam_start_x':50.,'cam_start_y':50.,'cam_end_zoom':160.,
                        'cam_end_x':50.,'cam_end_y':50.,'cam_begin':0.,'cam_time':1.2,
@@ -2760,6 +2780,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.hand=image; self.hand_builtin=builtin or False; self.hand_path=None
             self.hand_name.setText('Hand: '+(tools_kit.LABELS[builtin] if builtin else 'from project'))
         self.paint_hand_path=tools_kit.restore_paint_hand(settings.get('paint_hand_path'),data.get('paint_hand_png'))
+        self.eraser_hand_path=settings.get('eraser_hand_path')          # exp.192
+        if hasattr(self,'update_eraser_hand_name'): self.update_eraser_hand_name()
         self.paint_hand_tip=settings.get('paint_hand_tip')
         self.update_paint_hand_label()
         self.move_hand_path=tools_kit.restore_paint_hand(settings.get('move_hand_path'),data.get('move_hand_png'))
@@ -4969,6 +4991,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         state={name:widget_value(getattr(self,name)) for name in self.PROJECT_SETTINGS}
         state['audio_path']=self.audio_path
         state['paint_hand_path']=self.paint_hand_path
+        state['eraser_hand_path']=getattr(self,'eraser_hand_path',None)       # exp.192
         state.update(self.sound_files)
         state['paint_hand_tip']=self.paint_hand_tip
         state['move_hand_path']=getattr(self,'move_hand_path',None)
@@ -5726,7 +5749,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                                     'move_hand_gx':self.move_hand_gx.value(),'move_hand_gy':self.move_hand_gy.value(),
                                     'left_handed':self.left_handed.isChecked()})[0] \
                 if hasattr(self,'move_hand_gx') else options.get('move_hand')
-            for key,image in (('draw',draw),('paint',paint),('move',move)):
+            erase=None
+            if hasattr(self,'eraser_hand'):
+                import eraser_clips
+                tool=eraser_clips.erase_options(dict(options,eraser_tool=dict(kind=self.eraser_hand.currentText(),
+                    path=getattr(self,'eraser_hand_path',None),size=.45,left=self.left_handed.isChecked())),
+                    {'effect':'Eraser'})['erase']
+                erase=tool.get('image')
+            for key,image in (('draw',draw),('paint',paint),('move',move),('erase',erase)):
                 label=pictures.get(key)
                 if label is None: continue
                 stamp=image.cacheKey() if image is not None and not image.isNull() else None

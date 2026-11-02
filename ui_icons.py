@@ -37,6 +37,8 @@ _PATHS = {
     # A pencil: Handwriting.
     'handwriting': '<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/><path d="M14.5 5.5l3 3"/>',
     # A trash can: remove.
+    # exp.192: an eraser (a block at a slant, its rubbing end lighter) over a line
+    'eraser': '<path d="M14.5 4.5l5 5-8.5 8.5h-5l-2.5-2.5z"/><path d="M9.5 9.5l5 5"/><path d="M11 18h9"/>',
     'trash': '<path d="M4 7h16"/><path d="M9.5 7V4.5h5V7"/><path d="M6 7l1 13h10l1-13"/>'
              '<path d="M10 11v6M14 11v6"/>',
     # Close, collapse, fullscreen, eyedropper, image placeholder.
