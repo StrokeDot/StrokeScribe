@@ -9,6 +9,8 @@ quietly, nothing waits for it.
 from __future__ import annotations
 
 MODES = {'Zigzag (follows the shapes)': 'zigzag', 'Along the lines': 'lines'}
+# exp.190 (the user: an eraser hand): what rubs: the eraser, the drawing hand, or your own picture
+TOOLS = ('Built-in eraser', 'Pen hand', 'My picture…')
 SIZE = .08                     # the eraser's size, share of the picture's width
 WORK_WIDTH = 1280             # the erasing is worked out at this size, whatever the zoom
 OUT_S = .45                    # the drawing hand goes down / comes back in this long
@@ -49,13 +51,37 @@ def at(items, elements, seconds):
     return out
 
 
+def tool_key(item):
+    return (item.get('tool') or 'Built-in eraser', item.get('tool_path'))
+
+
+_PICTURES = {}
+
+
+def _picture(path):
+    from PySide6.QtGui import QImage
+    if path not in _PICTURES:
+        _PICTURES[path] = QImage(str(path))
+    return _PICTURES[path]
+
+
 def erase_options(options, item, hand=None):
     """The element's render options with this eraser as its way out (frame_render's eraser)."""
     from export_job import erase_from_settings
     mode = {v: k for k, v in MODES.items()}.get(item.get('mode') or 'zigzag', 'Zigzag (follows the shapes)')
+    tool = item.get('tool') or 'Built-in eraser'
+    pen = options.get('hand') if hand is None else hand
     erase = erase_from_settings({'erase_mode': mode, 'erase_size': SIZE * 100, 'erase_time': 1.,
-                                 'eraser': 'Built-in eraser',
-                                 'left_handed': bool(options.get('_left_handed'))}, hand)
+                                 'eraser': 'Pen hand' if tool == 'Pen hand' else 'Built-in eraser',
+                                 'handsize': float(options.get('hand_scale', .18)),
+                                 'ax': (options.get('anchor') or (.08, .13))[0],
+                                 'ay': (options.get('anchor') or (.08, .13))[1],
+                                 'left_handed': bool(options.get('_left_handed'))}, pen)
+    if tool == 'My picture…' and item.get('tool_path'):
+        picture = _picture(item['tool_path'])
+        if not picture.isNull():
+            erase = dict(erase, image=picture, anchor=tuple(item.get('tool_tip') or (.2, .85)),
+                         width=float(item.get('tool_size', .22)))
     opts = {k: v for k, v in options.items() if k not in ('hand_travel', 'hand_travel_out', 'hand_rest_here',
                                                        'hand_away', '_video_t', 'pause', 'erase')}
     opts.update(erase=erase, pause=0.)

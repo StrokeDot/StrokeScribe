@@ -229,12 +229,17 @@ def _drawing_now(state, elements, k):
     return False
 
 
+_ERASING = {}
+
+
 def _erasing(world, elements, erasers, view, out, width, height, state):
     """exp.186: the elements Eraser clips are rubbing out (gone once their clip is over), with
-    the eraser on them. Worked out at one size, so a zoom or camera move does not plan the
-    eraser's route again."""
+    the eraser on them. exp.190 (the user: every click lagged): the eraser's route is planned
+    once per element and kept (the element's own key), not again each time the preview is
+    made over, and drawn at one size whatever the zoom."""
+    import eraser
     import eraser_clips
-    from PySide6.QtGui import QPainter
+    from frame_render import erase_setup
     for k, (p, item) in sorted(erasers.items()):
         if p >= 1. or (k not in state.finished and k not in dict(state.active)):
             continue
@@ -242,12 +247,25 @@ def _erasing(world, elements, erasers, view, out, width, height, state):
         if w < 2 or x > width or y > height or x + w < 0 or y + h < 0:
             continue
         el = elements[k]
-        q = eraser_clips.WORK_WIDTH           # one size for every zoom: the route is planned once
+        q = eraser_clips.WORK_WIDTH
         opts = eraser_clips.erase_options(el['options'], item)
-        f = eraser_clips.fraction_for(el['drawing'], opts, p)
-        # the picture and the eraser on it in one go (one eraser route for both)
-        art = element_frame(el['drawing'], opts, f, q, max(2, round(q * world.aspect)), 'all')
-        out = world.put(out, art, world.frames[k], view, el['options'].get('blend_mode', 'Normal'),
+        tool = opts['erase']
+        key = (repr(world.items[k].get('key')), item.get('mode'), eraser_clips.tool_key(item), q, world.aspect)
+        found = _ERASING.get(key)
+        if found is None:
+            plain = {kk: v for kk, v in opts.items() if kk not in ('fps', 'audio', 'workers', 'erase', 'overlays')}
+            plain.update(width=q, height=max(2, round(q * world.aspect)), layers='art', ghost=0)
+            found = erase_setup(el['drawing'], plain, tool)
+            if len(_ERASING) > 8:
+                _ERASING.clear()
+            _ERASING[key] = found
+        hold, plan = found
+        frame = eraser.erase_frame(hold, plan, p)
+        frame = frame.copy() if frame is hold else frame
+        point, _ = plan.state(p)
+        frame = eraser.draw_eraser(frame, point, tool.get('image'), tool.get('anchor', eraser.ERASER_TIP),
+                                   float(tool.get('width', .18)))
+        out = world.put(out, frame, world.frames[k], view, el['options'].get('blend_mode', 'Normal'),
                         el['options'].get('artwork_opacity', 100))
     return out
 
