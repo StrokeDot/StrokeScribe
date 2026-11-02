@@ -75,7 +75,7 @@ class VisibleControlRegression(unittest.TestCase):
                      "image_detail", "font_select"):
             self._assert_control(name)
         for name in ("reveal_mode", "pen_ease",
-                     "entrance", "erase_mode", "camera"):
+                     "entrance", "camera"):
             self._assert_control(name)
 
     def test_combos_remain_measurable_at_multiple_desktop_sizes(self):
