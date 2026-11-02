@@ -1,0 +1,64 @@
+name: Image generator drawer review
+on:
+  pull_request:
+    paths:
+      - 'create_image_dialog.py'
+      - 'test_generator_polish.py'
+      - 'update_dialog.py'
+      - 'image_generator_updates.py'
+      - 'model_updates_live.py'
+      - 'test_live_model_updates.py'
+      - 'test_image_generator_updates.py'
+      - 'render_image_generator_updates.py'
+      - '.github/workflows/image-generator-updates.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: image-generator-drawer-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  drawer-review:
+    # Intermediate iteration only; full checks restored before delivery.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.12'
+          - os: windows-latest
+            python: '3.14'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 fonts-dejavu
+      - run: |
+          pip install --only-binary=:all: -r requirements.txt
+      - name: Drawer interaction and existing generation UI
+        # Anchor the process-wide application log outside per-test temporary
+        # folders. Windows otherwise prevents their cleanup while the log is open.
+        run: |
+          python -X faulthandler -c "import applog,runpy,logging,sys; applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); runpy.run_path('tools/run_tests.py',run_name='__main__')" test_generator_polish test_live_model_updates test_image_generator_updates test_ai.CreateImageWindowTests test_ui_theme
+      - name: Verify in-app update from released and review builds
+        run: python tools/verify_installed_app_update.py
+      - name: Create review screenshots
+        if: hashFiles('render_image_generator_updates.py') != ''
+        run: python render_image_generator_updates.py
+      - name: Package source prototype
+        if: runner.os == 'Windows'
+        run: python package_prototype.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StrokeScribe-image-generator-drawer-${{ runner.os }}
+          path: |
+            samples/image-generator-updates/
+            dist/*.zip

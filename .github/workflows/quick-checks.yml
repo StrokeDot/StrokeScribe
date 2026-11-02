@@ -1,0 +1,119 @@
+name: Quick checks
+# Every pull request push: a core Studio/layout/render set plus the tests that
+# touch the changed files, on Windows and Linux in parallel (a few minutes).
+# The full suite runs with the `full-tests` label or by hand (Full test suite),
+# and always before an installer is published (Windows installer workflow).
+on:
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: quick-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: write        # publishes panel screenshots to the ui-shots branch
+  pull-requests: write
+jobs:
+  quick:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Linux: the tests split over 4 machines running at the same time (each a
+        # few minutes); these decide the merge. Windows: all of them on one machine,
+        # about twice as slow; it reports problems but does not hold the merge.
+        include:
+          - os: windows-latest
+            python: '3.14'
+            shard: '1/1'
+            blocking: false
+          - os: ubuntu-latest
+            python: '3.12'
+            shard: '1/4'
+            blocking: true
+          - os: ubuntu-latest
+            python: '3.12'
+            shard: '2/4'
+            blocking: true
+          - os: ubuntu-latest
+            python: '3.12'
+            shard: '3/4'
+            blocking: true
+          - os: ubuntu-latest
+            python: '3.12'
+            shard: '4/4'
+            blocking: true
+    name: quick (${{ matrix.os }} ${{ matrix.shard }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ !matrix.blocking }}
+    timeout-minutes: 80      # Windows runs the same tests about twice as slowly
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+          cache: pip
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 ffmpeg
+      - run: 'python -m pip install --only-binary=:all: -r requirements.txt'
+      - name: Choose tests for the changed files
+        id: pick
+        shell: bash
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          if [ -n "$base" ]; then
+            changed=$(git diff --name-only "$base"...HEAD)
+          else
+            changed=""
+          fi
+          tests=$(python tools/select_tests.py --shard ${{ matrix.shard }} $changed)
+          echo "Running: $tests"
+          echo "tests=$tests" >> "$GITHUB_OUTPUT"
+      - name: Quick tests
+        id: tests
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m compileall -q .
+          python -X faulthandler tools/run_tests.py --limit 300 ${{ steps.pick.outputs.tests }} 2>&1 | tee quick-tests.log
+      - name: Report failures to the pull request
+        if: steps.tests.outcome == 'failure' && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        shell: bash
+        run: |
+          {
+            echo "### Quick checks failed on ${{ matrix.os }} (part ${{ matrix.shard }})"
+            echo '```text'
+            if grep -qE '^(FAIL|ERROR):' quick-tests.log; then
+              awk '/^(FAIL|ERROR):/{p=1} p' quick-tests.log | grep -v 'DeprecationWarning' | head -n 160 || true
+            else
+              echo 'No unittest summary (the test process may have crashed). Last 60 lines:'
+              tail -n 60 quick-tests.log || true
+            fi
+            echo '```'
+          } > quick-comment.md
+          gh pr comment "$PR_NUMBER" --body-file quick-comment.md
+      - name: Panel screenshots (branch ui-shots)
+        if: always() && runner.os == 'Windows'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python tools/ui_shots.py ../ui-shots-out
+          cd ../ui-shots-out
+          echo "${{ github.event.pull_request.head.sha || github.sha }}" > commit.txt
+          git init -q && git checkout -q -b ui-shots
+          git config user.name ci && git config user.email ci@example.invalid
+          git add -A && git commit -qm "UI shots for ${{ github.event.pull_request.head.sha || github.sha }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" ui-shots
+      - name: Stop if tests failed
+        if: steps.tests.outcome == 'failure'
+        shell: bash
+        run: exit 1

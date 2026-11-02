@@ -13,19 +13,30 @@ import os
 from pathlib import Path
 import re
 import shutil
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+# urllib is imported when a font is downloaded (exp.120: faster start).
 
-import cv2
+from lazy_import import Lazy as _Lazy
+cv2 = _Lazy("cv2")      # exp.130: loaded when first used
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from engine import Drawing, Stroke
 
-STARTER_FONTS=(
-    'Caveat','Kalam','Patrick Hand','Indie Flower','Dancing Script',
-    'Sacramento','Gochi Hand','Architects Daughter',
-    'Shadows Into Light','Reenie Beanie',
-)
+# Open-licensed Google Fonts (OFL or Apache 2.0: free, also for commercial use),
+# downloaded on request with their license. Grouped in the font list.
+FONT_GROUPS={
+    'Handwriting':('Caveat','Kalam','Patrick Hand','Indie Flower','Gochi Hand','Architects Daughter',
+                   'Shadows Into Light','Reenie Beanie','Amatic SC','Permanent Marker','Rock Salt',
+                   'Covered By Your Grace','Gloria Hallelujah','Handlee','Nothing You Could Do','Homemade Apple',
+                   'Just Another Hand','Schoolbell','Coming Soon','Neucha','Over the Rainbow',
+                   'Annie Use Your Telescope','La Belle Aurore','Zeyada','Delius','Mali','Sriracha','Caveat Brush',
+                   'Pangolin','Delicious Handrawn','Sue Ellen Francisco','Short Stack'),
+    'Script':('Dancing Script','Sacramento','Satisfy','Great Vibes','Pacifico','Courgette','Kaushan Script',
+              'Allura'),
+    'Clean titles':('Nunito','Poppins','Montserrat','Lato','Quicksand','Comfortaa','Fredoka','Bebas Neue',
+                    'Oswald','Bangers','Luckiest Guy','Chewy'),
+    'Serif':('Merriweather','Playfair Display','Lora'),
+}
+STARTER_FONTS=tuple(f for group in FONT_GROUPS.values() for f in group)
 MAX_FONT_BYTES=12_000_000
 API_ROOT='https://api.github.com/repos/google/fonts/contents'
 BINARY_HOST='https://raw.githubusercontent.com/google/fonts/'
@@ -56,6 +67,7 @@ def installed_font(family):
 
 
 def _read_url(url,binary=False):
+    from urllib.request import Request, urlopen
     req=Request(url,headers={
         'User-Agent':'StrokeScribe-font-installer/0.5.3',
         'Accept':'application/vnd.github+json' if not binary else 'application/octet-stream',
@@ -73,6 +85,7 @@ def download_google_font(family):
     Supports open font licenses as organized in Google's public repository.
     Does not download a font without its accompanying upstream license.
     """
+    from urllib.error import HTTPError, URLError
     slug=font_slug(family)
     existing=installed_font(family)
     if existing: return existing
