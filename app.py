@@ -1672,7 +1672,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.eraser_hand_path=self.keep_in_library('hands',name)
         self.eraser_hand.setCurrentText('My picture…')
         self.project_changes.mark_changed(); self.note_change()
-        self.update_eraser_hand_name(); self.show_hand_pictures(); self.hand_rest_changed()
+        self.update_eraser_hand_name(); self.show_hand_pictures(); self.eraser_changed()
 
     def update_eraser_hand_name(self):
         if not hasattr(self,'eraser_hand_name'): return
@@ -4066,10 +4066,34 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             drawing,options,length,camera=self.preview_scene(k,width,height)
             camera=self.video_camera(k,camera,length)            # exp.119: the camera clips
             options=dict(options,**self.hand_video(k))           # exp.147: the Hand row
+            tool=self.eraser_tool()
+            if tool is not None: options['eraser_tool']=tool     # exp.196: one for the video
             elements.append(dict(drawing=drawing,options=options,camera=camera,uid=self.scenes[k].get('uid'),
                                  transition=self.scenes[k]['transition'],
                                  move_seconds=self.scenes[k]['transition_seconds']))
         return elements
+
+    def eraser_tool(self):
+        """exp.196: the Eraser hand (one for the whole video) as render options take it. Kept out
+        of the elements' own settings: changing it (e.g. its size) remakes only the frames
+        with an eraser, not the whole video (it nearly froze the program)."""
+        if not hasattr(self,'eraser_hand'): return None
+        return dict(kind=self.eraser_hand.currentText(),path=getattr(self,'eraser_hand_path',None),
+                    size=self.eraser_hand_size.value()/100.,left=self.left_handed.isChecked(),
+                    on=self.eraser_hand_on.isChecked())
+
+    def eraser_changed(self):
+        """exp.196: the Eraser hand changed: once the slider / box stops (not every step)."""
+        if not hasattr(self,'_eraser_timer'):
+            self._eraser_timer=QTimer(self); self._eraser_timer.setSingleShot(True)
+            self._eraser_timer.timeout.connect(self._eraser_apply)
+        self._eraser_timer.start(250)
+
+    def _eraser_apply(self):
+        if getattr(self,'_restoring',False) or not self.drawing: return
+        self.project_changes.mark_changed()
+        self.show_hand_pictures()
+        self.refresh()
 
     def board_moment(self,world,view,W,H):
         """exp.193 (the user: on the Board, see the animation of the whole thing): the whole
@@ -5358,12 +5382,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def hand_rest_settings(self):
         """exp.143: the hand waiting in a corner, for every element of the video."""
         if not hasattr(self,'hand_rest'): return {}
-        eraser={}
-        if hasattr(self,'eraser_hand'):                      # exp.195: one eraser hand for the video
-            eraser=dict(eraser_hand=self.eraser_hand.currentText(),eraser_hand_size=self.eraser_hand_size.value(),
-                        eraser_hand_path=getattr(self,'eraser_hand_path',None),
-                        eraser_hand_on=self.eraser_hand_on.isChecked())
-        return dict(eraser,hand_rest=self.hand_rest.isChecked(),hand_rest_corner=self.hand_rest_corner.currentText(),
+        return dict(hand_rest=self.hand_rest.isChecked(),hand_rest_corner=self.hand_rest_corner.currentText(),
                     hand_rest_travel=self.hand_rest_travel.value(),
                     hand_under=self.hand_under.isChecked() if hasattr(self,'hand_under') else False)
 
@@ -5646,6 +5665,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             import overlays as _ov
             low=self.titles_split((a+b)/2)[1]
             under=repr([o for o in low if float(o.get('start',0))<b and (_ov.shown_until(o)>a or o.get('kind')=='eraser')])   # exp.186: an eraser stays done
+            if 'eraser' in under: under+=repr(self.eraser_tool())          # exp.196: its hand
             fp=('tl',describe(lay,state,a),tuple(self.element_fingerprint(i) for i in involved),under,
                 self.cameras_signature(a,b),
                 tuple(sorted(self.hidden_elements())),
