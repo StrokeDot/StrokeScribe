@@ -9,6 +9,20 @@ quietly, nothing waits for it.
 from __future__ import annotations
 
 MODES = {'Zigzag (follows the shapes)': 'zigzag', 'Along the lines': 'lines'}
+# exp.192 (the user: treat them all as one way out): what the clip does: the eraser, or an effect
+EFFECTS = {'Eraser': None, 'Fade out': 'fade', 'Pop out': 'pop', 'Zoom out': 'zoom', 'Spin out': 'spin',
+           'Move out to the left': 'out-left', 'Move out to the right': 'out-right',
+           'Move out to the top': 'out-top', 'Move out to the bottom': 'out-bottom'}
+
+
+def effect_of(item):
+    """The exit effect (frame_render.EXITS key) of the clip, or None for the eraser."""
+    return EFFECTS.get(item.get('effect') or 'Eraser')
+
+
+def with_hand(item):
+    """The eraser (or its hand) is seen rubbing: only for the eraser, when the clip says so."""
+    return effect_of(item) is None and item.get('hand', True) is not False
 # exp.190 (the user: an eraser hand): what rubs: the eraser, the drawing hand, or your own picture
 TOOLS = ('Built-in eraser', 'Pen hand', 'My picture…')
 SIZE = .08                     # the eraser's size, share of the picture's width
@@ -80,22 +94,39 @@ def _picture(path):
 
 
 def erase_options(options, item, hand=None):
-    """The element's render options with this eraser as its way out (frame_render's eraser)."""
+    """The element's render options with this eraser as its way out (frame_render's eraser).
+
+    exp.192: what rubs comes from the element's Hand panel (Eraser hand: the built-in eraser,
+    the pen hand or your own picture, and its size). The user's rule: a hand that erases is
+    the OTHER hand of the one that writes (a right-handed writer erases with the left)."""
     from export_job import erase_from_settings
     mode = {v: k for k, v in MODES.items()}.get(item.get('mode') or 'zigzag', 'Zigzag (follows the shapes)')
-    tool = item.get('tool') or 'Built-in eraser'
+    look = options.get('eraser_tool') or {}
+    tool = look.get('kind') or item.get('tool') or 'Built-in eraser'
+    path = look.get('path') if look.get('kind') else item.get('tool_path')
+    size = float(look.get('size') or .45)
+    left = bool(look.get('left'))                   # the writing hand is the left one
     pen = options.get('hand') if hand is None else hand
     erase = erase_from_settings({'erase_mode': mode, 'erase_size': SIZE * 100, 'erase_time': 1.,
-                                 'eraser': 'Pen hand' if tool == 'Pen hand' else 'Built-in eraser',
-                                 'handsize': float(options.get('hand_scale', .18)),
-                                 'ax': (options.get('anchor') or (.08, .13))[0],
-                                 'ay': (options.get('anchor') or (.08, .13))[1],
-                                 'left_handed': bool(options.get('_left_handed'))}, pen)
-    if tool == 'My picture…' and item.get('tool_path'):
-        picture, spot = _picture(item['tool_path'])
-        if not picture.isNull():
-            erase = dict(erase, image=picture, anchor=tuple(item.get('tool_tip') or spot),
-                         width=float(item.get('tool_size', .6)))
+                                 'eraser': 'Built-in eraser', 'left_handed': left}, None)
+    picture, spot = None, None
+    if tool == 'Pen hand' and pen is not None and not pen.isNull():
+        a = options.get('anchor') or (.08, .13)
+        picture, spot = pen, (float(a[0]), float(a[1]))
+        size = float(look.get('size') or .45)
+    elif tool == 'My picture…' and path:
+        picture, spot = _picture(path)
+        if picture.isNull():
+            picture = None
+    if picture is not None:
+        # the other hand: the pen hand as it writes, mirrored; your picture is taken as a right
+        # hand, so it is mirrored for a right-handed writer
+        from tools_kit import mirrored
+        if tool == 'Pen hand' or not left:
+            picture, spot = mirrored(picture), (1 - spot[0], spot[1])
+        erase = dict(erase, image=picture, anchor=spot, width=size)
+    if not with_hand(item):
+        erase = dict(erase, image=None)
     opts = {k: v for k, v in options.items() if k not in ('hand_travel', 'hand_travel_out', 'hand_rest_here',
                                                        'hand_away', '_video_t', 'pause', 'erase')}
     opts.update(erase=erase, pause=0.)
@@ -116,7 +147,7 @@ def hand_leaves(items, elements, frames, page_at):
     out = []
     for item in clips(items):
         k = target_of(item, elements)
-        if k is None:
+        if k is None or not with_hand(item):
             continue
         start, length = float(item.get('start', 0)), max(.2, float(item.get('duration', 3)))
         try:

@@ -248,9 +248,17 @@ def _erasing(world, elements, erasers, view, out, width, height, state):
             continue
         el = elements[k]
         q = eraser_clips.WORK_WIDTH
+        effect = eraser_clips.effect_of(item)
+        if effect is not None:
+            # exp.192: a way out with an effect (fade, pop, zoom, spin, move out): no eraser
+            from frame_render import effect_frame, EXITS
+            frame = effect_frame(world.finished(k, q), EXITS[effect], 1. - p)
+            out = world.put(out, frame, world.frames[k], view, el['options'].get('blend_mode', 'Normal'),
+                            el['options'].get('artwork_opacity', 100))
+            continue
         opts = eraser_clips.erase_options(el['options'], item)
         tool = opts['erase']
-        key = (repr(world.items[k].get('key')), item.get('mode'), eraser_clips.tool_key(item), q, world.aspect)
+        key = (repr(world.items[k].get('key')), item.get('mode'), q, world.aspect)
         found = _ERASING.get(key)
         if found is None:
             plain = {kk: v for kk, v in opts.items() if kk not in ('fps', 'audio', 'workers', 'erase', 'overlays')}
