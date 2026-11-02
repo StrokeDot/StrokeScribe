@@ -142,7 +142,9 @@ class ArtworkWorkflow:
         state['settings'].update(use_color=False,preserve_colors=True,image_animation='Draw, then Paint',
                                  picture_x=0.,picture_y=0.,artwork_size=100.,audio_path=None)
         self.image_result=None;self.image_path=None;self.image_guide=None;self.svg_state=None
+        self.__dict__.pop('_memo',None); self._scene_cache={}           # exp.198: nothing of the old project
         self.apply_project(state)
+        self.preview_scope.setCurrentIndex(0)
         self.project_path=None
         self.position=0
         self.reset_history()

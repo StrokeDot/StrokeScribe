@@ -5830,7 +5830,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.clear_frames(); self._view=None
         self.sync_workspace()
         if not self.drawing:
-            self.canvas.frame=None;self.canvas.highlight=[];self.canvas.titles_frame=None;self.canvas.update()
+            self.canvas.frame=None;self.canvas.highlight=[];self.canvas.titles_frame=None;self.canvas.rest_frame=None
+            self.canvas.update()
+            # exp.198 (the user: New Project left the old project on the timeline): an empty
+            # project shows an empty timeline (no elements, cameras, texts or hand bars).
+            tl=self.stage_timeline
+            tl.set_scenes(None,current=0)
+            tl.set_overlays([],None); tl.cam_clips=[]; tl.cam_holds={}; tl.cam_marks=[]; tl.hand_marks=[]
+            tl.set_audio(self.timeline_audio()); tl.lead=0.
             self.stage_timeline.update_state(0,0,0,0)
             self.clock.setText(timecode(0)); self.clock_total.setText(timecode(0))
             return False
