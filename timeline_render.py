@@ -102,14 +102,15 @@ def compose(world, lay, state, elements, width, height, titles=None, seconds=Non
     # exp.186: Eraser clips come with the texts (they are clips on the tracks like them).
     import eraser_clips
     erasers = eraser_clips.at(titles, elements, seconds)
+    glides = eraser_clips.glides(titles, elements, seconds)
     titles = [o for o in titles or () if o.get('kind') != 'eraser']
     if state.kind == 'move':
         k = state.move
         kind = elements[k].get('transition', 'Camera move')
         last = k == len(elements) - 1
         if kind in board.SCREEN_KINDS and not last and view_scale <= 1.:
-            a = _page(world, lay, state, elements, world.frames[k], width, height, erasers=erasers)
-            b = _page(world, lay, state, elements, world.frames[k + 1], width, height, erasers=erasers)
+            a = _page(world, lay, state, elements, world.frames[k], width, height, erasers=erasers, glides=glides)
+            b = _page(world, lay, state, elements, world.frames[k + 1], width, height, erasers=erasers, glides=glides)
             return _texts(transition_frame(a, b, kind, state.t), titles, seconds)
     def view_fn(st, plain=False):
         v = plain_view(world, st) if plain else view_of(world, lay, st, elements)
@@ -117,7 +118,7 @@ def compose(world, lay, state, elements, width, height, titles=None, seconds=Non
             w = v[2] * view_scale        # exp.122: and moved around by dragging it
             v = (v[0] + view_pan[0] * w, v[1] + view_pan[1] * w * world.aspect, w)
         return v
-    return _page(world, lay, state, elements, view_fn(state), width, height, titles, seconds, view_fn, erasers)
+    return _page(world, lay, state, elements, view_fn(state), width, height, titles, seconds, view_fn, erasers, glides)
 
 
 def page_of(lay, seconds):
@@ -232,7 +233,54 @@ def _drawing_now(state, elements, k):
 _ERASING = {}
 
 
-def _erasing(world, elements, erasers, view, out, width, height, state):
+def _erase_plan(world, el, k, item, opts):
+    from frame_render import erase_setup
+    import eraser_clips
+    q = eraser_clips.WORK_WIDTH
+    key = (repr(world.items[k].get('key')), item.get('mode'), q, world.aspect)
+    found = _ERASING.get(key)
+    if found is None:
+        plain = {kk: v for kk, v in opts.items() if kk not in ('fps', 'audio', 'workers', 'erase', 'overlays')}
+        plain.update(width=q, height=max(2, round(q * world.aspect)), layers='art', ghost=0)
+        found = erase_setup(el['drawing'], plain, opts['erase'])
+        if len(_ERASING) > 8:
+            _ERASING.clear()
+        _ERASING[key] = found
+    return found
+
+
+def _glide_tool(world, elements, glides, view, out, width, height):
+    """exp.197 (the user): the eraser hand comes in from the bottom on its own side (the left
+    hand from the bottom left) to its first rub, and after the last one goes back the same way."""
+    import eraser
+    import eraser_clips
+    from frame_render import glide_point
+    for k, item, phase, e in glides or ():
+        el = elements[k]
+        if eraser_clips.effect_of(item) is not None:
+            continue
+        opts = eraser_clips.erase_options(el['options'], item)
+        tool = opts['erase']
+        if tool.get('image') is None or tool['image'].isNull():
+            continue
+        hold, plan = _erase_plan(world, el, k, item, opts)
+        x, y, w, h = world.place(world.frames[k], view, width, height)
+        point, _ = plan.state(.002 if phase == 'in' else eraser.FINISH - .002)
+        if point is None:
+            continue
+        spot = (x + point[0] * w / hold.width(), y + point[1] * h / hold.height())
+        size = float(tool.get('width', .18)) * float(el['options'].get('_hand_zoom', 1.))
+        th = size * width * tool['image'].height() / max(1, tool['image'].width())
+        side = eraser_clips.side_of(el['options'], item)
+        away = (width * (.12 if side == 'left' else .88), height + th * (1 - tool.get('anchor', (0, 0))[1]) + 8)
+        a, b = (away, spot) if phase == 'in' else (spot, away)
+        where = glide_point(a, b, max(0., min(1., e)), 'Smooth')
+        out = out.copy()
+        out = eraser.draw_eraser(out, where, tool['image'], tool.get('anchor', eraser.ERASER_TIP), size)
+    return out
+
+
+def _erasing(world, elements, erasers, view, out, width, height, state, glides=None):
     """exp.186: the elements Eraser clips are rubbing out (gone once their clip is over), with
     the eraser on them. exp.190 (the user: every click lagged): the eraser's route is planned
     once per element and kept (the element's own key), not again each time the preview is
@@ -258,16 +306,7 @@ def _erasing(world, elements, erasers, view, out, width, height, state):
             continue
         opts = eraser_clips.erase_options(el['options'], item)
         tool = opts['erase']
-        key = (repr(world.items[k].get('key')), item.get('mode'), q, world.aspect)
-        found = _ERASING.get(key)
-        if found is None:
-            plain = {kk: v for kk, v in opts.items() if kk not in ('fps', 'audio', 'workers', 'erase', 'overlays')}
-            plain.update(width=q, height=max(2, round(q * world.aspect)), layers='art', ghost=0)
-            found = erase_setup(el['drawing'], plain, tool)
-            if len(_ERASING) > 8:
-                _ERASING.clear()
-            _ERASING[key] = found
-        hold, plan = found
+        hold, plan = _erase_plan(world, el, k, item, opts)
         frame = eraser.erase_frame(hold, plan, p)
         frame = frame.copy() if frame is hold else frame
         point, _ = plan.state(p)
@@ -283,11 +322,12 @@ def _erasing(world, elements, erasers, view, out, width, height, state):
     return out
 
 
-def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None, view_fn=None, erasers=None):
+def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None, view_fn=None, erasers=None,
+          glides=None):
     erasers = erasers or {}
     skip = (set(range(len(elements))) - set(state.finished)) | set(erasers)
     out = world.view(view, width, height, upto=len(elements), skip=skip)
-    out = _erasing(world, elements, erasers, view, out, width, height, state)
+    out = _erasing(world, elements, erasers, view, out, width, height, state, glides)
     tracks = {it.k: it.track for it in lay.items}
     waiting = sorted(titles or (), key=lambda o: int(o.get('track', 0)))
     hand_k = _hand_element(state, elements, tracks)
@@ -334,4 +374,6 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
         layer, frame, spec, place, opts = hand_layer
         out = world.put(out, layer, frame, view)
         out = paint_hand_spec(out, spec, dict(opts, width=width, height=height), place)
+    if glides:
+        out = _glide_tool(world, elements, glides, view, out, width, height)     # exp.197
     return out
