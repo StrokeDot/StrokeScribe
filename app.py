@@ -2,7 +2,7 @@ import os, sys, time
 from collections import OrderedDict
 from pathlib import Path
 from datetime import datetime
-from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl, QItemSelectionModel
+from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl, QItemSelectionModel, QEventLoop
 from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap, QDesktopServices
 from PySide6.QtWidgets import (QListWidgetItem,QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea,QColorDialog)
 from engine import import_svg, render, export_frames, encode_mov, encode_webm, encode_mp4, scale_animation_frame, apply_lettering_background
@@ -2479,6 +2479,57 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.hide_home()
         return True
 
+    # ------------------------------------------------------------ exp.188: opening card
+    def show_loading(self,title):
+        """A card over the window while a project opens: its name, what is being done and the
+        seconds so far (the work is on the window's own thread, so the card is updated
+        between steps)."""
+        from PySide6.QtWidgets import QFrame, QVBoxLayout, QProgressBar
+        card=getattr(self,'loading_card',None)
+        if card is None:
+            card=QFrame(self.centralWidget()); card.setObjectName('loadingCard')
+            card.setStyleSheet('QFrame#loadingCard{background:rgba(14,15,19,250);}'
+                               'QLabel#loadingTitle{font-size:20px;font-weight:600;color:#F2F1F7;}'
+                               'QLabel#loadingStep{color:#C9C7D6;font-size:13px;}'
+                               'QLabel#loadingTime{color:#8E8BA3;font-size:28px;font-family:Consolas,monospace;}')
+            box=QVBoxLayout(card); box.addStretch(1)
+            card.title=QLabel(); card.title.setObjectName('loadingTitle'); card.title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            card.clock=QLabel(); card.clock.setObjectName('loadingTime'); card.clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            card.step=QLabel(); card.step.setObjectName('loadingStep'); card.step.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            card.bar=QProgressBar(); card.bar.setTextVisible(False); card.bar.setFixedWidth(360); card.bar.setFixedHeight(6)
+            for widget in (card.title,card.clock,card.step):
+                box.addWidget(widget)
+            box.addWidget(card.bar,0,Qt.AlignmentFlag.AlignHCenter)
+            box.addStretch(1)
+            card.timer=QTimer(card); card.timer.setInterval(100)
+            card.timer.timeout.connect(self._loading_tick)
+            self.loading_card=card
+        card.began=time.perf_counter()
+        card.title.setText(title); card.step.setText(''); card.bar.setRange(0,0)
+        card.setGeometry(self.centralWidget().rect()); card.show(); card.raise_()
+        card.timer.start(); self._loading_tick()
+        QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+
+    def _loading_tick(self):
+        card=getattr(self,'loading_card',None)
+        if card is None or not card.isVisible(): return
+        card.clock.setText(f'{time.perf_counter()-card.began:.1f} s')
+
+    def loading_step(self,text,count=None):
+        """Tell the opening card what is being done now (nothing when it is not showing)."""
+        card=getattr(self,'loading_card',None)
+        if card is None or not card.isVisible(): return
+        card.step.setText(text)
+        if count is not None:
+            card.bar.setRange(0,max(1,count[1])); card.bar.setValue(count[0])
+        self._loading_tick()
+        QApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+
+    def hide_loading(self):
+        card=getattr(self,'loading_card',None)
+        if card is not None:
+            card.timer.stop(); card.hide()
+
     def open_project(self,path=None):
         if (self.builder and self.builder.isRunning()) or (self.worker and self.worker.isRunning()):
             QMessageBox.information(self,'Open project','Please wait for the current job to finish.'); return False
@@ -2486,12 +2537,21 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if path is None:
             path,_=QFileDialog.getOpenFileName(self,'Open project','','StrokeScribe project (*.strokescribe)')
             if not path: return False
+        if not self.confirm_leave_project('open another project'):
+            return False
+        self.show_loading(f'Opening {Path(path).stem}')
+        try:
+            return self._open_project(path,projects)
+        finally:
+            self.hide_loading()
+
+    def _open_project(self,path,projects):
+        self.loading_step('Reading the project file…')
         try:
             data=projects.load(path)
         except Exception as exc:
+            self.hide_loading()
             QMessageBox.warning(self,'Open project',str(exc)); return False
-        if not self.confirm_leave_project('open another project'):
-            return False
         # Loading can fail after partially changing scene/widget state. Keep a
         # full in-memory snapshot and restore it on failure, rather than leave
         # the user's unsaved work half-replaced.
@@ -2499,9 +2559,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import time as _time
         began=_time.perf_counter()
         held=getattr(self,'_suspend_refresh',False); self._suspend_refresh=True   # exp.130: one preview at the end
+        self.loading_step(f'Setting up {len(data.get("scenes") or ()) or "the"} elements…')
         try:
             self.apply_project(data)
         except Exception as exc:
+            self.hide_loading()
             self._suspend_refresh=held
             if previous is not None:
                 try:
@@ -3849,7 +3911,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         key=('timeline',width,height,self._view_token(),
              tuple((s['transition'],s['transition_seconds']) for s in self.scenes))
         if key in memo: return memo[key]
-        lengths=[self.preview_scene(k,width,height)[2] for k in range(len(self.scenes))]
+        lengths=[]
+        for k in range(len(self.scenes)):
+            self.loading_step(f'Preparing element {k+1} of {len(self.scenes)}: {self.scene_label(k)}',
+                              (k,len(self.scenes)))           # exp.188: the opening card
+            lengths.append(self.preview_scene(k,width,height)[2])
         last=len(self.scenes)-1
         joins=[transition_seconds(s['transition'],s['transition_seconds'],k==last) for k,s in enumerate(self.scenes)]
         memo[key]=(lengths,joins)
