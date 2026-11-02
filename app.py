@@ -3603,7 +3603,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         p.drawText(box.adjusted(12,0,-12,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
                    p.fontMetrics().elidedText(hint,Qt.TextElideMode.ElideRight,int(box.width()-24)))
         p.end()
-        self.canvas.frame=image; self.canvas.highlight=[]; self.canvas.titles_frame=None; self.canvas.update()
+        self.canvas.frame=image; self.canvas.highlight=[]; self.canvas.titles_frame=None; self.canvas.rest_frame=None; self.canvas.update()   # exp.195: no waiting hand left over from the video (it showed a second, big hand)
         segments,lengths,joins=self.whole_segments(960,round(960*aspect))
         self.show_whole_timeline(segments,lengths,joins,self.options())
         total=self.timeline_layout(960,round(960*aspect)).total
