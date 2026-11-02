@@ -419,7 +419,9 @@ class StageTimeline(QFrame):
         need=self._content_height()
         if self.items:
             # Many tracks: the panel keeps a sensible height and the tracks scroll.
-            self.setMinimumHeight(min(max(104,need),230)); self.setMaximumHeight(max(140,need+20))
+            # exp.194 (the user: the preview could not be made bigger): the tracks scroll, so the
+            # timeline may be dragged quite small (it held 230 px at least).
+            self.setMinimumHeight(min(max(90,need),120)); self.setMaximumHeight(max(140,need+20))
         else:
             self.setMinimumHeight(max(104,need)); self.setMaximumHeight(max(140,need+20))
         self._update_bars()

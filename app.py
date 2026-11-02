@@ -1617,6 +1617,53 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                             'effect. Drag it on the preview to place it, double-click its clip for more.')
         return item
 
+    def paint_end_of(self,item):
+        """exp.194 (the user): a Goes out clip comes after its element is painted: the second
+        (whole video) where that element's painting ends (0 when unknown)."""
+        import eraser_clips
+        try:
+            k=eraser_clips.target_of(item,[dict(uid=s.get('uid')) for s in self.scenes])
+            if k is None: return 0.
+            it=self.timeline_layout().items[k]
+            parts=dict(self.real_parts(k,it.length))
+            return it.start+sum(parts.get(key,0.) for key in ('glide','draw','move','paint'))
+        except Exception:
+            return 0.
+
+    def exits_to_clips(self):
+        """exp.194 (the user: the Out part is no longer part of the element): an element whose
+        own settings still have a way out (older projects) gets a Goes out clip right after it
+        instead, and the element's Out goes."""
+        import overlays, eraser_clips
+        if len(self.scenes)<2: return 0
+        found=[]
+        for k,scene in enumerate(self.scenes):
+            settings=self.settings_state() if k==self.scene_index else ((scene.get('state') or {}).get('settings') or {})
+            mode=settings.get('erase_mode') or 'Off'
+            if mode=='Off': continue
+            found.append((k,mode,float(settings.get('erase_time',3) or 3)))
+            if k==self.scene_index:
+                self.erase_mode.blockSignals(True); self.erase_mode.setCurrentText('Off'); self.erase_mode.blockSignals(False)
+            else:
+                settings['erase_mode']='Off'
+        if not found: return 0
+        if hasattr(self,'store_scene'):
+            try: self.store_scene()
+            except Exception: pass
+        self.__dict__.pop('_memo',None); self._scene_cache={}
+        lay=self.timeline_layout()
+        for k,mode,seconds in found:
+            it=lay.items[k]
+            effect='Eraser' if mode in eraser_clips.MODES else mode
+            item=overlays.new_eraser(self.scenes[k].get('uid'),k,
+                                     f'{"Erase" if effect=="Eraser" else effect} {k+1} · {self.scene_label(k)}'[:40],
+                                     start=round(it.start+it.length,2),duration=seconds,
+                                     mode=eraser_clips.MODES.get(mode,'zigzag'))
+            item.update(effect=effect,hand=True,track=it.track)
+            self.overlays.append(item)
+        self.project_changes.mark_changed()
+        return len(found)
+
     def choose_eraser_hand(self):
         """exp.192: your own eraser hand picture (kept in the library)."""
         name,_=QFileDialog.getOpenFileName(self,'Eraser hand (a hand holding an eraser…)','',
@@ -1864,6 +1911,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self._clip_from={o['id']:float(o.get('start',0)) for o in self.chosen_overlays()}
             self._clip_from[oid]=float(item.get('start',0))
         moved=abs(float(duration)-float(item.get('duration',3)))<1e-6
+        if item.get('kind')=='eraser':
+            start=max(float(start),self.paint_end_of(item))    # exp.194: not before the painting ends
         item.update(start=start,duration=duration,track=track)
         if moved:                          # the other chosen texts move with it (exp.117)
             starts=getattr(self,'_clip_from',{})
@@ -2617,6 +2666,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                     autosave.save(previous,getattr(self,'project_path',None),self.project_title)
             QMessageBox.warning(self,'Open project',str(exc)); return False
         self.project_path=str(path)
+        try:
+            moved=self.exits_to_clips()                     # exp.194: older projects
+            if moved: import applog; applog.info('Ways out moved to Goes out clips: %d',moved)
+        except Exception as exc:
+            import applog; applog.error('Ways out to clips',exc)
         self.setWindowTitle(f'{Path(path).stem}  •  {DISPLAY_NAME}')
         self.status.setText('Opened project: '+str(path))
         try:
@@ -4038,10 +4092,20 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         titles=[o for o in self.visible_titles() if o.get('kind')=='eraser']     # the erasers work here too
         import eraser_clips
         erasers=eraser_clips.at(titles,elements,seconds)
+        camera=timeline_render.view_of(world,lay,state,elements)
+        place=world.place((camera[0],camera[1],camera[2]),view,W,H)
+        # exp.194 (the user: the hand was gigantic on the Board): the hands are the size they
+        # are in the video, seen from above (as big as the camera's frame makes them)
+        f=max(.02,min(1.,place[2]/max(1.,W)))
+        for el in elements:
+            o=dict(el['options'])
+            o['hand_scale']=float(o.get('hand_scale',.18))*f
+            if o.get('move_hand_size') is not None: o['move_hand_size']=float(o['move_hand_size'])*f
+            o['_hand_zoom']=f
+            el['options']=o
         image=timeline_render._page(world,lay,state,elements,view,W,H,None,seconds,
                                     lambda st,plain=False: view,erasers)
-        camera=timeline_render.view_of(world,lay,state,elements)
-        return image,world.place((camera[0],camera[1],camera[2]),view,W,H)
+        return image,place
 
     def timeline_frame(self,state,width,height,seconds=None,view_scale=1.,view_pan=(0.,0.)):
         """Whole video with elements on tracks: one moment (timeline_render); texts under an
