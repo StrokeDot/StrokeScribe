@@ -1424,7 +1424,9 @@ class StageTimeline(QFrame):
             return super().mousePressEvent(event)
         # exp.165 (the user): an element's bar on the Hand row is chosen (white edge) like the
         # elements and the cameras; double-click opens its window.
-        hand_k=self._hand_mark_at(pos) if self.items else None
+        # exp.190 (the user: a "Hide the hand" clip could not be clicked once on the timeline):
+        # a clip on the Hand row comes before the elements' hand bars under it.
+        hand_k=self._hand_mark_at(pos) if self.items and self._clip_at(pos)[0] is None else None
         if hand_k is not None:
             self.selected_hand=hand_k
             if self.selected_camera:

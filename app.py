@@ -1631,17 +1631,31 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         target.setCurrentIndex(max(0,min(len(self.scenes)-1,int(k0))))
         style=QComboBox(); style.addItems(list(eraser_clips.MODES))
         if item: style.setCurrentText({v:k for k,v in eraser_clips.MODES.items()}.get(item.get('mode'),'Zigzag (follows the shapes)'))
+        tool=QComboBox(); tool.addItems(list(eraser_clips.TOOLS))
+        tool.setCurrentText((item or {}).get('tool') or 'Built-in eraser')
+        picked={'path':(item or {}).get('tool_path')}
+        def choose(index):
+            if tool.currentText()!='My picture…': return
+            name,_=QFileDialog.getOpenFileName(dialog,'Eraser picture (a hand holding an eraser…)','',
+                                               'Pictures (*.png *.webp *.jpg *.jpeg)')
+            if name: picked['path']=self.keep_in_library('hands',name)
+            elif not picked['path']: tool.setCurrentText('Built-in eraser')
+        tool.currentIndexChanged.connect(choose)
         length=QDoubleSpinBox(); length.setRange(.3,30.); length.setDecimals(1); length.setSingleStep(.5); length.setSuffix(' s')
         length.setValue(float(item.get('duration',3.)) if item else 3.)
         form.addRow(help_label('Erases','The element it rubs out (wherever it is on the board).'),target)
         form.addRow(help_label('How','Zigzag: back and forth over the picture. Along the lines: follows the lines it drew.'),style)
+        form.addRow(help_label('Eraser','What rubs it out: the eraser, the drawing hand (Pen hand), or your own '
+                               'picture, e.g. a hand holding an eraser (its rubbing spot is near its bottom left).'),tool)
         form.addRow(help_label('How long','How long the erasing takes.'),length)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); form.addRow(buttons)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return None
         k=target.currentIndex()
         return dict(target=self.scenes[k].get('uid'),target_k=k,name=f'Erase {k+1} · {self.scene_label(k)}'[:40],
-                    mode=eraser_clips.MODES[style.currentText()],duration=round(length.value(),2))
+                    mode=eraser_clips.MODES[style.currentText()],duration=round(length.value(),2),
+                    tool=tool.currentText() if (tool.currentText()!='My picture…' or picked['path']) else 'Built-in eraser',
+                    tool_path=picked['path'] if tool.currentText()=='My picture…' else None)
 
     def add_eraser(self):
         """exp.186: an Eraser clip at the playhead (whole video)."""
@@ -1653,7 +1667,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if choice is None: return None
         item=overlays.new_eraser(choice['target'],choice['target_k'],choice['name'],mode=choice['mode'])
         item=self.add_overlay(item)
-        item['duration']=choice['duration']
+        item.update(duration=choice['duration'],tool=choice['tool'],tool_path=choice['tool_path'])
         self.project_changes.mark_changed(); self.refresh()
         self.status.setText('Eraser added. Drag it on the timeline to choose when; double-click it to change it.')
         return item
