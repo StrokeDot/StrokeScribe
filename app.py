@@ -1597,7 +1597,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def add_overlay_picture(self,path=None,at=None):
         import overlays
-        if not self.drawing: return None
+        if not self.drawing:
+            # exp.199 (the user): an empty project: the picture button makes the first element
+            return self.new_element('file',False,path=path) if not at else None
         if not path:
             path,_=QFileDialog.getOpenFileName(self,'Add a picture on top','',
                                                'Pictures (*.png *.jpg *.jpeg *.webp *.bmp *.svg)')
@@ -3201,15 +3203,24 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         does not start as a copy of the one before)."""
         from PySide6.QtWidgets import QMenu
         from PySide6.QtGui import QCursor
-        if not self.drawing or (self.builder and self.builder.isRunning()): return
-        menu=QMenu(self)
-        menu.addAction('Picture or SVG file…',lambda: self.new_element('file',same_spot))
-        menu.addAction('Text (handwriting)…',lambda: self.new_element('text',same_spot))
-        menu.addAction('From the Library…',lambda: self.new_element('library',same_spot))
-        menu.addAction('Create an image with AI…',lambda: self.new_element('ai',same_spot))
-        menu.addSeparator()
-        menu.addAction('Copy of this element',lambda: self.new_element('copy',same_spot))
+        if self.builder and self.builder.isRunning(): return
         where=at if at is not None else button.mapToGlobal(button.rect().bottomLeft()) if button is not None else QCursor.pos()
+        first=not self.drawing            # exp.199 (the user): the first element too, from here
+        def choose(how):
+            # exp.199 (the user): after what, where: on this page, or in a new place
+            if first: return self.new_element(how,False)
+            ask=QMenu(self)
+            ask.addAction('On this page (no camera move)',lambda: self.new_element(how,True))
+            ask.addAction('In a new place (the camera moves there)',lambda: self.new_element(how,False))
+            ask.exec(QCursor.pos())
+        menu=QMenu(self)
+        menu.addAction('Picture or SVG file…',lambda: choose('file'))
+        menu.addAction('Text (handwriting)…',lambda: choose('text'))
+        menu.addAction('From the Library…',lambda: choose('library'))
+        menu.addAction('Create an image with AI…',lambda: choose('ai'))
+        if not first:
+            menu.addSeparator()
+            menu.addAction('Copy of this element',lambda: choose('copy'))
         menu.exec(where)
 
     def new_element(self,how,same_spot=False,path=None,text=None,item=None):
