@@ -4704,7 +4704,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             for box,value in ((self.ax,tip[0]),(self.ay,tip[1])):
                 box.blockSignals(True); box.setValue(round(value,3)); box.blockSignals(False)
         self.hand_name.setText(f'Hand: {label}' + (f'  •  {note} (adjust below if needed)' if tip else ''))
-        self.refresh()
+        self.schedule_hand_refresh()
 
     def find_pen_tip(self):
         if self.hand is None or self.hand.isNull(): return
@@ -4776,7 +4776,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         for widget,value in ((self.ax,tip[0]),(self.ay,tip[1]),(self.handsize,size)):
             widget.blockSignals(True); widget.setValue(value); widget.blockSignals(False)
         self.note_change()
-        self.refresh()
+        self.schedule_hand_refresh()
 
     def update_paint_hand_label(self):
         import tools_kit
@@ -4791,7 +4791,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         # so a separate size only exists for a different painting hand.
         self.paint_hand_size.setEnabled(True)
         if hasattr(self,'paint_hand_form'):
-            self.paint_hand_form.setRowVisible(self.paint_hand_size,choice!=tools_kit.PAINT_SAME)
+            self.paint_hand_form.setRowVisible(self.paint_hand_size_row,choice!=tools_kit.PAINT_SAME)
         if library:
             name=Path(self.paint_hand_path).stem if self.paint_hand_path else 'none chosen yet'
             missing=self.paint_hand_path and not Path(self.paint_hand_path).is_file()
@@ -4953,8 +4953,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             box.blockSignals(True); box.setValue(float(value)); box.blockSignals(False)
         self.update_move_hand_label()
         self.note_change()
-        self.refresh()
         self.show_hand_pictures()
+        self.schedule_hand_refresh()
 
     # ------------------------------------------------------------ AI parts (Painter)
     PAINTER_TEXT='Painter — real parts, strokes follow the shape'
@@ -5373,6 +5373,16 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self._soon_timer.setInterval(40); self._soon_timer.timeout.connect(self.refresh)
         if getattr(self,'_suspend_refresh',False): return
         if not self._soon_timer.isActive(): self._soon_timer.start()
+
+    def schedule_hand_refresh(self,*args):
+        """Coalesce rapid hand/grip/size edits before rebuilding the expensive preview."""
+        if getattr(self,'_suspend_refresh',False): return
+        if not hasattr(self,'_hand_preview_timer'):
+            self._hand_preview_timer=QTimer(self)
+            self._hand_preview_timer.setSingleShot(True)
+            self._hand_preview_timer.setInterval(180)
+            self._hand_preview_timer.timeout.connect(self.refresh)
+        self._hand_preview_timer.start()  # restart: only the final edit is rendered
 
     def clear_frames(self):
         """Something changed: work out the view again. Ready-made frames stay in the
