@@ -3215,15 +3215,36 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         # the element's page in the middle, with room around it to go further
         around=(page[0],page[1],max(page[2],views[k][2])*2.2)
         W=1100; H=round(W*aspect)
-        image=world.view(around,W,H,upto=len(frames))
         from PySide6.QtGui import QPainter, QColor
+        others=[(f'{j+1} · {self.scene_label(j)}',views[j]) for j in range(len(self.scenes)) if j!=k]
+        # exp.202: the element alone on its page, to move it apart from the camera
+        image=world.view(around,W,H,upto=len(frames),skip={k})
         bg=QImage(image.size(),QImage.Format.Format_RGB32); bg.fill(QColor(236,234,228))
         p=QPainter(bg); p.drawImage(0,0,image); p.end()
-        others=[(f'{j+1} · {self.scene_label(j)}',views[j]) for j in range(len(self.scenes)) if j!=k]
-        dialog=SetCameraDialog(self,bg,around,views[k],page,aspect,f'Set camera: element {k+1} · {self.scene_label(k)}',others)
+        x,y,pw,ph=world.place(page,around,W,H)
+        import timeline_render
+        it=world.items[k]
+        alone=timeline_render.element_frame(it['drawing'],dict(it['options'],background=False,overlays=[]),1.,
+                                            max(64,round(pw)),max(36,round(ph)),'art')
+        if k==self.scene_index:
+            place=[self.picture_x.value(),self.picture_y.value(),self.artwork_size.value()]
+        else:
+            st=(self.scenes[k].get('state') or {}).get('settings',{})
+            place=[float(st.get('picture_x',0)),float(st.get('picture_y',0)),float(st.get('artwork_size',100))]
+        dialog=SetCameraDialog(self,bg,around,views[k],page,aspect,f'Set camera: element {k+1} · {self.scene_label(k)}',
+                               others,picture=alone,place=place)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return
         chosen=dialog.chosen()
+        moved=dialog.picture_place()
         self.record_structure('set camera')
+        if moved is not None:
+            if k==self.scene_index:
+                self.picture_x.setValue(moved[0]); self.picture_y.setValue(moved[1]); self.artwork_size.setValue(moved[2])
+                self.store_scene(thumbnail=False)
+            else:
+                st=self.scenes[k].get('state') or {}
+                st.setdefault('settings',{}).update(picture_x=moved[0],picture_y=moved[1],artwork_size=moved[2])
+                self._scene_cache={}
         b=dict(self.scenes[k].get('board') or {})
         if chosen is None: b.pop('view',None)
         else: b['view']=list(chosen)
