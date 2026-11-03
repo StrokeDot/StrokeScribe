@@ -68,14 +68,26 @@ def linked_slider(spin, low, high, scale=1):
     return slider
 
 
+def compact_slider_row(spin, low, high, scale=1, tracking=True):
+    """Slider and editable number share the available width in any expanded section."""
+    box = QWidget(); box.setMinimumWidth(0)
+    line = QHBoxLayout(box); line.setContentsMargins(0, 0, 0, 0); line.setSpacing(6)
+    slider = linked_slider(spin, low, high, scale)
+    # A hand or eraser drag must not rebuild a video frame for every mouse pixel.
+    slider.setTracking(tracking)
+    slider.setToolTip(spin.toolTip())
+    line.addWidget(slider, 1); line.addWidget(spin)
+    return box, slider
+
+
 def compact_width(spin):
-    """Just wide enough for the longest number this box can show (and its arrows)."""
-    from PySide6.QtGui import QFont, QFontMetrics
-    font = QFont(spin.font()); font.setPointSizeF(8.5)
-    fm = QFontMetrics(font)
-    texts = [spin.textFromValue(v) for v in (spin.minimum(), spin.maximum())]
-    widest = max(fm.horizontalAdvance(spin.prefix() + t + spin.suffix()) for t in texts)
-    return widest + 6 + 16 + 10
+    """Fit actual numeric text, suffix and spinner arrows rather than a guessed font."""
+    fm = spin.fontMetrics()
+    values = (spin.minimum(), spin.maximum(), spin.value())
+    widest = max(fm.horizontalAdvance(spin.prefix() + spin.textFromValue(v) + spin.suffix())
+                 for v in values)
+    # 18px spinner arrows + 22px text inset + breathing room for high-DPI displays.
+    return max(98, widest + 46)
 
 
 def label(text, kind='section'):
@@ -3125,7 +3137,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     h=form_layout();w.section_draw_hand.body.addLayout(h)
     w.hand_size_pct=QSpinBox();w.hand_size_pct.setRange(2,80);w.hand_size_pct.setSuffix('%')
     w.hand_size_pct.setToolTip('Size of the drawing hand.')
-    h.addRow('Size',w.hand_size_pct)
+    w.draw_hand_size_row,w.draw_hand_size_slider=compact_slider_row(w.hand_size_pct,2,80,tracking=False)
+    h.addRow('Size',w.draw_hand_size_row)
     w.builtin_tool=QComboBox()
     w.builtin_tool.addItems(['Hand with pen','Pencil','Marker'])
     w.builtin_tool.setToolTip('The built-in hand holding a pen (default), or a pencil or marker on its own.')
@@ -3196,8 +3209,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.handsize.valueChanged.connect(lambda v: (w.hand_size_pct.blockSignals(True),
         w.hand_size_pct.setValue(round(v*100)),w.hand_size_pct.blockSignals(False)))
     # Defaults calibrated for the built-in hand (assets/default_hand.png).
-    w.ax=w.number(0,1,.08,.005);w.ax.setDecimals(3);h.addRow('Pen tip X',w.ax)
-    w.ay=w.number(0,1,.13,.005);w.ay.setDecimals(3);h.addRow('Pen tip Y',w.ay)
+    w.ax=w.number(0,1,.08,.005);w.ax.setDecimals(3)
+    w.pen_tip_x_row,w.pen_tip_x_slider=compact_slider_row(w.ax,0,1,scale=200,tracking=False)
+    h.addRow('Pen tip X',w.pen_tip_x_row)
+    w.ay=w.number(0,1,.13,.005);w.ay.setDecimals(3)
+    w.pen_tip_y_row,w.pen_tip_y_slider=compact_slider_row(w.ay,0,1,scale=200,tracking=False)
+    h.addRow('Pen tip Y',w.pen_tip_y_row)
     w.find_tip_button=QPushButton('Find')
     w.find_tip_button.setToolTip('Look for the pen tip in the hand image automatically. New hands get '
                                  'their pen tip found by themselves; adjust it if lines do not start at the pen.')
@@ -3220,7 +3237,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.paint_hand_size=w.number(5,90,30,1);w.paint_hand_size.setDecimals(0)
     w.paint_hand_size.setToolTip('Width of the painting hand, as a share of the video width.')
     w.paint_hand_size.setSuffix('%')
-    ph.addRow('Size',w.paint_hand_size)
+    w.paint_hand_size_row,w.paint_hand_size_slider=compact_slider_row(w.paint_hand_size,5,90,tracking=False)
+    ph.addRow('Size',w.paint_hand_size_row)
     w.paint_hand_form=ph
     w.paint_hand_choose=QPushButton('Choose…')
     w.paint_hand_choose.setToolTip('Choose the painting hand from your Hands library.')
@@ -3247,8 +3265,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.move_hand_size=w.number(5,90,35,1);w.move_hand_size.setDecimals(0)
     w.move_hand_size.setSuffix('%')
     w.move_hand_size.setToolTip('Width of the move-in hand, as a share of the video width.')
-    mh.addRow('Size',w.move_hand_size)
-    w.move_hand_choose=QPushButton('Upload hand…')
+    w.move_hand_size_row,w.move_hand_size_slider=compact_slider_row(w.move_hand_size,5,90,tracking=False)
+    mh.addRow('Size',w.move_hand_size_row)
+    w.move_hand_choose=QPushButton('Upload…')
     w.move_hand_choose.setToolTip('Your own transparent PNG of a hand that holds the picture. '
                                   'Draw it coming from below (arm down); it is turned for the other sides.')
     w.move_hand_choose.clicked.connect(lambda checked=False: w.choose_move_hand())
@@ -3258,10 +3277,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     mh.addRow('Hand',pair(w.move_hand_choose,w.move_hand_builtin))
     w.move_hand_gx=w.number(0,1,move_in.DEFAULT_GRIP[0],.005);w.move_hand_gx.setDecimals(3)
     w.move_hand_gx.setToolTip('Where the hand holds the picture, across the hand image (0 = left, 1 = right).')
-    mh.addRow('Grip X',w.move_hand_gx)
+    w.move_hand_gx_row,w.move_hand_gx_slider=compact_slider_row(w.move_hand_gx,0,1,scale=200,tracking=False)
+    mh.addRow('Grip X',w.move_hand_gx_row)
     w.move_hand_gy=w.number(0,1,move_in.DEFAULT_GRIP[1],.005);w.move_hand_gy.setDecimals(3)
     w.move_hand_gy.setToolTip('Where the hand holds the picture, down the hand image (0 = top, 1 = bottom).')
-    mh.addRow('Grip Y',w.move_hand_gy)
+    w.move_hand_gy_row,w.move_hand_gy_slider=compact_slider_row(w.move_hand_gy,0,1,scale=200,tracking=False)
+    mh.addRow('Grip Y',w.move_hand_gy_row)
     w.move_hand=QCheckBox('Show while moving in')
     w.move_hand.setToolTip('A hand carries the picture in when it slides in (Animation > Comes in: '
                            'Slide in from …), lets go, and leaves the way it came.')
@@ -3288,9 +3309,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.eraser_hand_size=w.number(5,90,45,1);w.eraser_hand_size.setDecimals(0);w.eraser_hand_size.setSuffix('%')
     w.eraser_hand_size.setToolTip('Width of the eraser hand, as a share of the video width (the drawing hand is '
                                   'about 45%).')
-    # exp.196 (the user): a bar too, not only the number
-    _size_box=QWidget(); _sl=QHBoxLayout(_size_box); _sl.setContentsMargins(0,0,0,0); _sl.setSpacing(6)
-    _sl.addWidget(linked_slider(w.eraser_hand_size,5,90),1); _sl.addWidget(w.eraser_hand_size)
+    # Keep the existing eraser slider, but render only after a drag ends.
+    _size_box,w.eraser_hand_size_slider=compact_slider_row(w.eraser_hand_size,5,90,tracking=False)
     eh.addRow('Size',_size_box)
     w.eraser_hand_form=eh
     w.eraser_hand_on=QCheckBox('Show while erasing'); w.eraser_hand_on.setChecked(True)
@@ -3805,8 +3825,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     outer.addLayout(footer)
 
     # Retain the existing preview/export signal wiring.
-    for widget in (w.duration,w.speed,w.thickness,w.artwork_size,w.picture_x,w.picture_y,w.handsize,w.ax,w.ay):
+    for widget in (w.duration,w.speed,w.thickness,w.artwork_size,w.picture_x,w.picture_y):
         widget.valueChanged.connect(w.refresh)
+    for widget in (w.handsize,w.ax,w.ay):
+        widget.valueChanged.connect(w.schedule_hand_refresh)
     w.showhand.toggled.connect(w.refresh)
     w.left_handed.toggled.connect(w.refresh)
     w.left_handed.toggled.connect(lambda checked: w.sync_hand_sides())
@@ -3849,7 +3871,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.move_time.setValue(w.duration.value())
     w.move_hand.toggled.connect(w.refresh)
     for widget in (w.move_hand_size,w.move_hand_gx,w.move_hand_gy):
-        widget.valueChanged.connect(w.schedule_refresh)
+        widget.valueChanged.connect(w.schedule_hand_refresh)
     w.pause_after.valueChanged.connect(w.refresh)
     w.res.currentIndexChanged.connect(w.refresh)
     w.use_color.toggled.connect(w.refresh)
@@ -3871,7 +3893,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.show_paint_hand.toggled.connect(w.refresh)
     w.sound_on.toggled.connect(lambda checked: (w.update_transport_icons(), w.sync_preview_sound()))
     w.paint_hand.activated.connect(lambda index: w.paint_hand_changed())
-    w.paint_hand_size.valueChanged.connect(w.refresh)
+    w.paint_hand_size.valueChanged.connect(w.schedule_hand_refresh)
     w.update_paint_hand_label()          # Size shows only for a different painting hand
     w.update_move_hand_label()
     w.update_painter_parts()
