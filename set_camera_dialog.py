@@ -13,11 +13,18 @@ from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QLabel, Q
 class BoardFrame(QWidget):
     changed = Signal()
 
-    def __init__(self, image, view, frame, aspect, page):
+    def __init__(self, image, view, frame, aspect, page, picture=None, place=None):
         super().__init__()
         self.image, self.board_view, self.aspect = image, view, aspect
+        self._pixmap = QPixmap.fromImage(image)       # exp.202: made once (it lagged on every move)
         self.frame = list(frame)            # cx, cy, w in board units
         self.page = page                    # the element's page (dashed)
+        # exp.202 (the user): the picture's own place, moved apart from the camera.
+        # picture: the element alone on its page (a QImage of the page); place: [x %, y %, size %]
+        self.picture = QPixmap.fromImage(picture) if picture is not None else None
+        self.place0 = list(place) if place else [0., 0., 100.]
+        self.place = list(self.place0)
+        self.mode = 'camera'
         self._drag = None
         self.setMinimumSize(720, round(720 * image.height() / max(1, image.width())))
         self.setCursor(Qt.CursorShape.OpenHandCursor)
@@ -44,9 +51,25 @@ class BoardFrame(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.drawPixmap(self.rect(), QPixmap.fromImage(self.image))
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        p.drawPixmap(self.rect(), self._pixmap)
+        page = self.rect_of(self.page)
+        if self.picture is not None:
+            # the picture where it is now: moved by its place, sized about the page's middle
+            k = self.place[2] / max(1e-6, self.place0[2])
+            c = page.center()
+            old = QPointF(c.x() + self.place0[0] / 100. * page.width(), c.y() + self.place0[1] / 100. * page.height())
+            new = QPointF(c.x() + self.place[0] / 100. * page.width(), c.y() + self.place[1] / 100. * page.height())
+            # the page picture scaled about the picture's own middle, which goes to its new place
+            target = QRectF(new.x() - (old.x() - page.left()) * k, new.y() - (old.y() - page.top()) * k,
+                            page.width() * k, page.height() * k)
+            p.drawPixmap(target, self.picture, QRectF(self.picture.rect()))
+            if self.mode == 'picture':
+                bw, bh = page.width() * .82 * self.place[2] / 100., page.height() * .78 * self.place[2] / 100.
+                p.setPen(QPen(QColor('#6E4FF2'), 2, Qt.PenStyle.DashLine)); p.setBrush(Qt.BrushStyle.NoBrush)
+                p.drawRect(QRectF(new.x() - bw / 2, new.y() - bh / 2, bw, bh))
         p.setPen(QPen(QColor(150, 150, 170), 1.2, Qt.PenStyle.DashLine)); p.setBrush(Qt.BrushStyle.NoBrush)
-        p.drawRect(self.rect_of(self.page))
+        p.drawRect(page)
         r = self.rect_of(self.frame)
         shade = QColor(10, 10, 16, 120)
         p.setPen(Qt.PenStyle.NoPen); p.setBrush(shade)
@@ -62,7 +85,7 @@ class BoardFrame(QWidget):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self._drag = (event.position(), tuple(self.frame))
+            self._drag = (event.position(), tuple(self.frame) if self.mode == 'camera' else tuple(self.place))
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
 
     def mouseMoveEvent(self, event):
@@ -71,6 +94,11 @@ class BoardFrame(QWidget):
         start, f = self._drag
         s = self._scale()
         d = event.position() - start
+        if self.mode == 'picture':
+            page = self.rect_of(self.page)
+            self.place[0] = f[0] + d.x() / max(1., page.width()) * 100.
+            self.place[1] = f[1] + d.y() / max(1., page.height()) * 100.
+            self.update(); self.changed.emit(); return
         self.frame[0], self.frame[1] = f[0] + d.x() / s, f[1] + d.y() / s
         self.update(); self.changed.emit()
 
@@ -80,6 +108,9 @@ class BoardFrame(QWidget):
 
     def wheelEvent(self, event):
         step = 1.12 if event.angleDelta().y() < 0 else 1 / 1.12
+        if self.mode == 'picture':
+            self.place[2] = max(10., min(300., self.place[2] / step))
+            self.update(); self.changed.emit(); event.accept(); return
         self.set_width(self.frame[2] * step)
         event.accept()
 
@@ -89,15 +120,27 @@ class BoardFrame(QWidget):
 
 
 class SetCameraDialog(QDialog):
-    def __init__(self, parent, image, board_view, frame, page, aspect, title, others=()):
+    def __init__(self, parent, image, board_view, frame, page, aspect, title, others=(), picture=None, place=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.page = tuple(page)
         box = QVBoxLayout(self)
-        help_ = QLabel('Drag the orange frame to where the camera should look; mouse wheel (or the slider) '
-                       'to go closer or further. The dashed frame is the element\'s page.')
+        help_ = QLabel('Move the camera: drag the orange frame, mouse wheel (or the slider) to go closer or '
+                       'further. Move the picture: drag this element\'s picture where it goes on the page, mouse '
+                       'wheel to make it bigger or smaller. The dashed frame is the element\'s page.')
         help_.setWordWrap(True); box.addWidget(help_)
-        self.board = BoardFrame(image, board_view, frame, aspect, page)
+        self.board = BoardFrame(image, board_view, frame, aspect, page, picture, place)
+        if picture is not None:
+            # exp.202 (the user): the camera and the picture's place are two things
+            modes = QHBoxLayout(); box.addLayout(modes)
+            self.mode_buttons = {}
+            for key, text, tip in (('camera', 'Move the camera', 'Drag / wheel: where the camera looks.'),
+                                   ('picture', 'Move the picture', 'Drag / wheel: where this element\'s picture '
+                                                                   'is on the page, and how big.')):
+                b = QPushButton(text); b.setCheckable(True); b.setToolTip(tip); b.setChecked(key == 'camera')
+                b.clicked.connect(lambda checked=False, k=key: self.set_mode(k))
+                modes.addWidget(b); self.mode_buttons[key] = b
+            modes.addStretch(1)
         box.addWidget(self.board, 1)
         row = QHBoxLayout(); box.addLayout(row)
         row.addWidget(QLabel('Closer'))
@@ -125,6 +168,17 @@ class SetCameraDialog(QDialog):
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
         box.addWidget(buttons)
         self.cleared = False
+
+    def set_mode(self, key):
+        self.board.mode = key
+        for k, b in self.mode_buttons.items():
+            b.setChecked(k == key)
+        self.board.update()
+
+    def picture_place(self):
+        """[x %, y %, size %] of the picture, or None when it did not move."""
+        p = [round(v, 1) for v in self.board.place]
+        return None if all(abs(a - b) < .05 for a, b in zip(p, self.board.place0)) else p
 
     def _match(self, i):
         view = self.match.itemData(i)
