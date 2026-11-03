@@ -3706,7 +3706,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.scene_right.clicked.connect(lambda checked=False: w.move_scene(1))
     w.scene_delete=QPushButton('Delete');w.scene_delete.setToolTip('Delete this element')
     w.scene_delete.clicked.connect(lambda checked=False: w.delete_scene())
-    for b in (w.scene_edit,w.scene_left,w.scene_right,w.scene_delete): move_row.addWidget(b)
+    # exp.200 (the user, like VideoScribe): the camera of this element
+    w.scene_camera=QPushButton('Camera…')
+    w.scene_camera.setToolTip('Set camera: choose on the board where the camera looks for this element, '
+                              'how close or far (like VideoScribe).')
+    w.scene_camera.clicked.connect(lambda checked=False: w.set_camera(w.scene_index))
+    for b in (w.scene_edit,w.scene_camera,w.scene_left,w.scene_right,w.scene_delete): move_row.addWidget(b)
     scene_buttons.addLayout(move_row)
     scene_row.addLayout(scene_buttons)
     trans=QFormLayout();trans.setSpacing(4)

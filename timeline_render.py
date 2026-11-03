@@ -39,7 +39,7 @@ def camera_at(camera, state, k):
 def view_of(world, lay, state, elements):
     """The camera's view (cx, cy, w) on the board for this state."""
     import board
-    frames = world.frames
+    frames = getattr(world, 'views', world.frames)          # exp.200: the cameras that were set
     if state.kind == 'move':
         k = state.move
         kind = elements[k].get('transition', 'Camera move')
@@ -47,18 +47,40 @@ def view_of(world, lay, state, elements):
         return board.join_view(frames, k, kind, state.t, world.aspect, elements[k].get('move_seconds', 1.),
                                leaving=elements[k].get('camera'), arriving=nxt)
     k = state.current
-    view = frames[k]
+    view = _rest_view(world, lay, state, k)
     camera = elements[k].get('camera')
     if camera is not None:
         view = board.sub_view(view, *camera_at(camera, state, k), world.aspect)
     return view
 
 
+VIEW_GLIDE = 1.2       # exp.200: seconds the camera takes to reach an element's view on the same page
+
+
+def _rest_view(world, lay, state, k):
+    """exp.200: element k's camera view. On the same page (no move between them) the camera
+    glides from where the element before it had it to this element's view, as it starts."""
+    import board
+    views = getattr(world, 'views', world.frames)
+    view = views[k]
+    if k <= 0 or world.frames[k] != world.frames[k - 1] or views[k - 1] == view:
+        return view
+    when = getattr(state, 'seconds', None)
+    item = next((it for it in lay.items if it.k == k), None)
+    if when is None or item is None:
+        return view
+    t = (float(when) - item.start) / VIEW_GLIDE
+    if t >= 1.:
+        return view
+    return board.move_view(views[k - 1], view, 'Camera move', max(0., t), world.aspect)
+
+
 def plain_view(world, state):
     """exp.155: the view with no camera at all (no zoom, no pan): the page shown."""
+    views = getattr(world, 'views', world.frames)
     if state.kind == 'move':
-        return world.frames[min(state.move + 1, len(world.frames) - 1)] if state.t >= .5 else world.frames[state.move]
-    return world.frames[state.current]
+        return views[min(state.move + 1, len(views) - 1)] if state.t >= .5 else views[state.move]
+    return views[state.current]
 
 
 def fixed_view(world, lay, state, elements):
@@ -72,10 +94,11 @@ def fixed_view(world, lay, state, elements):
     k = state.current
     camera = elements[k].get('camera')
     clips = [c for c in (getattr(camera, 'clips', None) or ()) if camera_clips.fixed(c)]
+    base = _rest_view(world, lay, state, k)
     if not clips:
-        return world.frames[k]
+        return base
     cam = camera_clips.VideoCamera(None, camera.start, clips, camera.moves, camera.total)
-    return board.sub_view(world.frames[k], *camera_at(cam, state, k), world.aspect)
+    return board.sub_view(base, *camera_at(cam, state, k), world.aspect)
 
 
 def page_place(world, lay, state, elements, width, height, view_scale=1., view_pan=(0., 0.)):
@@ -109,8 +132,9 @@ def compose(world, lay, state, elements, width, height, titles=None, seconds=Non
         kind = elements[k].get('transition', 'Camera move')
         last = k == len(elements) - 1
         if kind in board.SCREEN_KINDS and not last and view_scale <= 1.:
-            a = _page(world, lay, state, elements, world.frames[k], width, height, erasers=erasers, glides=glides)
-            b = _page(world, lay, state, elements, world.frames[k + 1], width, height, erasers=erasers, glides=glides)
+            vs = getattr(world, 'views', world.frames)
+            a = _page(world, lay, state, elements, vs[k], width, height, erasers=erasers, glides=glides)
+            b = _page(world, lay, state, elements, vs[k + 1], width, height, erasers=erasers, glides=glides)
             return _texts(transition_frame(a, b, kind, state.t), titles, seconds)
     def view_fn(st, plain=False):
         v = plain_view(world, st) if plain else view_of(world, lay, st, elements)
