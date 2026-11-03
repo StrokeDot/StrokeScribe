@@ -3219,7 +3219,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from PySide6.QtGui import QPainter, QColor
         bg=QImage(image.size(),QImage.Format.Format_RGB32); bg.fill(QColor(236,234,228))
         p=QPainter(bg); p.drawImage(0,0,image); p.end()
-        dialog=SetCameraDialog(self,bg,around,views[k],page,aspect,f'Set camera: element {k+1} · {self.scene_label(k)}')
+        others=[(f'{j+1} · {self.scene_label(j)}',views[j]) for j in range(len(self.scenes)) if j!=k]
+        dialog=SetCameraDialog(self,bg,around,views[k],page,aspect,f'Set camera: element {k+1} · {self.scene_label(k)}',others)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return
         chosen=dialog.chosen()
         self.record_structure('set camera')
