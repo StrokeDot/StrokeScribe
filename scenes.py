@@ -241,7 +241,11 @@ def _fit(audio, samples):
 
 
 def on_tracks(scenes):
-    """True when an element has its own start or a track above Track 1 (timeline_model)."""
+    """True when an element has its own start or a track above Track 1 (timeline_model), or
+    its own camera view (exp.200)."""
+    import board
+    if board.has_views(scenes):
+        return True
     return any(s.get('start') is not None or (s.get('track') or 0) or s.get('hidden') or s.get('muted')
                for s in scenes)
 
@@ -342,8 +346,9 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
     fps = int(prepared[0]['options']['fps'])
     width, height = prepared[0]['options']['width'], prepared[0]['options']['height']
     aspect = height / width
-    world = board.World([dict(drawing=p['drawing'], options=p['options'], frame=p['frame'], key=('scene', k))
-                         for k, p in enumerate(prepared)], aspect)
+    views = board.views(scenes, [p['frame'] for p in prepared])            # exp.200: Set camera
+    world = board.World([dict(drawing=p['drawing'], options=p['options'], frame=p['frame'], key=('scene', k),
+                              view=views[k]) for k, p in enumerate(prepared)], aspect)
     lay = layout([p['seconds'] for p in prepared], [p['transition_seconds'] for p in prepared],
                  [s.get('start') for s in scenes], [s.get('track') or 0 for s in scenes])
     elements = []

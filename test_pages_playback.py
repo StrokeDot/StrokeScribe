@@ -117,7 +117,10 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(w.scenes[0]['transition'], scenes.SAME_PAGE)
         self.assertTrue(scenes.on_page(w.scenes, 1))
         self.assertLess(w.artwork_size.value(), 100)
-        self.assertGreater(w.picture_x.value(), 0)
+        # exp.200 (the user): the first picture is never moved or made smaller to make room
+        first_settings = (w.scenes[0]['state'] or {}).get('settings', {})
+        self.assertEqual(float(first_settings.get('artwork_size', 100)), 100.)
+        self.assertEqual(float(first_settings.get('picture_x', 0)), 0.)
         self.assertIn('+', w.scene_list.item(1).text())
         w.set_drawing(import_svg(HERE / 'samples' / 'arthur-headset-traced.svg'))
         w.duration.setValue(1.)

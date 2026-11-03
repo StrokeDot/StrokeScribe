@@ -3198,6 +3198,41 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.status.setText(f'Scene {self.scene_index+1} added as a copy. Import an SVG or image for it '
                             '(Import, Library or Create image); its settings are its own.')
 
+    def set_camera(self,k=None):
+        """exp.200 (the user, like VideoScribe): where the camera looks for element k: its
+        own view on the board (closer, further, anywhere), kept with the element."""
+        import board
+        from set_camera_dialog import SetCameraDialog
+        from PySide6.QtWidgets import QDialog
+        k=self.scene_index if k is None else k
+        if not self.drawing or not 0<=k<len(self.scenes): return
+        self.store_scene(thumbnail=False)
+        aspect=self.board_aspect()
+        frames=self.board_frames()
+        views=board.views(self.scenes,frames)
+        world=self.preview_world(960,round(960*aspect))
+        page=frames[k]
+        # the element's page in the middle, with room around it to go further
+        around=(page[0],page[1],max(page[2],views[k][2])*2.2)
+        W=1100; H=round(W*aspect)
+        image=world.view(around,W,H,upto=len(frames))
+        from PySide6.QtGui import QPainter, QColor
+        bg=QImage(image.size(),QImage.Format.Format_RGB32); bg.fill(QColor(236,234,228))
+        p=QPainter(bg); p.drawImage(0,0,image); p.end()
+        dialog=SetCameraDialog(self,bg,around,views[k],page,aspect,f'Set camera: element {k+1} · {self.scene_label(k)}')
+        if dialog.exec()!=QDialog.DialogCode.Accepted: return
+        chosen=dialog.chosen()
+        self.record_structure('set camera')
+        b=dict(self.scenes[k].get('board') or {})
+        if chosen is None: b.pop('view',None)
+        else: b['view']=list(chosen)
+        self.scenes[k]['board']=b or None
+        self.project_changes.mark_changed()
+        self.__dict__.pop('_memo',None)
+        if not self.all_scenes(): self.preview_scope.setCurrentIndex(1)
+        self.clear_frames(); self.refresh()
+        self.status.setText(f'Element {k+1}: the camera looks where you set it'+(' (the whole page).' if chosen is None else '.'))
+
     def add_element_menu(self,same_spot=False,button=None,at=None):
         """'+ Add element' / '+ Same spot': what the new element is (like VideoScribe, it
         does not start as a copy of the one before)."""
@@ -3356,17 +3391,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.store_scene(thumbnail=False)
         members=self.page_members()
         spot=self.free_spot(self.page_occupancy(members))
-        if spot is None and members==[self.scene_index] and self.artwork_size.value()>60:
-            # One big picture on the page: it moves to the left half to make room.
-            self.artwork_size.setValue(55.); self.picture_x.setValue(-22.); self.picture_y.setValue(0.)
-            self.store_scene(thumbnail=False)
-            spot=self.free_spot(self.page_occupancy(members))
+        # exp.200 (the user): what is already on the page is never moved or made smaller.
+        # With no free place, the new picture goes in the middle, smaller, to be dragged
+        # where you want it (and Set camera chooses what the camera shows).
         if spot is None:
-            # The page is full: like VideoScribe, the camera moves on to a new place.
-            self.add_scene()
-            self.status.setText('This page is full, so the new picture goes on a new page: the camera moves there. '
-                                'Make pictures smaller (Artwork size) to fit more on one page.')
-            return False
+            spot=(40.,0.,0.)
         self.record_structure('add picture on the same page')
         self._leave_scene()
         self._stash_history()
@@ -3556,10 +3585,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
               tuple((s['transition'],repr(s.get('board'))) for s in self.scenes))
         if mkey in memo: return memo[mkey]
         items=[]
-        for k,frame in enumerate(self.board_frames()):
+        import board as _board
+        frames=self.board_frames()
+        views=_board.views(self.scenes,frames)                 # exp.200: Set camera
+        for k,frame in enumerate(frames):
             drawing,options,_,_=self.preview_scene(k,width,height)
             key=self.edited_key() if k==self.scene_index else ('scene',id(self.scenes[k]['state']))
-            items.append(dict(drawing=drawing,options=options,frame=frame,key=key))
+            items.append(dict(drawing=drawing,options=options,frame=frame,key=key,view=views[k]))
         cache=self.__dict__.setdefault('_world_cache',OrderedDict())
         memo[mkey]=board.World(items,height/width,cache)
         return memo[mkey]
@@ -3860,12 +3892,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from timeline_model import layout
         lengths,joins=self.scene_timeline(width,height)
         memo=self.__dict__.setdefault('_memo',{})
-        key=('layout',tuple(lengths),tuple(joins),tuple((s.get('start'),s.get('track')) for s in self.scenes))
+        key=('layout',tuple(lengths),tuple(joins),tuple((s.get('start'),s.get('track'),repr((s.get('board') or {}).get('view'))) for s in self.scenes))
         key=key+(repr(sorted(getattr(self,'track_flags',{}).items())),tuple(sorted(self.hidden_elements())))
         if key not in memo:
             lay=layout(lengths,joins,[s.get('start') for s in self.scenes],
                        [s.get('track') or 0 for s in self.scenes])
             if self.hidden_elements(): lay.sequential=False    # drawn moment by moment, without them
+            import board as _board
+            if _board.has_views(self.scenes): lay.sequential=False   # exp.200: the cameras that were set
             memo[key]=lay
         return memo[key]
 
@@ -4072,7 +4106,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import board
         lengths,joins=self.scene_timeline(width,height)
         lay=self.timeline_layout(width,height)
-        if not lay.sequential or self.zoomed_out():
+        import board as _board
+        if not lay.sequential or self.zoomed_out() or _board.has_views(self.scenes):   # exp.200
             from timeline_model import state_at
             at=(self.position if fraction is None else fraction)*lay.total
             state=state_at(lay,at)

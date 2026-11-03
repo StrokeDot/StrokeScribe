@@ -68,6 +68,20 @@ def frames(scenes, aspect=9 / 16):
     return out
 
 
+def views(scenes, all_frames):
+    """exp.200 (the user, like VideoScribe's Set camera): where the camera rests for each
+    element: its own view when one was set (board['view'] = cx, cy, w), else its frame."""
+    out = []
+    for scene, frame in zip(scenes, all_frames):
+        v = (scene.get('board') or {}).get('view')
+        out.append((float(v[0]), float(v[1]), max(.02, float(v[2]))) if v else frame)
+    return out
+
+
+def has_views(scenes):
+    return any((s.get('board') or {}).get('view') for s in scenes)
+
+
 def rect(frame, aspect=9 / 16):
     """(left, top, right, bottom) of a frame in world units."""
     cx, cy, w = frame
@@ -204,6 +218,8 @@ class World:
         self.items = items
         self.aspect = aspect
         self.frames = [it['frame'] for it in items]
+        # exp.200: where the camera rests for each element (its Set camera view, else its frame)
+        self.views = [it.get('view') or it['frame'] for it in items]
         self.cache = cache if cache is not None else OrderedDict()
 
     def _size(self, width):
