@@ -3927,7 +3927,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
         tidy_side_page(content)
     # Image, Hand and Sound line up like Animation: one label column per page.
     align_forms(source_page,88)
-    align_forms(hand,88)
+    align_forms(hand,72)        # more room for a readable slider + number in the narrow Hand panel
     # Buttons sharing a row may shrink (text clips) rather than widen the page.
     for button in (w.find_tip_button,w.pick_tip_button):
         button.setMinimumWidth(0)
