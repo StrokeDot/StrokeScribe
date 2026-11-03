@@ -89,7 +89,7 @@ class BoardFrame(QWidget):
 
 
 class SetCameraDialog(QDialog):
-    def __init__(self, parent, image, board_view, frame, page, aspect, title):
+    def __init__(self, parent, image, board_view, frame, page, aspect, title, others=()):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.page = tuple(page)
@@ -109,11 +109,27 @@ class SetCameraDialog(QDialog):
         whole = QPushButton('The whole page'); whole.setToolTip('The camera shows the element\'s whole page (as before).')
         whole.clicked.connect(self.reset)
         row.addWidget(whole)
+        # exp.201 (the user): Match camera: the same camera as another element
+        if others:
+            from PySide6.QtWidgets import QComboBox
+            match = QHBoxLayout(); box.addLayout(match)
+            match.addWidget(QLabel('Match camera of'))
+            self.match = QComboBox(); self.match.addItem('—', None)
+            for name, view in others:
+                self.match.addItem(name, list(view))
+            self.match.setToolTip('The camera looks exactly where another element\'s camera looks.')
+            self.match.currentIndexChanged.connect(self._match)
+            match.addWidget(self.match, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.button(QDialogButtonBox.StandardButton.Ok).setText('Set camera')
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
         box.addWidget(buttons)
         self.cleared = False
+
+    def _match(self, i):
+        view = self.match.itemData(i)
+        if view:
+            self.board.frame = list(view); self.board.update(); self._sync()
 
     def _sync(self):
         self.zoom.blockSignals(True)
