@@ -9,6 +9,14 @@ This version includes the StrokeScribe Studio UI, direct SVG animation, raster i
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Hand controls and preview responsiveness (v0.5.3-experimental.203)
+
+- **Hand and Appearance controls:** numeric values and spinner arrows have more room, while narrow Transform fields retain their compact layout.
+- **Hand tab:** sliders and directly editable values for drawing-hand size, pen tip X/Y, painting-hand size, move-in hand size, and move-in grip X/Y.
+- **Eraser hand:** slider commits on release, reducing repeated preview processing while dragging.
+- **Hand preview:** changes are grouped into fewer redraws instead of rendering on every intermediate slider value. Real-world animation responsiveness should be tested on the installed application.
+- **Update in place:** use StrokeScribe's existing Update control; no separate installer is required for these source-only changes.
+
 ## Trace the order with the mouse (v0.5.3-experimental.93)
 
 - **Line order → Trace the order**: hold the mouse down and move over the picture the way the drawing should go. Every line the cursor passes gets the next number, in that order; let go and press again anywhere to go on. Lines you never touch come after, in their present order. *Size* sets how wide an area the cursor picks up; *Turn lines to follow my path* draws a line from the end you reached first. *Start over* forgets the traced path. Works on the Painting tab too (drag over the parts in the order to paint them).
