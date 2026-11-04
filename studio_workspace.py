@@ -73,6 +73,7 @@ def compact_slider_row(spin, low, high, scale=1, tracking=True):
     box = QWidget(); box.setMinimumWidth(0)
     line = QHBoxLayout(box); line.setContentsMargins(0, 0, 0, 0); line.setSpacing(6)
     slider = linked_slider(spin, low, high, scale)
+    spin.setProperty('readableCompact', True)  # generous width for Hand panel values
     # A hand or eraser drag must not rebuild a video frame for every mouse pixel.
     slider.setTracking(tracking)
     slider.setToolTip(spin.toolTip())
@@ -86,8 +87,11 @@ def compact_width(spin):
     values = (spin.minimum(), spin.maximum(), spin.value())
     widest = max(fm.horizontalAdvance(spin.prefix() + spin.textFromValue(v) + spin.suffix())
                  for v in values)
-    # 18px spinner arrows + 22px text inset + breathing room for high-DPI displays.
-    return max(98, widest + 46)
+    # Hand and Appearance controls need full-sized text; the narrow Transform
+    # panel still needs a <=86px box beside its slider to fit the viewport.
+    if spin.property('readableCompact'):
+        return max(98, widest + 46)
+    return max(76, min(86, widest + 34))
 
 
 def label(text, kind='section'):
@@ -4148,6 +4152,7 @@ def build_look_sections(w):
         if tip: spin.setToolTip(tip)
         setattr(w,key,spin);w.look_widgets[key]=spin
         slider=linked_slider(spin,low,high)
+        spin.setProperty('readableCompact', True)
         reset=QToolButton();reset.setObjectName('panelClose')
         reset.setIcon(icon('reset',RAIL_ICON,RAIL_ACTIVE));reset.setIconSize(QSize(14,14))
         reset.setToolTip(f'Back to {default:g}')
