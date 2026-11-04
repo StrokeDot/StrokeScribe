@@ -119,6 +119,42 @@ class VisibleControlRegression(unittest.TestCase):
                 self.assertGreaterEqual(combo.height(), 20,
                                         "Inspector tab %s dropdown lost height" % tab)
 
+
+    def test_hand_sliders_keep_editable_values_and_commit_drags_once(self):
+        w = self.w
+        pairs = (
+            ("hand_size_pct", "draw_hand_size_slider", 40, 40),
+            ("paint_hand_size", "paint_hand_size_slider", 55, 55),
+            ("move_hand_size", "move_hand_size_slider", 45, 45),
+            ("eraser_hand_size", "eraser_hand_size_slider", 60, 60),
+            ("ax", "pen_tip_x_slider", .385, 77),
+            ("ay", "pen_tip_y_slider", .615, 123),
+            ("move_hand_gx", "move_hand_gx_slider", .385, 77),
+            ("move_hand_gy", "move_hand_gy_slider", .615, 123),
+        )
+        for spin_name, slider_name, value, ticks in pairs:
+            spin = getattr(w, spin_name)
+            slider = getattr(w, slider_name)
+            self.assertFalse(slider.hasTracking(), slider_name)
+            spin.setValue(value)
+            self.assertEqual(slider.value(), ticks, slider_name)
+            self.assertGreaterEqual(spin.width(), 98, spin_name)
+            self.assertEqual(spin.property('compact'), True, spin_name)
+        w.hand_size_pct.setValue(42)
+        self.assertAlmostEqual(w.handsize.value(), .42, places=2)
+        w.pen_tip_x_slider.setValue(100)
+        self.assertAlmostEqual(w.ax.value(), .5, places=3)
+
+    def test_compact_numeric_fields_fit_full_text_and_arrow_reserve(self):
+        from studio_workspace import compact_width
+        w = self.w
+        for name in ('ink_edge_size','ink_removal','ink_strength',
+                     'hand_size_pct','ax','ay','move_hand_size','move_hand_gx',
+                     'move_hand_gy','eraser_hand_size'):
+            spin = getattr(w, name)
+            self.assertGreaterEqual(spin.width(), compact_width(spin),
+                                    'Clipped numeric field: ' + name)
+
     def test_values_persist_with_existing_project_settings(self):
         w = self.w
         w.blend_mode.setCurrentText("Multiply")
