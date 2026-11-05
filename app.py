@@ -2,7 +2,7 @@ import os, sys, time
 from collections import OrderedDict
 from pathlib import Path
 from datetime import datetime
-from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl, QItemSelectionModel, QEventLoop
+from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl, QItemSelectionModel, QEventLoop, QObject
 from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap, QDesktopServices
 from PySide6.QtWidgets import (QListWidgetItem,QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea,QColorDialog)
 from engine import import_svg, render, export_frames, encode_mov, encode_webm, encode_mp4, scale_animation_frame, apply_lettering_background
@@ -431,6 +431,36 @@ def help_label(text, tip):
     the user did not want them)."""
     label=QLabel(text); label.setToolTip(tip)
     return label
+
+
+class _InputWatch(QObject):
+    """exp.204: when you last used the mouse, keyboard or wheel (pre-render waits for it)."""
+    KINDS=None
+
+    def __init__(self):
+        super().__init__()
+        self.last=0.
+        from PySide6.QtCore import QEvent
+        _InputWatch.KINDS={QEvent.Type.MouseButtonPress,QEvent.Type.MouseButtonRelease,QEvent.Type.MouseMove,
+                           QEvent.Type.Wheel,QEvent.Type.KeyPress,QEvent.Type.MouseButtonDblClick}
+
+    def eventFilter(self,obj,event):
+        if event.type() in _InputWatch.KINDS:
+            if event.type()!=event.Type.MouseMove or QApplication.mouseButtons()!=Qt.MouseButton.NoButton:
+                self.last=time.perf_counter()
+        return False
+
+
+_WATCH=None
+
+
+def _input_watch():
+    global _WATCH
+    if _WATCH is None:
+        _WATCH=_InputWatch()
+        app=QApplication.instance()
+        if app is not None: app.installEventFilter(_WATCH)
+    return _WATCH
 
 
 class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
@@ -2015,7 +2045,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         key=(self.selected_overlay,round(float(self.position),5),self.scene_index,
              self.preview_scope.currentIndex(),
              None if self.canvas.frame is None else (self.canvas.frame.width(),self.canvas.frame.height()),
-             repr(self.find_overlay(self.selected_overlay)) if self.selected_overlay else None)
+             repr(__import__('overlays').light(self.find_overlay(self.selected_overlay))) if self.selected_overlay else None)
         if self.zoomed_out() and self.canvas.frame is not None:
             # exp.121: zoomed out: the dashed frame is what the video shows (it can be hidden).
             if hasattr(self,'preview_frame_toggle') and not self.preview_frame_toggle.isChecked(): return None
@@ -5760,7 +5790,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             involved=sorted({k for k,_ in state.active}|set(state.finished)|{state.current})
             import overlays as _ov
             low=self.titles_split((a+b)/2)[1]
-            under=repr([o for o in low if (float(o.get('start',0))<b or (o.get('kind')=='eraser' and float(o.get('start',0))-.8<b))
+            under=repr([_ov.light(o) for o in low if (float(o.get('start',0))<b or (o.get('kind')=='eraser' and float(o.get('start',0))-.8<b))
                         and (_ov.shown_until(o)>a or o.get('kind')=='eraser')])   # exp.186/197: an eraser stays done; its hand comes in before
             if 'eraser' in under: under+=repr(self.eraser_tool())          # exp.196: its hand
             fp=('tl',describe(lay,state,a),tuple(self.element_fingerprint(i) for i in involved),under,
@@ -6084,7 +6114,17 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         changing things they wait."""
         if not self._prerender_all and time.perf_counter()-getattr(self,'_last_change',0.)<1.2:
             self.prerender_timer.start(400); return
+        # exp.204 (the user: lagging, getting stuck): it also waits while you use the mouse,
+        # the keyboard or the wheel anywhere in StrokeScribe, so a click is never queued
+        # behind a frame being made.
+        if not self._prerender_all and time.perf_counter()-_input_watch().last<.8:
+            self.prerender_timer.start(300); return
+        started=time.perf_counter()
         self.prerender_step()
+        spent=time.perf_counter()-started
+        if spent>.12 and not self._prerender_all and self.prerender_timer.isActive():
+            # a slow frame: leave the window as much time as the frame took
+            self.prerender_timer.start(int(min(spent,.6)*1000))
 
     def prerender_step(self):
         view=getattr(self,'_view',None)

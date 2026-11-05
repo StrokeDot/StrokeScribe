@@ -27,9 +27,19 @@ def pixel_rect(rect):
     return x, y, w, h
 
 
+def _identity(image):
+    """exp.204: the same picture loaded again (switching elements) keeps its scaled copy."""
+    import projects
+    text = projects._ENCODED.get((image.cacheKey(), image.width(), image.height()))
+    if text:
+        from overlays import data_digest
+        return data_digest(text)
+    return image.cacheKey()
+
+
 def scaled_source(image, width, height):
     """The PNG resized to exactly width x height with Lanczos (cached)."""
-    key = (image.cacheKey(), image.width(), image.height(), width, height)
+    key = (_identity(image), image.width(), image.height(), width, height)
     cached = _SCALED_CACHE.get(key)
     if cached is not None:
         _SCALED_CACHE.move_to_end(key)

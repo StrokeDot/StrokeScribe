@@ -143,9 +143,32 @@ _SOURCES = OrderedDict()           # sharp pictures at the size they are drawn
 _LIMIT = 40
 
 
+_DIGESTS = {}
+
+
+def data_digest(raw):
+    """exp.204: a short name for a picture's data, worked out once per picture (a picture is
+    over a megabyte of text; hashing or printing it for every frame made StrokeScribe lag)."""
+    key = (id(raw), len(raw))
+    found = _DIGESTS.get(key)
+    if found is None or found[0] is not raw:
+        found = (raw, hashlib.sha1(raw.encode('utf-8', 'replace')).hexdigest()[:16])
+        if len(_DIGESTS) > 256:
+            _DIGESTS.clear()
+        _DIGESTS[key] = found
+    return found[1]
+
+
+def light(item):
+    """exp.204: the item for fingerprints: its picture data replaced by a short name."""
+    if not item or not item.get('data'):
+        return item
+    return dict(item, data=data_digest(item['data']))
+
+
 def _key(item, *extra):
     raw = (item.get('data') or item.get('text') or '')
-    digest = hashlib.sha1(raw.encode('utf-8', 'replace')).hexdigest()[:16]
+    digest = data_digest(raw)
     return (item.get('kind'), digest, item.get('font'), item.get('color'), bool(item.get('bold'))) + extra
 
 
