@@ -983,7 +983,8 @@ class StageTimeline(QFrame):
         from PySide6.QtWidgets import QMenu
         if self.locked:return
         menu=QMenu(self)
-        menu.addAction('Edit Drawing Source…',lambda:self.stage_source_edit.emit('draw',index))
+        menu.addAction('Edit text…' if getattr(self,'text_element',None) and self.text_element(index)
+                       else 'Edit Drawing Source…',lambda:self.stage_source_edit.emit('draw',index))
         menu.addAction('Edit Painting Source…',lambda:self.stage_source_edit.emit('paint',index))
         menu.exec(global_pos)
 
@@ -1129,14 +1130,14 @@ class StageTimeline(QFrame):
                 chosen=item.get('id')==self.selected_overlay or item.get('id') in self.selected_overlays
                 fill=QColor('#8A8F98') if item.get('kind')=='eraser' else QColor(colour if item.get('kind')!='text' else QColor(c.get('erase','#E06A86')))
                 fill.setAlpha(235 if chosen else 185)
-                if int(item.get('track',0)) in self.text_hidden: fill.setAlpha(70)
+                if int(item.get('track',0)) in self.text_hidden or item.get('off'): fill.setAlpha(70)   # exp.208: E
                 p.setPen(QPen(QColor('white') if chosen else fill.lighter(130),2 if chosen else 1)); p.setBrush(fill)
                 p.drawRoundedRect(r,6,6)
                 if r.width()>30:
                     p.setPen(QColor('white')); p.setFont(small)
                     icon={'text':'T ','eraser':'⌫ '}.get(item.get('kind'),'▣ ')
                     p.drawText(r.adjusted(7,0,-6,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
-                               icon+str(item.get('name') or '')[:40])
+                               icon+str(item.get('name') or '')[:40]+(' (off)' if item.get('off') else ''))
             p.restore()
         if self._bg_shown():
             self._paint_background_row(p,c,small)      # exp.207
@@ -1313,6 +1314,7 @@ class StageTimeline(QFrame):
                 self._draw_icon(p,'camera',r.center(),'#FFFFFF' if lit else c['text'],12)
                 continue
             fill=QColor(c['hold'] if clip.get('kind') in ('Hand leaves','Hand hidden') else c['paint']); fill.setAlpha(235 if chosen else 190)
+            if clip.get('off'): fill=QColor(c['border_strong']); fill.setAlpha(150 if chosen else 110)   # exp.208: E
             p.setPen(QPen(QColor('white') if chosen else fill.lighter(130),2 if chosen else 1)); p.setBrush(fill)
             p.drawRoundedRect(r,5,5)
             # exp.124: getting there / stays / coming back: the two ramps are lighter.
@@ -1337,7 +1339,7 @@ class StageTimeline(QFrame):
                 p.setPen(QPen(line,1.5)); p.drawLine(QPointF(x1,r.top()+4),QPointF(x1,r.bottom()-4))
             if r.width()>40:
                 p.setFont(clip_font); p.setPen(QColor('white'))
-                text=p.fontMetrics().elidedText(str(clip.get('kind','Camera')),Qt.TextElideMode.ElideRight,int(r.width()-26))
+                text=p.fontMetrics().elidedText(str(clip.get('kind','Camera'))+(' (off)' if clip.get('off') else ''),Qt.TextElideMode.ElideRight,int(r.width()-26))
                 p.drawText(r.adjusted(19,0,-4,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,text)
                 p.setFont(small)
             if r.width()>=24:                              # grip: drag to make it slower / faster
@@ -4090,6 +4092,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.space_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
     w.space_shortcut.activated.connect(
         lambda: None if isinstance(QApplication.focusWidget(),(QPlainTextEdit,QComboBox)) else w.toggle())
+    # exp.208 (the user, like Filmora): Ctrl+B cuts the chosen clip, E switches it off / on
+    w.cut_shortcut=QShortcut(QKeySequence('Ctrl+B'),w); w.cut_shortcut.activated.connect(lambda: w.cut_at_playhead())
+    w.switch_shortcut=QShortcut(QKeySequence(Qt.Key.Key_E),w); w.switch_shortcut.activated.connect(lambda: w.switch_selected())
     w.undo_shortcut=QShortcut(QKeySequence(QKeySequence.StandardKey.Undo),w)
     w.undo_shortcut.activated.connect(lambda: w.undo())
     # Redo: Ctrl+Y and Ctrl+Shift+Z, ONE shortcut per key. On Windows the standard Redo

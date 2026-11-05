@@ -68,14 +68,41 @@ def frames(scenes, aspect=9 / 16):
     return out
 
 
-def views(scenes, all_frames):
+def views(scenes, all_frames, places=None):
     """exp.200 (the user, like VideoScribe's Set camera): where the camera rests for each
     element: its own view when one was set (board['view'] = cx, cy, w), else its frame."""
     out = []
-    for scene, frame in zip(scenes, all_frames):
+    camera = []
+    for k, (scene, frame) in enumerate(zip(scenes, all_frames)):
         v = (scene.get('board') or {}).get('view')
-        out.append((float(v[0]), float(v[1]), max(.02, float(v[2]))) if v else frame)
+        if v:
+            out.append((float(v[0]), float(v[1]), max(.02, float(v[2])))); camera.append(True)
+        elif k and camera[-1] and tuple(all_frames[k - 1]) == tuple(frame) and \
+                _inside(scene, frame, out[-1], (places or {}).get(k)):
+            # exp.208 (the user: adding a text on the page pulled the camera back and the
+            # picture shrank): an element with no camera of its own, on the same page, keeps
+            # the camera of the element before it (no camera move), when it is in that view.
+            out.append(out[-1]); camera.append(True)
+        else:
+            out.append(frame); camera.append(False)
     return out
+
+
+def _inside(scene, frame, view, place=None, aspect=9 / 16):
+    """True when the middle of the element's picture is inside `view` (world units).
+    place: its (picture_x, picture_y) when it is being edited (not stored in the scene yet)."""
+    settings = ((scene.get('state') or {}).get('settings') or {})
+    try:
+        x, y = place if place is not None else (settings.get('picture_x'), settings.get('picture_y'))
+        if x is None or y is None:
+            return False
+        x, y = float(x) / 100., float(y) / 100.
+    except (TypeError, ValueError):
+        return False
+    cx, cy, w = frame
+    px, py = cx + x * w, cy + y * w * aspect
+    left, top, right, bottom = rect(view, aspect)
+    return left <= px <= right and top <= py <= bottom
 
 
 def has_views(scenes):
