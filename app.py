@@ -4435,6 +4435,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             elements.append(dict(drawing=drawing,options=options,camera=camera,uid=self.scenes[k].get('uid'),
                                  transition=self.scenes[k]['transition'],
                                  move_seconds=self.scenes[k]['transition_seconds']))
+        if any(s.get('hand_link') for s in self.scenes):
+            # exp.210: a hand linked from the element before comes from where that one finished
+            try:
+                import scenes as _scenes
+                _scenes.link_hands(self.timeline_layout().items,elements,self.board_frames(),self.hidden_elements())
+            except Exception as exc:
+                import applog; applog.error('Linked hands',exc)
         return elements
 
     def eraser_tool(self):
@@ -5788,6 +5795,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 # exp.205 (the user: every way of moving looked the same): the element's own glide
                 # (how long, how it moves) is part of its frames; the old ones were shown.
                 repr(self.scenes[k].get('glide')) if 0<=k<len(self.scenes) else None,
+                tuple(bool(s.get('hand_link')) for s in self.scenes),          # exp.210: linked hands
                 (bool(self.scenes[k].get('art_off')),bool(self.scenes[k].get('hand_off'))) if 0<=k<len(self.scenes) else None)
 
     def hand_rest_settings(self):
@@ -5836,7 +5844,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 drawing,opts,_,_=self.preview_scene(it.k,960,540)
                 plan=travel_plan(drawing,opts)
                 if plan is not None:
-                    marks.append((it.start,plan[0],plan[1]-plan[5],plan[2],it.k))
+                    marks.append((it.start,plan[0],plan[1]-plan[5],plan[2],it.k,bool(self.scenes[it.k].get('hand_link'))))
         except Exception:
             return []
         return marks
@@ -5869,6 +5877,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         form.addRow(help_label('How',tip),how_in)
         form.addRow(help_label('Back','How long the hand takes to go back to its corner after drawing.'),back)
         form.addRow(help_label('How ',tip),how_out)
+        # exp.210 (the user): link this hand to the next one: no way back to the corner, the
+        # next element's hand starts from where this one finished, in one movement.
+        from PySide6.QtWidgets import QCheckBox
+        link=QCheckBox('Go straight on to the next drawing (linked)')
+        link.setChecked(bool(self.scenes[k].get('hand_link')))
+        link.setToolTip('The hand does not go back to its corner after this element: it goes on from '
+                        'where it finished to the first line of the next element (on the same page), '
+                        'in one smooth movement. The next element\'s "To the drawing" time and way are used.')
+        def linked(on):
+            back.setEnabled(not on); how_out.setEnabled(not on)
+        link.toggled.connect(linked); linked(link.isChecked())
+        form.addRow(help_label('Then','Back to the corner, or on to the next drawing.'),link)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
@@ -5876,6 +5896,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.record_structure('hand glide')
         before=next((it for it in self.timeline_layout().items if it.k==k),None)
         self.scenes[k]['glide']=(round(go.value(),2),round(back.value(),2),how_in.currentText(),how_out.currentText())
+        if link.isChecked(): self.scenes[k]['hand_link']=True
+        else: self.scenes[k].pop('hand_link',None)
         self.project_changes.mark_changed()
         self.__dict__.pop('_memo',None); self._scene_cache={}
         if before is not None:
@@ -5991,19 +6013,23 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         out=0.
         if self.all_scenes():
             lay=self.timeline_layout(); hidden=self.hidden_elements()
-            options=None; others=[]
+            options=None; others=[]; source=None
             for it in lay.items:
                 if it.k in hidden: continue
                 drawing,opts,_,_=self.preview_scene(it.k,960,540)        # its timing (as the timeline)
                 window=hand_window(drawing,opts)
                 if window is None:
                     others.append((drawing,opts,it.start)); continue     # exp.153: slides out for it
-                if options is None or it.start<=seconds: options=opts
+                if options is None or it.start<=seconds: options=opts; source=drawing
                 if it.start-1e-6<=seconds<it.start+window[0]-1e-6:
                     return None                     # this element's own hand
             if options is None: return None
             out=rest_out(others,seconds)
             if out>=1.: return None
+            if options.get('hand_link_out') and source is not None:
+                from frame_render import last_tip
+                tip=last_tip(source,options)                              # exp.210: waits where it finished
+                if tip is not None: options=dict(options,_wait_tip=tip)
         else:
             drawing,options,_,_=self.preview_scene(self.scene_index,960,540)
             window=hand_window(drawing,options)
@@ -6714,7 +6740,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                              transition_seconds=s['transition_seconds'],board=s.get('board'),
                              start=s.get('start'),track=s.get('track') or 0,
                              hidden=bool(self.track_flag(s,'hidden')),muted=bool(self.track_flag(s,'muted')),
-                             art_off=bool(s.get('art_off')),hand_off=bool(s.get('hand_off')))
+                             art_off=bool(s.get('art_off')),hand_off=bool(s.get('hand_off')),
+                             hand_link=bool(s.get('hand_link')))
                         for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
             self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand,copy.deepcopy(self.visible_titles()),

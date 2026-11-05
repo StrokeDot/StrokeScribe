@@ -199,7 +199,36 @@ def apply_glide(options, scene):
         if len(glide) > 3:                          # exp.164: how it moves
             options['hand_glide_style_in'] = glide[2] or 'Smooth'
             options['hand_glide_style_out'] = glide[3] or 'Smooth'
+    if scene and scene.get('hand_link') and options.get('hand_travel'):
+        options['hand_link_out'] = True             # exp.210: on to the next hand, no way back
     return options
+
+
+def hand_links(items, elements, frames, hidden=()):
+    """exp.210 (the user): {j: k}: element j's hand comes from where element k's linked hand
+    finished: the next element (in time) whose hand travels, on the same page.
+    items: the layout's items; elements: [{'drawing', 'options'}]."""
+    from frame_render import hand_window
+    moving = [it for it in sorted(items, key=lambda it: (it.start, it.k))
+              if it.k not in hidden and elements[it.k]['options'].get('hand_travel')
+              and hand_window(elements[it.k]['drawing'], elements[it.k]['options']) is not None]
+    out = {}
+    for i, it in enumerate(moving):
+        if not elements[it.k]['options'].get('hand_link_out'):
+            continue
+        nxt = next((o for o in moving[i + 1:] if o.start >= it.start), None)
+        if nxt is not None and tuple(frames[nxt.k]) == tuple(frames[it.k]):
+            out[nxt.k] = it.k
+    return out
+
+
+def link_hands(items, elements, frames, hidden=()):
+    """Put on each linked element's options where its hand comes from (_from_tip)."""
+    from frame_render import last_tip
+    for j, k in hand_links(items, elements, frames, hidden).items():
+        tip = last_tip(elements[k]['drawing'], elements[k]['options'])
+        if tip is not None:
+            elements[j]['options']['_from_tip'] = tip
 
 
 def plan(scenes, hand=None, overrides=None):
@@ -304,6 +333,7 @@ def _resting_options(lay, elements, seconds, hidden=()):
     (None while an element's own hand draws or travels, or when it does not wait)."""
     from frame_render import hand_window, rest_out
     chosen = None
+    chosen_drawing = None
     others = []
     for it in lay.items:
         if it.k in hidden:
@@ -317,6 +347,7 @@ def _resting_options(lay, elements, seconds, hidden=()):
             continue
         if chosen is None or it.start <= seconds:
             chosen = e['options']
+            chosen_drawing = e['drawing']
         if it.start - 1e-6 <= seconds < it.start + window[0] - 1e-6:
             return None
     if chosen is not None:
@@ -325,6 +356,11 @@ def _resting_options(lay, elements, seconds, hidden=()):
             return None
         if out > 0:
             chosen = dict(chosen, _rest_out=out)
+        if chosen.get('hand_link_out') and chosen_drawing is not None:
+            from frame_render import last_tip
+            tip = last_tip(chosen_drawing, chosen)              # exp.210: waits where it finished
+            if tip is not None:
+                chosen = dict(chosen, _wait_tip=tip)
     return chosen
 
 
@@ -376,6 +412,8 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
         if own.get('hand_off'): options['hand_off'] = True      # E on its Hand bar
         elements.append(dict(drawing=p['drawing'], options=options, camera=camera, uid=uids[len(elements)],
                              transition=p['transition'], move_seconds=p['move_seconds']))
+    link_hands(lay.items, elements, [p['frame'] for p in prepared],
+               {k for k, s in enumerate(scenes) if s.get('hidden')})       # exp.210: linked hands
     total = max(1, round(lay.total * fps))
     titles = with_holds(titles, [m.start for m in lay.moves], lay.total,
                         page_at=lambda sec: timeline_render.page_of(lay, sec))
@@ -697,6 +735,7 @@ def scenes_from_project(data):
                         start=item.get('start'), track=item.get('track') or 0,
                         hidden=bool(item.get('hidden')), muted=bool(item.get('muted')),
                         art_off=bool(item.get('art_off')), hand_off=bool(item.get('hand_off')),
+                        hand_link=bool(item.get('hand_link')),
                         thumb_png=item.get('thumb_png'),
                         glide=tuple(item['glide']) if item.get('glide') else None))
     return out
@@ -712,6 +751,7 @@ def scenes_to_project(main_state, scene_list, index):
                                start=s.get('start'), track=s.get('track') or 0,
                                hidden=bool(s.get('hidden')), muted=bool(s.get('muted')),
                                art_off=bool(s.get('art_off')), hand_off=bool(s.get('hand_off')),
+                               hand_link=bool(s.get('hand_link')),
                                glide=list(s['glide']) if s.get('glide') else None)
                           for k, s in enumerate(scene_list)]
         data['scene_index'] = index

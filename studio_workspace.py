@@ -1290,6 +1290,13 @@ class StageTimeline(QFrame):
                                              self._x(start+lead+busy+tail)-self._x(start)+2,row.height()*.6),3,3)
                 # exp.147: each element's hand: glides in, draws, glides back (faint)
                 gone=bool(rest) and self.element_flags.get(rest[0],{}).get('hand_off')   # exp.209: E
+                if len(rest)>1 and rest[1]:
+                    # exp.210: linked to the next hand: a line on to where the next one starts
+                    nxt=min((m[0] for m in self.hand_marks if m[0]>=start+lead+busy-1e-6 and (len(m)<5 or m[4]!=rest[0])),default=None)
+                    if nxt is not None:
+                        y=row.center().y(); link_col=QColor(c['hold']); link_col.setAlpha(170)
+                        p.setPen(QPen(link_col,1.6,Qt.PenStyle.DashLine))
+                        p.drawLine(QPointF(self._x(start+lead+busy),y),QPointF(self._x(nxt),y))
                 for a,b,alpha in ((start,start+lead,120),(start+lead,start+lead+busy,210),
                                   (start+lead+busy,start+lead+busy+tail,120)):
                     if b-a<=1e-6: continue
