@@ -356,6 +356,8 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
     above = sorted((k for k in already - set(erasers)
                     if any(order.get(a, (0, a)) < order[k] for a, _ in state.active)), key=lambda k: order[k])
     skip = (set(range(len(elements))) - set(state.finished)) | set(erasers) | set(above)
+    # exp.209 (the user: E on a picture): its picture is not drawn, its hand still is
+    skip |= {k for k, el in enumerate(elements) if el['options'].get('art_off')}
     out = world.view(view, width, height, upto=len(elements), skip=skip)
     out = _erasing(world, elements, erasers, view, out, width, height, state, glides)
     tracks = {it.k: it.track for it in lay.items}
@@ -379,13 +381,13 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
             continue
         el = elements[k]
         opts = el['options']
-        if k not in erasers:              # exp.186: being erased / gone: its picture is drawn by _erasing
+        if k not in erasers and not opts.get('art_off'):   # exp.186: being erased: _erasing draws it
             art = element_frame(el['drawing'], opts, fraction, w, h, 'art')
             out = world.put(out, art, world.frames[k], view, opts.get('blend_mode', 'Normal'),
                             opts.get('artwork_opacity', 100))
         # exp.196 (the user: the hand vanished when a Goes out clip began while it was still on
         # its way back to the corner): its hand is still drawn.
-        if k == hand_k and opts.get('layers', 'all') != 'art':
+        if k == hand_k and opts.get('layers', 'all') != 'art' and not opts.get('hand_off'):
             from frame_render import last_hand_spec
             layer = element_frame(el['drawing'], opts, fraction, w, h, 'hand')   # eraser, move-in hand
             spec = last_hand_spec()
@@ -397,6 +399,8 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
                 opts = dict(opts, _rest_place=world.place(fixed_view(world, lay, state, elements), view_fn(state), width, height))
             hand_layer = (layer, world.frames[k], spec, place, opts)
     for k in above:
+        if elements[k]['options'].get('art_off'):
+            continue
         x, y, w, h = world.place(world.frames[k], view, width, height)
         if w < 2 or x > width or y > height or x + w < 0 or y + h < 0:
             continue

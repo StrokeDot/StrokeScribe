@@ -247,7 +247,7 @@ def on_tracks(scenes):
     if board.has_views(scenes):
         return True
     return any(s.get('start') is not None or (s.get('track') or 0) or s.get('hidden') or s.get('muted')
-               for s in scenes)
+               or s.get('art_off') or s.get('hand_off') for s in scenes)
 
 
 def with_holds(titles, move_starts, total, page_at=None):
@@ -371,6 +371,9 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
         hand_sig = camera_clips.hand_signature(away)                 # exp.147: the Hand row
         if hand_sig:
             options.update(hand_away=hand_sig, hand_video_start=lay.items[len(elements)].start)
+        own = scenes[len(elements)]
+        if own.get('art_off'): options['art_off'] = True        # exp.208/209: E (picture off, hand on)
+        if own.get('hand_off'): options['hand_off'] = True      # E on its Hand bar
         elements.append(dict(drawing=p['drawing'], options=options, camera=camera, uid=uids[len(elements)],
                              transition=p['transition'], move_seconds=p['move_seconds']))
     total = max(1, round(lay.total * fps))
@@ -693,6 +696,7 @@ def scenes_from_project(data):
                         uid=item.get('uid'), rev=item.get('rev'),
                         start=item.get('start'), track=item.get('track') or 0,
                         hidden=bool(item.get('hidden')), muted=bool(item.get('muted')),
+                        art_off=bool(item.get('art_off')), hand_off=bool(item.get('hand_off')),
                         thumb_png=item.get('thumb_png'),
                         glide=tuple(item['glide']) if item.get('glide') else None))
     return out
@@ -707,6 +711,7 @@ def scenes_to_project(main_state, scene_list, index):
                                board=s.get('board'), uid=s.get('uid'), rev=s.get('rev'),
                                start=s.get('start'), track=s.get('track') or 0,
                                hidden=bool(s.get('hidden')), muted=bool(s.get('muted')),
+                               art_off=bool(s.get('art_off')), hand_off=bool(s.get('hand_off')),
                                glide=list(s['glide']) if s.get('glide') else None)
                           for k, s in enumerate(scene_list)]
         data['scene_index'] = index
