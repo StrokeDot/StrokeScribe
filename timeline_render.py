@@ -349,7 +349,13 @@ def _erasing(world, elements, erasers, view, out, width, height, state, glides=N
 def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None, view_fn=None, erasers=None,
           glides=None):
     erasers = erasers or {}
-    skip = (set(range(len(elements))) - set(state.finished)) | set(erasers)
+    # exp.206: an element Already there stays at its place among the tracks: one above a
+    # picture still coming in is drawn after it (not covered by it, then popping back on top).
+    order = {it.k: (it.track, it.k) for it in lay.items}
+    already = {it.k for it in lay.items if getattr(it, 'already', False)} & set(state.finished)
+    above = sorted((k for k in already - set(erasers)
+                    if any(order.get(a, (0, a)) < order[k] for a, _ in state.active)), key=lambda k: order[k])
+    skip = (set(range(len(elements))) - set(state.finished)) | set(erasers) | set(above)
     out = world.view(view, width, height, upto=len(elements), skip=skip)
     out = _erasing(world, elements, erasers, view, out, width, height, state, glides)
     tracks = {it.k: it.track for it in lay.items}
@@ -390,6 +396,13 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
             if spec is not None and spec.get('phase') in ('in', 'out') and view_fn is not None:
                 opts = dict(opts, _rest_place=world.place(fixed_view(world, lay, state, elements), view_fn(state), width, height))
             hand_layer = (layer, world.frames[k], spec, place, opts)
+    for k in above:
+        x, y, w, h = world.place(world.frames[k], view, width, height)
+        if w < 2 or x > width or y > height or x + w < 0 or y + h < 0:
+            continue
+        opts = elements[k]['options']
+        art = element_frame(elements[k]['drawing'], opts, 1., w, h, 'art')
+        out = world.put(out, art, world.frames[k], view, opts.get('blend_mode', 'Normal'), opts.get('artwork_opacity', 100))
     out = _texts(out, waiting, seconds, world, view)
     if hand_layer is not None:
         # exp.148 (the user): the hand is always over everything (it was drawn under the

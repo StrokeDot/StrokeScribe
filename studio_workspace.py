@@ -2938,7 +2938,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     mi=form_layout();w.section_move_in.body.addLayout(mi);w.move_in_form=mi
     from frame_render import ENTRANCES
     w.entrance=QComboBox(); w.entrance.addItems(list(ENTRANCES))
-    w.entrance.setToolTip('The effect this element comes in with (no drawing hand).')
+    w.entrance.setToolTip('The effect this element comes in with (no drawing hand). Already there: it is on its page, finished, from the start of the video, waiting for the camera (like VideoScribe); Pause after is how long the camera looks at it.')
     w.entrance.view().setRowHidden(0,True)           # "Draw with the hand" is the Drawing switch
     mi.addRow('Comes in',w.entrance)
     import move_in

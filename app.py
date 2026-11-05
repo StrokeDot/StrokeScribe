@@ -3892,6 +3892,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """[(stage key, seconds)] of one element: Draw, Paint, Hold (+ pause), Out."""
         colour=options.get('final_image') is not None
         erase=options.get('erase')
+        from frame_render import is_already, timeline_seconds
+        if is_already(options):
+            # exp.206: Already there: only the time the camera looks at it
+            return [('hold',timeline_seconds(None,{k:v for k,v in options.items() if k!='erase'})),
+                    ('erase',float(erase['seconds']) if erase else 0.)]
         if (options.get('entrance') or 'draw')!='draw':
             # Comes in with an effect: one Move in clip (then the painting, when only the lines move in).
             import move_in
@@ -3945,15 +3950,25 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         lengths,joins=self.scene_timeline(width,height)
         memo=self.__dict__.setdefault('_memo',{})
         key=('layout',tuple(lengths),tuple(joins),tuple((s.get('start'),s.get('track'),repr((s.get('board') or {}).get('view'))) for s in self.scenes))
-        key=key+(repr(sorted(getattr(self,'track_flags',{}).items())),tuple(sorted(self.hidden_elements())))
+        already=self.already_elements(width,height)
+        key=key+(repr(sorted(getattr(self,'track_flags',{}).items())),tuple(sorted(self.hidden_elements())),tuple(already))
         if key not in memo:
             lay=layout(lengths,joins,[s.get('start') for s in self.scenes],
-                       [s.get('track') or 0 for s in self.scenes])
+                       [s.get('track') or 0 for s in self.scenes],already)
             if self.hidden_elements(): lay.sequential=False    # drawn moment by moment, without them
             import board as _board
             if _board.has_views(self.scenes): lay.sequential=False   # exp.200: the cameras that were set
             memo[key]=lay
         return memo[key]
+
+    def already_elements(self,width=960,height=540):
+        """exp.206: [True for each element that is Already there (finished from the start)]."""
+        from frame_render import is_already
+        flags=[]
+        for k in range(len(self.scenes)):
+            try: flags.append(is_already(self.preview_scene(k,width,height)[1]))
+            except Exception: flags.append(False)
+        return flags
 
     def timeline_items(self,width=960,height=540):
         """(items, moves) for the timeline: [(k, label, start, seconds, track, parts)], [(k, label, start, seconds)]."""
@@ -4877,7 +4892,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if not hasattr(self,'entrance_part') or not hasattr(self,'timing_form'): return
         self.sync_entrance_switches()
         effect=self.entrance.currentIndex()!=0
-        lines_only=self.entrance_part.currentIndex()==1
+        already=self.entrance.currentText()=='Already there'       # exp.206
+        lines_only=self.entrance_part.currentIndex()==1 and not already
         image=self.is_image_artwork() if hasattr(self,'is_image_artwork') else False
         if image:
             colours=self.preserve_colors.isChecked() or self.image_animation.currentIndex()==1
@@ -4897,8 +4913,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         able(self.pen_ease,not effect,'Drawing is off: the element comes in with an effect, the hand does not draw it.')
         if hasattr(self,'move_time'):
             able(self.entrance,effect,'Drawing is on: the hand draws this element. Turn on Move in to choose an effect.')
-            able(self.move_time,effect,'Drawing is on: Draw time is used.')
-        able(self.entrance_part,effect and colours,
+            able(self.move_time,effect and not already,'Drawing is on: Draw time is used.' if not already else
+                 'Already there: it does not come in; Pause after is how long the camera looks at it.')
+        able(self.entrance_part,effect and colours and not already,
              'turn on Move in (and have colours) to pick what moves in.')
         why='there are no colours to paint.' if not colours else \
             'the whole picture moves in with its colours (choose "Only the lines" in Moves in to paint them).'

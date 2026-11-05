@@ -26,6 +26,7 @@ class Item:
     start: float
     length: float
     track: int = 0
+    already: bool = False  # exp.206: finished on its page from the start (Already there)
 
     @property
     def end(self):
@@ -52,7 +53,7 @@ class Layout:
     boundaries: list = field(default_factory=list)
 
 
-def layout(lengths, joins, starts=None, tracks=None):
+def layout(lengths, joins, starts=None, tracks=None, already=None):
     """lengths[k]: seconds of element k; joins[k]: seconds of the camera move after it
     (for the last element: the Show everything move, 0 if none); starts[k]: its own
     start (None: after the element before it); tracks[k]: its track (0: Track 1)."""
@@ -66,7 +67,8 @@ def layout(lengths, joins, starts=None, tracks=None):
             start = end_before + (float(joins[k - 1]) if k else 0.)
         else:
             start = max(0., float(starts[k]))
-        items.append(Item(k, start, max(0., float(lengths[k])), max(0, tracks[k])))
+        items.append(Item(k, start, max(0., float(lengths[k])), max(0, tracks[k]),
+                          bool(already[k]) if already is not None and k < len(already) else False))
         end_before = start + max(0., float(lengths[k]))
         if k and joins[k - 1] > 0:
             moves.append(Move(k - 1, max(0., start - float(joins[k - 1])), start))
@@ -74,7 +76,7 @@ def layout(lengths, joins, starts=None, tracks=None):
     if n and joins[-1] > 0:                          # Show everything, after everything
         moves.append(Move(n - 1, last_end, last_end + float(joins[-1])))
     total = max([last_end] + [m.end for m in moves])
-    sequential = all(s is None for s in starts) and not any(tracks)
+    sequential = all(s is None for s in starts) and not any(tracks) and not any(it.already for it in items)
     points = {0., total}
     for it in items:
         points.update((it.start, it.end))
@@ -102,6 +104,9 @@ def state_at(lay, seconds):
     s = max(0., min(lay.total, float(seconds)))
     active, finished = [], []
     for it in sorted(lay.items, key=lambda it: (it.track, it.start, it.k)):
+        if it.already:                     # exp.206: there, finished, the whole video
+            finished.append(it.k)
+            continue
         if it.start > s + 1e-9:
             continue
         if s < it.end - 1e-9:

@@ -212,7 +212,17 @@ def erase_setup(drawing, opts, erase):
 ENTRANCES = {'Draw with the hand': 'draw', 'Fade in': 'Fade', 'Pop in': 'Pop', 'Zoom in': 'Zoom',
              'Spin in': 'Spin', 'Slide in from the left': 'Slide from left',
              'Slide in from the right': 'Slide from right', 'Slide in from the top': 'Slide from top',
-             'Slide in from the bottom': 'Slide from bottom', 'Ink appearance': 'Ink'}
+             'Slide in from the bottom': 'Slide from bottom', 'Ink appearance': 'Ink',
+             'Already there': 'Already'}
+# exp.206 (the user, like VideoScribe): an element that is already on its page, finished, from
+# the start of the video: no hand, no effect. When the camera comes to it, it is waiting there.
+# Its clip is only the time the camera looks at it (Pause after; ALREADY_LOOK when none).
+ALREADY = 'Already'
+ALREADY_LOOK = 1.0
+
+
+def is_already(options):
+    return (options or {}).get('entrance') == ALREADY
 EXITS = {'fade': 'Fade', 'pop': 'Pop', 'zoom': 'Zoom', 'spin': 'Spin', 'out-left': 'Slide from left',
          'out-right': 'Slide from right', 'out-top': 'Slide from top', 'out-bottom': 'Slide from bottom'}
 
@@ -362,7 +372,7 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
             plain = whole - pause
             base_fraction = min(1., base_fraction * whole / plain) if plain > 0 else 1.
         entrance = opts.get('entrance') or 'draw'
-        lines_only = entrance != 'draw' and _lines_part(opts)
+        lines_only = entrance not in ('draw', ALREADY) and _lines_part(opts)
         if lines_only and base_fraction * timeline_seconds(drawing, dict(opts, pause=0)) >= \
                 float(opts.get('duration', 4) or 0):
             frame = _core(drawing, base_fraction, opts, camera_path, fraction)    # the colours are painted
@@ -483,6 +493,8 @@ def _own_camera(drawing, options, zoom, rate=30.):
 
 def move_seconds(options):
     """Length of a move-in effect: the element's animation time."""
+    if is_already(options):
+        return 0.
     return float(options.get('duration', 4) or 0) or float(options.get('fade_duration', .4) or .4)
 
 
@@ -499,6 +511,8 @@ def timeline_seconds(drawing, options):
         base = {k: v for k, v in options.items() if k != 'erase'}
         return timeline_seconds(drawing, base) + max(.1, float(erase.get('seconds', 3)))
     pause = max(0., float(options.get('pause', 0) or 0))      # the element stays, finished
+    if is_already(options):
+        return pause if pause > 0 else ALREADY_LOOK
     if (options.get('entrance') or 'draw') != 'draw':
         import move_in
         if move_in.part_of(options) == move_in.PART_ALL:
