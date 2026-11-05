@@ -296,9 +296,9 @@ class PreviewSound:
 class Exporter(QThread):
     progress=Signal(int,int); done=Signal(str); failed=Signal(str)
     def __init__(self,drawing,folder,options,mov,webm=False,webm_quality=28,keep_png=True,
-                 mp4=False,mp4_background='white',sound_volume=None,background=None):
+                 mp4=False,mp4_background='white',sound_volume=None,background=None,background_pieces=None):
         super().__init__()
-        self.sound_volume=sound_volume; self.background=background
+        self.sound_volume=sound_volume; self.background=background; self.background_pieces=background_pieces
         self.drawing=drawing; self.folder=Path(folder); self.options=options
         self.mov=mov; self.webm=webm; self.webm_quality=webm_quality
         self.keep_png=keep_png; self.mp4=mp4; self.mp4_background=mp4_background
@@ -308,7 +308,8 @@ class Exporter(QThread):
             self.done.emit(run_export(
                 self.drawing,self.folder,self.options,self.mov,self.webm,self.webm_quality,
                 self.keep_png,self.mp4,self.mp4_background,self.sound_volume,
-                progress=self.progress.emit,interrupted=self.isInterruptionRequested,background=self.background))
+                progress=self.progress.emit,interrupted=self.isInterruptionRequested,background=self.background,
+                background_pieces=self.background_pieces))
         except Exception as e: self.failed.emit(str(e))
 
 class PlanWorker(QThread):
@@ -527,6 +528,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.selected_overlay=None
         self.selected_overlays=set()    # exp.117: Ctrl+click chooses more than one
         self.cameras=[]                 # exp.119: the Camera track's clips (camera_clips.py)
+        self.background_pieces=[]       # exp.207: the Background row (background_track.py)
         self.selected_camera=None
         self.text_hidden=set()          # text tracks hidden from the video
         # Rapid brush-width changes should not synchronously rebuild the entire
@@ -854,7 +856,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def _extras_copy(self):
         """The video's own clips (texts, camera clips) kept with a project undo step."""
         import copy
-        return {'titles':copy.deepcopy(self.overlays),'cameras':copy.deepcopy(getattr(self,'cameras',[]))}
+        return {'titles':copy.deepcopy(self.overlays),'cameras':copy.deepcopy(getattr(self,'cameras',[])),
+                'background_pieces':copy.deepcopy(getattr(self,'background_pieces',[]))}
 
     def restore_structure(self,scenes,index,titles=None):
         from history import History
@@ -864,6 +867,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             extras=titles if isinstance(titles,dict) else {'titles':titles}
             self.overlays=copy.deepcopy(extras.get('titles') or [])
             if 'cameras' in extras: self.cameras=copy.deepcopy(extras['cameras'] or [])
+            if 'background_pieces' in extras: self.background_pieces=copy.deepcopy(extras['background_pieces'] or [])
             if not any(o.get('id')==self.selected_overlay for o in self.overlays): self.selected_overlay=None
             if not any(c.get('id')==getattr(self,'selected_camera',None) for c in self.cameras): self.selected_camera=None
         self.scenes=[dict(s) for s in scenes]
@@ -2097,9 +2101,118 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.status.setText('The last part of the log is copied: paste it in the chat with Henry.')
 
     # ------------------------------------------------------------ background
+    # exp.207 (the user, like Filmora): the Background row of the timeline (background_track.py)
+    def background_at(self,seconds):
+        """(preview Background index, custom colour) at `seconds` of the video."""
+        main=(self.preview_background.currentIndex(),getattr(self,'background_color',None))
+        pieces=getattr(self,'background_pieces',None)
+        if not pieces or self.board_mode(): return main
+        import background_track
+        from backgrounds import BACKGROUND_ITEMS
+        piece=pieces[background_track.index_at(pieces,seconds)]
+        if piece.get('hidden'): return (0,None)
+        choice=piece.get('choice')
+        if choice is None or choice not in BACKGROUND_ITEMS: return main
+        return (BACKGROUND_ITEMS.index(choice),piece.get('colour') if choice=='Custom colour…' else main[1])
+
+    def apply_background_at(self,seconds):
+        index,colour=self.background_at(seconds)
+        if (self.canvas.background,self.canvas.custom_colour)!=(index,colour):
+            self.canvas.custom_colour=colour; self.canvas.set_background(index)
+
+    def sync_background_row(self):
+        """The Background row on the timeline (whole video, or a video of one element)."""
+        timeline=getattr(self,'stage_timeline',None)
+        if timeline is None or not hasattr(timeline,'set_background_row'): return
+        import background_track
+        from backgrounds import spec
+        main=spec(self.preview_background.currentText(),getattr(self,'background_color',None))
+        shown=bool(timeline.items) or len(self.scenes)<2
+        total=self.video_length() if shown else 0.
+        pieces=getattr(self,'background_pieces',[]) or []
+        rows=[]
+        for i,start,end in (background_track.ranges(pieces,total) if pieces else [(None,0.,total)]):
+            piece=pieces[i] if i is not None else None
+            value=background_track.spec_of(piece,main)
+            rows.append((i,start,end,background_track.swatch(value),
+                         background_track.label(piece,self.preview_background.currentText()) if piece is not None
+                         else f'Video background ({self.preview_background.currentText()})'))
+        timeline.set_background_row(rows if shown else None)
+
+    def background_menu(self,i,seconds,where):
+        """A piece of the Background row clicked: its background, hide it, split it…"""
+        from PySide6.QtWidgets import QMenu
+        import background_track
+        pieces=background_track.normalise(getattr(self,'background_pieces',[]) or [])
+        i=background_track.index_at(pieces,seconds) if pieces else 0
+        piece=pieces[i] if pieces else dict(choice=None,hidden=False)
+        menu=QMenu(self)
+        title=menu.addAction(background_track.label(piece,self.preview_background.currentText()) if pieces
+                             else f'Video background ({self.preview_background.currentText()})')
+        title.setEnabled(False)
+        menu.addSeparator()
+        look=menu.addMenu('Background')
+        a=look.addAction(f'The video\'s Background ({self.preview_background.currentText()})',
+                         lambda: self.change_background_pieces(lambda p: background_track.set_choice(p,i,None),'background'))
+        a.setCheckable(True); a.setChecked(piece.get('choice') is None and not piece.get('hidden'))
+        look.addSeparator()
+        for choice in background_track.CHOICES:
+            a=look.addAction(choice,lambda choice=choice: self.choose_piece_background(i,choice))
+            a.setCheckable(True); a.setChecked(piece.get('choice')==choice and not piece.get('hidden'))
+        hide=menu.addAction('Hide (transparent)',lambda: self.change_background_pieces(
+            lambda p: background_track.set_hidden(p,i,not piece.get('hidden')),'hide background'))
+        hide.setCheckable(True); hide.setChecked(bool(piece.get('hidden')))
+        menu.addSeparator()
+        menu.addAction(f'Split here ({seconds:.2f} s)',lambda: self.change_background_pieces(
+            lambda p: background_track.split(p,seconds),'split background'))
+        play=self.video_seconds()
+        if abs(play-seconds)>.05:
+            menu.addAction(f'Split at the playhead ({play:.2f} s)',lambda: self.change_background_pieces(
+                lambda p: background_track.split(p,play),'split background'))
+        if pieces and i>0:
+            menu.addAction('Join with the piece before',lambda: self.change_background_pieces(
+                lambda p: background_track.remove_cut(p,i),'join background'))
+        if pieces:
+            menu.addSeparator()
+            menu.addAction('Reset the whole row',lambda: self.change_background_pieces(lambda p: [],'reset background'))
+        menu.exec(where)
+
+    def choose_piece_background(self,i,choice):
+        import background_track
+        colour=None
+        if choice=='Custom colour…':
+            current=(getattr(self,'background_pieces',[]) or [{}])
+            start=(current[i] if 0<=i<len(current) else {}).get('colour') or getattr(self,'background_color',None) or '#f5f0e4'
+            picked=QColorDialog.getColor(QColor(start),self,'Background colour')
+            if not picked.isValid(): return
+            colour=picked.name()
+        self.change_background_pieces(lambda p: background_track.set_choice(p,i,choice,colour),'background')
+
+    def change_background_pieces(self,change,what):
+        import background_track
+        self.record_structure(what)
+        self.background_pieces=background_track.tidy(change(background_track.normalise(getattr(self,'background_pieces',[]) or [])))
+        self.project_changes.mark_changed()
+        self.sync_background_row(); self.refresh()
+
+    def background_cut_moved(self,i,seconds,done):
+        """A cut of the Background row dragged (done: let go)."""
+        import background_track
+        if done:
+            self.background_pieces=background_track.tidy(self.background_pieces)
+            self.project_changes.mark_changed()
+        else:
+            if not getattr(self,'_bg_drag_recorded',False):
+                self.record_structure('move background cut'); self._bg_drag_recorded=True
+            self.background_pieces=background_track.move_cut(self.background_pieces,i,seconds)
+        if done: self._bg_drag_recorded=False
+        self.sync_background_row(); self.apply_background_at(self.shown_seconds())
+
     def export_backgrounds(self):
         from export_job import backgrounds_from_settings
-        return backgrounds_from_settings(self.settings_state())
+        out=backgrounds_from_settings(self.settings_state())
+        if len(self.scenes)>1: out.pop('background_pieces',None)    # one element alone: not the video's times
+        return out
 
     def background_spec(self):
         from backgrounds import spec
@@ -2371,6 +2484,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if getattr(self,'cameras',None):
             import copy
             data['cameras']=copy.deepcopy(self.cameras)        # exp.119: the Camera track
+        if getattr(self,'background_pieces',None):
+            import copy
+            data['background_pieces']=copy.deepcopy(self.background_pieces)    # exp.207: the Background row
         data.pop('overlays',None)
         return data
 
@@ -2768,6 +2884,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.cameras=[camera_clips.upgrade(dict(c,**{'from':tuple(c['from']) if c.get('from') else None,
                                                      'to':tuple(c.get('to') or (1.,.5,.5))}))
                       for c in copy.deepcopy(data.get('cameras') or [])]
+        import background_track
+        self.background_pieces=background_track.normalise(data.get('background_pieces') or [])   # exp.207
         self.selected_camera=None
         self.selected_overlay=None
         self._legacy_titles=[]
@@ -5262,6 +5380,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         state['paint_hand_tip']=self.paint_hand_tip
         state['move_hand_path']=getattr(self,'move_hand_path',None)
         state['background_color']=getattr(self,'background_color',None)
+        if getattr(self,'background_pieces',None):
+            import copy
+            state['background_pieces']=copy.deepcopy(self.background_pieces)    # exp.207: Background row
         return state
 
     # ------------------------------------------------- voiceover, timing
@@ -5873,6 +5994,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.status.setText('Preview could not be updated: '+str(exc)[:220])
             return
         self.canvas.frame=frame
+        self.apply_background_at(self.shown_seconds())       # exp.207: the Background row
+        self.sync_background_row()
         self.sync_titles_timeline()
         self.sync_camera_timeline()
         try:
