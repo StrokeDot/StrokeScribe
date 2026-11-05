@@ -272,6 +272,7 @@ class StageTimeline(QFrame):
         self.cam_clips=[]              # exp.119: the camera clips (camera_clips.py)
         self.cam_holds={}              # clip id -> where its framing stops holding (seconds)
         self.selected_camera=None
+        self.selected_bg=None          # exp.209: a chosen piece of the Background row (-1: the whole row)
         self.text_hidden=set()         # text tracks hidden from the video
         self.audio=None            # {'start', 'seconds', 'name', 'envelope'} or None
         self.editable=set(self.STAGE_KEYS)   # stages whose length can be dragged
@@ -453,6 +454,28 @@ class StageTimeline(QFrame):
     def _bg_row(self):
         return QRectF(self.LEFT,self._stack_bottom()+4+(self.LANE_H+3)*self.text_lanes(),self._width(),self.BG_H)
 
+    def _bg_piece_at(self, seconds):
+        """The piece of the Background row at `seconds` (-1: the row has no pieces yet)."""
+        for i,start,end,_,_ in getattr(self,'bg_rows',None) or ():
+            if i is not None and start-1e-6<=seconds<end+1e-6: return i
+        return -1
+
+    def _something_else_chosen(self):
+        """exp.209: a hand bar, a camera, a text / picture or a background piece is chosen
+        (then the element does not look chosen too)."""
+        return (getattr(self,'selected_hand',None) is not None or bool(self.selected_camera)
+                or bool(self.selected_overlay) or bool(self.selected_overlays)
+                or getattr(self,'selected_bg',None) is not None)
+
+    def _choose_only(self, kind):
+        """exp.209 (the user: one click chooses one thing; Shift for more): the others let go."""
+        if kind!='hand': self.selected_hand=None
+        if kind!='bg': self.selected_bg=None
+        if kind!='camera' and self.selected_camera:
+            self.selected_camera=None; self.camera_selected.emit('')
+        if kind!='overlay' and (self.selected_overlay or self.selected_overlays):
+            self.selected_overlay=None; self.selected_overlays=set(); self.overlay_selected.emit('')
+
     def _bg_cut_at(self, pos):
         """The piece whose starting cut is under `pos` (to drag it), or None."""
         if not self._bg_shown() or not self._bg_row().adjusted(0,-2,0,2).contains(pos): return None
@@ -485,6 +508,10 @@ class StageTimeline(QFrame):
                 fill=QColor(colour); p.setBrush(fill)
                 p.setPen(QPen(QColor(c['border_strong']),1)); p.drawRoundedRect(r,5,5)
                 ink=QColor('#202028') if fill.lightness()>140 else QColor('#f2f2f5')
+            chosen=getattr(self,'selected_bg',None)
+            if chosen is not None and (i==chosen or (i is None and chosen==-1)):
+                p.setPen(QPen(QColor(c['accent']),2.5)); p.setBrush(Qt.BrushStyle.NoBrush)   # exp.209: chosen
+                p.drawRoundedRect(r.adjusted(-1,-1,1,1),5,5)
             if r.width()>40:
                 p.setPen(ink); p.setFont(small)
                 p.drawText(r.adjusted(7,0,-5,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,text)
@@ -1262,10 +1289,11 @@ class StageTimeline(QFrame):
                     p.drawRoundedRect(QRectF(self._x(start)-1,row.top()+row.height()*.2,
                                              self._x(start+lead+busy+tail)-self._x(start)+2,row.height()*.6),3,3)
                 # exp.147: each element's hand: glides in, draws, glides back (faint)
+                gone=bool(rest) and self.element_flags.get(rest[0],{}).get('hand_off')   # exp.209: E
                 for a,b,alpha in ((start,start+lead,120),(start+lead,start+lead+busy,210),
                                   (start+lead+busy,start+lead+busy+tail,120)):
                     if b-a<=1e-6: continue
-                    col=QColor(c['hold']); col.setAlpha(alpha)
+                    col=QColor(c['border_strong'] if gone else c['hold']); col.setAlpha(alpha//2 if gone else alpha)
                     p.setPen(Qt.PenStyle.NoPen); p.setBrush(col)
                     p.drawRect(QRectF(self._x(a),row.top()+row.height()*.35,max(1.,self._x(b)-self._x(a)),row.height()*.3))
             p.restore()
@@ -1356,7 +1384,7 @@ class StageTimeline(QFrame):
             k,label,start,secs,track,parts=item
             if secs<=0: continue
             rect=self._item_rect(item)
-            current=k==self.current_scene
+            current=k==self.current_scene and not self._something_else_chosen()   # exp.209: one choice
             dragged=self._ghost is not None and self._ghost[0]==k
             parts=[(key,v) for key,v in (parts or ()) if v>0] or [('draw',secs)]
             whole=sum(v for _,v in parts) or 1.
@@ -1364,6 +1392,7 @@ class StageTimeline(QFrame):
             p.save(); p.setClipPath(path,Qt.ClipOperation.IntersectClip)
             hidden=self.flag(track,'hide') or self.element_flags.get(k,{}).get('hidden')
             if hidden: p.setOpacity(.35)                      # hidden: not in the video
+            elif self.element_flags.get(k,{}).get('art_off'): p.setOpacity(.5)   # exp.209: picture off (E)
             x=rect.left()
             for key,v in parts:
                 w=rect.width()*v/whole
@@ -1385,7 +1414,7 @@ class StageTimeline(QFrame):
                         gx=ex-5
                         p.drawLine(QPointF(gx,rect.center().y()-6),QPointF(gx,rect.center().y()+6))
                         p.drawLine(QPointF(gx-3,rect.center().y()-6),QPointF(gx-3,rect.center().y()+6))
-            marks=[w for w,key in (('hide','hidden'),('mute','muted')) if self.element_flags.get(k,{}).get(key)]
+            marks=[w for w,key in (('hide','hidden'),('mute','muted'),('hide','art_off')) if self.element_flags.get(k,{}).get(key)]
             for n,which in enumerate(marks):           # this element hidden / muted on its own
                 self._mark_icon(p,QPointF(rect.right()-12-n*20,rect.center().y()),which)
             if rect.width()>=30:
@@ -1448,13 +1477,18 @@ class StageTimeline(QFrame):
             event.accept(); return
         pos=event.position()
         if self._bg_shown() and self._bg_row().adjusted(0,-2,0,2).contains(pos) and pos.x()>=self.LEFT:
-            # exp.207: the Background row: drag a cut, or click a piece for its menu
-            cut=self._bg_cut_at(pos) if event.button()==Qt.MouseButton.LeftButton else None
+            # exp.207: the Background row. exp.209 (the user): a click chooses a piece like any
+            # clip (then Ctrl+B cuts it, E hides it); the right button opens its menu.
+            seconds=max(0.,min(self.total(),self._sec(pos.x())))
+            if event.button()==Qt.MouseButton.RightButton:
+                self._choose_only('bg'); self.selected_bg=self._bg_piece_at(seconds); self.update()
+                self.background_menu.emit(-1,seconds,event.globalPosition().toPoint())
+                event.accept(); return
+            cut=self._bg_cut_at(pos)
             if cut is not None:
                 self._drag=('bgcut',cut); self.setCursor(Qt.CursorShape.SizeHorCursor)
             else:
-                self.background_menu.emit(-1,max(0.,min(self.total(),self._sec(pos.x()))),
-                                          event.globalPosition().toPoint())
+                self._choose_only('bg'); self.selected_bg=self._bg_piece_at(seconds); self.update()
             event.accept(); return
         if event.button()==Qt.MouseButton.RightButton:
             clip,_=self._clip_at(pos)
@@ -1519,18 +1553,17 @@ class StageTimeline(QFrame):
         # a clip on the Hand row comes before the elements' hand bars under it.
         hand_k=self._hand_mark_at(pos) if self.items and self._clip_at(pos)[0] is None else None
         if hand_k is not None:
+            self._choose_only('hand')
             self.selected_hand=hand_k
-            if self.selected_camera:
-                self.selected_camera=None; self.camera_selected.emit('')
             self.update(); event.accept(); return
-        if getattr(self,'selected_hand',None) is not None:
-            self.selected_hand=None; self.update()
+        if getattr(self,'selected_hand',None) is not None or getattr(self,'selected_bg',None) is not None:
+            self.selected_hand=None; self.selected_bg=None; self.update()
         other=self._other_at(pos) if not self._overlay_at(pos)[0] else None
         if other is not None:
             self.other_overlay_clicked.emit(other[0],str(other[1].get('id')))
             event.accept(); return
         item,part=self._overlay_at(pos)
-        if item is not None and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+        if item is not None and event.modifiers() & (Qt.KeyboardModifier.ControlModifier|Qt.KeyboardModifier.ShiftModifier):
             self.overlay_toggled.emit(str(item.get('id')))
             self.update(); event.accept(); return
         if item is not None:

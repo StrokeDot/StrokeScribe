@@ -4102,11 +4102,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         memo=self.__dict__.setdefault('_memo',{})
         key=('layout',tuple(lengths),tuple(joins),tuple((s.get('start'),s.get('track'),repr((s.get('board') or {}).get('view'))) for s in self.scenes))
         already=self.already_elements(width,height)
-        key=key+(repr(sorted(getattr(self,'track_flags',{}).items())),tuple(sorted(self.hidden_elements())),tuple(already))
+        key=key+(repr(sorted(getattr(self,'track_flags',{}).items())),tuple(sorted(self.hidden_elements())),tuple(already),
+                 tuple((bool(s.get('art_off')),bool(s.get('hand_off'))) for s in self.scenes))
         if key not in memo:
             lay=layout(lengths,joins,[s.get('start') for s in self.scenes],
                        [s.get('track') or 0 for s in self.scenes],already)
-            if self.hidden_elements(): lay.sequential=False    # drawn moment by moment, without them
+            if self.hidden_elements() or any(s.get('art_off') or s.get('hand_off') for s in self.scenes):
+                lay.sequential=False                             # drawn moment by moment, without them
             import board as _board
             if _board.has_views(self.scenes): lay.sequential=False   # exp.200: the cameras that were set
             memo[key]=lay
@@ -4234,36 +4236,43 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         return isinstance(QApplication.focusWidget(),(QLineEdit,QPlainTextEdit,QTextEdit,QAbstractSpinBox))
 
     def cut_at_playhead(self):
+        """exp.209 (the user): Ctrl+B cuts the chosen piece of the Background row at the playhead
+        (for now only the Background row)."""
         if self.typing_now() or not self.drawing: return
-        import copy, uuid
-        import overlays as _ov
-        t=self.video_seconds()
-        item=self.find_overlay(self.selected_overlay) if self.selected_overlay else None
-        if item is not None:
-            if item.get('kind')=='eraser':
-                self.status.setText('An Eraser clip cannot be cut: drag its ends to change it.'); return
-            parts=_ov.cut(copy.deepcopy(item),t,uuid.uuid4().hex[:10])
-            if parts is None:
-                self.status.setText('Put the playhead inside the chosen clip to cut it (Ctrl+B).'); return
-            self.record_structure('cut clip')
-            i=self.overlays.index(item)
-            self.overlays[i:i+1]=list(parts)
-            self.selected_overlay=parts[1]['id']
-            self.project_changes.mark_changed()
-            self.status.setText(f'Cut at {t:.2f} s.')
-            self.sync_titles_timeline(); self.refresh(); return
-        if getattr(self,'selected_camera',None):
-            self.status.setText('A camera clip cannot be cut: drag its ends, or add another camera at the playhead.'); return
         import background_track
+        tl=self.stage_timeline
+        if getattr(tl,'selected_bg',None) is None:
+            self.status.setText('Ctrl+B: click a piece of the Background row first, then Ctrl+B cuts it at the playhead.')
+            return
+        t=self.video_seconds()
         pieces=background_track.normalise(getattr(self,'background_pieces',[]) or [])
-        if len(background_track.split(pieces,t))!=len(pieces or [0]):
-            self.change_background_pieces(lambda p: background_track.split(p,t),'cut background')
-            self.status.setText(f'Background row cut at {t:.2f} s. Click a piece to change its background.')
-        else:
-            self.status.setText('Ctrl+B cuts the chosen text or picture clip (or the Background row) at the playhead.')
+        after=background_track.split(pieces,t)
+        if len(after)==len(pieces or [0]):
+            self.status.setText('Ctrl+B: the playhead is on a cut already (or too close to one).'); return
+        self.change_background_pieces(lambda p: background_track.split(p,t),'cut background')
+        tl.selected_bg=background_track.index_at(self.background_pieces,t)
+        tl.update()
+        self.status.setText(f'Background cut at {t:.2f} s. Right-click a piece to change its background; E hides it.')
 
     def switch_selected(self):
+        """exp.209 (the user, like Filmora): E switches the chosen thing off and on: a hand bar
+        (that element's hand is not seen), a background piece (transparent), a text or picture,
+        a camera clip (it does nothing), or else the chosen element's picture (its hand still
+        writes it, unseen)."""
         if self.typing_now() or not self.drawing: return
+        tl=self.stage_timeline
+        hand_k=getattr(tl,'selected_hand',None)
+        if hand_k is not None and 0<=hand_k<len(self.scenes):
+            return self.switch_scene_flag(hand_k,'hand_off','The hand of element {k}')
+        if getattr(tl,'selected_bg',None) is not None:
+            import background_track
+            pieces=background_track.normalise(getattr(self,'background_pieces',[]) or [])
+            i=max(0,tl.selected_bg)
+            hidden=bool(pieces[i].get('hidden')) if pieces and i<len(pieces) else False
+            self.change_background_pieces(lambda p: background_track.set_hidden(p,i,not hidden),'hide background')
+            tl.selected_bg=i if self.background_pieces else -1; tl.update()
+            self.status.setText('Background piece '+('shown again.' if hidden else 'hidden (transparent). E shows it again.'))
+            return
         item=self.find_overlay(self.selected_overlay) if self.selected_overlay else None
         if item is not None:
             self.record_structure('switch clip')
@@ -4281,7 +4290,22 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.status.setText(f'{clip.get("kind")} camera: '+('switched off (E switches it on again).' if clip.get('off') else 'on.'))
             self.sync_camera_timeline(); self.refresh(); return
         if len(self.scenes)>1:
-            self.toggle_element_flag(self.scene_index,'hide')
+            self.switch_scene_flag(self.scene_index,'art_off','The picture of element {k}')
+
+    def switch_scene_flag(self,k,key,what):
+        self.record_structure('switch '+key)
+        scene=self.scenes[k]
+        scene[key]=not scene.get(key)
+        if not scene[key]: scene.pop(key)
+        self.project_changes.mark_changed()
+        self._scene_cache={}; self.__dict__.setdefault('_memo',{}).clear()
+        name=what.format(k=k+1)
+        if key=='art_off':
+            self.status.setText(name+(' is switched off: its hand still draws it, unseen. E shows it again.'
+                                      if scene.get(key) else ' is shown again.'))
+        else:
+            self.status.setText(name+(' is switched off. E shows it again.' if scene.get(key) else ' is shown again.'))
+        self.fill_scenes(); self.refresh()
 
     def toggle_element_flag(self,k,which):
         if not 0<=k<len(self.scenes): return
@@ -4325,8 +4349,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         items,moves=self.timeline_items()
         tl.set_scenes(segments,current=self.scene_index,items=items,moves=moves,
                       flags=getattr(self,'track_flags',{}),
-                      element_flags={k:{key:True for key in ('hidden','muted') if s.get(key)}
-                                     for k,s in enumerate(self.scenes) if s.get('hidden') or s.get('muted')})
+                      element_flags={k:{key:True for key in ('hidden','muted','art_off','hand_off') if s.get(key)}
+                                     for k,s in enumerate(self.scenes) if s.get('hidden') or s.get('muted') or s.get('art_off') or s.get('hand_off')})
         self.sync_titles_timeline(force=True)
         tl.cam_marks=self.element_camera_marks(items)
         tl.set_audio(self.timeline_audio())
@@ -4404,6 +4428,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             drawing,options,length,camera=self.preview_scene(k,width,height)
             camera=self.video_camera(k,camera,length)            # exp.119: the camera clips
             options=dict(options,**self.hand_video(k))           # exp.147: the Hand row
+            if self.scenes[k].get('art_off'): options['art_off']=True     # exp.209: E, the picture off
+            if self.scenes[k].get('hand_off'): options['hand_off']=True   # E on its Hand bar
             tool=self.eraser_tool()
             if tool is not None: options['eraser_tool']=tool     # exp.196: one for the video
             elements.append(dict(drawing=drawing,options=options,camera=camera,uid=self.scenes[k].get('uid'),
@@ -5761,7 +5787,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 repr(getattr(self,'background_color',None)),self.hand_rest_settings(),
                 # exp.205 (the user: every way of moving looked the same): the element's own glide
                 # (how long, how it moves) is part of its frames; the old ones were shown.
-                repr(self.scenes[k].get('glide')) if 0<=k<len(self.scenes) else None)
+                repr(self.scenes[k].get('glide')) if 0<=k<len(self.scenes) else None,
+                (bool(self.scenes[k].get('art_off')),bool(self.scenes[k].get('hand_off'))) if 0<=k<len(self.scenes) else None)
 
     def hand_rest_settings(self):
         """exp.143: the hand waiting in a corner, for every element of the video."""
@@ -6686,7 +6713,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             scene_list=[dict(state=copy.deepcopy(s['state']),transition=s['transition'],
                              transition_seconds=s['transition_seconds'],board=s.get('board'),
                              start=s.get('start'),track=s.get('track') or 0,
-                             hidden=bool(self.track_flag(s,'hidden')),muted=bool(self.track_flag(s,'muted')))
+                             hidden=bool(self.track_flag(s,'hidden')),muted=bool(self.track_flag(s,'muted')),
+                             art_off=bool(s.get('art_off')),hand_off=bool(s.get('hand_off')))
                         for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
             self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand,copy.deepcopy(self.visible_titles()),
