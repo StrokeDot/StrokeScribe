@@ -212,5 +212,61 @@ class SourceEditing:
             self.select_scene(index)
             if index!=self.scene_index:return
         self.playing=False
+        if stage=='draw' and getattr(self.drawing,'source_kind',None) in ('font','lettering'):
+            return self.edit_text_source()          # exp.208: a text is changed as text, not as a picture
         from source_editor import SourceEditor
         SourceEditor(self,stage).exec()
+
+    def edit_text_source(self):
+        """exp.208 (the user: double-clicking Draw of a text asked for an SVG): the words, the
+        font, how detailed the letters are and how long the hand takes to write them."""
+        from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
+                                       QLabel, QPlainTextEdit, QSpinBox)
+        dialog=QDialog(self); dialog.setWindowTitle('Edit text'); dialog.setMinimumWidth(460)
+        form=QFormLayout(dialog)
+        known=getattr(self,'_letter_known',False)
+        start=self.text.toPlainText()
+        if not known and 0<=self.scene_index<len(self.scenes):
+            start=self.scenes[self.scene_index].get('name') or start     # made before its words were kept
+        words=QPlainTextEdit(start); words.setMinimumHeight(90)
+        form.addRow('Text',words)
+        font=QComboBox()
+        for i in range(self.font_select.count()):
+            font.addItem(self.font_select.itemText(i),self.font_select.itemData(i))
+        font.setCurrentIndex(self.font_select.currentIndex())
+        form.addRow('Font',font)
+        detail=QSpinBox(); detail.setRange(int(self.font_size.minimum()),int(self.font_size.maximum()))
+        detail.setValue(int(self.font_size.value()))
+        detail.setToolTip('How detailed the letters of a real font are traced (the built-in pen has none).')
+        form.addRow('Letter detail',detail)
+        def builtin_changed():
+            detail.setEnabled(font.currentText().strip() not in ('','Built-in single-line pen'))
+        font.currentIndexChanged.connect(lambda i: builtin_changed()); builtin_changed()
+        seconds=QDoubleSpinBox(); seconds.setRange(self.duration.minimum(),self.duration.maximum())
+        seconds.setSingleStep(.1); seconds.setDecimals(2); seconds.setSuffix(' s'); seconds.setValue(self.duration.value())
+        form.addRow('Draw time',seconds)
+        note=QLabel('The ink colour and the place on the page stay as they are.' if known else
+                    'This text was made before StrokeScribe kept its words and font: check the words '
+                    'and choose its font again.'); note.setWordWrap(True)
+        form.addRow(note)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); form.addRow(buttons)
+        if dialog.exec()!=QDialog.DialogCode.Accepted: return False
+        text=words.toPlainText()
+        if not text.strip(): return False
+        changed=(not known or text!=self.text.toPlainText() or font.currentIndex()!=self.font_select.currentIndex()
+                 or detail.value()!=int(self.font_size.value()))
+        self.duration.setValue(seconds.value())
+        if changed:
+            for widget,setter,value in ((self.text,'setPlainText',text),(self.font_select,'setCurrentIndex',font.currentIndex()),
+                                        (self.font_size,'setValue',detail.value())):
+                widget.blockSignals(True); getattr(widget,setter)(value); widget.blockSignals(False)
+            self.font_size.setEnabled(font.currentText().strip() not in ('','Built-in single-line pen'))
+            position=self.position
+            self.letter()
+            self.position=position
+            if 0<=self.scene_index<len(self.scenes):
+                self.scenes[self.scene_index]['name']=text.strip().splitlines()[0][:30]
+        self.refresh()
+        self.status.setText('Text changed.')
+        return True

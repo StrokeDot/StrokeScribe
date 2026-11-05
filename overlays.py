@@ -109,7 +109,7 @@ def state_at(item, t):
     # exp.121: with no way out (None), it stays after its clip, like the drawings do, until
     # the camera moves to another page ('_until', worked out by the window from the timeline).
     until = start + length
-    if item.get('effect_out', 'None') == 'None':
+    if item.get('effect_out', 'None') == 'None' and not item.get('cut_end'):   # exp.208: cut (Ctrl+B) ends there
         until = max(until, float(item.get('_until', until)))
     if t < start or t > until:
         return None
@@ -132,9 +132,23 @@ def end_of(item):
 def shown_until(item):
     """The clip's end, or later when it stays on screen (no way out: exp.121)."""
     end = end_of(item)
-    if item.get('effect_out', 'None') == 'None':
+    if item.get('effect_out', 'None') == 'None' and not item.get('cut_end'):
         end = max(end, float(item.get('_until', end)))
     return end
+
+
+def cut(item, seconds, new_id):
+    """exp.208 (the user, like Filmora's Ctrl+B): the clip in two at `seconds`: the first
+    part ends there with no way out, the second goes on from there with no way in (so
+    nothing changes on screen at the cut). None when `seconds` is not inside it."""
+    start, end = float(item.get('start', 0)), end_of(item)
+    if not start + .1 <= float(seconds) <= end - .1:
+        return None
+    first = dict(item, duration=round(float(seconds) - start, 3), effect_out='None', cut_end=True)
+    second = dict(item, id=new_id, start=round(float(seconds), 3), duration=round(end - float(seconds), 3),
+                  effect_in='None')
+    second.pop('_until', None); first.pop('_until', None)
+    return first, second
 
 
 # ------------------------------------------------------------ pictures

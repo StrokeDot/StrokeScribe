@@ -1216,7 +1216,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def live_clips(self):
         """The camera clips the preview uses (exp.125: all but the one being aimed)."""
-        clips=list(getattr(self,'cameras',None) or ())
+        clips=[c for c in (getattr(self,'cameras',None) or ()) if not c.get('off')]   # exp.208: E switches a clip off
         if self.camera_editing():
             # exp.128: aiming a clip, the preview shows the page as it is without camera
             # clips (the frame you drag is where the camera goes on that page).
@@ -1610,7 +1610,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             start=0.
         return [dict(copy.deepcopy(o),start=float(o.get('start',0))-start,
                      **({'_until':float(o['_until'])-start} if o.get('_until') is not None else {}))
-                for o in self.visible_titles()]
+                for o in self.visible_titles()]   # (exp.208: not the ones switched off with E)
 
     def titles_layer(self,width,height,seconds=None):
         """The texts / pictures on top at the playhead, on a clear picture (None: nothing).
@@ -1886,7 +1886,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.mark_title_holds()
         hidden=set(getattr(self,'text_hidden',set()))
         hidden|={int(t) for t,f in (getattr(self,'track_flags',{}) or {}).items() if f.get('hidden')}
-        return [o for o in self.overlays if int(o.get('track',0)) not in hidden]
+        return [o for o in self.overlays if int(o.get('track',0)) not in hidden and not o.get('off')]   # exp.208: E
 
     def mark_title_holds(self):
         """exp.123: a text lives on its page like the drawings: the page the camera shows when
@@ -2500,7 +2500,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                'drawing':drawing_to_dict(self.drawing),
                'settings':self.settings_state(),
                'hand':hand_to_project(getattr(self,'hand_builtin',False),self.hand),
-               'letter':{'ink':self.letter_ink_color,'background':self.letter_bg_color},
+               'letter':self.letter_state(),
                'audio':str(self.audio_path or '')}
         if image_source and self.image_result:
             r=self.image_result
@@ -3015,6 +3015,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.update_sound_buttons()
         letter=data.get('letter',{})
         self.letter_ink_color=letter.get('ink',self.letter_ink_color)
+        self.restore_letter_words(letter)                 # exp.208
         if 'background_color' not in keep:
             self.background_color=settings.get('background_color') or getattr(self,'background_color',None)
         old_bg=letter.get('background')
@@ -3560,12 +3561,36 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.playing=False
         self.store_scene(thumbnail=False)
         members=self.page_members()
-        spot=self.free_spot(self.page_occupancy(members))
+        current_board=copy.deepcopy(self.scenes[self.scene_index].get('board'))
+        view=(current_board or {}).get('view')
+        used=self.page_occupancy(members)
+        sizes=(.6,.55,.5,.42,.34); centre=(0.,0.); share=1.
+        if view:
+            # exp.208 (the user: the text went outside what the camera showed, and the camera
+            # pulled back to show it): the new element goes in a free place of what the camera
+            # of this element shows, at a size that fits there.
+            try:
+                aspect=self.board_aspect()
+                frame=self.board_frames()[self.scene_index]
+                import board as _board
+                fl,ft,fr,fb=_board.rect(frame,aspect); vl,vt,vr,vb=_board.rect(view,aspect)
+                h,w=used.shape
+                x0=int(max(0,min(w,round((vl-fl)/(fr-fl)*w)))); x1=int(max(0,min(w,round((vr-fl)/(fr-fl)*w))))
+                y0=int(max(0,min(h,round((vt-ft)/(fb-ft)*h)))); y1=int(max(0,min(h,round((vb-ft)/(fb-ft)*h))))
+                if x1-x0>8 and y1-y0>8:
+                    outside=used.copy(); outside[:]=True; outside[y0:y1,x0:x1]=used[y0:y1,x0:x1]
+                    used=outside
+                    share=min(1.,(x1-x0)/w)
+                    sizes=tuple(s*share for s in sizes)
+                    centre=(round(((x0+x1)/2/w-.5)*100,1),round(((y0+y1)/2/h-.5)*100,1))
+            except Exception as exc:
+                import applog; applog.error('Free place in the camera',exc)
+        spot=self.free_spot(used,sizes)
         # exp.200 (the user): what is already on the page is never moved or made smaller.
         # With no free place, the new picture goes in the middle, smaller, to be dragged
         # where you want it (and Set camera chooses what the camera shows).
         if spot is None:
-            spot=(40.,0.,0.)
+            spot=(40.*share,centre[0],centre[1])
         self.record_structure('add picture on the same page')
         self._leave_scene()
         self._stash_history()
@@ -3576,6 +3601,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if 'erase_mode' in settings: settings['erase_mode']='Off'   # the page stays until it is finished
         new=dict(state=state,transition=current['transition'],transition_seconds=current['transition_seconds'],
                  name=f'Picture {self.scene_index+2}',thumb=None)
+        if current_board: new['board']=current_board        # exp.208: the same page and camera
         current['transition']='Same page'
         self.scenes.insert(self.scene_index+1,new)
         self._base_cache=OrderedDict()
@@ -3730,6 +3756,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         except Exception:
             return 9/16
 
+    def edited_place(self):
+        """exp.208: {k: (picture_x, picture_y)} of the element being edited (board.views)."""
+        try:
+            return {self.scene_index:(self.picture_x.value(),self.picture_y.value())} if self.drawing else {}
+        except Exception:
+            return {}
+
     def board_frames(self):
         """(cx, cy, w) of every scene on the board."""
         import board
@@ -3752,12 +3785,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import board
         memo=self.__dict__.setdefault('_memo',{})
         mkey=('world',width,height,self._view_token(),
-              tuple((s['transition'],repr(s.get('board'))) for s in self.scenes))
+              tuple((s['transition'],repr(s.get('board'))) for s in self.scenes),repr(self.edited_place()))
         if mkey in memo: return memo[mkey]
         items=[]
         import board as _board
         frames=self.board_frames()
-        views=_board.views(self.scenes,frames)                 # exp.200: Set camera
+        views=_board.views(self.scenes,frames,self.edited_place())    # exp.200: Set camera
         for k,frame in enumerate(frames):
             drawing,options,_,_=self.preview_scene(k,width,height)
             key=self.edited_key() if k==self.scene_index else ('scene',id(self.scenes[k]['state']))
@@ -4193,6 +4226,62 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """Hidden / muted: by its track, or the element on its own (exp.106)."""
         return bool(scene.get(key)) or \
             (getattr(self,'track_flags',{}) or {}).get(scene.get('track') or 0,{}).get(key,False)
+
+    # exp.208 (the user, like Filmora): Ctrl+B cuts the chosen clip at the playhead, E switches
+    # the chosen clip off (a camera clip does nothing, a picture or text is not seen) and on.
+    def typing_now(self):
+        from PySide6.QtWidgets import QLineEdit, QPlainTextEdit, QTextEdit, QAbstractSpinBox
+        return isinstance(QApplication.focusWidget(),(QLineEdit,QPlainTextEdit,QTextEdit,QAbstractSpinBox))
+
+    def cut_at_playhead(self):
+        if self.typing_now() or not self.drawing: return
+        import copy, uuid
+        import overlays as _ov
+        t=self.video_seconds()
+        item=self.find_overlay(self.selected_overlay) if self.selected_overlay else None
+        if item is not None:
+            if item.get('kind')=='eraser':
+                self.status.setText('An Eraser clip cannot be cut: drag its ends to change it.'); return
+            parts=_ov.cut(copy.deepcopy(item),t,uuid.uuid4().hex[:10])
+            if parts is None:
+                self.status.setText('Put the playhead inside the chosen clip to cut it (Ctrl+B).'); return
+            self.record_structure('cut clip')
+            i=self.overlays.index(item)
+            self.overlays[i:i+1]=list(parts)
+            self.selected_overlay=parts[1]['id']
+            self.project_changes.mark_changed()
+            self.status.setText(f'Cut at {t:.2f} s.')
+            self.sync_titles_timeline(); self.refresh(); return
+        if getattr(self,'selected_camera',None):
+            self.status.setText('A camera clip cannot be cut: drag its ends, or add another camera at the playhead.'); return
+        import background_track
+        pieces=background_track.normalise(getattr(self,'background_pieces',[]) or [])
+        if len(background_track.split(pieces,t))!=len(pieces or [0]):
+            self.change_background_pieces(lambda p: background_track.split(p,t),'cut background')
+            self.status.setText(f'Background row cut at {t:.2f} s. Click a piece to change its background.')
+        else:
+            self.status.setText('Ctrl+B cuts the chosen text or picture clip (or the Background row) at the playhead.')
+
+    def switch_selected(self):
+        if self.typing_now() or not self.drawing: return
+        item=self.find_overlay(self.selected_overlay) if self.selected_overlay else None
+        if item is not None:
+            self.record_structure('switch clip')
+            item['off']=not item.get('off')
+            if not item['off']: item.pop('off')
+            self.project_changes.mark_changed()
+            self.status.setText(f'{item.get("name") or "Clip"}: '+('switched off (E switches it on again).' if item.get('off') else 'on.'))
+            self.sync_titles_timeline(); self.refresh(); return
+        clip=self.find_camera(self.selected_camera) if getattr(self,'selected_camera',None) else None
+        if clip is not None:
+            self.record_structure('switch camera')
+            clip['off']=not clip.get('off')
+            if not clip['off']: clip.pop('off')
+            self.project_changes.mark_changed()
+            self.status.setText(f'{clip.get("kind")} camera: '+('switched off (E switches it on again).' if clip.get('off') else 'on.'))
+            self.sync_camera_timeline(); self.refresh(); return
+        if len(self.scenes)>1:
+            self.toggle_element_flag(self.scene_index,'hide')
 
     def toggle_element_flag(self,k,which):
         if not 0<=k<len(self.scenes): return
@@ -4655,6 +4744,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.color_note.setText('Lettering • no image painting')
             self.source_type.setCurrentIndex(0)
             self.update_project_title('Lettering — '+self.text.toPlainText()[:16].replace('\n',' '))
+            self._letter_known=True                       # exp.208: its words and font are kept
             self.set_drawing(drawing)
         except Exception as e: QMessageBox.warning(self,'Lettering',str(e))
 
@@ -4682,6 +4772,33 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.position=position
         self.slider.blockSignals(True); self.slider.setValue(round(position*1000)); self.slider.blockSignals(False)
         self.refresh()
+
+    def letter_state(self):
+        """exp.208 (the user: the Text panel showed "Hello world!" for every text): a text
+        element keeps its words, font and letter detail (only its strokes were kept)."""
+        out={'ink':self.letter_ink_color,'background':self.letter_bg_color}
+        if getattr(self.drawing,'source_kind',None) in ('font','lettering') and getattr(self,'_letter_known',False):
+            out.update(text=self.text.toPlainText(),font=self.font_select.currentText(),
+                       font_path=self.font_select.currentData(),detail=int(self.font_size.value()))
+        return out
+
+    def restore_letter_words(self,letter):
+        """The Text panel shows this element's own words and font (nothing is written again)."""
+        self._letter_known=bool(letter) and 'text' in letter
+        if not self._letter_known: return
+        widgets=(self.text,self.font_select,self.font_size)
+        for widget in widgets: widget.blockSignals(True)
+        try:
+            self.text.setPlainText(letter.get('text') or '')
+            name=letter.get('font') or 'Built-in single-line pen'
+            i=self.font_select.findText(name)
+            if i<0 and letter.get('font_path'):
+                self.font_select.addItem(name,letter.get('font_path')); i=self.font_select.count()-1
+            if i>=0: self.font_select.setCurrentIndex(i)
+            if letter.get('detail'): self.font_size.setValue(int(letter['detail']))
+            self.font_size.setEnabled(self.font_select.currentText()!='Built-in single-line pen')
+        finally:
+            for widget in widgets: widget.blockSignals(False)
 
     def apply_letter_style(self,drawing=None):
         drawing=drawing or self.drawing
@@ -5657,7 +5774,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """exp.147: render options for the Hand row: its clips (the hand slides out of the
         picture and back) and where element k starts in the whole video."""
         import camera_clips
-        sig=camera_clips.hand_signature(list(getattr(self,'cameras',()))+self.eraser_hand_clips())
+        sig=camera_clips.hand_signature([c for c in getattr(self,'cameras',()) if not c.get('off')]+self.eraser_hand_clips())
         if not sig: return {}
         start=0.
         if k is not None:
@@ -6563,7 +6680,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         options['overlays']=self.titles_for_element()      # this element alone: its time (exp.116)
         if getattr(self,'cameras',None) and len(self.scenes)<2:      # exp.119: the Camera track
             import camera_clips
-            options['video_camera']=(0.,camera_clips.signature(self.cameras),tuple(self.camera_moves()))
+            options['video_camera']=(0.,camera_clips.signature([c for c in self.cameras if not c.get('off')]),tuple(self.camera_moves()))
         if len(self.scenes)>1 and self.export_all_scenes.isChecked():
             self._leave_scene()
             scene_list=[dict(state=copy.deepcopy(s['state']),transition=s['transition'],
@@ -6573,7 +6690,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                         for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
             self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand,copy.deepcopy(self.visible_titles()),
-                                      copy.deepcopy(getattr(self,'cameras',[])))
+                                      copy.deepcopy([c for c in getattr(self,'cameras',[]) if not c.get('off')]))
         else:
             self.worker=None
         if self.worker is None: self.worker=Exporter(copy.deepcopy(self.drawing),folder,options,
