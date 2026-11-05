@@ -234,6 +234,8 @@ class StageTimeline(QFrame):
     move_clicked=Signal(int)            # whole video: a camera move clicked (the move after element k)
     move_shift=Signal(int,float)        # exp.167: a camera move dragged (k, seconds): the elements after it move too
     element_flag=Signal(int,str)        # whole video: one element's 'mute' or 'hide' (right-click menu)
+    background_menu=Signal(int,float,object)   # exp.207: Background row clicked: piece, seconds, screen point
+    background_cut=Signal(int,float,bool)      # exp.207: a cut dragged: piece, its new start, let go
 
     stage_source_edit=Signal(str,int)   # Draw/Paint source editor, exact clicked element
 
@@ -429,7 +431,66 @@ class StageTimeline(QFrame):
     def _content_height(self):
         n=self.lanes()
         stack=(self.CAM_H+4+(self.CLIP_H+3)*n) if n else (self.CLIP_H+4)
-        return int(22+6+stack+(self.LANE_H+3)*self.text_lanes()+self.AUDIO_H+10+(12 if self.items else 0))
+        return int(22+6+stack+(self.LANE_H+3)*self.text_lanes()+self.AUDIO_H+10+(12 if self.items else 0)
+                   +((self.BG_H+4) if self._bg_shown() else 0))
+
+    # ------------------------------------------------------------ exp.207: Background row
+    BG_H=22.
+
+    def set_background_row(self, rows):
+        """[(piece index or None, start, end, swatch colour or None (transparent), label)];
+        None: no Background row (This element of a longer video)."""
+        rows=[tuple(r) for r in rows] if rows else None
+        if rows!=getattr(self,'bg_rows',None):
+            had=self._bg_shown()
+            self.bg_rows=rows
+            if had!=self._bg_shown(): self._fit_height()
+            self.update()
+
+    def _bg_shown(self):
+        return bool(getattr(self,'bg_rows',None))
+
+    def _bg_row(self):
+        return QRectF(self.LEFT,self._stack_bottom()+4+(self.LANE_H+3)*self.text_lanes(),self._width(),self.BG_H)
+
+    def _bg_cut_at(self, pos):
+        """The piece whose starting cut is under `pos` (to drag it), or None."""
+        if not self._bg_shown() or not self._bg_row().adjusted(0,-2,0,2).contains(pos): return None
+        for i,start,end,_,_ in self.bg_rows:
+            if i and abs(self._x(start)-pos.x())<=self.EDGE: return i
+        return None
+
+    def _paint_background_row(self, p, c, small):
+        row=self._bg_row()
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track'])); p.drawRoundedRect(row,7,7)
+        chip=QRectF(6,row.top(),self.HEADER-12,row.height())
+        if self.items:
+            p.setBrush(QColor(c['track'])); p.drawRoundedRect(chip,7,7)
+            self._draw_icon(p,'image',QPointF(chip.left()+12,chip.center().y()),c['muted'],13)
+            p.setPen(QColor(c['muted'])); p.setFont(small)
+            p.drawText(chip.adjusted(24,0,-4,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,'Background')
+        p.save(); p.setClipRect(QRectF(self.LEFT,row.top(),self._width(),row.height()))
+        for i,start,end,colour,text in self.bg_rows:
+            x0,x1=self._x(start),self._x(end)
+            r=QRectF(x0+1,row.top()+2,max(4.,x1-x0-2),row.height()-4)
+            if colour is None:                         # transparent: a small checker
+                p.save(); p.setClipRect(r)
+                p.fillRect(r,QColor('#d9d9de'))
+                for yy in range(int(r.top()),int(r.bottom())+1,6):
+                    for xx in range(int(r.left()),int(r.right())+1,6):
+                        if ((xx-int(r.left()))//6+(yy-int(r.top()))//6)%2==0: p.fillRect(QRectF(xx,yy,6,6),QColor('#a9a9b2'))
+                p.restore()
+                ink=QColor('#202028')
+            else:
+                fill=QColor(colour); p.setBrush(fill)
+                p.setPen(QPen(QColor(c['border_strong']),1)); p.drawRoundedRect(r,5,5)
+                ink=QColor('#202028') if fill.lightness()>140 else QColor('#f2f2f5')
+            if r.width()>40:
+                p.setPen(ink); p.setFont(small)
+                p.drawText(r.adjusted(7,0,-5,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,text)
+            if i:                                      # the cut at its start: drag it
+                p.setPen(QPen(QColor(c['accent']),2)); p.drawLine(QPointF(x0,row.top()+1),QPointF(x0,row.bottom()-1))
+        p.restore()
 
     def _fit_height(self):
         need=self._content_height()
@@ -823,6 +884,7 @@ class StageTimeline(QFrame):
         n=0 if self.items else self.tracks()          # whole video: text tracks are on top
         lane_top=y
         y+=(self.LANE_H+3)*n if n else 0
+        if self._bg_shown(): y+=self.BG_H+4           # exp.207: the Background row, over the audio
         audio=QRectF(self.LEFT,y,self._width(),(self.AUDIO_H+10) if self.items else
                      max(18.,min(self.AUDIO_H+10,self.height()-y-4)))
         return ruler_h,clips,audio
@@ -1076,6 +1138,8 @@ class StageTimeline(QFrame):
                     p.drawText(r.adjusted(7,0,-6,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
                                icon+str(item.get('name') or '')[:40])
             p.restore()
+        if self._bg_shown():
+            self._paint_background_row(p,c,small)      # exp.207
         # Audio lane.
         if True:
             p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track']))
@@ -1381,6 +1445,15 @@ class StageTimeline(QFrame):
         if self.locked:
             event.accept(); return
         pos=event.position()
+        if self._bg_shown() and self._bg_row().adjusted(0,-2,0,2).contains(pos) and pos.x()>=self.LEFT:
+            # exp.207: the Background row: drag a cut, or click a piece for its menu
+            cut=self._bg_cut_at(pos) if event.button()==Qt.MouseButton.LeftButton else None
+            if cut is not None:
+                self._drag=('bgcut',cut); self.setCursor(Qt.CursorShape.SizeHorCursor)
+            else:
+                self.background_menu.emit(-1,max(0.,min(self.total(),self._sec(pos.x()))),
+                                          event.globalPosition().toPoint())
+            event.accept(); return
         if event.button()==Qt.MouseButton.RightButton:
             clip,_=self._clip_at(pos)
             if clip is not None:
@@ -1547,6 +1620,9 @@ class StageTimeline(QFrame):
         if self.locked:
             event.accept(); return
         pos=event.position()
+        if self._drag and self._drag[0]=='bgcut' and event.buttons() & Qt.MouseButton.LeftButton:
+            self.background_cut.emit(self._drag[1],max(0.,self._sec(pos.x())),False)    # exp.207
+            event.accept(); return
         if self._drag and event.buttons() & Qt.MouseButton.LeftButton:
             kind=self._drag[0]
             if kind=='movechip':
@@ -1751,6 +1827,10 @@ class StageTimeline(QFrame):
         super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self,event):
+        if self._drag and self._drag[0]=='bgcut':
+            i=self._drag[1]; self._drag=None; self.unsetCursor()
+            self.background_cut.emit(i,max(0.,self._sec(event.position().x())),True)    # exp.207
+            event.accept(); return
         if self._drag and self._drag[0]=='movechip':
             _,k,x0,pps,shift=self._drag
             self._drag=None; self.unsetCursor()
@@ -3796,6 +3876,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.other_overlay_clicked.connect(lambda k,oid: w.go_to_overlay(k,oid))
     w.stage_timeline.overlay_toggled.connect(lambda oid: w.toggle_overlay(oid))
     w.stage_timeline.camera_selected.connect(lambda cid: w.select_camera(cid))
+    w.stage_timeline.background_menu.connect(lambda i,seconds,where: w.background_menu(i,seconds,where))    # exp.207
+    w.stage_timeline.background_cut.connect(lambda i,seconds,done: w.background_cut_moved(i,seconds,done))
     w.stage_timeline.camera_changed.connect(lambda cid,start,length: w.move_camera_clip(cid,start,length))
     w.stage_timeline.camera_lane.connect(lambda cid,lane: w.move_camera_lane(cid,lane))
     w.stage_timeline.hand_glide_edit.connect(lambda k: w.edit_hand_glide(k))

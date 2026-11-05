@@ -158,9 +158,11 @@ def backgrounds_from_settings(s):
     from backgrounds import spec
     choice = s.get('preview_background')
     value = spec(choice, s.get('background_color')) if choice is not None else 'transparent'
-    if value == 'transparent':
-        return dict(mp4_background=(s.get('mp4_background') or 'White').lower(), background=None)
-    return dict(mp4_background=value, background=value)
+    out = (dict(mp4_background=(s.get('mp4_background') or 'White').lower(), background=None)
+           if value == 'transparent' else dict(mp4_background=value, background=value))
+    if s.get('background_pieces'):                        # exp.207: the Background row
+        out['background_pieces'] = s['background_pieces']
+    return out
 
 
 def formats_from_settings(s):
@@ -173,7 +175,7 @@ def formats_from_settings(s):
 
 def run_export(drawing, folder, options, mov=False, webm=False, webm_quality=28, keep_png=True,
                mp4=False, mp4_background='white', sound_volume=None, progress=lambda i, n: None,
-               interrupted=lambda: False, background=None):
+               interrupted=lambda: False, background=None, background_pieces=None):
     """Frames, optional soundtrack, then the chosen videos. Returns a summary."""
     from engine import export_frames
     folder = Path(folder)
@@ -199,25 +201,46 @@ def run_export(drawing, folder, options, mov=False, webm=False, webm_quality=28,
         audio = mix(audio, voice['path'], voice['volume'], voice['offset'],
                     timeline_seconds(drawing, options), folder / 'soundtrack.wav')
     return encode_outputs(folder, options['fps'], mov, webm, webm_quality, keep_png, mp4, mp4_background,
-                          audio=audio, progress=progress, interrupted=interrupted, background=background)
+                          audio=audio, progress=progress, interrupted=interrupted, background=background,
+                          background_pieces=background_pieces)
 
 
 def encode_outputs(folder, fps, mov=False, webm=False, webm_quality=28, keep_png=True, mp4=False,
                    mp4_background='white', sound_volume=None, audio=None, progress=lambda i, n: None,
-                   interrupted=lambda: False, background=None):
+                   interrupted=lambda: False, background=None, background_pieces=None):
     """Encode the PNG frames in `folder` into the chosen videos. Returns a summary."""
     from engine import encode_mov, encode_mp4, encode_webm
     folder = Path(folder)
     videos = []
-    for wanted, make in ((webm, lambda: encode_webm(folder, fps, webm_quality, audio, background)),
-                         (mov, lambda: encode_mov(folder, fps, audio, background)),
-                         (mp4, lambda: encode_mp4(folder, fps, mp4_background, audio))):
-        if not wanted:
-            continue
-        if interrupted():
-            raise InterruptedError('Export cancelled; completed files were retained.')
+    source = folder
+    if background_pieces and (webm or mov or mp4):
+        # exp.207: the background changes along the video (Background row): every frame is put
+        # on the background of its moment first; hidden pieces stay transparent (MP4: white).
+        import background_track
         progress(0, 0)
-        videos.append(make())
+        source = background_track.bake(folder, fps, background_pieces, background or 'transparent')
+        background, mp4_background = None, 'white'
+    try:
+        for wanted, make in ((webm, lambda: encode_webm(source, fps, webm_quality, audio, background)),
+                             (mov, lambda: encode_mov(source, fps, audio, background)),
+                             (mp4, lambda: encode_mp4(source, fps, mp4_background, audio))):
+            if not wanted:
+                continue
+            if interrupted():
+                raise InterruptedError('Export cancelled; completed files were retained.')
+            progress(0, 0)
+            made = Path(make())
+            if source != folder:
+                import shutil
+                name = 'animation_backgrounds.mp4' if made.suffix == '.mp4' else made.name
+                target = folder / name
+                shutil.move(str(made), str(target))
+                made = target
+            videos.append(made)
+    finally:
+        if source != folder:
+            import shutil
+            shutil.rmtree(source, ignore_errors=True)
     if videos and not keep_png:
         # Only remove intermediate frames once every selected format encoded
         # successfully. Never remove user-supplied artwork.
