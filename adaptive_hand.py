@@ -7,6 +7,7 @@ stamp. The planner audits coverage and adds real repair strokes before playback.
 from __future__ import annotations
 import bisect
 import hashlib
+import os
 import math
 import numpy as np
 from collections import OrderedDict, deque
@@ -480,9 +481,68 @@ def plan_ready(drawing,image,brush_width=.14,stroke_spacing=.55):
     except Exception:
         return True
 
+def _plan_file(key):
+    """exp.204: where a brush plan is kept between runs (opening a project planned every
+    painted element again: two seconds for two pictures)."""
+    import pickle
+    from preview_cache import default_folder
+    try:
+        from version import APP_VERSION
+    except Exception:
+        APP_VERSION=''
+    name=hashlib.sha1(pickle.dumps((APP_VERSION,key),protocol=4)).hexdigest()[:24]
+    return default_folder().parent/'plan-cache'/f'{name}.plan'
+
+PLAN_FILES=40
+
+def _plan_from_disk(key):
+    import pickle
+    try:
+        path=_plan_file(key)
+        if not path.exists(): return None
+        with open(path,'rb') as f: plan=pickle.load(f)
+        os.utime(path,None)
+        return plan
+    except Exception:
+        return None
+
+def _plan_to_disk(key,plan):
+    import pickle
+    try:
+        path=_plan_file(key)
+        path.parent.mkdir(parents=True,exist_ok=True)
+        tmp=path.with_suffix('.tmp')
+        with open(tmp,'wb') as f: pickle.dump(plan,f,protocol=4)
+        os.replace(tmp,path)
+        files=sorted(path.parent.glob('*.plan'),key=lambda p:p.stat().st_mtime)
+        for old in files[:-PLAN_FILES]: old.unlink(missing_ok=True)
+    except Exception:
+        pass
+
 def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
     key=_plan_key(drawing,image,brush_width,stroke_spacing)
     if key not in _CACHE:
+        disk=PLAN_DISK and _disk_allowed()
+        kept=_plan_from_disk(key) if disk else None
+        if kept is not None:
+            _CACHE[key]=kept
+            if len(_CACHE)>PLAN_CACHE_SIZE: _CACHE.popitem(last=False)
+            return kept
+        _plan_build(drawing,image,brush_width,stroke_spacing,key)
+        if disk: _plan_to_disk(key,_CACHE[key])
+    else:
+        _CACHE.move_to_end(key)
+    return _CACHE[key]
+
+def _disk_allowed():
+    # tests count and replace plans, so they always plan afresh
+    import sys
+    return not os.environ.get('STROKESCRIBE_NO_PLAN_CACHE') and 'unittest' not in sys.modules and 'pytest' not in sys.modules
+
+PLAN_DISK=True
+
+def _plan_build(drawing,image,brush_width,stroke_spacing,key):
+    if True:
         method=getattr(drawing,'paint_method','adaptive')
         if method in ('rows','columns'):
             from zigzag_paint import build_band_plan
@@ -502,9 +562,6 @@ def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
         # Enough plans for a whole video's painted elements: with only 3, playing
         # the whole video re-planned every element each time ("Preparing scene…").
         if len(_CACHE)>PLAN_CACHE_SIZE: _CACHE.popitem(last=False)
-    else:
-        _CACHE.move_to_end(key)
-    return _CACHE[key]
 
 # exp.177 (the user: make the painting feel real, not squares switching on): the paint edge.
 # Every point of the picture gets its own moment the brush reaches it (the plan's grid of

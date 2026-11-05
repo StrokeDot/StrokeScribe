@@ -91,7 +91,7 @@ def qimage_from_b64(text):
         return None
     hit = _DECODED.get(text)
     if hit is not None:
-        return QImage_copy(hit)
+        return _remember(QImage_copy(hit), text)
     from PySide6.QtGui import QImage
     image = QImage()
     image.loadFromData(base64.b64decode(text), 'PNG')
@@ -100,7 +100,17 @@ def qimage_from_b64(text):
     _DECODED[text] = image
     while len(_DECODED) > 24:
         _DECODED.pop(next(iter(_DECODED)))
-    return QImage_copy(image)
+    return _remember(QImage_copy(image), text)
+
+
+def _remember(image, text):
+    """exp.204: a picture loaded from saved text already has its PNG, so leaving an element
+    does not save the same big picture as PNG again (2 seconds on every element switch)."""
+    key = (image.cacheKey(), image.width(), image.height())
+    _ENCODED[key] = text
+    while len(_ENCODED) > 24:
+        _ENCODED.pop(next(iter(_ENCODED)))
+    return image
 
 
 def QImage_copy(image):
