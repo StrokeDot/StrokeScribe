@@ -5503,7 +5503,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def element_fingerprint(self,k):
         uid,rev=self.current_rev() if k==self.scene_index else self.scene_rev(k)
         return ('el',uid,rev,self.hand_digest(),self.preview_background.currentText(),
-                repr(getattr(self,'background_color',None)),self.hand_rest_settings())
+                repr(getattr(self,'background_color',None)),self.hand_rest_settings(),
+                # exp.205 (the user: every way of moving looked the same): the element's own glide
+                # (how long, how it moves) is part of its frames; the old ones were shown.
+                repr(self.scenes[k].get('glide')) if 0<=k<len(self.scenes) else None)
 
     def hand_rest_settings(self):
         """exp.143: the hand waiting in a corner, for every element of the video."""
@@ -5576,9 +5579,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             box.setValue(float(value or 0) or default); return box
         go=number(settings.get('hand_glide_in')); back=number(settings.get('hand_glide_out'))
         how_in=style(glide[2]); how_out=style(glide[3])
-        tip=('Smooth: starts and ends gently. Steady: the same speed all the way. Quick start: fast, then '
-             'slows down. Slow start: slow, then fast. Overshoot: goes a little past and settles. Curve: '
-             'along an arc. Swoop: fast along an arc.')
+        tip=('How the hand moves on its way. Smooth: eases out of its corner and gently into place. '
+             'Steady: the same speed all the way, like a machine. Quick start: darts off, then arrives '
+             'slowly. Slow start: leaves slowly, then hurries. Overshoot: goes past the spot and comes '
+             'back to it. Curve: along an arc bulging upwards. Swoop: dips down and sweeps up into place.')
         form.addRow(help_label('To the drawing','How long the hand takes to go from its corner to the first line.'),go)
         form.addRow(help_label('How',tip),how_in)
         form.addRow(help_label('Back','How long the hand takes to go back to its corner after drawing.'),back)

@@ -329,6 +329,11 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
         if phase == 'in':
             # the pen on the first point it really paints (exp.151)
             inner_t = hand_start + (hand_end - hand_start) * TRAVEL_EPS
+        elif inner_t < hand_start + (hand_end - hand_start) * TRAVEL_EPS:
+            # exp.205 (the user: the hand disappeared for a moment when it reached the drawing):
+            # the frame right after the glide was the drawing's very first instant, before the
+            # pen is anywhere; it stays on the first point it paints, like at the glide's end.
+            inner_t = hand_start + (hand_end - hand_start) * TRAVEL_EPS
         elif phase == 'out':
             # exp.182 (the user: the hand vanished, then the last lines went when it reached
             # its corner): the moment of the last stroke itself. A hair before it the pen was
@@ -859,36 +864,58 @@ GLIDE_STYLES = ('Smooth', 'Steady', 'Quick start', 'Slow start', 'Overshoot', 'C
 
 
 def _glide_ease(p, style):
+    """exp.205 (the user: "I don't see any difference between all of them"): each way of
+    moving is now clearly its own (they were close cousins, and over a short way looked alike)."""
     p = max(0., min(1., float(p)))
-    if style == 'Steady':
+    if style == 'Steady':                    # the same speed all the way, stops at once
         return p
-    if style in ('Quick start', 'Swoop'):
+    if style == 'Quick start':               # darts off, then a long gentle arrival
+        return 1 - (1 - p) ** 5
+    if style == 'Swoop':
         return 1 - (1 - p) ** 3
-    if style == 'Slow start':
-        return p ** 3
-    if style == 'Overshoot':                 # goes a little past and settles back
-        c1 = 1.70158; c3 = c1 + 1
+    if style == 'Slow start':                # takes its time to leave, then hurries
+        return p ** 4
+    if style == 'Overshoot':                 # goes clearly past, then settles back
+        c1 = 2.8; c3 = c1 + 1
         return 1 + c3 * (p - 1) ** 3 + c1 * (p - 1) ** 2
-    return p * p * (3 - 2 * p)               # Smooth
+    return p * p * p * (p * (6 * p - 15) + 10)   # Smooth: gentle start and end
+
+
+# exp.205: how far an arc bulges (share of the way), + up, - down.
+_ARC = {'Curve': .35, 'Swoop': -.45}
 
 
 def glide_point(a, b, p, style='Smooth'):
-    """Where the hand is at p (0..1) of its way from a to b, in this style. Curve and Swoop
-    go along an arc (bulging up) instead of a straight line."""
+    """Where the hand is at p (0..1) of its way from a to b, in this style. Curve goes along
+    an arc bulging up; Swoop dips down under the straight way, like a bird swooping."""
     e = _glide_ease(p, style)
     x = a[0] + (b[0] - a[0]) * e
     y = a[1] + (b[1] - a[1]) * e
-    if style in ('Curve', 'Swoop'):
+    arc = _ARC.get(style)
+    if arc:
         import math
         dx, dy = b[0] - a[0], b[1] - a[1]
         length = math.hypot(dx, dy)
         if length > 1e-6:
-            bulge = .25 * length * math.sin(math.pi * max(0., min(1., e)))
+            bulge = abs(arc) * length * math.sin(math.pi * max(0., min(1., e)))
             nx, ny = -dy / length, dx / length          # perpendicular
-            if ny > 0:                                  # always bulge upwards
+            if (ny > 0) == (arc > 0):                   # Curve: upwards, Swoop: downwards
                 nx, ny = -nx, -ny
             x += nx * bulge; y += ny * bulge
     return (x, y)
+
+
+def glide_tilt(a, b, p, style='Smooth', hand_width=100.):
+    """exp.205: degrees the hand leans while it travels (a wrist leading the move), from its
+    sideways speed; nothing when it is still, so it is upright on the drawing."""
+    if style == 'Steady':
+        return 0.
+    d = .02
+    x0, _ = glide_point(a, b, max(0., p - d), style)
+    x1, _ = glide_point(a, b, min(1., p + d), style)
+    speed = (x1 - x0) / (2 * d) / max(1., 4 * hand_width)      # hand widths per glide
+    lean = 14. if style in ('Swoop', 'Quick start', 'Overshoot') else 9.
+    return max(-lean, min(lean, -speed * lean))
 
 
 def paint_hand_spec(frame, spec, options, place=None):
@@ -918,6 +945,7 @@ def paint_hand_spec(frame, spec, options, place=None):
         return _paint_move_hand(frame, spec, tip, shown, options)
     image, anchor, ratio = spec.get('image'), spec.get('anchor'), float(spec.get('ratio') or 1.)
     phase = spec.get('phase')
+    tilt = 0.
     if phase in ('in', 'out'):
         corner = rest_rect(W, H, options, spec.get('seconds'))
         hand = options.get('hand')
@@ -931,6 +959,7 @@ def paint_hand_spec(frame, spec, options, place=None):
         a, b = (home, target) if phase == 'in' else (target, home)
         tip = glide_point(a, b, p, style)
         image, anchor, ratio = hand, (float(ax), float(ay)), 1.
+        tilt = glide_tilt(a, b, p, style, W * float(options.get('hand_scale', .18)))
     if tip is None or image is None or image.isNull():
         return frame
     hw = W * float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.) * ratio
@@ -939,6 +968,8 @@ def paint_hand_spec(frame, spec, options, place=None):
     painter = QPainter(out)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     painter.setOpacity(shown)
+    if abs(tilt) > .05:
+        painter.translate(tip[0], tip[1]); painter.rotate(tilt); painter.translate(-tip[0], -tip[1])
     painter.drawImage(QRectF(tip[0] - anchor[0] * hw, tip[1] - anchor[1] * hh, hw, hh), image)
     painter.end()
     return out

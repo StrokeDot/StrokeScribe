@@ -94,7 +94,7 @@ class WindowTests(unittest.TestCase):
             # Section headers since exp.96 ("Drawing hand", "Painting hand").
             self.assertTrue(any('DRAWING HAND' in t for t in texts))
             self.assertTrue(any('PAINTING HAND' in t for t in texts))
-            self.assertEqual(set(w.hand_pictures), {'draw', 'paint', 'move'})
+            self.assertEqual(set(w.hand_pictures), {'draw', 'paint', 'move', 'erase'})   # exp.192: Eraser hand
             w.font_select.setCurrentText('Built-in single-line pen'); self.app.processEvents()
             self.assertFalse(w.font_size.isEnabled())            # Letter detail: real fonts only
             # A new element made with AI: nothing is added when the window is closed unused.
