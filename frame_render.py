@@ -574,6 +574,8 @@ def travel_plan(drawing, options):
             hand_start = max(0., min(first, hand_end * .9))
         hand_end = max(hand_start + .05, min(hand_end, last))
     back = float(options.get('hand_travel_out', 0) or 0) or travel     # exp.163: its own way back
+    if options.get('hand_link_out'):
+        back = 0.                     # exp.210: linked: no way back, the next hand comes from here
     return travel, hand_end, back, inner_total, inner, hand_start
 
 
@@ -627,6 +629,47 @@ def travel_phase(t, lead, hand_end, tail, hand_start=0.):
     if t < hand_end + tail:
         return hand_end, 'out', (t - hand_end) / max(1e-9, tail)
     return t - tail, None, 0.
+
+
+_LAST_TIP = {}
+
+
+def last_tip(drawing, options):
+    """exp.210: where the pen is at the end of the element's drawing, as (x, y) shares of its
+    own frame (camera left out), or None."""
+    plan = travel_plan(drawing, options)
+    if plan is None:
+        return None
+    lead, hand_end, tail, inner_total, inner, hand_start = plan
+    total = inner_total - hand_start + lead + tail
+    picture = options.get('final_image')
+    key = (id(drawing), round(lead, 4), round(hand_end, 4), round(hand_start, 4), round(total, 4),
+           options.get('width'), options.get('height'), repr(options.get('offset')), options.get('artwork_scale'),
+           options.get('reveal_mode'), options.get('brush_width'), options.get('hand_scale'),
+           picture.cacheKey() if picture is not None and not picture.isNull() else None)
+    if key in _LAST_TIP:
+        return _LAST_TIP[key]
+    found = None
+    for back in (1e-3, .02, .06, .15):
+        t = max(0., lead + hand_end - hand_start - back)
+        _set_spec(None)
+        try:
+            # on a copy: what the frame keeps for itself (by the drawing) stays apart from
+            # the real element's frames (they were painted less far after this)
+            import copy as _copy
+            _compose_raw_frame(_copy.copy(drawing), min(1., t / max(1e-9, total)), dict(options, layers='hand'))
+        except Exception:
+            break
+        spec = last_hand_spec()
+        if spec is not None and (spec.get('tip_plain') or spec.get('tip')) is not None and spec.get('phase') is None:
+            x, y = spec.get('tip_plain') or spec['tip']
+            fw, fh = spec['frame']
+            found = (x / max(1, fw), y / max(1, fh))
+            break
+    if len(_LAST_TIP) > 64:
+        _LAST_TIP.clear()
+    _LAST_TIP[key] = found
+    return found
 
 
 def hand_window(drawing, options):
@@ -707,7 +750,7 @@ class _FixedCamera:
         return getattr(self.camera, name)
 
 
-def rest_rect(width, height, options, seconds=None, place=None):
+def rest_rect(width, height, options, seconds=None, place=None, spot=None):
     """Where the waiting hand is on a frame of this size (exp.147: at `seconds` of the
     video it may be sliding out of the picture, Hand row)."""
     from PySide6.QtCore import QRectF
@@ -718,6 +761,11 @@ def rest_rect(width, height, options, seconds=None, place=None):
     hh = hw * hand.height() / max(1, hand.width())
     ax, ay = options.get('anchor', (.1, .1))
     fx, fy = REST_CORNERS.get(options.get('hand_rest_corner') or 'Bottom right', REST_CORNERS['Bottom right'])
+    spot = spot if spot is not None else options.get('_wait_tip')
+    if spot is not None:
+        # exp.210 (the user: link one hand to the next): it waits where the linked hand
+        # finished (a spot of the page, like the corner), not in the corner.
+        fx, fy = float(spot[0]), float(spot[1])
     # exp.161 (the user): the corner belongs to the page, not to the screen: when the camera
     # zooms, the waiting hand stays at its spot of the page (it can leave the picture), at its
     # own size. place = (x, y, w, h) of the page on the screen (None: the whole screen).
@@ -961,7 +1009,9 @@ def paint_hand_spec(frame, spec, options, place=None):
     phase = spec.get('phase')
     tilt = 0.
     if phase in ('in', 'out'):
-        corner = rest_rect(W, H, options, spec.get('seconds'))
+        # exp.210: a hand linked from the element before comes from where that one finished
+        corner = rest_rect(W, H, options, spec.get('seconds'),
+                           spot=options.get('_from_tip') if phase == 'in' else None)
         hand = options.get('hand')
         if corner is None or hand is None or hand.isNull():
             return frame
