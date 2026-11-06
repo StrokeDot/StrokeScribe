@@ -676,6 +676,79 @@ def last_tip(drawing, options):
     return found
 
 
+_FIRST_TIP = {}
+
+
+def first_tip(drawing, options):
+    """exp.218: where the pen first touches the drawing (shares of its frame), or None."""
+    plan = travel_plan(drawing, options)
+    if plan is None:
+        return None
+    lead, hand_end, tail, inner_total, inner, hand_start = plan
+    total = inner_total - hand_start + lead + tail
+    key = (id(drawing), round(lead, 4), round(total, 4), options.get('width'), options.get('height'),
+           repr(options.get('offset')), options.get('artwork_scale'), options.get('reveal_mode'))
+    if key in _FIRST_TIP:
+        return _FIRST_TIP[key]
+    found = None
+    for ahead in (1e-3, .02, .06):
+        _set_spec(None)
+        try:
+            _compose_raw_frame(drawing, min(1., (lead + ahead) / max(1e-9, total)), dict(options, layers='hand'))
+        except Exception:
+            break
+        spec = last_hand_spec()
+        if spec is not None and (spec.get('tip_plain') or spec.get('tip')) is not None and spec.get('phase') is None:
+            x, y = spec.get('tip_plain') or spec['tip']
+            fw, fh = spec['frame']
+            found = (x / max(1, fw), y / max(1, fh))
+            break
+    if len(_FIRST_TIP) > 64:
+        _FIRST_TIP.clear()
+    _FIRST_TIP[key] = found
+    return found
+
+
+def flow_point(A, C, B, u, out_way, in_way, mode, centre):
+    """exp.218 (the user: the hand goes back to its corner and on to the next drawing without
+    stopping): where the hand is at u (0..1) of the one movement from A (the last line) by the
+    corner C to B (the next first line). out_way / in_way: (style, bend, keyframes) of the way
+    back and of the next way in (they shape the two halves); mode 'exact': it sweeps through
+    the corner point itself, 'near': it swings close by. One even movement, gentle only at the
+    very start and the very end."""
+    import math
+
+    def half(a, b, way, n=40):
+        style, bend, keys = way
+        if keys:
+            return path_polyline(a, b, keys)
+        return [glide_point(a, b, _inverse_ease(i / float(n), style), style, centre, bend) for i in range(n + 1)]
+
+    first, second = half(A, C, out_way), half(C, B, in_way)
+    line = first[:-1] + second
+    lengths = [0.]
+    for p, q in zip(line, line[1:]):
+        lengths.append(lengths[-1] + math.hypot(q[0] - p[0], q[1] - p[1]))
+    total = lengths[-1] or 1.
+    at = lengths[len(first) - 1]                    # the corner, along the line
+    r = min(.35 * at, .35 * (total - at), .12 * 2. * centre[0])
+    if r > 1:
+        p0 = _along_polyline(line, (at - r) / total); p2 = _along_polyline(line, (at + r) / total)
+        if mode == 'exact':
+            q = (2 * C[0] - .5 * (p0[0] + p2[0]), 2 * C[1] - .5 * (p0[1] + p2[1]))   # through C itself
+        else:
+            q = C
+        bend = [((1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * q[0] + t * t * p2[0],
+                 (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * q[1] + t * t * p2[1]) for t in (i / 16. for i in range(17))]
+        keep_a = [p for p, l in zip(line, lengths) if l < at - r]
+        keep_b = [p for p, l in zip(line, lengths) if l > at + r]
+        line = keep_a + bend + keep_b
+    # gentle at the start and the end, never stopping at the corner
+    u = max(0., min(1., u))
+    e = .35 * u * u * (3 - 2 * u) + .65 * u
+    return _along_polyline(line, e)
+
+
 def hand_window(drawing, options):
     """(seconds from the element's start to when the hand is back in its corner, element
     seconds), or None."""
@@ -1184,6 +1257,26 @@ def paint_hand_spec(frame, spec, options, place=None):
             theirs = float(before['hand_scale']) * float(before['artwork_scale'])
             ratio = (theirs / max(1e-6, mine)) * (1. - near) + near
             anchor = (float(ax) + (own[0] - float(ax)) * near, float(ay) + (own[1] - float(ay)) * near)
+        flow = options.get('_flow_next') if phase == 'out' else options.get('_flow_prev')
+        if flow and place is not None and flow.get('tip') is not None:
+            # exp.218: the way back and the next way in are one movement by the corner
+            px, py, pw, ph = place
+            other = (px + float(flow['tip'][0]) * pw, py + float(flow['tip'][1]) * ph)
+            whole = max(1e-6, float(flow['tail']) + float(flow['lead']))
+            mine_way = (style, bend, keys)
+            if phase == 'out':
+                A, B, u = target, other, p * float(flow['tail']) / whole
+                ways = (mine_way, tuple(flow['way']))
+            else:
+                A, B, u = other, target, (float(flow['tail']) + p * float(flow['lead'])) / whole
+                ways = (tuple(flow['way']), mine_way)
+            centre = (W / 2., H / 2.)
+            tip = flow_point(A, home, B, u, ways[0], ways[1], flow.get('mode', 'near'), centre)
+            x0, _ = flow_point(A, home, B, max(0., u - .01), ways[0], ways[1], flow.get('mode', 'near'), centre)
+            x1, _ = flow_point(A, home, B, min(1., u + .01), ways[0], ways[1], flow.get('mode', 'near'), centre)
+            import math as _m
+            speed = (x1 - x0) / .02 / max(1., 4 * W * float(options.get('hand_scale', .18)) * whole)
+            tilt = max(-12., min(12., -speed * 12.)) * _m.sin(_m.pi * u)
     if tip is None or image is None or image.isNull():
         return frame
     hw = W * float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.) * ratio \
