@@ -101,6 +101,15 @@ def fixed_view(world, lay, state, elements):
     return board.sub_view(base, *camera_at(cam, state, k), world.aspect)
 
 
+def element_place(world, lay, state, elements, k, width, height, view_scale=1., view_pan=(0., 0.)):
+    """exp.216: (x, y, w, h) on the screen of element k's page (its frame on the board)."""
+    v = view_of(world, lay, state, elements)
+    if view_scale > 1.:
+        w = v[2] * view_scale
+        v = (v[0] + view_pan[0] * w, v[1] + view_pan[1] * w * world.aspect, w)
+    return world.place(world.frames[k], v, width, height)
+
+
 def page_place(world, lay, state, elements, width, height, view_scale=1., view_pan=(0., 0.)):
     """exp.161/162: (x, y, w, h) on the screen of what the Fixed camera shows: the Moving
     camera's zooms move and size it; the waiting hand keeps its corner on it."""
@@ -142,7 +151,8 @@ def compose(world, lay, state, elements, width, height, titles=None, seconds=Non
             w = v[2] * view_scale        # exp.122: and moved around by dragging it
             v = (v[0] + view_pan[0] * w, v[1] + view_pan[1] * w * world.aspect, w)
         return v
-    return _page(world, lay, state, elements, view_fn(state), width, height, titles, seconds, view_fn, erasers, glides)
+    return _page(world, lay, state, elements, view_fn(state), width, height, titles, seconds, view_fn, erasers, glides,
+                 hand_view=1. / max(1., float(view_scale)))
 
 
 def page_of(lay, seconds):
@@ -347,7 +357,7 @@ def _erasing(world, elements, erasers, view, out, width, height, state, glides=N
 
 
 def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None, view_fn=None, erasers=None,
-          glides=None):
+          glides=None, hand_view=1.):
     erasers = erasers or {}
     # exp.206: an element Already there stays at its place among the tracks: one above a
     # picture still coming in is drawn after it (not covered by it, then popping back on top).
@@ -414,7 +424,9 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
         from frame_render import paint_hand_spec
         layer, frame, spec, place, opts = hand_layer
         out = world.put(out, layer, frame, view)
-        out = paint_hand_spec(out, spec, dict(opts, width=width, height=height), place)
+        # exp.216 (the user: zoomed out, the hand is outside the frame too): its size follows
+        # the zoom out like everything else (it stayed the screen size, twice too big)
+        out = paint_hand_spec(out, spec, dict(opts, width=width, height=height, _hand_view=hand_view), place)
     if glides:
         out = _glide_tool(world, elements, glides, view, out, width, height)     # exp.197
     return out
