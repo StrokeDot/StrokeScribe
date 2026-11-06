@@ -659,10 +659,9 @@ def last_tip(drawing, options):
         t = max(0., lead + hand_end - hand_start - back)
         _set_spec(None)
         try:
-            # on a copy: what the frame keeps for itself (by the drawing) stays apart from
-            # the real element's frames (they were painted less far after this)
-            import copy as _copy
-            _compose_raw_frame(_copy.copy(drawing), min(1., t / max(1e-9, total)), dict(options, layers='hand'))
+            # exp.214: on the element itself (a copy planned its brush strokes again, differently,
+            # so the hand waited at the wrong spot)
+            _compose_raw_frame(drawing, min(1., t / max(1e-9, total)), dict(options, layers='hand'))
         except Exception:
             break
         spec = last_hand_spec()
@@ -927,7 +926,8 @@ def _paint_move_hand(frame, spec, tip, shown, options):
 
 
 # exp.164 (the user): different ways for the hand to go to the drawing and back.
-GLIDE_STYLES = ('Smooth', 'Steady', 'Quick start', 'Slow start', 'Overshoot', 'Curve', 'Swoop')
+GLIDE_STYLES = ('Smooth', 'Steady', 'Quick start', 'Slow start', 'Overshoot', 'Curve', 'Swoop', 'Circle')
+GLIDE_BENDS = ('Auto', 'Clockwise', 'Anticlockwise')   # exp.214
 
 
 def _glide_ease(p, style):
@@ -938,8 +938,8 @@ def _glide_ease(p, style):
         return p
     if style == 'Quick start':               # darts off, then a long gentle arrival
         return 1 - (1 - p) ** 5
-    if style == 'Swoop':
-        return 1 - (1 - p) ** 3
+    if style in ('Swoop', 'Circle'):
+        return 1 - (1 - p) ** 3 if style == 'Swoop' else p * p * (3 - 2 * p)
     if style == 'Slow start':                # takes its time to leave, then hurries
         return p ** 4
     if style == 'Overshoot':                 # goes clearly past, then settles back
@@ -952,10 +952,30 @@ def _glide_ease(p, style):
 _ARC = {'Curve': .35, 'Swoop': -.45}
 
 
-def glide_point(a, b, p, style='Smooth', centre=None):
+def glide_point(a, b, p, style='Smooth', centre=None, bend='Auto'):
     """Where the hand is at p (0..1) of its way from a to b, in this style. Curve goes along
     an arc bulging up; Swoop dips down under the straight way, like a bird swooping."""
     e = _glide_ease(p, style)
+    if bend in ('Clockwise', 'Anticlockwise') and style in ('Swoop', 'Curve', 'Circle'):
+        # exp.214 (the user: "the hand should go round in a circle to the next one"): the way
+        # bends to the side chosen, clockwise or anticlockwise, whatever its direction: a wide
+        # arc (Swoop), half a circle (Circle) or a gentle one (Curve).
+        import math
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        n = math.hypot(dx, dy) or 1.
+        # on the screen (y down) a clockwise turn bulges to the left of the way
+        nx, ny = (dy / n, -dx / n) if bend == 'Clockwise' else (-dy / n, dx / n)
+        u = 1. - e
+        if style == 'Circle':
+            r = .5 * n * 1.33                     # half a circle over the way (two curves)
+            c1 = (a[0] + nx * r, a[1] + ny * r); c2 = (b[0] + nx * r, b[1] + ny * r)
+            return (u ** 3 * a[0] + 3 * u * u * e * c1[0] + 3 * u * e * e * c2[0] + e ** 3 * b[0],
+                    u ** 3 * a[1] + 3 * u * u * e * c1[1] + 3 * u * e * e * c2[1] + e ** 3 * b[1])
+        amount = (.3 if style == 'Curve' else .55) * n
+        cx, cy = (a[0] + b[0]) / 2. + nx * amount * 2., (a[1] + b[1]) / 2. + ny * amount * 2.
+        return (u * u * a[0] + 2 * u * e * cx + e * e * b[0], u * u * a[1] + 2 * u * e * cy + e * e * b[1])
+    if style == 'Circle':
+        style = 'Swoop'                           # Circle with Auto: like a swoop
     if style == 'Swoop' and centre is not None:
         # exp.212 (the user: the swoop was not the same from one element to the next): a swoop
         # is always one big sweep through the middle of the picture, whatever the direction
@@ -995,14 +1015,14 @@ def glide_point(a, b, p, style='Smooth', centre=None):
     return (x, y)
 
 
-def glide_tilt(a, b, p, style='Smooth', hand_width=100., centre=None):
+def glide_tilt(a, b, p, style='Smooth', hand_width=100., centre=None, bend='Auto'):
     """exp.205: degrees the hand leans while it travels (a wrist leading the move), from its
     sideways speed; nothing when it is still, so it is upright on the drawing."""
     if style == 'Steady':
         return 0.
     d = .02
-    x0, _ = glide_point(a, b, max(0., p - d), style, centre)
-    x1, _ = glide_point(a, b, min(1., p + d), style, centre)
+    x0, _ = glide_point(a, b, max(0., p - d), style, centre, bend)
+    x1, _ = glide_point(a, b, min(1., p + d), style, centre, bend)
     speed = (x1 - x0) / (2 * d) / max(1., 4 * hand_width)      # hand widths per glide
     import math
     lean = 14. if style in ('Swoop', 'Quick start', 'Overshoot') else 9.
@@ -1039,28 +1059,33 @@ def paint_hand_spec(frame, spec, options, place=None):
     phase = spec.get('phase')
     tilt = 0.
     if phase in ('in', 'out'):
-        # exp.210: a hand linked from the element before comes from where that one finished
-        corner = rest_rect(W, H, options, spec.get('seconds'),
+        # exp.210: a hand linked from the element before comes from where that one finished.
+        # exp.214: coming in, it starts as the waiting hand was drawn (the element before's
+        # size and grip), so nothing jumps when it takes over.
+        before = options.get('_prev_rest') if phase == 'in' else None
+        corner = rest_rect(W, H, dict(options, **before) if before else options, spec.get('seconds'),
                            spot=options.get('_from_tip') if phase == 'in' else None)
         hand = options.get('hand')
         if corner is None or hand is None or hand.isNull():
             return frame
-        ax, ay = options.get('anchor', (.1, .1))
+        own = tuple(options.get('anchor', (.1, .1)))
+        ax, ay = (before or {}).get('anchor', own)
         home = (corner.x() + float(ax) * corner.width(), corner.y() + float(ay) * corner.height())
         target = spec.get('screen_target') or (tip if tip is not None else home)
         p = max(0., min(1., float(spec.get('p') or 0.)))
         style = options.get('hand_glide_style_in' if phase == 'in' else 'hand_glide_style_out') or 'Smooth'
+        bend = options.get('hand_glide_bend_in' if phase == 'in' else 'hand_glide_bend_out') or 'Auto'
         a, b = (home, target) if phase == 'in' else (target, home)
-        tip = glide_point(a, b, p, style, (W / 2., H / 2.))
-        image, anchor, ratio = hand, (float(ax), float(ay)), 1.
-        tilt = glide_tilt(a, b, p, style, W * float(options.get('hand_scale', .18)), (W / 2., H / 2.))
-        # exp.212 (the user: the hand flickered from one hand to the next): the hand that comes
-        # in starts at the size of the hand that was waiting (the element before's), and grows
-        # or shrinks to its own on the way (it jumped to its own size at once).
-        before = options.get('_prev_artwork_scale')
-        if phase == 'in' and before:
+        tip = glide_point(a, b, p, style, (W / 2., H / 2.), bend)
+        image, anchor, ratio = hand, (float(own[0]), float(own[1])), 1.
+        tilt = glide_tilt(a, b, p, style, W * float(options.get('hand_scale', .18)), (W / 2., H / 2.), bend)
+        if before:
+            # exp.214: from the waiting hand (its size and grip) to its own, along the way
             near = max(0., min(1., _glide_ease(p, style)))
-            ratio = float(before) / max(1e-6, float(options.get('artwork_scale', 1.) or 1.)) * (1. - near) + near
+            mine = float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.)
+            theirs = float(before['hand_scale']) * float(before['artwork_scale'])
+            ratio = (theirs / max(1e-6, mine)) * (1. - near) + near
+            anchor = (float(ax) + (own[0] - float(ax)) * near, float(ay) + (own[1] - float(ay)) * near)
     if tip is None or image is None or image.isNull():
         return frame
     hw = W * float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.) * ratio

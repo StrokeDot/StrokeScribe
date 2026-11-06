@@ -199,6 +199,9 @@ def apply_glide(options, scene):
         if len(glide) > 3:                          # exp.164: how it moves
             options['hand_glide_style_in'] = glide[2] or 'Smooth'
             options['hand_glide_style_out'] = glide[3] or 'Smooth'
+        if len(glide) > 5:                          # exp.214: which way it turns
+            options['hand_glide_bend_in'] = glide[4] or 'Auto'
+            options['hand_glide_bend_out'] = glide[5] or 'Auto'
     if scene and scene.get('hand_link') and options.get('hand_travel'):
         options['hand_link_out'] = True             # exp.210: on to the next hand, no way back
     return options
@@ -230,9 +233,12 @@ def hand_handover(items, elements, hidden=()):
               if it.k not in hidden and elements[it.k]['options'].get('hand_travel')
               and hand_window(elements[it.k]['drawing'], elements[it.k]['options']) is not None]
     for before, it in zip(moving, moving[1:]):
-        scale = elements[before.k]['options'].get('artwork_scale')
-        if scale:
-            elements[it.k]['options']['_prev_artwork_scale'] = float(scale)
+        o = elements[before.k]['options']
+        # exp.214: the waiting hand as it is drawn (its size is hand_scale x artwork_scale;
+        # exp.212 compared only the second and the hand came in too big)
+        elements[it.k]['options']['_prev_rest'] = dict(
+            hand_scale=float(o.get('hand_scale', .18)), artwork_scale=float(o.get('artwork_scale', 1.) or 1.),
+            anchor=tuple(o.get('anchor', (.1, .1))))
 
 
 def link_hands(items, elements, frames, hidden=()):
