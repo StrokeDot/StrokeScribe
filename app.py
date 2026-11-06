@@ -4452,13 +4452,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             elements.append(dict(drawing=drawing,options=options,camera=camera,uid=self.scenes[k].get('uid'),
                                  transition=self.scenes[k]['transition'],
                                  move_seconds=self.scenes[k]['transition_seconds']))
-        if any(s.get('hand_link') for s in self.scenes):
-            # exp.210: a hand linked from the element before comes from where that one finished
-            try:
-                import scenes as _scenes
-                _scenes.link_hands(self.timeline_layout().items,elements,self.board_frames(),self.hidden_elements())
-            except Exception as exc:
-                import applog; applog.error('Linked hands',exc)
+        try:
+            import scenes as _scenes
+            items=self.timeline_layout().items
+            if any(s.get('hand_link') for s in self.scenes):
+                # exp.210: a hand linked from the element before comes from where that one finished
+                _scenes.link_hands(items,elements,self.board_frames(),self.hidden_elements())
+            _scenes.hand_handover(items,elements,self.hidden_elements())   # exp.212: no jump in size
+        except Exception as exc:
+            import applog; applog.error('Linked hands',exc)
         return elements
 
     def eraser_tool(self):

@@ -222,6 +222,19 @@ def hand_links(items, elements, frames, hidden=()):
     return out
 
 
+def hand_handover(items, elements, hidden=()):
+    """exp.212: each element's hand comes in from the hand that was waiting before it (the
+    element before it in time with a travelling hand): its size (_prev_artwork_scale)."""
+    from frame_render import hand_window
+    moving = [it for it in sorted(items, key=lambda it: (it.start, it.k))
+              if it.k not in hidden and elements[it.k]['options'].get('hand_travel')
+              and hand_window(elements[it.k]['drawing'], elements[it.k]['options']) is not None]
+    for before, it in zip(moving, moving[1:]):
+        scale = elements[before.k]['options'].get('artwork_scale')
+        if scale:
+            elements[it.k]['options']['_prev_artwork_scale'] = float(scale)
+
+
 def link_hands(items, elements, frames, hidden=()):
     """Put on each linked element's options where its hand comes from (_from_tip)."""
     from frame_render import last_tip
@@ -414,6 +427,7 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
                              transition=p['transition'], move_seconds=p['move_seconds']))
     link_hands(lay.items, elements, [p['frame'] for p in prepared],
                {k for k, s in enumerate(scenes) if s.get('hidden')})       # exp.210: linked hands
+    hand_handover(lay.items, elements, {k for k, s in enumerate(scenes) if s.get('hidden')})   # exp.212
     total = max(1, round(lay.total * fps))
     titles = with_holds(titles, [m.start for m in lay.moves], lay.total,
                         page_at=lambda sec: timeline_render.page_of(lay, sec))

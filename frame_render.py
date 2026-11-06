@@ -956,6 +956,23 @@ def glide_point(a, b, p, style='Smooth', centre=None):
     """Where the hand is at p (0..1) of its way from a to b, in this style. Curve goes along
     an arc bulging up; Swoop dips down under the straight way, like a bird swooping."""
     e = _glide_ease(p, style)
+    if style == 'Swoop' and centre is not None:
+        # exp.212 (the user: the swoop was not the same from one element to the next): a swoop
+        # is always one big sweep through the middle of the picture, whatever the direction
+        # of the way (going straight up it hardly bent before).
+        import math
+        mx, my = (a[0] + b[0]) / 2., (a[1] + b[1]) / 2.
+        cx, cy = mx + (centre[0] - mx) * 1.3, my + (centre[1] - my) * 1.3
+        reach = .3 * min(centre[0], centre[1]) * 2.
+        if math.hypot(cx - mx, cy - my) < reach:
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            n = math.hypot(dx, dy) or 1.
+            nx, ny = -dy / n, dx / n
+            if nx * (centre[0] - mx) + ny * (centre[1] - my) < 0:
+                nx, ny = -nx, -ny
+            cx, cy = mx + nx * reach, my + ny * reach
+        u = 1. - e
+        return (u * u * a[0] + 2 * u * e * cx + e * e * b[0], u * u * a[1] + 2 * u * e * cy + e * e * b[1])
     x = a[0] + (b[0] - a[0]) * e
     y = a[1] + (b[1] - a[1]) * e
     arc = _ARC.get(style)
@@ -987,8 +1004,10 @@ def glide_tilt(a, b, p, style='Smooth', hand_width=100., centre=None):
     x0, _ = glide_point(a, b, max(0., p - d), style, centre)
     x1, _ = glide_point(a, b, min(1., p + d), style, centre)
     speed = (x1 - x0) / (2 * d) / max(1., 4 * hand_width)      # hand widths per glide
+    import math
     lean = 14. if style in ('Swoop', 'Quick start', 'Overshoot') else 9.
-    return max(-lean, min(lean, -speed * lean))
+    # exp.212: the lean comes and goes gently (it snapped on at the start of a fast glide)
+    return max(-lean, min(lean, -speed * lean)) * math.sin(math.pi * max(0., min(1., p)))
 
 
 def paint_hand_spec(frame, spec, options, place=None):
@@ -1035,6 +1054,13 @@ def paint_hand_spec(frame, spec, options, place=None):
         tip = glide_point(a, b, p, style, (W / 2., H / 2.))
         image, anchor, ratio = hand, (float(ax), float(ay)), 1.
         tilt = glide_tilt(a, b, p, style, W * float(options.get('hand_scale', .18)), (W / 2., H / 2.))
+        # exp.212 (the user: the hand flickered from one hand to the next): the hand that comes
+        # in starts at the size of the hand that was waiting (the element before's), and grows
+        # or shrinks to its own on the way (it jumped to its own size at once).
+        before = options.get('_prev_artwork_scale')
+        if phase == 'in' and before:
+            near = max(0., min(1., _glide_ease(p, style)))
+            ratio = float(before) / max(1e-6, float(options.get('artwork_scale', 1.) or 1.)) * (1. - near) + near
     if tip is None or image is None or image.isNull():
         return frame
     hw = W * float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.) * ratio
