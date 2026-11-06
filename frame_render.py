@@ -977,22 +977,16 @@ def glide_point(a, b, p, style='Smooth', centre=None, bend='Auto'):
     if style == 'Circle':
         style = 'Swoop'                           # Circle with Auto: like a swoop
     if style == 'Swoop' and centre is not None:
-        # exp.212 (the user: the swoop was not the same from one element to the next): a swoop
-        # is always one big sweep through the middle of the picture, whatever the direction
-        # of the way (going straight up it hardly bent before).
+        # exp.215 (the user: "corner, left, and then the right, to the point"): a swoop is
+        # always the same movement: the hand leaves going to the left, sweeps round and comes
+        # into the point from its left, moving right, like a hand about to write. (exp.212
+        # bent it towards the middle of the picture, so it changed with where the drawing was.)
         import math
-        mx, my = (a[0] + b[0]) / 2., (a[1] + b[1]) / 2.
-        cx, cy = mx + (centre[0] - mx) * 1.3, my + (centre[1] - my) * 1.3
-        reach = .3 * min(centre[0], centre[1]) * 2.
-        if math.hypot(cx - mx, cy - my) < reach:
-            dx, dy = b[0] - a[0], b[1] - a[1]
-            n = math.hypot(dx, dy) or 1.
-            nx, ny = -dy / n, dx / n
-            if nx * (centre[0] - mx) + ny * (centre[1] - my) < 0:
-                nx, ny = -nx, -ny
-            cx, cy = mx + nx * reach, my + ny * reach
+        reach = max(.45 * math.hypot(b[0] - a[0], b[1] - a[1]), .18 * 2. * centre[0])
+        c1 = (a[0] - reach, a[1]); c2 = (b[0] - reach, b[1])
         u = 1. - e
-        return (u * u * a[0] + 2 * u * e * cx + e * e * b[0], u * u * a[1] + 2 * u * e * cy + e * e * b[1])
+        return (u ** 3 * a[0] + 3 * u * u * e * c1[0] + 3 * u * e * e * c2[0] + e ** 3 * b[0],
+                u ** 3 * a[1] + 3 * u * u * e * c1[1] + 3 * u * e * e * c2[1] + e ** 3 * b[1])
     x = a[0] + (b[0] - a[0]) * e
     y = a[1] + (b[1] - a[1]) * e
     arc = _ARC.get(style)
