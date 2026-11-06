@@ -206,6 +206,8 @@ def apply_glide(options, scene):
     if path and options.get('hand_travel'):           # exp.217: keyframes of its own path
         if path.get('in'): options['hand_glide_path_in'] = tuple(tuple(k) for k in path['in'])
         if path.get('out'): options['hand_glide_path_out'] = tuple(tuple(k) for k in path['out'])
+    if scene and scene.get('hand_flow') in ('exact', 'near') and options.get('hand_travel'):
+        options['hand_flow'] = scene['hand_flow']     # exp.218: back by the corner without stopping
     if scene and scene.get('hand_link') and options.get('hand_travel'):
         options['hand_link_out'] = True             # exp.210: on to the next hand, no way back
     return options
@@ -243,6 +245,38 @@ def hand_handover(items, elements, hidden=()):
         elements[it.k]['options']['_prev_rest'] = dict(
             hand_scale=float(o.get('hand_scale', .18)), artwork_scale=float(o.get('artwork_scale', 1.) or 1.),
             anchor=tuple(o.get('anchor', (.1, .1))))
+
+
+def flow_hands(items, elements, frames, hidden=()):
+    """exp.218 (the user): an element whose hand goes back to its corner 'without stopping'
+    (hand_flow 'exact' / 'near'): when the next hand starts the moment it is back in its
+    corner (on the same page), the two ways are one movement by the corner. Otherwise
+    nothing changes (it goes back and waits as always)."""
+    from frame_render import first_tip, hand_window, last_tip, travel_plan
+    moving = [it for it in sorted(items, key=lambda it: (it.start, it.k))
+              if it.k not in hidden and elements[it.k]['options'].get('hand_travel')
+              and hand_window(elements[it.k]['drawing'], elements[it.k]['options']) is not None]
+    for it, nxt in zip(moving, moving[1:]):
+        o = elements[it.k]['options']
+        mode = o.get('hand_flow')
+        if mode not in ('exact', 'near') or o.get('hand_link_out') or tuple(frames[nxt.k]) != tuple(frames[it.k]):
+            continue
+        back = hand_window(elements[it.k]['drawing'], o)[0]
+        if abs(nxt.start - (it.start + back)) > .05:
+            continue                                  # a gap (or overlap): as always
+        plan_a = travel_plan(elements[it.k]['drawing'], o)
+        n = elements[nxt.k]['options']
+        plan_b = travel_plan(elements[nxt.k]['drawing'], n)
+        a_tip, b_tip = last_tip(elements[it.k]['drawing'], o), first_tip(elements[nxt.k]['drawing'], n)
+        if plan_a is None or plan_b is None or a_tip is None or b_tip is None or plan_a[2] <= 0:
+            continue
+        tail, lead = float(plan_a[2]), float(plan_b[0])
+        o['_flow_next'] = dict(tip=b_tip, tail=tail, lead=lead, mode=mode,
+                               way=(n.get('hand_glide_style_in') or 'Smooth', n.get('hand_glide_bend_in') or 'Auto',
+                                    n.get('hand_glide_path_in') or None))
+        n['_flow_prev'] = dict(tip=a_tip, tail=tail, lead=lead, mode=mode,
+                               way=(o.get('hand_glide_style_out') or 'Smooth', o.get('hand_glide_bend_out') or 'Auto',
+                                    o.get('hand_glide_path_out') or None))
 
 
 def link_hands(items, elements, frames, hidden=()):
@@ -440,6 +474,8 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
     link_hands(lay.items, elements, [p['frame'] for p in prepared],
                {k for k, s in enumerate(scenes) if s.get('hidden')})       # exp.210: linked hands
     hand_handover(lay.items, elements, {k for k, s in enumerate(scenes) if s.get('hidden')})   # exp.212
+    flow_hands(lay.items, elements, [p['frame'] for p in prepared],
+               {k for k, s in enumerate(scenes) if s.get('hidden')})       # exp.218
     total = max(1, round(lay.total * fps))
     titles = with_holds(titles, [m.start for m in lay.moves], lay.total,
                         page_at=lambda sec: timeline_render.page_of(lay, sec))
@@ -764,7 +800,7 @@ def scenes_from_project(data):
                         start=item.get('start'), track=item.get('track') or 0,
                         hidden=bool(item.get('hidden')), muted=bool(item.get('muted')),
                         art_off=bool(item.get('art_off')), hand_off=bool(item.get('hand_off')),
-                        hand_link=bool(item.get('hand_link')),
+                        hand_link=bool(item.get('hand_link')), hand_flow=item.get('hand_flow'),
                         thumb_png=item.get('thumb_png'),
                         glide=tuple(item['glide']) if item.get('glide') else None,
                         glide_path=item.get('glide_path') or None))
@@ -781,7 +817,7 @@ def scenes_to_project(main_state, scene_list, index):
                                start=s.get('start'), track=s.get('track') or 0,
                                hidden=bool(s.get('hidden')), muted=bool(s.get('muted')),
                                art_off=bool(s.get('art_off')), hand_off=bool(s.get('hand_off')),
-                               hand_link=bool(s.get('hand_link')),
+                               hand_link=bool(s.get('hand_link')), hand_flow=s.get('hand_flow'),
                                glide=list(s['glide']) if s.get('glide') else None,
                                glide_path=s.get('glide_path') or None)
                           for k, s in enumerate(scene_list)]

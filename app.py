@@ -4459,6 +4459,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 # exp.210: a hand linked from the element before comes from where that one finished
                 _scenes.link_hands(items,elements,self.board_frames(),self.hidden_elements())
             _scenes.hand_handover(items,elements,self.hidden_elements())   # exp.212: no jump in size
+            if any(s.get('hand_flow') for s in self.scenes):
+                _scenes.flow_hands(items,elements,self.board_frames(),self.hidden_elements())   # exp.218
         except Exception as exc:
             import applog; applog.error('Linked hands',exc)
         return elements
@@ -5816,6 +5818,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 repr(self.scenes[k].get('glide')) if 0<=k<len(self.scenes) else None,
                 repr(self.scenes[k].get('glide_path')) if 0<=k<len(self.scenes) else None,   # exp.217
                 tuple(bool(s.get('hand_link')) for s in self.scenes),          # exp.210: linked hands
+                tuple(s.get('hand_flow') for s in self.scenes),                # exp.218
                 (bool(self.scenes[k].get('art_off')),bool(self.scenes[k].get('hand_off'))) if 0<=k<len(self.scenes) else None)
 
     def hand_rest_settings(self):
@@ -5939,9 +5942,21 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         link.setToolTip('The hand does not go back to its corner after this element: it goes on from '
                         'where it finished to the first line of the next element (on the same page), '
                         'in one smooth movement. The next element\'s "To the drawing" time and way are used.')
+        # exp.218 (the user): back to the corner, but on to the next drawing without stopping
+        flow=QComboBox()
+        flow.addItem('Stop and wait',None)
+        flow.addItem('Through the corner, without stopping','exact')
+        flow.addItem('Near the corner, without stopping','near')
+        flow.setCurrentIndex(max(0,flow.findData(self.scenes[k].get('hand_flow'))))
+        flow.setToolTip('When the next element\'s hand starts the moment this one is back in its corner '
+                        '(the green line "one hand after the other"), the way back and the next way in become '
+                        'one movement: through the corner, or swinging near it, without stopping. With a gap '
+                        'between them the hand goes back and waits, as always.')
         def linked(on):
             back.setEnabled(not on); how_out.setEnabled(not on); bend_out.setEnabled(not on); out_path.setEnabled(not on)
+            flow.setEnabled(not on)
         link.toggled.connect(linked); linked(link.isChecked())
+        form.addRow(help_label('At the corner','After the way back: stop there, or go on to the next drawing without stopping.'),flow)
         form.addRow(help_label('Then','Back to the corner, or on to the next drawing.'),link)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
@@ -5953,6 +5968,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                                  bend_in.currentText(),bend_out.currentText())
         if paths: self.scenes[k]['glide_path']=paths
         else: self.scenes[k].pop('glide_path',None)
+        if flow.currentData() and not link.isChecked(): self.scenes[k]['hand_flow']=flow.currentData()
+        else: self.scenes[k].pop('hand_flow',None)
         if link.isChecked(): self.scenes[k]['hand_link']=True
         else: self.scenes[k].pop('hand_link',None)
         self.project_changes.mark_changed()
@@ -6849,7 +6866,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                              start=s.get('start'),track=s.get('track') or 0,
                              hidden=bool(self.track_flag(s,'hidden')),muted=bool(self.track_flag(s,'muted')),
                              art_off=bool(s.get('art_off')),hand_off=bool(s.get('hand_off')),
-                             hand_link=bool(s.get('hand_link')),glide_path=s.get('glide_path'),
+                             hand_link=bool(s.get('hand_link')),glide_path=s.get('glide_path'),hand_flow=s.get('hand_flow'),
                              glide=s.get('glide'))
                         for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
