@@ -235,6 +235,7 @@ class StageTimeline(QFrame):
     move_shift=Signal(int,float)        # exp.167: a camera move dragged (k, seconds): the elements after it move too
     element_flag=Signal(int,str)        # whole video: one element's 'mute' or 'hide' (right-click menu)
     background_menu=Signal(int,float,object)   # exp.207: Background row clicked: piece, seconds, screen point
+    hand_snapped=Signal(int,int)               # exp.211: element k let go on element j's hand end (-1: not)
     background_cut=Signal(int,float,bool)      # exp.207: a cut dragged: piece, its new start, let go
 
     stage_source_edit=Signal(str,int)   # Draw/Paint source editor, exact clicked element
@@ -819,18 +820,38 @@ class StageTimeline(QFrame):
                 return item
         return None
 
+    def _paint_snap(self, p, small):
+        snap=getattr(self,'_snap_line',None)
+        if self._ghost is not None and snap is not None:
+            # exp.211 (the user, like Filmora): a green line where the dragged element snaps
+            x=self._x(snap[0]); green=QColor('#2ecc71')
+            p.setPen(QPen(green,2)); p.drawLine(QPointF(x,22),QPointF(x,self.height()-4))
+            if snap[1]=='hand':
+                p.setFont(small); text='the hand follows on'
+                w_=p.fontMetrics().horizontalAdvance(text)+12
+                box=QRectF(x+4,24,w_,18); p.setBrush(green); p.setPen(Qt.PenStyle.NoPen); p.drawRoundedRect(box,5,5)
+                p.setPen(QColor('#0b2e17')); p.drawText(box,Qt.AlignmentFlag.AlignCenter,text)
+
     def _snap(self, k, start, px_per_sec):
-        """Start times snap to 0, the playhead and the other elements' starts and ends."""
+        """Start times snap to 0, the playhead and the other elements' starts and ends, and
+        (exp.211, the user, like Filmora) to where another element's hand finishes drawing:
+        then a green line shows it, and letting go there links the hands (the hand goes on
+        from that drawing to this one). self._snap_line: (seconds, kind, other element)."""
         secs=next(i[3] for i in self.items if i[0]==k)
-        points=[0.,self.progress*self.total()]
+        points=[(0.,'edge',None),(self.progress*self.total(),'edge',None)]
         for i in self.items:
-            if i[0]!=k: points+= [i[2],i[2]+i[3]]
-        best=start
+            if i[0]!=k: points+=[(i[2],'edge',i[0]),(i[2]+i[3],'edge',i[0])]
+        for mark in getattr(self,'hand_marks',None) or ():
+            if len(mark)>4 and mark[4]!=k:
+                points.append((mark[0]+mark[1]+mark[2],'hand',mark[4]))   # its last stroke
+        best=start; found=None
         limit=8./max(1e-6,px_per_sec)
-        for p in points:
-            for edge,value in ((start,p),(start+secs,p-secs)):
+        for p,kind,other in points:
+            for edge,value,front in ((start,p,True),(start+secs,p-secs,False)):
                 if abs(edge-p)<limit and abs(edge-p)<abs(start-best)+limit:
                     best=value; limit=abs(edge-p)
+                    found=(p,kind if front else 'edge',other)
+        self._snap_line=found
         return max(0.,best)
 
     def element_length(self):
@@ -1212,6 +1233,8 @@ class StageTimeline(QFrame):
         p.drawPolygon(QPolygonF([QPointF(play_x-6,ruler_h-13),QPointF(play_x+6,ruler_h-13),
                                  QPointF(play_x+6,ruler_h-6),QPointF(play_x,ruler_h),
                                  QPointF(play_x-6,ruler_h-6)]))
+        small=QFont(self.font());small.setPointSizeF(8.)
+        self._paint_snap(p,small)           # exp.211: the green snap line, on top of everything
         p.end()
 
     STAGE_NAMES={'draw':'Draw','paint':'Paint','hold':'Hold','erase':'Out','move':'Move in','glide':'Hand'}
@@ -1889,9 +1912,12 @@ class StageTimeline(QFrame):
             self._frozen=None
             ghost=self._ghost; self._ghost=None
             self._drag=None
+            snap=getattr(self,'_snap_line',None); self._snap_line=None
             if moved and ghost is not None:
                 if (abs(ghost[1]-start0)>1e-3 or ghost[2]!=track0):
                     self.element_placed.emit(k,float(ghost[1]),int(ghost[2]))
+                # exp.211: let go on where another hand finishes: the hands are linked
+                self.hand_snapped.emit(k,snap[2] if snap and snap[1]=='hand' and snap[2] is not None else -1)
             else:
                 self._seek(event.position().x())
                 if k!=self.current_scene: self.element_clicked.emit(k)
@@ -3932,6 +3958,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.element_edit.connect(lambda k: w.edit_element(k))
     w.stage_timeline.element_enter.connect(lambda k: w.enter_element(k))
     w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))
+    w.stage_timeline.hand_snapped.connect(lambda k,j: w.snap_hands(k,j))       # exp.211
     w.stage_timeline.element_reset.connect(lambda k: w.reset_element_time(k))
     w.stage_timeline.track_toggled.connect(lambda t,which: w.toggle_track(t,which))
     w.stage_timeline.element_flag.connect(lambda k,which: w.toggle_element_flag(k,which))
