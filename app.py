@@ -3718,7 +3718,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             return memo[key]
         state=self.scenes[k]['state']
         rest=self.hand_rest_settings()             # exp.143: the same for every element
-        key=(id(state),width,height,over,tuple(sorted(rest.items())),tuple(self.scenes[k].get('glide') or ()))
+        key=(id(state),width,height,over,tuple(sorted(rest.items())),tuple(self.scenes[k].get('glide') or ()),repr(self.scenes[k].get('glide_path')))
         cached=self._scene_cache.get(id(state))
         if cached is None or cached[0]!=key:
             drawing,options,_=job_from_state(state,self.hand,overrides=rest)
@@ -5814,6 +5814,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 # exp.205 (the user: every way of moving looked the same): the element's own glide
                 # (how long, how it moves) is part of its frames; the old ones were shown.
                 repr(self.scenes[k].get('glide')) if 0<=k<len(self.scenes) else None,
+                repr(self.scenes[k].get('glide_path')) if 0<=k<len(self.scenes) else None,   # exp.217
                 tuple(bool(s.get('hand_link')) for s in self.scenes),          # exp.210: linked hands
                 (bool(self.scenes[k].get('art_off')),bool(self.scenes[k].get('hand_off'))) if 0<=k<len(self.scenes) else None)
 
@@ -5906,9 +5907,30 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         form.addRow(help_label('To the drawing','How long the hand takes to go from its corner to the first line.'),go)
         form.addRow(help_label('How',tip),how_in)
         form.addRow(help_label('Turn',tip),bend_in)
+        # exp.217 (the user: keyframes in the trajectory): shape the way by hand
+        from PySide6.QtWidgets import QPushButton
+        paths=dict(self.scenes[k].get('glide_path') or {})
+        def path_button(which):
+            button=QPushButton(); button.setObjectName('subtle')
+            def label():
+                button.setText('Edit path… (own path)' if paths.get(which) else 'Edit path…')
+            def clicked():
+                keys=self.edit_glide_path(k,which,how_in.currentText() if which=='in' else how_out.currentText(),
+                                          bend_in.currentText() if which=='in' else bend_out.currentText(),paths.get(which))
+                if keys is not False:
+                    if keys: paths[which]=keys
+                    else: paths.pop(which,None)
+                    label()
+            button.clicked.connect(clicked); label()
+            button.setToolTip('Drag keyframes on the video to give this way its own path (the chosen way '
+                              'gives the first keyframes and its speed).')
+            return button
+        form.addRow(help_label('Path','Your own path for this way, with keyframes.'),path_button('in'))
         form.addRow(help_label('Back','How long the hand takes to go back to its corner after drawing.'),back)
         form.addRow(help_label('How ',tip),how_out)
         form.addRow(help_label('Turn ',tip),bend_out)
+        out_path=path_button('out')
+        form.addRow(help_label('Path ','Your own path for the way back, with keyframes.'),out_path)
         # exp.210 (the user): link this hand to the next one: no way back to the corner, the
         # next element's hand starts from where this one finished, in one movement.
         from PySide6.QtWidgets import QCheckBox
@@ -5918,7 +5940,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                         'where it finished to the first line of the next element (on the same page), '
                         'in one smooth movement. The next element\'s "To the drawing" time and way are used.')
         def linked(on):
-            back.setEnabled(not on); how_out.setEnabled(not on); bend_out.setEnabled(not on)
+            back.setEnabled(not on); how_out.setEnabled(not on); bend_out.setEnabled(not on); out_path.setEnabled(not on)
         link.toggled.connect(linked); linked(link.isChecked())
         form.addRow(help_label('Then','Back to the corner, or on to the next drawing.'),link)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
@@ -5929,6 +5951,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         before=next((it for it in self.timeline_layout().items if it.k==k),None)
         self.scenes[k]['glide']=(round(go.value(),2),round(back.value(),2),how_in.currentText(),how_out.currentText(),
                                  bend_in.currentText(),bend_out.currentText())
+        if paths: self.scenes[k]['glide_path']=paths
+        else: self.scenes[k].pop('glide_path',None)
         if link.isChecked(): self.scenes[k]['hand_link']=True
         else: self.scenes[k].pop('hand_link',None)
         self.project_changes.mark_changed()
@@ -5939,6 +5963,43 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self.push_after(before.end,after.length-before.length,skip=k)
         self.hand_rest_changed()
         self.sync_camera_timeline()
+
+    def edit_glide_path(self,k,which,style,bend,keys):
+        """exp.217: the Edit path window for element k's way in / back. Returns the keyframes
+        (None: the preset's path) or False (cancelled / no frame to show)."""
+        import frame_render
+        from PySide6.QtWidgets import QDialog
+        from glide_path_dialog import GlidePathDialog
+        from timeline_model import state_at
+        lay=self.timeline_layout()
+        it=next((i for i in lay.items if i.k==k),None)
+        marks=next((m for m in self.hand_marks() if len(m)>4 and m[4]==k),None)
+        if it is None or marks is None:
+            self.status.setText('Edit path: this element has no hand way in the whole video.'); return False
+        start,lead,busy,tail=marks[:4]
+        if which=='out' and tail<=0:
+            self.status.setText('Edit path: this hand has no way back (it is linked to the next one).'); return False
+        t=start+lead*.5 if which=='in' else start+lead+busy+tail*.5
+        # the frame of that moment, with the way as it is (its start and end on the screen)
+        saved=self.scenes[k].get('glide')
+        g=list(saved or (0.,0.,'Smooth','Smooth'))+['Smooth','Smooth','Auto','Auto']
+        g=g[:6]; g[2 if which=='in' else 3]=style; g[4 if which=='in' else 5]=bend
+        self.scenes[k]['glide']=tuple(g); self._scene_cache={}; self.__dict__.pop('_memo',None)
+        try:
+            frame_render._HAND.glide=None
+            W=960; H=round(W*self.board_aspect())
+            image=self.timeline_frame(state_at(self.timeline_layout(),t),W,H,t)
+            info=getattr(frame_render._HAND,'glide',None)
+        finally:
+            self.scenes[k]['glide']=saved; self._scene_cache={}; self.__dict__.pop('_memo',None)
+        if info is None or image is None:
+            self.status.setText('Edit path: the hand could not be found at that moment.'); return False
+        a,b=info['a'],info['b']
+        preset=frame_render.preset_keyframes(a,b,style,(W/2.,H/2.),bend)
+        dialog=GlidePathDialog(self,image,a,b,keys,preset,style,
+                               f'Hand path: element {k+1}, '+('to the drawing' if which=='in' else 'back'))
+        if dialog.exec()!=QDialog.DialogCode.Accepted: return False
+        return dialog.keyframes()
 
     def shift_camera_move(self,k,shift):
         """exp.167 (the user): a move between pages dragged along the timeline: the element it
@@ -6788,7 +6849,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                              start=s.get('start'),track=s.get('track') or 0,
                              hidden=bool(self.track_flag(s,'hidden')),muted=bool(self.track_flag(s,'muted')),
                              art_off=bool(s.get('art_off')),hand_off=bool(s.get('hand_off')),
-                             hand_link=bool(s.get('hand_link')))
+                             hand_link=bool(s.get('hand_link')),glide_path=s.get('glide_path'),
+                             glide=s.get('glide'))
                         for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
             self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand,copy.deepcopy(self.visible_titles()),

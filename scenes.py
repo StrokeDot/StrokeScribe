@@ -202,6 +202,10 @@ def apply_glide(options, scene):
         if len(glide) > 5:                          # exp.214: which way it turns
             options['hand_glide_bend_in'] = glide[4] or 'Auto'
             options['hand_glide_bend_out'] = glide[5] or 'Auto'
+    path = scene.get('glide_path') if scene else None
+    if path and options.get('hand_travel'):           # exp.217: keyframes of its own path
+        if path.get('in'): options['hand_glide_path_in'] = tuple(tuple(k) for k in path['in'])
+        if path.get('out'): options['hand_glide_path_out'] = tuple(tuple(k) for k in path['out'])
     if scene and scene.get('hand_link') and options.get('hand_travel'):
         options['hand_link_out'] = True             # exp.210: on to the next hand, no way back
     return options
@@ -762,7 +766,8 @@ def scenes_from_project(data):
                         art_off=bool(item.get('art_off')), hand_off=bool(item.get('hand_off')),
                         hand_link=bool(item.get('hand_link')),
                         thumb_png=item.get('thumb_png'),
-                        glide=tuple(item['glide']) if item.get('glide') else None))
+                        glide=tuple(item['glide']) if item.get('glide') else None,
+                        glide_path=item.get('glide_path') or None))
     return out
 
 
@@ -777,7 +782,8 @@ def scenes_to_project(main_state, scene_list, index):
                                hidden=bool(s.get('hidden')), muted=bool(s.get('muted')),
                                art_off=bool(s.get('art_off')), hand_off=bool(s.get('hand_off')),
                                hand_link=bool(s.get('hand_link')),
-                               glide=list(s['glide']) if s.get('glide') else None)
+                               glide=list(s['glide']) if s.get('glide') else None,
+                               glide_path=s.get('glide_path') or None)
                           for k, s in enumerate(scene_list)]
         data['scene_index'] = index
     elif scene_list:
