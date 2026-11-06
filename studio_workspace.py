@@ -1585,6 +1585,10 @@ class StageTimeline(QFrame):
         if hand_k is not None:
             self._choose_only('hand')
             self.selected_hand=hand_k
+            # exp.212 (the user): a Hand bar can be dragged too: it moves its element with it
+            item=next((i for i in self.items if i[0]==hand_k),None)
+            if item is not None and event.button()==Qt.MouseButton.LeftButton:
+                self._drag=('handbar',hand_k,pos.x(),pos.y(),item[2],item[4],self._px_per_sec(),False)
             self.update(); event.accept(); return
         if getattr(self,'selected_hand',None) is not None or getattr(self,'selected_bg',None) is not None:
             self.selected_hand=None; self.selected_bg=None; self.update()
@@ -1752,6 +1756,23 @@ class StageTimeline(QFrame):
                 self.overlay_changed.emit(item.get('id'),round(start,2),round(length,2),track)
                 self.setToolTip(f'{item.get("name","")}: {start:.1f} s → {start+length:.1f} s')
                 event.accept(); return
+            if kind=='handbar':
+                _,k,x0,y0,start0,track0,px_per_sec,moved=self._drag
+                if not moved and abs(pos.x()-x0)<5:
+                    event.accept(); return
+                start=self._snap(k,start0+(pos.x()-x0)/px_per_sec,px_per_sec)
+                # exp.212 (the user): it cannot go over the hand before it: at most it joins on
+                # to where that hand finishes drawing (and then the hands are linked)
+                before=[m for m in (getattr(self,"hand_marks",None) or ()) if len(m)>4 and m[4]!=k and m[0]<start0-1e-6]
+                if before:
+                    prev=max(before,key=lambda m:m[0])
+                    limit=prev[0]+prev[1]+prev[2]
+                    if start<=limit+1e-6:
+                        start=limit; self._snap_line=(limit,'hand',prev[4])
+                self._drag=self._drag[:7]+(True,)
+                self._ghost=(k,round(start,2),track0)
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                self.update(); event.accept(); return
             if kind=='block':
                 _,k,x0,y0,start0,track0,px_per_sec,moved=self._drag
                 if not moved and abs(pos.x()-x0)<5 and abs(pos.y()-y0)<5:
@@ -1907,6 +1928,15 @@ class StageTimeline(QFrame):
         if self._drag and self._drag[0]=='handrow':
             self._drag=None; self.unsetCursor()
             self.update(); event.accept(); return       # exp.160: the Hand row stays on top
+        if self._drag and self._drag[0]=='handbar':
+            _,k,x0,y0,start0,track0,px_per_sec,moved=self._drag
+            ghost=self._ghost; self._ghost=None; self._drag=None
+            snap=getattr(self,'_snap_line',None); self._snap_line=None
+            if moved and ghost is not None:
+                if abs(ghost[1]-start0)>1e-3:
+                    self.element_placed.emit(k,float(ghost[1]),int(ghost[2]))
+                self.hand_snapped.emit(k,snap[2] if snap and snap[1]=='hand' and snap[2] is not None else -1)
+            self.unsetCursor(); self.update(); event.accept(); return
         if self._drag and self._drag[0]=='block':
             _,k,x0,y0,start0,track0,px_per_sec,moved=self._drag
             self._frozen=None
