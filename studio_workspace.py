@@ -820,14 +820,47 @@ class StageTimeline(QFrame):
                 return item
         return None
 
+    def _hand_follow(self, k, start0, raw, start, px_per_sec):
+        """exp.212/213 (the user): an element with a hand never overlaps the hand before it.
+        It snaps to where that hand is back in its corner (one after the other) or to where
+        it draws its last line (linked: it goes straight on); in between, the nearer."""
+        if not any(len(m)>4 and m[4]==k for m in (getattr(self,'hand_marks',None) or ())):
+            return start
+        before=[m for m in (getattr(self,'hand_marks',None) or ()) if len(m)>4 and m[4]!=k and m[0]<start0-1e-6]
+        if not before:
+            return start
+        prev=max(before,key=lambda m:m[0])
+        linked=prev[0]+prev[1]+prev[2]
+        done=linked+(0. if (len(prev)>5 and prev[5]) else prev[3])
+        reach=14./max(1e-6,px_per_sec)
+        if raw<=linked+reach:
+            self._snap_line=(linked,'hand',prev[4]); return linked
+        if raw<done+reach:
+            if done>linked and raw-linked<done-raw:
+                self._snap_line=(linked,'hand',prev[4]); return linked
+            self._snap_line=(done,'after',prev[4]); return done
+        return start
+
     def _paint_snap(self, p, small):
+        # exp.213 (the user: dragging, only the picture moved): the dragged element's Hand bar
+        # moves with it
+        if self._ghost is not None and self.items:
+            gk,gstart,_=self._ghost
+            mark=next((m for m in (getattr(self,'hand_marks',None) or ()) if len(m)>4 and m[4]==gk),None)
+            item=next((i for i in self.items if i[0]==gk),None)
+            if mark is not None and item is not None:
+                row=self._hand_row(); shift=gstart-item[2]
+                a=mark[0]+shift; b=a+mark[1]+mark[2]+mark[3]
+                r=QRectF(self._x(a),row.center().y()-5,max(4.,self._x(b)-self._x(a)),10)
+                fill=QColor(theme_colors()['hold']); fill.setAlpha(150)
+                p.setPen(QPen(QColor('#ffffff'),1.5,Qt.PenStyle.DashLine)); p.setBrush(fill); p.drawRoundedRect(r,4,4)
         snap=getattr(self,'_snap_line',None)
         if self._ghost is not None and snap is not None:
             # exp.211 (the user, like Filmora): a green line where the dragged element snaps
             x=self._x(snap[0]); green=QColor('#2ecc71')
             p.setPen(QPen(green,2)); p.drawLine(QPointF(x,22),QPointF(x,self.height()-4))
-            if snap[1]=='hand':
-                p.setFont(small); text='the hand follows on'
+            if snap[1] in ('hand','after'):
+                p.setFont(small); text='the hand follows on (linked)' if snap[1]=='hand' else 'one hand after the other'
                 w_=p.fontMetrics().horizontalAdvance(text)+12
                 box=QRectF(x+4,24,w_,18); p.setBrush(green); p.setPen(Qt.PenStyle.NoPen); p.drawRoundedRect(box,5,5)
                 p.setPen(QColor('#0b2e17')); p.drawText(box,Qt.AlignmentFlag.AlignCenter,text)
@@ -1760,15 +1793,8 @@ class StageTimeline(QFrame):
                 _,k,x0,y0,start0,track0,px_per_sec,moved=self._drag
                 if not moved and abs(pos.x()-x0)<5:
                     event.accept(); return
-                start=self._snap(k,start0+(pos.x()-x0)/px_per_sec,px_per_sec)
-                # exp.212 (the user): it cannot go over the hand before it: at most it joins on
-                # to where that hand finishes drawing (and then the hands are linked)
-                before=[m for m in (getattr(self,"hand_marks",None) or ()) if len(m)>4 and m[4]!=k and m[0]<start0-1e-6]
-                if before:
-                    prev=max(before,key=lambda m:m[0])
-                    limit=prev[0]+prev[1]+prev[2]
-                    if start<=limit+1e-6:
-                        start=limit; self._snap_line=(limit,'hand',prev[4])
+                raw=start0+(pos.x()-x0)/px_per_sec
+                start=self._hand_follow(k,start0,raw,self._snap(k,raw,px_per_sec),px_per_sec)
                 self._drag=self._drag[:7]+(True,)
                 self._ghost=(k,round(start,2),track0)
                 self.setCursor(Qt.CursorShape.ClosedHandCursor)
@@ -1777,7 +1803,8 @@ class StageTimeline(QFrame):
                 _,k,x0,y0,start0,track0,px_per_sec,moved=self._drag
                 if not moved and abs(pos.x()-x0)<5 and abs(pos.y()-y0)<5:
                     event.accept(); return
-                start=self._snap(k,start0+(pos.x()-x0)/px_per_sec,px_per_sec)
+                raw=start0+(pos.x()-x0)/px_per_sec
+                start=self._hand_follow(k,start0,raw,self._snap(k,raw,px_per_sec),px_per_sec)
                 track=track0
                 for t in range(self.lanes()):
                     lane=self._track_rect(t)
