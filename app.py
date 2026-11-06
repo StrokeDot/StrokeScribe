@@ -5888,14 +5888,27 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             box.setValue(float(value or 0) or default); return box
         go=number(settings.get('hand_glide_in')); back=number(settings.get('hand_glide_out'))
         how_in=style(glide[2]); how_out=style(glide[3])
+        # exp.214 (the user: "make the hand go round in a circle to the next one"): which way it bends
+        from frame_render import GLIDE_BENDS
+        stored=tuple(self.scenes[k].get('glide') or ())
+        def bending(value):
+            box=QComboBox(); box.addItems(list(GLIDE_BENDS))
+            box.setCurrentText(value if value in GLIDE_BENDS else 'Auto')
+            box.setToolTip('Which way a Curve, Swoop or Circle bends: Auto chooses for you; Clockwise or '
+                           'Anticlockwise always turns that way, whatever the direction of the way.')
+            return box
+        bend_in=bending(stored[4] if len(stored)>4 else 'Auto'); bend_out=bending(stored[5] if len(stored)>5 else 'Auto')
         tip=('How the hand moves on its way. Smooth: eases out of its corner and gently into place. '
              'Steady: the same speed all the way, like a machine. Quick start: darts off, then arrives '
              'slowly. Slow start: leaves slowly, then hurries. Overshoot: goes past the spot and comes '
-             'back to it. Curve: along an arc bulging upwards. Swoop: dips down and sweeps up into place.')
+             'back to it. Curve: a gentle arc. Swoop: a big sweep through the picture. Circle: round '
+             'in half a circle. Turn: which way Curve, Swoop and Circle bend.')
         form.addRow(help_label('To the drawing','How long the hand takes to go from its corner to the first line.'),go)
         form.addRow(help_label('How',tip),how_in)
+        form.addRow(help_label('Turn',tip),bend_in)
         form.addRow(help_label('Back','How long the hand takes to go back to its corner after drawing.'),back)
         form.addRow(help_label('How ',tip),how_out)
+        form.addRow(help_label('Turn ',tip),bend_out)
         # exp.210 (the user): link this hand to the next one: no way back to the corner, the
         # next element's hand starts from where this one finished, in one movement.
         from PySide6.QtWidgets import QCheckBox
@@ -5905,7 +5918,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                         'where it finished to the first line of the next element (on the same page), '
                         'in one smooth movement. The next element\'s "To the drawing" time and way are used.')
         def linked(on):
-            back.setEnabled(not on); how_out.setEnabled(not on)
+            back.setEnabled(not on); how_out.setEnabled(not on); bend_out.setEnabled(not on)
         link.toggled.connect(linked); linked(link.isChecked())
         form.addRow(help_label('Then','Back to the corner, or on to the next drawing.'),link)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
@@ -5914,7 +5927,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if dialog.exec()!=QDialog.DialogCode.Accepted: return
         self.record_structure('hand glide')
         before=next((it for it in self.timeline_layout().items if it.k==k),None)
-        self.scenes[k]['glide']=(round(go.value(),2),round(back.value(),2),how_in.currentText(),how_out.currentText())
+        self.scenes[k]['glide']=(round(go.value(),2),round(back.value(),2),how_in.currentText(),how_out.currentText(),
+                                 bend_in.currentText(),bend_out.currentText())
         if link.isChecked(): self.scenes[k]['hand_link']=True
         else: self.scenes[k].pop('hand_link',None)
         self.project_changes.mark_changed()
