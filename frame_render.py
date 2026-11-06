@@ -75,7 +75,7 @@ def _core(drawing, fraction, opts, camera_path=None, camera_fraction=None):
         _core_body(drawing, travel[3], opts, camera_path, camera_fraction, last)
         if last.get('hands'):
             got = last
-    _set_spec(_spec_from(got, opts, frame, travel))
+    _set_spec(None if opts.get('_hand_gone') else _spec_from(got, opts, frame, travel))
     return frame
 
 
@@ -351,6 +351,11 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
             inner_t = hand_end
         video_t = float(options.get('hand_video_start', 0) or 0) + t
         inner['_video_t'] = video_t
+        if phase is None and t >= lead + (hand_end - hand_start) + tail - 1e-6:
+            # exp.211 (the user: two hands, one on the picture and one in the corner, right
+            # after the way back): its hand's time is over (back in its corner, or linked on to
+            # the next): it is not drawn on the picture again; the waiting hand is the one seen.
+            inner['_hand_gone'] = True
         if phase:
             lines_end = max(.001, float(options.get('duration', 4) or 4)) * (1 - TRAVEL_EPS)
             inner['_travel'] = (phase, p, video_t,
@@ -947,7 +952,7 @@ def _glide_ease(p, style):
 _ARC = {'Curve': .35, 'Swoop': -.45}
 
 
-def glide_point(a, b, p, style='Smooth'):
+def glide_point(a, b, p, style='Smooth', centre=None):
     """Where the hand is at p (0..1) of its way from a to b, in this style. Curve goes along
     an arc bulging up; Swoop dips down under the straight way, like a bird swooping."""
     e = _glide_ease(p, style)
@@ -963,18 +968,24 @@ def glide_point(a, b, p, style='Smooth'):
             nx, ny = -dy / length, dx / length          # perpendicular
             if (ny > 0) == (arc > 0):                   # Curve: upwards, Swoop: downwards
                 nx, ny = -nx, -ny
+            if style == 'Swoop' and centre is not None:
+                # exp.211: a swoop from a corner at the bottom dipped off the screen: it dips
+                # towards the middle of the picture instead, so the hand is always seen.
+                mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+                if nx * (centre[0] - mx) + ny * (centre[1] - my) < 0:
+                    nx, ny = -nx, -ny
             x += nx * bulge; y += ny * bulge
     return (x, y)
 
 
-def glide_tilt(a, b, p, style='Smooth', hand_width=100.):
+def glide_tilt(a, b, p, style='Smooth', hand_width=100., centre=None):
     """exp.205: degrees the hand leans while it travels (a wrist leading the move), from its
     sideways speed; nothing when it is still, so it is upright on the drawing."""
     if style == 'Steady':
         return 0.
     d = .02
-    x0, _ = glide_point(a, b, max(0., p - d), style)
-    x1, _ = glide_point(a, b, min(1., p + d), style)
+    x0, _ = glide_point(a, b, max(0., p - d), style, centre)
+    x1, _ = glide_point(a, b, min(1., p + d), style, centre)
     speed = (x1 - x0) / (2 * d) / max(1., 4 * hand_width)      # hand widths per glide
     lean = 14. if style in ('Swoop', 'Quick start', 'Overshoot') else 9.
     return max(-lean, min(lean, -speed * lean))
@@ -1021,9 +1032,9 @@ def paint_hand_spec(frame, spec, options, place=None):
         p = max(0., min(1., float(spec.get('p') or 0.)))
         style = options.get('hand_glide_style_in' if phase == 'in' else 'hand_glide_style_out') or 'Smooth'
         a, b = (home, target) if phase == 'in' else (target, home)
-        tip = glide_point(a, b, p, style)
+        tip = glide_point(a, b, p, style, (W / 2., H / 2.))
         image, anchor, ratio = hand, (float(ax), float(ay)), 1.
-        tilt = glide_tilt(a, b, p, style, W * float(options.get('hand_scale', .18)))
+        tilt = glide_tilt(a, b, p, style, W * float(options.get('hand_scale', .18)), (W / 2., H / 2.))
     if tip is None or image is None or image.isNull():
         return frame
     hw = W * float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.) * ratio

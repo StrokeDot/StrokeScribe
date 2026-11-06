@@ -4212,6 +4212,23 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                             'Right-click it on the timeline to put it back after the element before it.')
         self.fill_scenes(); self.refresh()
 
+    def snap_hands(self,k,j):
+        """exp.211 (the user, like Filmora's green line): element k was let go right where
+        element j's hand finishes drawing: j's hand goes straight on to k (linked). Moved away
+        from there, a link made this way is undone."""
+        changed=False
+        for other,scene in enumerate(self.scenes):
+            if scene.get('hand_link')=='snap' and other!=j and scene.get('_snap_to')==k:
+                scene.pop('hand_link',None); scene.pop('_snap_to',None); changed=True
+        if 0<=j<len(self.scenes) and j!=k and not self.scenes[j].get('hand_link'):
+            self.scenes[j]['hand_link']='snap'; self.scenes[j]['_snap_to']=k; changed=True
+            self.status.setText(f'Element {k+1} follows on from element {j+1}: the hand goes straight from '
+                                f'its last line to this one (linked). Double-click the Hand bar to change it.')
+        if changed:
+            self.project_changes.mark_changed()
+            self._scene_cache={}; self.__dict__.setdefault('_memo',{}).clear()
+            self.fill_scenes(); self.refresh()
+
     def toggle_track(self,track,which):
         """A track's mute (its pencil / brush sounds) or hide (not in the video) button."""
         flags=self.__dict__.setdefault('track_flags',{})
