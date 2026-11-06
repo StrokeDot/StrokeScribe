@@ -353,6 +353,7 @@ def _resting_options(lay, elements, seconds, hidden=()):
     from frame_render import hand_window, rest_out
     chosen = None
     chosen_drawing = None
+    chosen_k = None
     others = []
     for it in lay.items:
         if it.k in hidden:
@@ -367,6 +368,7 @@ def _resting_options(lay, elements, seconds, hidden=()):
         if chosen is None or it.start <= seconds:
             chosen = e['options']
             chosen_drawing = e['drawing']
+            chosen_k = it.k
         if it.start - 1e-6 <= seconds < it.start + window[0] - 1e-6:
             return None
     if chosen is not None:
@@ -379,7 +381,7 @@ def _resting_options(lay, elements, seconds, hidden=()):
             from frame_render import last_tip
             tip = last_tip(chosen_drawing, chosen)              # exp.210: waits where it finished
             if tip is not None:
-                chosen = dict(chosen, _wait_tip=tip)
+                chosen = dict(chosen, _wait_tip=tip, _wait_k=chosen_k)
     return chosen
 
 
@@ -456,6 +458,9 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
             if rest is not None:                     # exp.143: the hand waiting in its corner
                 from frame_render import paint_rest_hand
                 place = timeline_render.page_place(world, lay, state, elements, width, height)   # exp.161: on the page
+                if rest.get('_wait_k') is not None:      # exp.216: a linked hand waits on its page
+                    rest = dict(rest, _spot_place=timeline_render.element_place(
+                        world, lay, state, elements, rest['_wait_k'], width, height))
                 image = paint_rest_hand(image, rest, i / fps, place)
             writer.write(image, folder / f'frame_{i:06d}.png')
             progress(i + 1, total)

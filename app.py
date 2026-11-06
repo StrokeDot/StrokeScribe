@@ -6046,14 +6046,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         out=0.
         if self.all_scenes():
             lay=self.timeline_layout(); hidden=self.hidden_elements()
-            options=None; others=[]; source=None
+            options=None; others=[]; source=None; source_k=None
             for it in lay.items:
                 if it.k in hidden: continue
                 drawing,opts,_,_=self.preview_scene(it.k,960,540)        # its timing (as the timeline)
                 window=hand_window(drawing,opts)
                 if window is None:
                     others.append((drawing,opts,it.start)); continue     # exp.153: slides out for it
-                if options is None or it.start<=seconds: options=opts; source=drawing
+                if options is None or it.start<=seconds: options=opts; source=drawing; source_k=it.k
                 if it.start-1e-6<=seconds<it.start+window[0]-1e-6:
                     return None                     # this element's own hand
             if options is None: return None
@@ -6062,7 +6062,20 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if options.get('hand_link_out') and source is not None:
                 from frame_render import last_tip
                 tip=last_tip(source,options)                              # exp.210: waits where it finished
-                if tip is not None: options=dict(options,_wait_tip=tip)
+                if tip is not None:
+                    options=dict(options,_wait_tip=tip)
+                    try:                                                    # exp.216: on its page
+                        import timeline_render
+                        from timeline_model import state_at
+                        zoom=self.zoomed_out()
+                        els=[dict(drawing=d,options=o,camera=self.video_camera(j,c,s),transition=self.scenes[j]['transition'],
+                                  move_seconds=self.scenes[j]['transition_seconds'])
+                             for j,(d,o,s,c) in enumerate(self.preview_scene(j,width,height) for j in range(len(self.scenes)))]
+                        options['_spot_place']=timeline_render.element_place(
+                            self.preview_world(width,height),lay,state_at(lay,max(0.,float(seconds))),els,source_k,width,height,
+                            self.preview_zoom_out if zoom else 1.,getattr(self,'preview_pan',(0.,0.)) if zoom else (0.,0.))
+                    except Exception as exc:
+                        import applog; applog.error('Linked hand spot',exc)
         else:
             drawing,options,_,_=self.preview_scene(self.scene_index,960,540)
             window=hand_window(drawing,options)
@@ -6070,7 +6083,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if self.position*window[1]<window[0]-1e-6: return None
         layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
         place=self.page_place_at(width,height,seconds) if self.all_scenes() else None     # exp.161: on the page
-        return paint_rest_hand(layer,dict(options,layers='all',_rest_out=out,**self.hand_video(None)),seconds,place)
+        view=1./max(1.,float(getattr(self,'preview_zoom_out',1.))) if self.zoomed_out() else 1.   # exp.216
+        return paint_rest_hand(layer,dict(options,layers='all',_rest_out=out,_hand_view=view,**self.hand_video(None)),seconds,place)
 
     def page_place_at(self,width,height,seconds):
         """exp.161: where the page is on the screen at `seconds` (camera zooms included)."""

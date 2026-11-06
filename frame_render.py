@@ -761,7 +761,8 @@ def rest_rect(width, height, options, seconds=None, place=None, spot=None):
     hand = options.get('hand')
     if hand is None or hand.isNull():
         return None
-    hw = width * float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.)
+    hw = width * float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.) \
+        * float(options.get('_hand_view', 1.) or 1.)
     hh = hw * hand.height() / max(1, hand.width())
     ax, ay = options.get('anchor', (.1, .1))
     fx, fy = REST_CORNERS.get(options.get('hand_rest_corner') or 'Bottom right', REST_CORNERS['Bottom right'])
@@ -770,6 +771,9 @@ def rest_rect(width, height, options, seconds=None, place=None, spot=None):
         # exp.210 (the user: link one hand to the next): it waits where the linked hand
         # finished (a spot of the page, like the corner), not in the corner.
         fx, fy = float(spot[0]), float(spot[1])
+        # exp.216: that spot is on the element's page, not on what the camera shows
+        if options.get('_spot_place') is not None:
+            place = options['_spot_place']
     # exp.161 (the user): the corner belongs to the page, not to the screen: when the camera
     # zooms, the waiting hand stays at its spot of the page (it can leave the picture), at its
     # own size. place = (x, y, w, h) of the page on the screen (None: the whole screen).
@@ -939,7 +943,8 @@ def _glide_ease(p, style):
     if style == 'Quick start':               # darts off, then a long gentle arrival
         return 1 - (1 - p) ** 5
     if style in ('Swoop', 'Circle'):
-        return 1 - (1 - p) ** 3 if style == 'Swoop' else p * p * (3 - 2 * p)
+        # exp.216: a loop goes round at an even pace, gently in and out
+        return p * p * (3 - 2 * p)
     if style == 'Slow start':                # takes its time to leave, then hurries
         return p ** 4
     if style == 'Overshoot':                 # goes clearly past, then settles back
@@ -956,7 +961,7 @@ def glide_point(a, b, p, style='Smooth', centre=None, bend='Auto'):
     """Where the hand is at p (0..1) of its way from a to b, in this style. Curve goes along
     an arc bulging up; Swoop dips down under the straight way, like a bird swooping."""
     e = _glide_ease(p, style)
-    if bend in ('Clockwise', 'Anticlockwise') and style in ('Swoop', 'Curve', 'Circle'):
+    if bend in ('Clockwise', 'Anticlockwise') and style in ('Curve', 'Circle'):
         # exp.214 (the user: "the hand should go round in a circle to the next one"): the way
         # bends to the side chosen, clockwise or anticlockwise, whatever its direction: a wide
         # arc (Swoop), half a circle (Circle) or a gentle one (Curve).
@@ -977,13 +982,17 @@ def glide_point(a, b, p, style='Smooth', centre=None, bend='Auto'):
     if style == 'Circle':
         style = 'Swoop'                           # Circle with Auto: like a swoop
     if style == 'Swoop' and centre is not None:
-        # exp.215 (the user: "corner, left, and then the right, to the point"): a swoop is
-        # always the same movement: the hand leaves going to the left, sweeps round and comes
-        # into the point from its left, moving right, like a hand about to write. (exp.212
-        # bent it towards the middle of the picture, so it changed with where the drawing was.)
+        # exp.216 (the user drew it twice: corner -> left -> round to the right into the
+        # drawing; end of a drawing -> out to the right, down round under the picture and
+        # up into the next): a swoop is a big round loop that always turns clockwise. It
+        # swings wide (outside the picture if it must) and comes into the point from the
+        # other side. Turn: Anticlockwise loops the other way.
         import math
-        reach = max(.45 * math.hypot(b[0] - a[0], b[1] - a[1]), .18 * 2. * centre[0])
-        c1 = (a[0] - reach, a[1]); c2 = (b[0] - reach, b[1])
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        n = math.hypot(dx, dy) or 1.
+        nx, ny = (dy / n, -dx / n) if bend != 'Anticlockwise' else (-dy / n, dx / n)
+        k = max(1.0 * n, .35 * 2. * centre[0])
+        c1 = (a[0] + nx * k, a[1] + ny * k); c2 = (b[0] + nx * k, b[1] + ny * k)
         u = 1. - e
         return (u ** 3 * a[0] + 3 * u * u * e * c1[0] + 3 * u * e * e * c2[0] + e ** 3 * b[0],
                 u ** 3 * a[1] + 3 * u * u * e * c1[1] + 3 * u * e * e * c2[1] + e ** 3 * b[1])
@@ -1057,7 +1066,10 @@ def paint_hand_spec(frame, spec, options, place=None):
         # exp.214: coming in, it starts as the waiting hand was drawn (the element before's
         # size and grip), so nothing jumps when it takes over.
         before = options.get('_prev_rest') if phase == 'in' else None
-        corner = rest_rect(W, H, dict(options, **before) if before else options, spec.get('seconds'),
+        merged = dict(options, **before) if before else dict(options)
+        if phase == 'in' and options.get('_from_tip') is not None and place is not None:
+            merged['_spot_place'] = place          # exp.216: the linked spot is on the page
+        corner = rest_rect(W, H, merged, spec.get('seconds'),
                            spot=options.get('_from_tip') if phase == 'in' else None)
         hand = options.get('hand')
         if corner is None or hand is None or hand.isNull():
@@ -1082,7 +1094,8 @@ def paint_hand_spec(frame, spec, options, place=None):
             anchor = (float(ax) + (own[0] - float(ax)) * near, float(ay) + (own[1] - float(ay)) * near)
     if tip is None or image is None or image.isNull():
         return frame
-    hw = W * float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.) * ratio
+    hw = W * float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.) * ratio \
+        * float(options.get('_hand_view', 1.) or 1.)
     hh = hw * image.height() / max(1, image.width())
     out = frame.copy()
     painter = QPainter(out)
