@@ -957,10 +957,100 @@ def _glide_ease(p, style):
 _ARC = {'Curve': .35, 'Swoop': -.45}
 
 
-def glide_point(a, b, p, style='Smooth', centre=None, bend='Auto'):
+def _path_points(a, b, waypoints):
+    """exp.217: the screen points of the hand's own path: a, the keyframes, b. A keyframe is
+    kept as (along, side): along the way from a to b, and to its side (both in shares of
+    the way), so the path keeps its shape wherever the drawing and the corner are."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    pts = [tuple(a)]
+    for along, side in waypoints:
+        pts.append((a[0] + along * dx - side * dy, a[1] + along * dy + side * dx))
+    pts.append(tuple(b))
+    return pts
+
+
+def to_keyframe(a, b, point):
+    """(along, side) of a screen point for the way from a to b (see _path_points)."""
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    n2 = dx * dx + dy * dy or 1.
+    px, py = point[0] - a[0], point[1] - a[1]
+    return ((px * dx + py * dy) / n2, (-px * dy + py * dx) / n2)
+
+
+def path_polyline(a, b, waypoints, steps=24):
+    """A smooth curve through a, the keyframes and b (centripetal Catmull-Rom), as points."""
+    import math
+    pts = _path_points(a, b, waypoints)
+    if len(pts) == 2:
+        return pts
+    ext = [(2 * pts[0][0] - pts[1][0], 2 * pts[0][1] - pts[1][1])] + pts + \
+          [(2 * pts[-1][0] - pts[-2][0], 2 * pts[-1][1] - pts[-2][1])]
+    out = [pts[0]]
+    for i in range(1, len(ext) - 2):
+        p0, p1, p2, p3 = ext[i - 1], ext[i], ext[i + 1], ext[i + 2]
+        def tj(ti, pa, pb):
+            return ti + max(1e-6, math.hypot(pb[0] - pa[0], pb[1] - pa[1])) ** .5
+        t0 = 0.; t1 = tj(t0, p0, p1); t2 = tj(t1, p1, p2); t3 = tj(t2, p2, p3)
+        for s in range(1, steps + 1):
+            t = t1 + (t2 - t1) * s / steps
+            def lerp(pa, pb, ta, tb):
+                w = (t - ta) / (tb - ta) if tb != ta else 0.
+                return (pa[0] + (pb[0] - pa[0]) * w, pa[1] + (pb[1] - pa[1]) * w)
+            a1 = lerp(p0, p1, t0, t1); a2 = lerp(p1, p2, t1, t2); a3 = lerp(p2, p3, t2, t3)
+            b1 = lerp(a1, a2, t0, t2); b2 = lerp(a2, a3, t1, t3)
+            out.append(lerp(b1, b2, t1, t2))
+    return out
+
+
+def _along_polyline(line, e):
+    import math
+    lengths = [0.]
+    for p, q in zip(line, line[1:]):
+        lengths.append(lengths[-1] + math.hypot(q[0] - p[0], q[1] - p[1]))
+    total = lengths[-1]
+    if total <= 1e-9:
+        return line[-1]
+    want = max(0., min(1., e)) * total
+    import bisect
+    i = max(1, min(len(line) - 1, bisect.bisect_left(lengths, want)))
+    seg = lengths[i] - lengths[i - 1] or 1.
+    w = (want - lengths[i - 1]) / seg
+    return (line[i - 1][0] + (line[i][0] - line[i - 1][0]) * w, line[i - 1][1] + (line[i][1] - line[i - 1][1]) * w)
+
+
+def preset_keyframes(a, b, style, centre, bend='Auto', count=None):
+    """exp.217: keyframes that make the preset's path (the starting point of Edit path)."""
+    count = count or (3 if style in ('Swoop', 'Circle') else 2)
+    keys = []
+    for i in range(1, count + 1):
+        q = i / (count + 1.)
+        # the point the preset reaches half-way in distance: use its own shape, not its speed
+        keys.append(to_keyframe(a, b, _shape_point(a, b, q, style, centre, bend)))
+    return keys
+
+
+def _shape_point(a, b, q, style, centre, bend):
+    """The preset's shape at q (0..1) along its curve, without its speed."""
+    line = [glide_point(a, b, _inverse_ease(i / 60., style), style, centre, bend) for i in range(61)]
+    return _along_polyline(line, q)
+
+
+def _inverse_ease(x, style):
+    lo, hi = 0., 1.
+    for _ in range(30):
+        mid = (lo + hi) / 2.
+        if _glide_ease(mid, style) < x: lo = mid
+        else: hi = mid
+    return (lo + hi) / 2.
+
+
+def glide_point(a, b, p, style='Smooth', centre=None, bend='Auto', waypoints=None):
     """Where the hand is at p (0..1) of its way from a to b, in this style. Curve goes along
     an arc bulging up; Swoop dips down under the straight way, like a bird swooping."""
     e = _glide_ease(p, style)
+    if waypoints:
+        # exp.217 (the user: keyframes on the path): the hand's own path, at the preset's speed
+        return _along_polyline(path_polyline(a, b, waypoints), e)
     if bend in ('Clockwise', 'Anticlockwise') and style in ('Curve', 'Circle'):
         # exp.214 (the user: "the hand should go round in a circle to the next one"): the way
         # bends to the side chosen, clockwise or anticlockwise, whatever its direction: a wide
@@ -1018,14 +1108,14 @@ def glide_point(a, b, p, style='Smooth', centre=None, bend='Auto'):
     return (x, y)
 
 
-def glide_tilt(a, b, p, style='Smooth', hand_width=100., centre=None, bend='Auto'):
+def glide_tilt(a, b, p, style='Smooth', hand_width=100., centre=None, bend='Auto', waypoints=None):
     """exp.205: degrees the hand leans while it travels (a wrist leading the move), from its
     sideways speed; nothing when it is still, so it is upright on the drawing."""
     if style == 'Steady':
         return 0.
     d = .02
-    x0, _ = glide_point(a, b, max(0., p - d), style, centre, bend)
-    x1, _ = glide_point(a, b, min(1., p + d), style, centre, bend)
+    x0, _ = glide_point(a, b, max(0., p - d), style, centre, bend, waypoints)
+    x1, _ = glide_point(a, b, min(1., p + d), style, centre, bend, waypoints)
     speed = (x1 - x0) / (2 * d) / max(1., 4 * hand_width)      # hand widths per glide
     import math
     lean = 14. if style in ('Swoop', 'Quick start', 'Overshoot') else 9.
@@ -1082,9 +1172,11 @@ def paint_hand_spec(frame, spec, options, place=None):
         style = options.get('hand_glide_style_in' if phase == 'in' else 'hand_glide_style_out') or 'Smooth'
         bend = options.get('hand_glide_bend_in' if phase == 'in' else 'hand_glide_bend_out') or 'Auto'
         a, b = (home, target) if phase == 'in' else (target, home)
-        tip = glide_point(a, b, p, style, (W / 2., H / 2.), bend)
+        keys = options.get('hand_glide_path_in' if phase == 'in' else 'hand_glide_path_out') or None
+        tip = glide_point(a, b, p, style, (W / 2., H / 2.), bend, keys)
+        _HAND.glide = dict(a=a, b=b, size=(W, H), style=style, bend=bend, phase=phase, keys=keys)   # exp.217
         image, anchor, ratio = hand, (float(own[0]), float(own[1])), 1.
-        tilt = glide_tilt(a, b, p, style, W * float(options.get('hand_scale', .18)), (W / 2., H / 2.), bend)
+        tilt = glide_tilt(a, b, p, style, W * float(options.get('hand_scale', .18)), (W / 2., H / 2.), bend, keys)
         if before:
             # exp.214: from the waiting hand (its size and grip) to its own, along the way
             near = max(0., min(1., _glide_ease(p, style)))
