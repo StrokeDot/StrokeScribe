@@ -5916,7 +5916,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         def path_button(which):
             button=QPushButton(); button.setObjectName('subtle')
             def label():
-                button.setText('Edit path… (own path)' if paths.get(which) else 'Edit path…')
+                button.setText('Edit path')        # exp.219 (the user): just its name
             def clicked():
                 keys=self.edit_glide_path(k,which,how_in.currentText() if which=='in' else how_out.currentText(),
                                           bend_in.currentText() if which=='in' else bend_out.currentText(),paths.get(which))
@@ -6007,6 +6007,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             W=960; H=round(W*self.board_aspect())
             image=self.timeline_frame(state_at(self.timeline_layout(),t),W,H,t)
             info=getattr(frame_render._HAND,'glide',None)
+            # exp.219: the picture under the path without the hand (the window shows its own)
+            had=self.scenes[k].get('hand_off'); self.scenes[k]['hand_off']=True
+            self._scene_cache={}; self.__dict__.pop('_memo',None)
+            try:
+                image=self.timeline_frame(state_at(self.timeline_layout(),t),W,H,t)
+            finally:
+                if had: self.scenes[k]['hand_off']=had
+                else: self.scenes[k].pop('hand_off',None)
         finally:
             self.scenes[k]['glide']=saved; self._scene_cache={}; self.__dict__.pop('_memo',None)
         if info is None or image is None:
@@ -6015,6 +6023,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         preset=frame_render.preset_keyframes(a,b,style,(W/2.,H/2.),bend)
         dialog=GlidePathDialog(self,image,a,b,keys,preset,style,
                                f'Hand path: element {k+1}, '+('to the drawing' if which=='in' else 'back'))
+        # exp.219 (the user): Play shows the hand itself going along the path
+        try:
+            _,opts,_,_=self.preview_scene(k,W,H)
+            hand=opts.get('hand')
+            if hand is not None and not hand.isNull():
+                size=W*float(opts.get('hand_scale',.18))*float(opts.get('artwork_scale',1.) or 1.)
+                dialog.canvas.hand=(hand,tuple(opts.get('anchor',(.1,.1))),size)
+        except Exception as exc:
+            import applog; applog.error('Edit path: the hand',exc)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return False
         return dialog.keyframes()
 
