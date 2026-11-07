@@ -331,8 +331,10 @@ class MotionCanvas(PathCanvas):
     """exp.224 (the user): a Hand motion: from the corner (green) through points anywhere
     (frame pixels, also outside the picture) and back to the corner."""
 
+    back = True                 # exp.231: False: the hand stays at the last point
+
     def points(self):
-        return [self.a] + list(self.keys) + [self.b]
+        return [self.a] + list(self.keys) + ([self.b] if self.back else [])
 
     def line(self, steps=24):
         from frame_render import spline
@@ -341,24 +343,75 @@ class MotionCanvas(PathCanvas):
     def key_of(self, spot):
         return (float(spot[0]), float(spot[1]))
 
+    def _key_at(self, pos):
+        for i, q in enumerate(self.keys):
+            c = self.to_widget(q)
+            if math.hypot(c.x() - pos.x(), c.y() - pos.y()) <= 12:
+                return i
+        return None
+
+    def add_point(self, spot):
+        """exp.231: a new point at `spot`, in its place along the path (at the end when it is past
+        the last point and the hand stays there)."""
+        spot = self.key_of(spot)
+        pts = self.points()
+        best, where = None, len(self.keys)
+        for j in range(len(pts) - 1):            # the nearest piece of the path between two points
+            ax, ay = pts[j]; bx, by = pts[j + 1]
+            dx, dy = bx - ax, by - ay
+            u = max(0., min(1., ((spot[0] - ax) * dx + (spot[1] - ay) * dy) / max(1e-9, dx * dx + dy * dy)))
+            d = math.hypot(spot[0] - (ax + u * dx), spot[1] - (ay + u * dy))
+            if best is None or d < best:
+                best, where = d, j
+        if not self.back and self.keys:
+            last = self.keys[-1]
+            if math.hypot(spot[0] - last[0], spot[1] - last[1]) < best:
+                where = len(self.keys)              # nearer the end: a new end
+        self.keys.insert(min(where, len(self.keys)), spot)
+        self.update()
+
     def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.RightButton and len(self.keys) <= 1:
-            return                                   # at least one point to go to
-        super().mousePressEvent(event)
+        if event.button() == Qt.MouseButton.RightButton:
+            # exp.231 (the user, like Filmora): right-click to add a point, or to remove one
+            from PySide6.QtWidgets import QMenu
+            i = self._key_at(event.position())
+            spot = self.to_frame(event.position())
+            menu = QMenu(self)
+            menu.addAction('Add a point here', lambda: self.add_point(spot))
+            if i is not None and len(self.keys) > 1:
+                menu.addAction('Remove this point', lambda: (self.keys.pop(i), self.update()))
+            menu.exec(event.globalPosition().toPoint())
+            return
+        i = self._key_at(event.position())
+        if i is not None:
+            self.drag = i
+
+    def mouseDoubleClickEvent(self, event):
+        self.add_point(self.to_frame(event.position()))
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if not self.back and self.keys:              # where the hand stays: the red end
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setPen(QPen(QColor('white'), 2)); p.setBrush(QColor('#e5484d'))
+            p.drawEllipse(self.to_widget(self.keys[-1]), 9, 9)
+            p.end()
 
 
 class HandMotionDialog(QDialog):
     """exp.224: double-click a Hand motion clip: when, how long, how it moves, and its path."""
 
-    def __init__(self, parent, frame, home, keys, hand, start, length, how, styles, preset):
+    def __init__(self, parent, frame, home, keys, hand, start, length, how, styles, preset, begin=None, back=True):
         from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QFormLayout
         super().__init__(parent)
         self.setWindowTitle('Hand motion')
         self.preset = [tuple(k) for k in preset]
         layout = QVBoxLayout(self)
-        help_text = QLabel('The waiting hand leaves its corner (green), goes through the purple points and comes '
-                           'back. Drag the points anywhere, also outside the video (the dashed edge). Double-click '
-                           'the path to add a point, right-click one to remove it. No picture is needed.')
+        help_text = QLabel('The hand goes from where it is (green) through the points: drag them anywhere, also '
+                           'outside the video (the dashed edge). Right-click (or double-click) to add a point, '
+                           'right-click a point to remove it. At the end it goes back to its corner, or stays at '
+                           'the last point (red): the next drawing\'s hand starts from there. No picture is needed.')
         help_text.setWordWrap(True)
         layout.addWidget(help_text)
         form = QFormLayout()
@@ -373,8 +426,13 @@ class HandMotionDialog(QDialog):
         form.addRow('Starts', self.start)
         form.addRow('Length', self.length)
         form.addRow('How it moves', self.how)
+        self.end = QComboBox(); self.end.addItems(['Stays at the last point', 'Goes back to its corner'])
+        self.end.setCurrentIndex(0 if not back else 1)
+        form.addRow('At the end', self.end)
         layout.addLayout(form)
-        self.canvas = MotionCanvas(frame, home, home, keys)
+        self.canvas = MotionCanvas(frame, begin if begin is not None else home, home, keys)
+        self.canvas.back = bool(back)
+        self.end.currentIndexChanged.connect(lambda i: (setattr(self.canvas, 'back', i == 1), self.canvas.update()))
         self.canvas.hand = hand
         self.canvas.style = self.how.currentText()
         self.how.currentTextChanged.connect(self._style)

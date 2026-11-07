@@ -961,6 +961,13 @@ def rest_rect(width, height, options, seconds=None, place=None, spot=None):
     place = place if place is not None else options.get('_rest_place')
     px, py, pw, ph = place if place is not None else (0., 0., float(width), float(height))
     rect = QRectF(px + fx * pw - float(ax) * hw, py + fy * ph - float(ay) * hh, hw, hh)
+    if seconds is not None and (options.get('_hand_moves') or options.get('hand_away')):
+        # exp.231: the Hand motion clips move the waiting hand (and where every hand way starts
+        # and ends: the hands come from where it is and go back there)
+        home = (rect.x() + float(ax) * hw, rect.y() + float(ay) * hh)
+        moved = hand_motion_at(options, seconds, home, (px, py, pw, ph), (width, height))
+        if moved is not None:
+            rect.translate(moved[0] - home[0], moved[1] - home[1])
     e, side = 0., 'Bottom'
     if options.get('hand_away') and seconds is not None:
         import camera_clips
@@ -1108,21 +1115,44 @@ def _with_arm(image):
     return found
 
 
-def hand_motion_at(options, seconds, home, place, size):
-    """exp.224 (the user): where the waiting hand's pen is at `seconds` when a Hand motion
-    clip is on: from its corner through the clip's points (shares of the page) and back to
-    its corner. None when no Hand motion clip is on."""
+def _moves_of(options):
+    """exp.231: the Hand motion clips in these render options (given as _hand_moves, or found
+    in the Hand row's clips, hand_away, which every element's options carry)."""
     moves = options.get('_hand_moves')
+    if moves:
+        return moves
+    import camera_clips
+    found = []
+    for r in options.get('hand_away') or ():
+        if len(r) > 8 and r[6] == camera_clips.MOVE and not (len(r) > 10 and r[10]):
+            found.append(dict(start=float(r[1]), duration=float(r[2]), how=r[7] or 'Smooth', path=tuple(r[8]),
+                              back=bool(r[9]) if len(r) > 9 else True))
+    return tuple(found)
+
+
+def hand_motion_at(options, seconds, home, place, size):
+    """exp.224/231 (the user: put the hand wherever I want): where the waiting hand's pen is at
+    `seconds` because of the Hand motion clips: during a clip it goes from where it was through
+    the clip's points (shares of the page); a clip that goes back ends in its corner, one that
+    stays leaves the hand at its last point (the next clip, or the next drawing's hand, starts
+    there). None when the hand is in its corner."""
+    moves = _moves_of(options)
     if not moves or seconds is None:
         return None
     t = float(seconds)
-    for m in moves:
+    px, py, pw, ph = place if place is not None else (0., 0., float(size[0]), float(size[1]))
+    pos = None                                   # None: in its corner
+    for m in sorted(moves, key=lambda m: float(m['start'])):
         start, length = float(m['start']), max(.2, float(m['duration']))
-        if start <= t < start + length:
-            px, py, pw, ph = place if place is not None else (0., 0., float(size[0]), float(size[1]))
-            pts = [home] + [(px + float(x) * pw, py + float(y) * ph) for x, y in m['path']] + [home]
-            return _along_polyline(spline(pts), _glide_ease((t - start) / length, m.get('how') or 'Smooth'))
-    return None
+        if t < start:
+            break
+        pts = [(px + float(x) * pw, py + float(y) * ph) for x, y in m['path']]
+        back = m.get('back', True) is not False
+        if t < start + length:
+            line = [pos if pos is not None else home] + pts + ([home] if back else [])
+            return _along_polyline(spline(line), _glide_ease((t - start) / length, m.get('how') or 'Smooth'))
+        pos = None if back or not pts else pts[-1]
+    return pos
 
 
 def paint_rest_hand(frame, options, seconds=None, place=None):
@@ -1134,13 +1164,6 @@ def paint_rest_hand(frame, options, seconds=None, place=None):
     shown = 1. - _hidden(options, seconds)
     if rect is None or shown <= 0:
         return frame
-    if options.get('_hand_moves'):
-        ax, ay = options.get('anchor', (.1, .1))
-        home = (rect.x() + float(ax) * rect.width(), rect.y() + float(ay) * rect.height())
-        spot = hand_motion_at(options, seconds, home, place if place is not None else options.get('_rest_place'),
-                              (frame.width(), frame.height()))
-        if spot is not None:                         # exp.224: a Hand motion clip moves it
-            rect.translate(spot[0] - home[0], spot[1] - home[1])
     from PySide6.QtGui import QPainter
     out = frame.copy()
     p = QPainter(out)

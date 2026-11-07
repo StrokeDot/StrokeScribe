@@ -1229,7 +1229,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def camera_editing(self):
         """A camera clip chosen: the preview shows the page without that clip, with a frame
         where it takes the camera (drag it, wheel to zoom)."""
-        return bool(getattr(self,'selected_camera',None)) and self.all_scenes()
+        cid=getattr(self,'selected_camera',None)
+        if not cid or not self.all_scenes(): return False
+        # exp.231 (the user: with a Hand motion chosen, the zoom out was gone): a hand clip is
+        # not a camera to aim: the cameras keep working while it is chosen
+        import camera_clips
+        clip=self.find_camera(cid)
+        return not (clip is not None and clip.get('kind') in camera_clips.HAND_KINDS)
 
     def live_clips(self):
         """The camera clips the preview uses (exp.125: all but the one being aimed)."""
@@ -6246,10 +6252,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self._scene_cache={}; self.__dict__.pop('_memo',None)
         if image is None:
             self.status.setText('Hand motion: that moment of the video could not be shown.'); return
+        # exp.231: it starts where the hand is then (an earlier Hand motion may have left it elsewhere)
+        earlier=tuple(m for m in camera_clips.hand_moves(self.cameras) if m['start']<start-1e-6)
+        begin=frame_render.hand_motion_at(dict(_hand_moves=earlier),start-1e-4,home,place,(W,H)) if earlier else None
         dialog=HandMotionDialog(self,image,home,[to_frame(q) for q in clip.get('path') or camera_clips.MOVE_PATH],
                                 (options['hand'],(float(ax),float(ay)),rect.width()),start,length,
                                 clip.get('how') or 'Smooth',('Smooth','Steady','Quick start','Slow start','Overshoot'),
-                                [to_frame(q) for q in camera_clips.MOVE_PATH])
+                                [to_frame(q) for q in camera_clips.MOVE_PATH],begin=begin,
+                                back=clip.get('back',True) is not False)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return
         if dialog.deleted:
             return self.camera_clip_action(cid,'delete')
@@ -6257,6 +6267,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         clip['start']=round(dialog.start.value(),2); clip['duration']=round(dialog.length.value(),2)
         clip['how']=dialog.how.currentText()
         clip['path']=[to_page(q) for q in dialog.canvas.keys]
+        clip['back']=dialog.end.currentIndex()==1          # exp.231
         self.project_changes.mark_changed()
         self.clear_frames()
         self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
