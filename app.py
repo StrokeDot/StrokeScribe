@@ -1398,11 +1398,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         form.addRow(help_label('Up / down','Where the camera looks, from the top (0 %) to the bottom (100 %).'),y_row)
         # exp.222 (the user: two kinds of zoom): the waiting hand moves with the page, or stays put
         from PySide6.QtWidgets import QCheckBox
-        stays=QCheckBox('The waiting hand stays where it is on the screen')
+        stays=QCheckBox('Leave the hand out of this zoom')
         stays.setChecked(bool(clip.get('hand_fixed')))
-        stays.setToolTip('Off (usual): the waiting hand is on its spot of the page, so it moves with the zoom '
-                         '(it can go out of view when zooming in). On: during this zoom it stays where it is '
-                         'on the screen. Either way it keeps its size; a hand drawing is always on its line.')
+        stays.setToolTip('Off (usual): this zoom affects everything, the hand too: zooming in it looks bigger '
+                         'and may leave the picture, zooming out it looks smaller and comes in with the page. '
+                         'On: the hand is left out of this zoom: the waiting hand stays where it is on the screen, '
+                         'at its own size (a hand that is drawing stays on its line).')
         form.addRow(help_label('Hand',stays.toolTip()),stays)
         def framing():
             return camera_clips.keep_in((close.value()/100.,px.value()/100.,py.value()/100.))
@@ -6241,7 +6242,26 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             for weight,start in camera_clips.fixed_hand_weight(self.live_clips(),seconds):   # exp.222
                 place=camera_clips.blend_place(place,self.page_place_at(width,height,start),weight)
         view=1./max(1.,float(getattr(self,'preview_zoom_out',1.))) if self.zoomed_out() else 1.   # exp.216
+        if self.all_scenes(): view*=self.hand_zoom_at(width,height,seconds)      # exp.223: the camera's zoom
         return paint_rest_hand(layer,dict(options,layers='all',_rest_out=out,_hand_view=view,**self.hand_video(None)),seconds,place)
+
+    def hand_zoom_at(self,width,height,seconds):
+        """exp.223: how much bigger the hand looks at `seconds` because of the camera's zooms."""
+        try:
+            import timeline_render
+            from timeline_model import state_at
+            lay=self.timeline_layout(width,height)
+            world=self.preview_world(width,height)
+            elements=[]
+            for k in range(len(self.scenes)):
+                drawing,options,secs,camera=self.preview_scene(k,width,height)
+                elements.append(dict(drawing=drawing,options=options,camera=self.video_camera(k,camera,secs),
+                                     transition=self.scenes[k]['transition'],move_seconds=self.scenes[k]['transition_seconds']))
+            return timeline_render.hand_camera_zoom(world,lay,state_at(lay,max(0.,float(seconds))),elements,
+                                                    [c for c in self.live_clips() if c.get('hand_fixed')],seconds)
+        except Exception as exc:
+            import applog; applog.error('The hand and the zoom',exc)
+            return 1.
 
     def page_place_at(self,width,height,seconds):
         """exp.161: where the page is on the screen at `seconds` (camera zooms included)."""

@@ -101,6 +101,23 @@ def fixed_view(world, lay, state, elements):
     return board.sub_view(base, *camera_at(cam, state, k), world.aspect)
 
 
+def hand_camera_zoom(world, lay, state, elements, fixed_clips=None, seconds=None):
+    """exp.223 (the user: the zoom affects everything, the hand too): how much bigger the
+    hand looks because of the camera's zooms (the Moving camera's clips and the element's own
+    camera) compared with its default view: 2 when the camera is twice as close, .5 twice as
+    far. A camera clip with 'Leave the hand out' does not count while it is on."""
+    import camera_clips
+    try:
+        zoom = fixed_view(world, lay, state, elements)[2] / max(1e-9, view_of(world, lay, state, elements)[2])
+    except Exception:
+        return 1.
+    if fixed_clips and seconds is not None:
+        weights = [w for w, _ in camera_clips.fixed_hand_weight(fixed_clips, seconds)]
+        if weights:
+            zoom = 1. + (zoom - 1.) * (1. - max(weights))
+    return max(.05, min(20., zoom))
+
+
 def element_place(world, lay, state, elements, k, width, height, view_scale=1., view_pan=(0., 0.)):
     """exp.216: (x, y, w, h) on the screen of element k's page (its frame on the board)."""
     v = view_of(world, lay, state, elements)
@@ -436,7 +453,8 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
         out = world.put(out, layer, frame, view)
         # exp.216 (the user: zoomed out, the hand is outside the frame too): its size follows
         # the zoom out like everything else (it stayed the screen size, twice too big)
-        out = paint_hand_spec(out, spec, dict(opts, width=width, height=height, _hand_view=hand_view), place)
+        zoom = hand_camera_zoom(world, lay, state, elements, opts.get('_fixed_hand_clips'), seconds) if view_fn else 1.
+        out = paint_hand_spec(out, spec, dict(opts, width=width, height=height, _hand_view=hand_view * zoom), place)
     if glides:
         out = _glide_tool(world, elements, glides, view, out, width, height)     # exp.197
     return out

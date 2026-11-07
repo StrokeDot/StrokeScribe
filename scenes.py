@@ -504,6 +504,8 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
             if rest is not None:                     # exp.143: the hand waiting in its corner
                 from frame_render import paint_rest_hand
                 place = timeline_render.page_place(world, lay, state, elements, width, height)   # exp.161: on the page
+                rest = dict(rest, _hand_view=timeline_render.hand_camera_zoom(               # exp.223
+                    world, lay, state, elements, [c for c in cameras or () if c.get('hand_fixed')], i / fps))
                 for weight, start in camera_clips.fixed_hand_weight(cameras or (), i / fps):     # exp.222
                     place = camera_clips.blend_place(place, timeline_render.page_place(
                         world, lay, state_at(lay, start), elements, width, height), weight)
