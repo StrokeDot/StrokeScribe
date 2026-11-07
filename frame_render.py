@@ -1008,6 +1008,23 @@ def _with_arm(image):
     return found
 
 
+def hand_motion_at(options, seconds, home, place, size):
+    """exp.224 (the user): where the waiting hand's pen is at `seconds` when a Hand motion
+    clip is on: from its corner through the clip's points (shares of the page) and back to
+    its corner. None when no Hand motion clip is on."""
+    moves = options.get('_hand_moves')
+    if not moves or seconds is None:
+        return None
+    t = float(seconds)
+    for m in moves:
+        start, length = float(m['start']), max(.2, float(m['duration']))
+        if start <= t < start + length:
+            px, py, pw, ph = place if place is not None else (0., 0., float(size[0]), float(size[1]))
+            pts = [home] + [(px + float(x) * pw, py + float(y) * ph) for x, y in m['path']] + [home]
+            return _along_polyline(spline(pts), _glide_ease((t - start) / length, m.get('how') or 'Smooth'))
+    return None
+
+
 def paint_rest_hand(frame, options, seconds=None, place=None):
     """The hand waiting in its corner, painted on (a copy of) the frame (place: the page on
     the screen, exp.161)."""
@@ -1017,6 +1034,13 @@ def paint_rest_hand(frame, options, seconds=None, place=None):
     shown = 1. - _hidden(options, seconds)
     if rect is None or shown <= 0:
         return frame
+    if options.get('_hand_moves'):
+        ax, ay = options.get('anchor', (.1, .1))
+        home = (rect.x() + float(ax) * rect.width(), rect.y() + float(ay) * rect.height())
+        spot = hand_motion_at(options, seconds, home, place if place is not None else options.get('_rest_place'),
+                              (frame.width(), frame.height()))
+        if spot is not None:                         # exp.224: a Hand motion clip moves it
+            rect.translate(spot[0] - home[0], spot[1] - home[1])
     from PySide6.QtGui import QPainter
     out = frame.copy()
     p = QPainter(out)
@@ -1160,9 +1184,14 @@ def to_keyframe(a, b, point):
 
 def path_polyline(a, b, waypoints, steps=24):
     """A smooth curve through a, the keyframes and b (centripetal Catmull-Rom), as points."""
+    return spline(_path_points(a, b, waypoints), steps)
+
+
+def spline(pts, steps=24):
+    """exp.224: a smooth curve through these screen points (centripetal Catmull-Rom)."""
     import math
-    pts = _path_points(a, b, waypoints)
-    if len(pts) == 2:
+    pts = [tuple(p) for p in pts]
+    if len(pts) <= 2:
         return pts
     ext = [(2 * pts[0][0] - pts[1][0], 2 * pts[0][1] - pts[1][1])] + pts + \
           [(2 * pts[-1][0] - pts[-2][0], 2 * pts[-1][1] - pts[-2][1])]
