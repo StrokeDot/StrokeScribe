@@ -1040,7 +1040,14 @@ def _with_arm(image):
         if math.hypot(dx, dy) < 1e-6:
             dx = sum({'left': -1, 'right': 1}.get(e, 0) for e in cuts)
             dy = sum({'top': -1, 'bottom': 1}.get(e, 0) for e in cuts)
-        length = math.hypot(dx, dy) or 1.
+        length = math.hypot(dx, dy)
+        if length < 1e-6:
+            # cut all round (or on two opposite sides): no arm to carry on (a plain picture)
+            found = (image, (0, 0, w, h))
+            if len(_ARM) > 16:
+                _ARM.clear()
+            _ARM[key] = found
+            return found
         dx, dy = dx / length, dy / length
         far = 1.5 * max(w, h)
         L = int(far * max(0., -dx)) + 2; R = int(far * max(0., dx)) + 2
