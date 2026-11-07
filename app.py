@@ -6319,6 +6319,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if moves: options=dict(options,_hand_moves=moves)
         view=1./max(1.,float(getattr(self,'preview_zoom_out',1.))) if self.zoomed_out() else 1.   # exp.216
         if self.all_scenes(): view*=self.hand_zoom_at(width,height,seconds)      # exp.223: the camera's zoom
+        else: view*=self.element_hand_view(self.scene_index)                      # exp.226
         return dict(options,layers='all',_rest_out=out,_hand_view=view,**self.hand_video(None)),place
 
     def _flow_rest(self,options,k,width,height,seconds):
@@ -6344,6 +6345,36 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         except Exception as exc:
             import applog; applog.error('Flowing hand spot',exc)
             return options
+
+    def element_hand_view(self,k):
+        """exp.226 (the user: in This element the picture was small next to a big hand; it must
+        follow the same rule as the whole video): This element shows element k's whole page,
+        while the video's camera shows a part of it (or more than it). The hand keeps the size
+        it has next to the picture in the video: like everything else, it looks smaller from
+        further away. 1 when the video shows exactly that page."""
+        memo=self.__dict__.setdefault('_memo',{})
+        key=('element_hand_view',k,len(self.scenes))
+        if key in memo: return memo[key]
+        value=1.
+        try:
+            if len(self.scenes)>1 and 0<=k<len(self.scenes):
+                import timeline_render
+                from timeline_model import state_at
+                W=960; H=round(W*self.board_aspect())
+                lay=self.timeline_layout()
+                item=next((it for it in lay.items if it.k==k),None)
+                if item is not None:
+                    world=self.preview_world(W,H)
+                    els=self.timeline_elements(W,H)
+                    t=item.start+item.length/2.
+                    view=timeline_render.fixed_view(world,lay,state_at(lay,t),els)
+                    page=world.frames[k][2]
+                    if view and page>0:
+                        value=max(.05,min(20.,float(view[2])/float(page)))
+        except Exception as exc:
+            import applog; applog.error('Hand size in This element',exc)
+        memo[key]=value
+        return value
 
     def hand_zoom_at(self,width,height,seconds):
         """exp.223: how much bigger the hand looks at `seconds` because of the camera's zooms."""
@@ -6627,6 +6658,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         # Size, while its pen-tip coordinates move with the artwork.
         options['hand_scale']/=options['artwork_scale']
         options['ghost']=.22            # Hand only: still show faintly what is being written
+        # exp.226 (the user: inside the element the picture changed size next to the hand): the
+        # hand is as big next to the picture as in the whole video
+        options['_hand_view']=self.element_hand_view(self.scene_index)
         # Pictures of earlier scenes in this frame stay on the board under it.
         # exp.189 (the user): This element shows that element alone (not the pages under it).
         page=False

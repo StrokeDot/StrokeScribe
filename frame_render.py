@@ -1007,24 +1007,58 @@ def _with_arm(image):
             if (img.pixel(x, y) >> 24) & 255 > 128:
                 hits += 1
         return hits >= 3
-    pad = {e: (int(1.5 * (h if e in ('top', 'bottom') else w)) if cut(e) else 0) for e in ('top', 'bottom', 'left', 'right')}
-    if not any(pad.values()):
+    cuts = [e for e in ('top', 'bottom', 'left', 'right') if cut(e)]
+    if not cuts:
         found = (image, (0, 0, w, h))
     else:
-        W, H = w + pad['left'] + pad['right'], h + pad['top'] + pad['bottom']
-        ext = QImage(W, H, QImage.Format.Format_ARGB32_Premultiplied); ext.fill(0)
+        import math
+        # exp.226 (the user: a band showed where the arm went on): the arm goes on in its own
+        # direction (it went straight out of each cut edge: a sleeve leaving by the corner
+        # became a flat band along the bottom). Its direction: from the arm a little inside
+        # the picture to where it is cut.
+        step = max(1, min(w, h) // 160)
+        near = max(2, int(.03 * min(w, h)))           # the strip on the cut that is carried on
+        r = max(near * 2, int(.15 * min(w, h)))
+
+        def edge_distance(x, y):
+            return min([{'top': y, 'bottom': h - 1 - y, 'left': x, 'right': w - 1 - x}[e] for e in cuts])
+        ex = ey = en = ix = iy = inn = 0
+        for y in range(0, h, step):
+            for x in range(0, w, step):
+                if (img.pixel(x, y) >> 24) & 255 <= 128:
+                    continue
+                d = edge_distance(x, y)
+                if d < near:
+                    ex += x; ey += y; en += 1
+                elif r <= d < 2 * r:
+                    ix += x; iy += y; inn += 1
+        dx = dy = 0.
+        if en and inn:
+            ex, ey, ix, iy = ex / en, ey / en, ix / inn, iy / inn
+            # only the arm next to the cut counts as inside (not the whole hand)
+            dx, dy = ex - ix, ey - iy
+        if math.hypot(dx, dy) < 1e-6:
+            dx = sum({'left': -1, 'right': 1}.get(e, 0) for e in cuts)
+            dy = sum({'top': -1, 'bottom': 1}.get(e, 0) for e in cuts)
+        length = math.hypot(dx, dy) or 1.
+        dx, dy = dx / length, dy / length
+        far = 1.5 * max(w, h)
+        L = int(far * max(0., -dx)) + 2; R = int(far * max(0., dx)) + 2
+        T = int(far * max(0., -dy)) + 2; B = int(far * max(0., dy)) + 2
+        strip = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied); strip.fill(0)
+        q = QPainter(strip)
+        for e in cuts:
+            box = {'top': QRect(0, 0, w, near), 'bottom': QRect(0, h - near, w, near),
+                   'left': QRect(0, 0, near, h), 'right': QRect(w - near, 0, near, h)}[e]
+            q.drawImage(box, img, box)
+        q.end()
+        ext = QImage(w + L + R, h + T + B, QImage.Format.Format_ARGB32_Premultiplied); ext.fill(0)
         p = QPainter(ext)
-        L, T = pad['left'], pad['top']
-        # the rows / columns on the cut edges, stretched out (the arm going on straight)
-        if pad['bottom']: p.drawImage(QRectF(L, T + h, w, pad['bottom']), img, QRectF(0, h - 1, w, 1))
-        if pad['top']: p.drawImage(QRectF(L, 0, w, T), img, QRectF(0, 0, w, 1))
-        if pad['right']: p.drawImage(QRectF(L + w, T, pad['right'], h), img, QRectF(w - 1, 0, 1, h))
-        if pad['left']: p.drawImage(QRectF(0, T, L, h), img, QRectF(0, 0, 1, h))
-        for (cx, cy, on) in ((w - 1, h - 1, pad['right'] and pad['bottom']), (0, h - 1, pad['left'] and pad['bottom']),
-                             (w - 1, 0, pad['right'] and pad['top']), (0, 0, pad['left'] and pad['top'])):
-            if on:
-                x0 = L + w if cx else 0; y0 = T + h if cy else 0
-                p.drawImage(QRectF(x0, y0, pad['right'] if cx else L, pad['bottom'] if cy else T), img, QRectF(cx, cy, 1, 1))
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        gap = max(1., near / 2.)
+        n = int(far / gap) + 1
+        for i in range(n, 0, -1):                      # the strip carried on, far to near
+            p.drawImage(QRectF(L + dx * gap * i, T + dy * gap * i, w, h), strip)
         p.drawImage(L, T, img)
         p.end()
         found = (ext, (L, T, w, h))
