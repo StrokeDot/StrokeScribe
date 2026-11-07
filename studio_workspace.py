@@ -237,6 +237,7 @@ class StageTimeline(QFrame):
     background_menu=Signal(int,float,object)   # exp.207: Background row clicked: piece, seconds, screen point
     hand_snapped=Signal(int,int)               # exp.211: element k let go on element j's hand end (-1: not)
     background_cut=Signal(int,float,bool)      # exp.207: a cut dragged: piece, its new start, let go
+    video_end_moved=Signal(float,bool)         # exp.230: the end of the video dragged (seconds, let go)
 
     stage_source_edit=Signal(str,int)   # Draw/Paint source editor, exact clicked element
 
@@ -476,6 +477,12 @@ class StageTimeline(QFrame):
             self.selected_camera=None; self.camera_selected.emit('')
         if kind!='overlay' and (self.selected_overlay or self.selected_overlays):
             self.selected_overlay=None; self.selected_overlays=set(); self.overlay_selected.emit('')
+
+    def _bg_end_at(self, pos):
+        """exp.230: the end of the Background row (the end of the video) under `pos`."""
+        if not self.items or not self._bg_shown() or not self._bg_row().adjusted(0,-2,0,2).contains(pos): return False
+        end=max((r[2] for r in self.bg_rows),default=0.)
+        return abs(self._x(end)-pos.x())<=self.EDGE+2
 
     def _bg_cut_at(self, pos):
         """The piece whose starting cut is under `pos` (to drag it), or None."""
@@ -944,6 +951,7 @@ class StageTimeline(QFrame):
     def total(self):
         if self.items:
             ends=[i[2]+i[3] for i in self.items]+[m[2]+m[3] for m in self.moves or ()]
+            if getattr(self,'video_end',None): ends.append(float(self.video_end))    # exp.230
             return max(ends) if ends else 0.
         if self.scene_segments:
             return sum(s[1] for s in self.scene_segments)
@@ -1548,7 +1556,9 @@ class StageTimeline(QFrame):
                 self.background_menu.emit(-1,seconds,event.globalPosition().toPoint())
                 event.accept(); return
             cut=self._bg_cut_at(pos)
-            if cut is not None:
+            if self._bg_end_at(pos):
+                self._drag=('bgend',); self._frozen=self.total(); self.setCursor(Qt.CursorShape.SizeHorCursor)
+            elif cut is not None:
                 self._drag=('bgcut',cut); self.setCursor(Qt.CursorShape.SizeHorCursor)
             else:
                 self._choose_only('bg'); self.selected_bg=self._bg_piece_at(seconds); self.update()
@@ -1722,6 +1732,9 @@ class StageTimeline(QFrame):
         if self.locked:
             event.accept(); return
         pos=event.position()
+        if self._drag and self._drag[0]=='bgend' and event.buttons() & Qt.MouseButton.LeftButton:
+            self.video_end_moved.emit(max(0.,self._sec(pos.x())),False)      # exp.230
+            event.accept(); return
         if self._drag and self._drag[0]=='bgcut' and event.buttons() & Qt.MouseButton.LeftButton:
             self.background_cut.emit(self._drag[1],max(0.,self._sec(pos.x())),False)    # exp.207
             event.accept(); return
@@ -1853,6 +1866,12 @@ class StageTimeline(QFrame):
             self.setToolTip(tip)
             self.setCursor(Qt.CursorShape.PointingHandCursor if hover else Qt.CursorShape.ArrowCursor)
             return super().mouseMoveEvent(event)
+        if not event.buttons() and self._bg_end_at(pos):
+            # exp.230: the end of the video: drag it to make the video longer (Hand motion)
+            self.setCursor(Qt.CursorShape.SizeHorCursor)
+            self.setToolTip('The end of the video: drag it to the right to make the video longer (the last '
+                            'picture stays, and you can move the hand with Hand motion); back to shorten it.')
+            return super().mouseMoveEvent(event)
         clip,part=self._clip_at(pos)
         if clip is not None:
             self.setCursor(Qt.CursorShape.SizeHorCursor if part=='end' else Qt.CursorShape.OpenHandCursor)
@@ -1940,6 +1959,11 @@ class StageTimeline(QFrame):
         super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self,event):
+        if self._drag and self._drag[0]=='bgend':
+            seconds=max(0.,self._sec(event.position().x()))      # on the scale it was dragged on
+            self._drag=None; self._frozen=None; self.unsetCursor()
+            self.video_end_moved.emit(seconds,True)    # exp.230
+            event.accept(); return
         if self._drag and self._drag[0]=='bgcut':
             i=self._drag[1]; self._drag=None; self.unsetCursor()
             self.background_cut.emit(i,max(0.,self._sec(event.position().x())),True)    # exp.207
@@ -4026,6 +4050,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.camera_selected.connect(lambda cid: w.select_camera(cid))
     w.stage_timeline.background_menu.connect(lambda i,seconds,where: w.background_menu(i,seconds,where))    # exp.207
     w.stage_timeline.background_cut.connect(lambda i,seconds,done: w.background_cut_moved(i,seconds,done))
+    w.stage_timeline.video_end_moved.connect(lambda seconds,done: w.video_end_moved(seconds,done))     # exp.230
     w.stage_timeline.camera_changed.connect(lambda cid,start,length: w.move_camera_clip(cid,start,length))
     w.stage_timeline.camera_lane.connect(lambda cid,lane: w.move_camera_lane(cid,lane))
     w.stage_timeline.hand_glide_edit.connect(lambda k: w.edit_hand_glide(k))

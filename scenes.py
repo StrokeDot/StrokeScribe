@@ -455,7 +455,8 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
     world = board.World([dict(drawing=p['drawing'], options=p['options'], frame=p['frame'], key=('scene', k),
                               view=views[k]) for k, p in enumerate(prepared)], aspect)
     lay = layout([p['seconds'] for p in prepared], [p['transition_seconds'] for p in prepared],
-                 [s.get('start') for s in scenes], [s.get('track') or 0 for s in scenes])
+                 [s.get('start') for s in scenes], [s.get('track') or 0 for s in scenes],
+                 video_end=(settings or {}).get('video_end'))          # exp.230
     elements = []
     for p in prepared:
         options = {k: v for k, v in p['options'].items() if k not in ('audio', 'fps', 'workers')}
@@ -579,7 +580,7 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                   titles=None, cameras=None):
     """Render all scenes into one PNG sequence + videos. `settings`: the editor's settings
     (its output settings are used for every scene). Returns a summary text."""
-    if on_tracks(scenes):
+    if on_tracks(scenes) or (settings or {}).get('video_end'):      # exp.230: a longer video too
         return export_timeline(scenes, folder, settings, hand, progress, interrupted, titles, cameras)
     from engine import export_frames
     from export_job import encode_outputs, formats_from_settings

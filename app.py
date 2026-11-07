@@ -542,6 +542,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.selected_overlays=set()    # exp.117: Ctrl+click chooses more than one
         self.cameras=[]                 # exp.119: the Camera track's clips (camera_clips.py)
         self.background_pieces=[]       # exp.207: the Background row (background_track.py)
+        self.video_end=None             # exp.230: the video goes on to here (seconds) after its last element
         self.selected_camera=None
         self.text_hidden=set()          # text tracks hidden from the video
         # Rapid brush-width changes should not synchronously rebuild the entire
@@ -870,7 +871,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """The video's own clips (texts, camera clips) kept with a project undo step."""
         import copy
         return {'titles':copy.deepcopy(self.overlays),'cameras':copy.deepcopy(getattr(self,'cameras',[])),
-                'background_pieces':copy.deepcopy(getattr(self,'background_pieces',[]))}
+                'background_pieces':copy.deepcopy(getattr(self,'background_pieces',[])),
+                'video_end':getattr(self,'video_end',None)}
 
     def restore_structure(self,scenes,index,titles=None):
         from history import History
@@ -881,6 +883,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.overlays=copy.deepcopy(extras.get('titles') or [])
             if 'cameras' in extras: self.cameras=copy.deepcopy(extras['cameras'] or [])
             if 'background_pieces' in extras: self.background_pieces=copy.deepcopy(extras['background_pieces'] or [])
+            if 'video_end' in extras: self.video_end=extras['video_end']         # exp.230
             if not any(o.get('id')==self.selected_overlay for o in self.overlays): self.selected_overlay=None
             if not any(c.get('id')==getattr(self,'selected_camera',None) for c in self.cameras): self.selected_camera=None
         self.scenes=[dict(s) for s in scenes]
@@ -2167,6 +2170,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             rows.append((i,start,end,background_track.swatch(value),
                          background_track.label(piece,self.preview_background.currentText()) if piece is not None
                          else f'Video background ({self.preview_background.currentText()})'))
+        timeline.video_end=getattr(self,'video_end',None) if len(self.scenes)>1 else None    # exp.230
         timeline.set_background_row(rows if shown else None)
 
     def background_menu(self,i,seconds,where):
@@ -2237,6 +2241,34 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.background_pieces=background_track.move_cut(self.background_pieces,i,seconds)
         if done: self._bg_drag_recorded=False
         self.sync_background_row(); self.apply_background_at(self.shown_seconds())
+
+    def video_end_moved(self,seconds,done):
+        """exp.230 (the user: let me make the video longer to move the hand without a new
+        picture): the end of the Background row dragged. Back to the last element (or before
+        it): the video ends with its last element again."""
+        if len(self.scenes)<2: return
+        if not getattr(self,'_end_drag_recorded',False):
+            self.record_structure('video length'); self._end_drag_recorded=True
+        saved=getattr(self,'video_end',None); self.video_end=None
+        self.__dict__.pop('_memo',None)
+        try:
+            natural=self.timeline_layout().total
+        finally:
+            self.video_end=saved
+        seconds=float(seconds)
+        self.video_end=round(seconds,2) if seconds>natural+.05 else None
+        self.__dict__.pop('_memo',None)
+        if done:
+            self._end_drag_recorded=False
+            self.project_changes.mark_changed()
+            total=self.video_length()
+            self.status.setText(f'The video now lasts {total:.1f} s.' if self.video_end else
+                                'The video ends with its last element again.')
+        self.fill_scenes() if hasattr(self,'fill_scenes') and done else None
+        self.sync_background_row(); self.sync_camera_timeline()
+        try: self.stage_timeline.update()
+        except Exception: pass
+        if done: self.clear_frames(); self.refresh()
 
     def export_backgrounds(self):
         from export_job import backgrounds_from_settings
@@ -2517,6 +2549,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if getattr(self,'background_pieces',None):
             import copy
             data['background_pieces']=copy.deepcopy(self.background_pieces)    # exp.207: the Background row
+        if getattr(self,'video_end',None):
+            data['video_end']=float(self.video_end)          # exp.230: the video goes on after its last element
         data.pop('overlays',None)
         return data
 
@@ -2916,6 +2950,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                       for c in copy.deepcopy(data.get('cameras') or [])]
         import background_track
         self.background_pieces=background_track.normalise(data.get('background_pieces') or [])   # exp.207
+        self.video_end=float(data['video_end']) if data.get('video_end') else None              # exp.230
         self.selected_camera=None
         self.selected_overlay=None
         self._legacy_titles=[]
@@ -4132,11 +4167,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         memo=self.__dict__.setdefault('_memo',{})
         key=('layout',tuple(lengths),tuple(joins),tuple((s.get('start'),s.get('track'),repr((s.get('board') or {}).get('view'))) for s in self.scenes))
         already=self.already_elements(width,height)
+        key=key+(getattr(self,'video_end',None),)
         key=key+(repr(sorted(getattr(self,'track_flags',{}).items())),tuple(sorted(self.hidden_elements())),tuple(already),
                  tuple((bool(s.get('art_off')),bool(s.get('hand_off'))) for s in self.scenes))
         if key not in memo:
             lay=layout(lengths,joins,[s.get('start') for s in self.scenes],
-                       [s.get('track') or 0 for s in self.scenes],already)
+                       [s.get('track') or 0 for s in self.scenes],already,
+                       getattr(self,'video_end',None) if len(self.scenes)>1 else None)     # exp.230
             if self.hidden_elements() or any(s.get('art_off') or s.get('hand_off') for s in self.scenes):
                 lay.sequential=False                             # drawn moment by moment, without them
             import board as _board
@@ -5586,6 +5623,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if getattr(self,'background_pieces',None):
             import copy
             state['background_pieces']=copy.deepcopy(self.background_pieces)    # exp.207: Background row
+        if getattr(self,'video_end',None) and len(self.scenes)>1:
+            state['video_end']=float(self.video_end)          # exp.230
         return state
 
     # ------------------------------------------------- voiceover, timing
