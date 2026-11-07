@@ -19,7 +19,8 @@ def original_frame(drawing, image, width, height):
     frame.fill(Qt.GlobalColor.transparent)
     painter=QPainter(frame)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    painter.drawImage(artwork_rect(drawing,image,width,height),image)
+    from source_render import draw_source
+    draw_source(painter,artwork_rect(drawing,image,width,height),image)
     painter.end()
     return frame
 
@@ -48,8 +49,38 @@ def _nearest_paint_timing(plan):
     timing=lookup[nearest]
     if not np.isfinite(timing).all():
         raise ValueError('Contour cleanup requires a complete painting plan.')
+    timing=np.where(painted_support,timing,
+                    np.minimum(timing,_empty_area_timing(times,painted_support,plan.total)))
     plan._contour_timing_field=timing
     return timing
+
+
+# exp.174 (the user: the painting looked finished but the lines were still there until the
+# hand went back): lines where the picture is EMPTY (nothing will ever be painted there) used
+# to wait for their single nearest painted spot, often one of the last small touches. Now they
+# go once most of the picture around them is painted, and at the latest at this share of the
+# painting.
+EMPTY_REACH=.2          # around: this share of the picture's width
+EMPTY_DONE=.6           # gone once this share of the picture around is painted
+EMPTY_LATEST=.7         # and at the latest at this share of the painting
+EMPTY_FEATHER=.08       # they fade out over this share of the painting (not a pop)
+
+
+def _empty_area_timing(times,support,total):
+    """For every cell: the moment EMPTY_DONE of the picture around it is painted."""
+    gh,gw=support.shape
+    reach=max(1,int(round(gw*EMPTY_REACH)))
+    box=(2*reach+1,2*reach+1)
+    around=cv2.boxFilter(support.astype(np.float32),-1,box,normalize=False,
+                         borderType=cv2.BORDER_CONSTANT)
+    when=np.full(support.shape,float(total)*EMPTY_LATEST)
+    found=np.zeros(support.shape,bool)
+    for t in np.linspace(0.,float(total)*EMPTY_LATEST,48)[1:]:
+        painted=cv2.boxFilter((support&(times<=t)).astype(np.float32),-1,box,normalize=False,
+                              borderType=cv2.BORDER_CONSTANT)
+        reached=(~found)&(around>0)&(painted>=EMPTY_DONE*around)
+        when[reached]=t; found|=reached
+    return when
 
 
 def _contour_erase_mask(drawing,image,width,height,rect,progress,plan):
@@ -68,6 +99,9 @@ def _contour_erase_mask(drawing,image,width,height,rect,progress,plan):
     # Short local feathering (~1.5% of paint duration) prevents harsh
     # pixel-grid stepping while still following each actual brush arrival.
     strength=np.clip((float(progress)-arrival)/.015,0.,1.)
+    painted_support=(np.asarray(plan.labels,dtype=np.int32).reshape(gh,gw)>0)[np.ix_(y,x)]
+    empty=~painted_support
+    strength[empty]=np.clip((float(progress)-arrival[empty]+EMPTY_FEATHER)/EMPTY_FEATHER,0.,1.)
     alpha=Image.fromarray(np.asarray(np.rint(strength*255),dtype=np.uint8),'L')
     layer=Image.new('RGBA',(width,height),(255,255,255,0))
     layer.putalpha(alpha)
@@ -75,10 +109,11 @@ def _contour_erase_mask(drawing,image,width,height,rect,progress,plan):
 
 
 def paint_frame(drawing,image,width,height,progress,thickness,brush_width,
-                stroke_spacing,painting_hand,hand_scale,anchor,show_outlines):
+                stroke_spacing,painting_hand,hand_scale,anchor,show_outlines,display_image=None):
     """One uninterrupted painting phase: colors appear and guides retire together."""
     from color_reveal import artwork_rect, draw_hand
     from engine import render
+    visible=display_image if display_image is not None else image
     progress=max(0.,min(1.,float(progress)))
     if progress<=0:
         if show_outlines:
@@ -87,12 +122,18 @@ def paint_frame(drawing,image,width,height,progress,thickness,brush_width,
         empty.fill(Qt.GlobalColor.transparent)
         return empty
     # Plan.mask(.98) is complete; no extra line-erasing time is added.
-    if progress>=.98:
-        return original_frame(drawing,image,width,height)
+    from adaptive_hand import painting_done
+    if painting_done(drawing,image,progress,brush_width,stroke_spacing):     # exp.182: at the last stroke
+        result=original_frame(drawing,visible,width,height)
+        from adaptive_hand import finished_tip
+        tip=finished_tip(drawing,image,artwork_rect(drawing,image,width,height),progress,brush_width,stroke_spacing)
+        if tip is not None:                          # the hand stays on its last stroke
+            p=QPainter(result); draw_hand(p,tip,painting_hand,width,hand_scale,anchor); p.end()
+        return result
     rect=artwork_rect(drawing,image,width,height)
     mask,tip=adaptive_paint_mask(drawing,image,width,height,rect,progress,
                                  brush_width,stroke_spacing)
-    result=original_frame(drawing,image,width,height)
+    result=original_frame(drawing,visible,width,height)
     p=QPainter(result)
     p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
     p.drawImage(0,0,mask)

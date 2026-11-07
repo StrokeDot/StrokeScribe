@@ -72,7 +72,8 @@ def source_frame(drawing, image, width, height):
     frame.fill(Qt.GlobalColor.transparent)
     painter = QPainter(frame)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    painter.drawImage(artwork_rect(drawing, image, width, height), image)
+    from source_render import draw_source
+    draw_source(painter, artwork_rect(drawing, image, width, height), image)
     painter.end()
     return frame
 

@@ -1,0 +1,57 @@
+name: Source editing and AI lifecycle review
+on:
+  pull_request:
+    paths:
+      - 'source_*.py'
+      - 'owned_process.py'
+      - 'artwork_*.py'
+      - 'ai_lineart.py'
+      - 'lineart.py'
+      - 'test_source*.py'
+      - 'test_owned*.py'
+      - '.github/workflows/source-editing.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: source-editing-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  focused:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: '3.12'
+          - os: windows-latest
+            python: '3.14'
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0
+      - run: |
+          pip install --only-binary=:all: -r requirements.txt
+      - name: Source and lifecycle regression checks
+        run: python -X faulthandler -c "import applog,runpy,logging,sys,pathlib,unittest,traceback; original_failure=unittest.TextTestResult.addFailure; unittest.TextTestResult.addFailure=lambda self,test,err:(original_failure(self,test,err),traceback.print_exception(*err)); original_error=unittest.TextTestResult.addError; unittest.TextTestResult.addError=lambda self,test,err:(original_error(self,test,err),traceback.print_exception(*err)); applog.setup(); applog.log.addHandler(logging.StreamHandler(sys.stderr)); sys.argv=['tools/run_tests.py','--limit','120']+[p.stem for p in sorted(pathlib.Path('.').glob('test_source*.py'))]+[p.stem for p in sorted(pathlib.Path('.').glob('test_owned*.py'))]+['test_artwork_assets','test_artwork_workflow','test_artwork_pairing','test_artwork_svg','test_artwork_rendering']; runpy.run_path('tools/run_tests.py',run_name='__main__')"
+      - name: Source editor screenshots and transparent frame checks
+        if: success()
+        run: python tools/review_source_editing.py
+      - name: Review source ZIP
+        if: success()
+        run: python package_prototype.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Source-editing-${{ runner.os }}
+          if-no-files-found: ignore
+          path: |
+            dist/*.zip
+            samples/source-editing/

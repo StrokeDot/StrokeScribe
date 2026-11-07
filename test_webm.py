@@ -67,6 +67,36 @@ class CompressedExportTests(unittest.TestCase):
             self.assertTrue((folder/'sequence.json').is_file())
             self.assertEqual(list(folder.glob('frame_*.png')),[])
 
+    def test_mp4_export_on_chosen_background(self):
+        from app import Exporter
+        drawing=import_svg(Path(__file__).parent/'samples'/'drawing.svg')
+        for background,rgb in (('white',(255,255,255)),('dark',(0x24,0x2D,0x3B))):
+            with self.subTest(background=background), tempfile.TemporaryDirectory() as tmp:
+                folder=Path(tmp)/'mp4-export'
+                worker=Exporter(drawing,folder,dict(duration=.3,fps=8,width=128,
+                                 height=72),False,False,28,False,
+                                 mp4=True,mp4_background=background)
+                errors=[]; worker.failed.connect(errors.append)
+                worker.run()
+                self.assertFalse(errors,str(errors))
+                output=folder/f'animation_{background}_background.mp4'
+                self.assertTrue(output.is_file())
+                probe=json.loads(subprocess.check_output(['ffprobe','-v','error',
+                    '-select_streams','v:0','-count_frames','-show_entries',
+                    'stream=codec_name,width,height,nb_read_frames','-of','json',
+                    str(output)]))['streams'][0]
+                self.assertEqual(probe['codec_name'],'h264')
+                self.assertEqual((probe['width'],probe['height']),(128,72))
+                frames=len(list(folder.glob('frame_*.png'))) or None
+                self.assertIsNone(frames,'PNGs removed after a successful MP4')
+                self.assertEqual(int(probe['nb_read_frames']),
+                                 json.loads((folder/'sequence.json').read_text())['frames'])
+                # First frame is empty: every pixel is the background color.
+                data=subprocess.check_output(['ffmpeg','-hide_banner','-loglevel','error',
+                    '-i',str(output),'-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','-'])
+                for channel,want in zip(data[:3],rgb):
+                    self.assertLessEqual(abs(channel-want),4)
+
     def test_png_only_export_keeps_frames(self):
         from app import Exporter
         drawing=import_svg(Path(__file__).parent/'samples'/'drawing.svg')
