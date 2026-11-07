@@ -642,6 +642,9 @@ _LAST_TIP = {}
 def last_tip(drawing, options):
     """exp.210: where the pen is at the end of the element's drawing, as (x, y) shares of its
     own frame (camera left out), or None."""
+    exact = phase_tip(drawing, options, 'out')       # exp.221: as the video draws it
+    if exact is not None:
+        return exact
     plan = travel_plan(drawing, options)
     if plan is None:
         return None
@@ -676,11 +679,57 @@ def last_tip(drawing, options):
     return found
 
 
+_PHASE_TIP = {}
+
+
+def phase_tip(drawing, options, phase):
+    """exp.221 (the user: fix the cause, not the case): where the pen is when the hand
+    leaves the drawing ('out') or reaches it ('in'), in shares of the element's frame, found
+    from the very frames the video draws (the travel frames themselves). Anything that joins
+    two hands (a link, going on by the corner, waiting where it finished) takes its points
+    from here, so the two hands meet exactly where the hand really is."""
+    opts = {k: v for k, v in options.items() if k not in ('_flow_next', '_flow_prev', '_from_tip', '_wait_tip')}
+    if phase == 'out':
+        opts['hand_link_out'] = False             # a linked hand too: where its way back would start
+    plan = travel_plan(drawing, opts)
+    if plan is None:
+        return None
+    lead, hand_end, tail, inner_total, inner, hand_start = plan
+    total = inner_total - hand_start + lead + tail
+    picture = opts.get('final_image')
+    key = (phase, id(drawing), round(lead, 4), round(hand_end, 4), round(tail, 4), round(total, 4),
+           opts.get('width'), opts.get('height'), repr(opts.get('offset')), opts.get('artwork_scale'),
+           opts.get('reveal_mode'), opts.get('brush_width'), opts.get('hand_scale'), repr(opts.get('anchor')),
+           picture.cacheKey() if picture is not None and not picture.isNull() else None)
+    if key in _PHASE_TIP:
+        return _PHASE_TIP[key]
+    found = None
+    if (lead if phase == 'in' else tail) > 0:
+        t = lead * .5 if phase == 'in' else lead + (hand_end - hand_start) + tail * .5
+        _set_spec(None)
+        try:
+            _compose_raw_frame(drawing, min(1., t / max(1e-9, total)), dict(opts, layers='hand'))
+            spec = last_hand_spec()
+        except Exception:
+            spec = None
+        if spec is not None and spec.get('phase') == phase and spec.get('tip') is not None:
+            fw, fh = spec['frame']
+            target = spec.get('tip')
+            found = (target[0] / max(1, fw), target[1] / max(1, fh))
+    if len(_PHASE_TIP) > 128:
+        _PHASE_TIP.clear()
+    _PHASE_TIP[key] = found
+    return found
+
+
 _FIRST_TIP = {}
 
 
 def first_tip(drawing, options):
     """exp.218: where the pen first touches the drawing (shares of its frame), or None."""
+    exact = phase_tip(drawing, options, 'in')        # exp.221: as the video draws it
+    if exact is not None:
+        return exact
     plan = travel_plan(drawing, options)
     if plan is None:
         return None
@@ -1258,24 +1307,28 @@ def paint_hand_spec(frame, spec, options, place=None):
             ratio = (theirs / max(1e-6, mine)) * (1. - near) + near
             anchor = (float(ax) + (own[0] - float(ax)) * near, float(ay) + (own[1] - float(ay)) * near)
         flow = options.get('_flow_next') if phase == 'out' else options.get('_flow_prev')
-        if flow and place is not None and flow.get('tip') is not None:
+        if flow and place is not None and flow.get('a') is not None and flow.get('b') is not None:
             # exp.218: the way back and the next way in are one movement by the corner
             px, py, pw, ph = place
-            other = (px + float(flow['tip'][0]) * pw, py + float(flow['tip'][1]) * ph)
+            # exp.221: both hands build the one movement from the same two points (where the
+            # pen leaves the first drawing and reaches the next, as the video draws them)
+            def screen(spot):
+                return (px + float(spot[0]) * pw, py + float(spot[1]) * ph)
+            A, B = screen(flow['a']), screen(flow['b'])
             whole = max(1e-6, float(flow['tail']) + float(flow['lead']))
             mine_way = (style, bend, keys)
             if phase == 'out':
-                A, B, u = target, other, p * float(flow['tail']) / whole
+                u = p * float(flow['tail']) / whole
                 ways = (mine_way, tuple(flow['way']))
             else:
-                A, B, u = other, target, (float(flow['tail']) + p * float(flow['lead'])) / whole
+                u = (float(flow['tail']) + p * float(flow['lead'])) / whole
                 ways = (tuple(flow['way']), mine_way)
             centre = (W / 2., H / 2.)
             tip = flow_point(A, home, B, u, ways[0], ways[1], flow.get('mode', 'near'), centre)
             x0, _ = flow_point(A, home, B, max(0., u - .01), ways[0], ways[1], flow.get('mode', 'near'), centre)
             x1, _ = flow_point(A, home, B, min(1., u + .01), ways[0], ways[1], flow.get('mode', 'near'), centre)
             import math as _m
-            speed = (x1 - x0) / .02 / max(1., 4 * W * float(options.get('hand_scale', .18)) * whole)
+            speed = (x1 - x0) / .02 / max(1., 4 * W * float(flow.get('hand_scale', options.get('hand_scale', .18))) * whole)
             tilt = max(-12., min(12., -speed * 12.)) * _m.sin(_m.pi * u)
     if tip is None or image is None or image.isNull():
         return frame
