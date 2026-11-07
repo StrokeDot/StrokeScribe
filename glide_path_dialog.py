@@ -26,6 +26,7 @@ class PathCanvas(QWidget):
         self.drag = None
         self.try_at = None                     # 0..1: the hand shown along the path (Try)
         self.style = 'Smooth'
+        self.hand = None                       # exp.219: (picture, grip, width in frame pixels)
         self.setMinimumSize(760, 520)
         self.setMouseTracking(True)
 
@@ -67,6 +68,18 @@ class PathCanvas(QWidget):
             path.lineTo(self.to_widget(q))
         p.setPen(QPen(QColor(255, 255, 255, 200), 5)); p.drawPath(path)
         p.setPen(QPen(QColor('#e5484d'), 2.5)); p.drawPath(path)
+        spot = _along_polyline(line, _glide_ease(self.try_at or 0., self.style))
+        c = self.to_widget(spot)
+        if self.hand is not None:
+            # exp.219 (the user): the hand itself, at its size in the video, its pen on the path
+            image, (gx, gy), size = self.hand
+            hw = size * k; hh = hw * image.height() / max(1, image.width())
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            p.setOpacity(.92)
+            p.drawImage(QRectF(c.x() - gx * hw, c.y() - gy * hh, hw, hh), image)
+            p.setOpacity(1.)
+        elif self.try_at is not None:
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor('#ffd166')); p.drawEllipse(c, 8, 8)
         for i, q in enumerate(self.points()):
             c = self.to_widget(q)
             if i == 0 or i == len(self.keys) + 1:
@@ -75,9 +88,6 @@ class PathCanvas(QWidget):
             else:
                 p.setPen(QPen(QColor('white'), 2)); p.setBrush(QColor('#6c5ce7'))
                 p.drawEllipse(c, 9, 9)
-        if self.try_at is not None:
-            spot = _along_polyline(line, _glide_ease(self.try_at, self.style))
-            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor('#ffd166')); p.drawEllipse(self.to_widget(spot), 8, 8)
         p.end()
 
     def _key_at(self, pos):
@@ -157,7 +167,7 @@ class GlidePathDialog(QDialog):
         self.canvas.try_at = value / 100.; self.canvas.update()
 
     def play(self):
-        self.slider.setValue(0); self.timer.start(20)
+        self.slider.setValue(0); self.timer.start(25)
 
     def _step(self):
         if self.slider.value() >= 100:
