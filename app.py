@@ -1173,6 +1173,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             menu=QMenu(self)
             menu.addAction('Hand leaves the picture',lambda: self.add_camera_clip('Hand leaves',at=seconds))
             menu.addAction('Hide the hand',lambda: self.add_camera_clip('Hand hidden',at=seconds))
+            menu.addAction('Move the hand (Hand motion)',lambda: self.add_camera_clip('Hand motion',at=seconds))
             return menu.exec(QCursor.pos())
         if kind: return self.add_camera_clip(kind,at=seconds)
         return self.add_camera_menu(None,at=seconds)
@@ -1284,7 +1285,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         clip=camera_clips.new_clip(kind,min(start,max(0.,total-.5)))
         if kind in camera_clips.HAND_KINDS:              # exp.147/148: on the Hand row
             clip['side']='Right'
-            if kind==camera_clips.HAND and hasattr(self,'hand_rest') and not self.hand_rest.isChecked():
+            if kind in (camera_clips.HAND,camera_clips.MOVE) and hasattr(self,'hand_rest') and not self.hand_rest.isChecked():
                 self.hand_rest.setChecked(True)          # it moves the waiting hand
         elif not camera_clips.fixed(clip):                # exp.138: a free Moving camera row
             clip['lane']=camera_clips.free_lane(self.cameras,float(clip['start']),camera_clips.until(clip))
@@ -1293,7 +1294,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.project_changes.mark_changed()
         self.select_camera(clip['id'])
         if hasattr(self,'show_left_panel'): self.show_left_panel('camera')
-        if kind==camera_clips.FIXED:
+        if kind==camera_clips.MOVE:
+            self.status.setText(f'Hand motion at {clip["start"]:.1f} s: the waiting hand leaves its corner, moves and comes '
+                                'back. Double-click it on the Hand row to choose where it goes and how.')
+        elif kind==camera_clips.FIXED:
             self.status.setText(f'Reframe at {clip["start"]:.1f} s: the camera goes there and stays. Drag the frame on '
                                 'the preview to choose where; double-click it on the timeline for its settings.')
         else:
@@ -1346,6 +1350,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         clip=self.find_camera(cid)
         if clip is not None and camera_clips.fixed(clip):
             return self.edit_fixed_camera(cid)
+        if clip is not None and clip.get('kind')==camera_clips.MOVE:
+            return self.edit_hand_motion(cid)
         if clip is not None and clip.get('kind') in camera_clips.HAND_KINDS:
             return self.edit_hand_clip(cid)
         if clip is not None:
@@ -6145,6 +6151,64 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if moved:
             self.status.setText(f'Everything after it moved {"later" if delta>0 else "earlier"} by {abs(delta):.1f} s.')
 
+    def add_hand_motion(self):
+        """exp.224 (the user): a Hand motion at the playhead: the waiting hand goes where you
+        want, no picture needed."""
+        return self.add_camera_clip('Hand motion')
+
+    def edit_hand_motion(self,cid):
+        """exp.224: double-click a Hand motion: when, how long, how, and where it goes."""
+        from PySide6.QtWidgets import QDialog
+        import camera_clips, frame_render
+        from glide_path_dialog import HandMotionDialog
+        from timeline_model import state_at
+        clip=self.find_camera(cid)
+        if clip is None: return
+        start,length=float(clip['start']),float(clip['duration'])
+        t=start+length/2.
+        W=960; H=round(W*self.board_aspect())
+        info=self.rest_hand_info(W,H,t,busy_too=True)
+        if info is None:
+            self.status.setText('Hand motion: it moves the hand waiting in its corner. Turn on "The hand waits in a '
+                                'corner" (Hand panel) and add a drawing with a hand first.'); return
+        options,place=info
+        quiet=dict((k,v) for k,v in options.items() if k not in ('hand_away','_rest_out','_hand_moves'))
+        rect=frame_render.rest_rect(W,H,quiet,None,place)
+        if rect is None:
+            self.status.setText('Hand motion: this video has no hand picture.'); return
+        ax,ay=quiet.get('anchor',(.1,.1))
+        home=(rect.x()+float(ax)*rect.width(),rect.y()+float(ay)*rect.height())
+        px,py,pw,ph=place if place is not None else (0.,0.,float(W),float(H))
+        to_frame=lambda q: (px+float(q[0])*pw,py+float(q[1])*ph)
+        to_page=lambda q: [round((q[0]-px)/max(1.,pw),4),round((q[1]-py)/max(1.,ph),4)]
+        # the picture of that moment without any element's hand (the window shows the hand itself)
+        hidden={j:self.scenes[j].get('hand_off') for j in range(len(self.scenes))}
+        for j in hidden: self.scenes[j]['hand_off']=True
+        self._scene_cache={}; self.__dict__.pop('_memo',None)
+        try:
+            image=self.timeline_frame(state_at(self.timeline_layout(),t),W,H,t)
+        finally:
+            for j,had in hidden.items():
+                if had: self.scenes[j]['hand_off']=had
+                else: self.scenes[j].pop('hand_off',None)
+            self._scene_cache={}; self.__dict__.pop('_memo',None)
+        if image is None:
+            self.status.setText('Hand motion: that moment of the video could not be shown.'); return
+        dialog=HandMotionDialog(self,image,home,[to_frame(q) for q in clip.get('path') or camera_clips.MOVE_PATH],
+                                (options['hand'],(float(ax),float(ay)),rect.width()),start,length,
+                                clip.get('how') or 'Smooth',('Smooth','Steady','Quick start','Slow start','Overshoot'),
+                                [to_frame(q) for q in camera_clips.MOVE_PATH])
+        if dialog.exec()!=QDialog.DialogCode.Accepted: return
+        if dialog.deleted:
+            return self.camera_clip_action(cid,'delete')
+        self.record_structure('hand motion')
+        clip['start']=round(dialog.start.value(),2); clip['duration']=round(dialog.length.value(),2)
+        clip['how']=dialog.how.currentText()
+        clip['path']=[to_page(q) for q in dialog.canvas.keys]
+        self.project_changes.mark_changed()
+        self.clear_frames()
+        self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()
+
     def edit_hand_clip(self,cid):
         """exp.147: the hand leaves the picture: when, how fast, how long, which side."""
         from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QComboBox, QDoubleSpinBox
@@ -6194,9 +6258,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def rest_hand_layer(self,width,height,seconds):
         """exp.143: the hand in its corner at `seconds` (None when an element's hand is
         drawing or travelling, or when the hand does not wait in a corner)."""
+        info=self.rest_hand_info(width,height,seconds)
+        if info is None: return None
+        from frame_render import paint_rest_hand
+        layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
+        return paint_rest_hand(layer,info[0],seconds,info[1])
+
+    def rest_hand_info(self,width,height,seconds,busy_too=False):
+        """(options, place) of the waiting hand at `seconds`, ready for paint_rest_hand, or
+        None when it is not there (busy_too, exp.224: also while an element's hand draws)."""
         if not getattr(self,'hand_rest',None) or not self.hand_rest.isChecked() or self.board_mode() or not self.drawing:
             return None
-        from frame_render import hand_window, paint_rest_hand, rest_out
+        from frame_render import hand_window, rest_out
         out=0.
         if self.all_scenes():
             lay=self.timeline_layout(); hidden=self.hidden_elements()
@@ -6208,11 +6281,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 if window is None:
                     others.append((drawing,opts,it.start)); continue     # exp.153: slides out for it
                 if options is None or it.start<=seconds: options=opts; source=drawing; source_k=it.k
-                if it.start-1e-6<=seconds<it.start+window[0]-1e-6:
+                if it.start-1e-6<=seconds<it.start+window[0]-1e-6 and not busy_too:
                     return None                     # this element's own hand
             if options is None: return None
             out=rest_out(others,seconds)
-            if out>=1.: return None
+            if out>=1. and not busy_too: return None
             if options.get('hand_link_out') and source is not None:
                 from frame_render import last_tip
                 tip=last_tip(source,options)                              # exp.210: waits where it finished
@@ -6234,16 +6307,17 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             drawing,options,_,_=self.preview_scene(self.scene_index,960,540)
             window=hand_window(drawing,options)
             if window is None: return None
-            if self.position*window[1]<window[0]-1e-6: return None
-        layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
+            if self.position*window[1]<window[0]-1e-6 and not busy_too: return None
         place=self.page_place_at(width,height,seconds) if self.all_scenes() else None     # exp.161: on the page
         if place is not None:
             import camera_clips
             for weight,start in camera_clips.fixed_hand_weight(self.live_clips(),seconds):   # exp.222
                 place=camera_clips.blend_place(place,self.page_place_at(width,height,start),weight)
+        moves=__import__('camera_clips').hand_moves(getattr(self,'cameras',()))    # exp.224: Hand motion clips (also while chosen)
+        if moves: options=dict(options,_hand_moves=moves)
         view=1./max(1.,float(getattr(self,'preview_zoom_out',1.))) if self.zoomed_out() else 1.   # exp.216
         if self.all_scenes(): view*=self.hand_zoom_at(width,height,seconds)      # exp.223: the camera's zoom
-        return paint_rest_hand(layer,dict(options,layers='all',_rest_out=out,_hand_view=view,**self.hand_video(None)),seconds,place)
+        return dict(options,layers='all',_rest_out=out,_hand_view=view,**self.hand_video(None)),place
 
     def hand_zoom_at(self,width,height,seconds):
         """exp.223: how much bigger the hand looks at `seconds` because of the camera's zooms."""

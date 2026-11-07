@@ -39,7 +39,9 @@ FAR, NEAR = .2, 10.         # exp.159: how far a camera can go out and how close
 MENU = ('Zoom in', ZOOM_OUT)
 HAND = 'Hand leaves'       # exp.147: on the Hand row: the waiting hand slides out of the picture and back
 HIDE = 'Hand hidden'       # exp.148: on the Hand row: the hand fades away (also while drawing) and back
-HAND_KINDS = (HAND, HIDE)
+MOVE = 'Hand motion'      # exp.224 (the user): the waiting hand moves where you want, no picture needed
+HAND_KINDS = (HAND, HIDE, MOVE)
+MOVE_PATH = ((.72, .5), (.55, .62), (.66, .8))     # where a new Hand motion goes (shares of the page)
 SIDES = ('Right', 'Bottom', 'Left')   # exp.142 (the user): + Add camera offers these two
 MOVING = ('Zoom in', ZOOM_OUT, 'Pan left', 'Pan right', 'Pan up', 'Pan down', CUSTOM)
 KINDS = MOVING + (FIXED,)
@@ -65,6 +67,10 @@ def new_clip(kind='Zoom in', start=0., duration=None):
     clip['from'], clip['to'] = presets(kind)
     if kind == HIDE:                     # a quick fade out and in
         clip['in_s'] = clip['out_s'] = .3
+    if kind == MOVE:                     # exp.224: its own path, from the corner and back
+        clip['path'] = [list(p) for p in MOVE_PATH]
+        clip['how'] = 'Smooth'
+        clip['duration'] = 3.
     fit(clip)
     return clip
 
@@ -131,6 +137,7 @@ def presets(kind):
         ZOOM_OUT: (None, (.6, .5, .5)),
         HAND: (None, REST),
         HIDE: (None, REST),
+        MOVE: (None, REST),
     }.get(kind, (None, (1.6, .5, .5)))
 
 
@@ -238,11 +245,20 @@ def away_at(clips, seconds):
     return best, side
 
 
+def hand_moves(clips):
+    """exp.224: the Hand motion clips as plain data for the render options."""
+    return tuple(dict(start=float(c['start']), duration=float(c['duration']), how=c.get('how') or 'Smooth',
+                      path=tuple(tuple(p) for p in c.get('path') or MOVE_PATH))
+                 for c in clips or () if c.get('kind') == MOVE and not c.get('off'))
+
+
 def hand_signature(clips):
     """Plain data of the hand clips (for render options and fingerprints)."""
     return tuple((c.get('id'), round(float(c['start']), 4), round(float(c['duration']), 4),
                   round(float(c.get('in_s', IN_SECONDS)), 4), round(float(c.get('out_s', OUT_SECONDS)), 4),
-                  c.get('side') or 'Right', c.get('kind', HAND)) for c in hand_clips(clips))
+                  c.get('side') or 'Right', c.get('kind', HAND))
+                 + ((c.get('how') or 'Smooth', tuple(tuple(p) for p in c.get('path') or MOVE_PATH))
+                    if c.get('kind') == MOVE else ()) for c in hand_clips(clips))
 
 
 def from_hand_signature(sig):

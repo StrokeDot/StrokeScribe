@@ -51,6 +51,15 @@ class PathCanvas(QWidget):
         from frame_render import _path_points
         return _path_points(self.a, self.b, self.keys)
 
+    def line(self, steps=24):
+        from frame_render import path_polyline
+        return path_polyline(self.a, self.b, self.keys, steps)
+
+    def key_of(self, spot):
+        """A keyframe for this spot of the frame."""
+        from frame_render import to_keyframe
+        return to_keyframe(self.a, self.b, spot)
+
     def paintEvent(self, event):
         from frame_render import path_polyline, _along_polyline, _glide_ease
         p = QPainter(self)
@@ -62,7 +71,7 @@ class PathCanvas(QWidget):
         p.drawImage(rect, self.frame)
         p.setPen(QPen(QColor('#8a7cff'), 1.5, Qt.PenStyle.DashLine)); p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRect(rect)                         # the edge of the video
-        line = path_polyline(self.a, self.b, self.keys)
+        line = self.line()
         path = QPainterPath(self.to_widget(line[0]))
         for q in line[1:]:
             path.lineTo(self.to_widget(q))
@@ -108,8 +117,7 @@ class PathCanvas(QWidget):
 
     def mouseMoveEvent(self, event):
         if self.drag is not None:
-            from frame_render import to_keyframe
-            self.keys[self.drag] = to_keyframe(self.a, self.b, self.to_frame(event.position()))
+            self.keys[self.drag] = self.key_of(self.to_frame(event.position()))
             self.update()
         else:
             self.setCursor(Qt.CursorShape.OpenHandCursor if self._key_at(event.position()) is not None
@@ -120,11 +128,10 @@ class PathCanvas(QWidget):
 
     def mouseDoubleClickEvent(self, event):
         """A new keyframe where the path was double-clicked (between the two around it)."""
-        from frame_render import path_polyline, to_keyframe
         spot = self.to_frame(event.position())
-        new = to_keyframe(self.a, self.b, spot)
+        new = self.key_of(spot)
         # put it in order along the way: after the keyframes that come before it on the path
-        line = path_polyline(self.a, self.b, self.keys, 24)
+        line = self.line(24)
         nearest = min(range(len(line)), key=lambda j: math.hypot(line[j][0] - spot[0], line[j][1] - spot[1]))
         index = min(len(self.keys), nearest // 24)
         self.keys.insert(index, new)
@@ -318,3 +325,92 @@ class HandPathsDialog(QDialog):
             if new != before:
                 out[(mv['k'], mv['which'])] = new
         return out
+
+
+class MotionCanvas(PathCanvas):
+    """exp.224 (the user): a Hand motion: from the corner (green) through points anywhere
+    (frame pixels, also outside the picture) and back to the corner."""
+
+    def points(self):
+        return [self.a] + list(self.keys) + [self.b]
+
+    def line(self, steps=24):
+        from frame_render import spline
+        return spline(self.points(), steps)
+
+    def key_of(self, spot):
+        return (float(spot[0]), float(spot[1]))
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton and len(self.keys) <= 1:
+            return                                   # at least one point to go to
+        super().mousePressEvent(event)
+
+
+class HandMotionDialog(QDialog):
+    """exp.224: double-click a Hand motion clip: when, how long, how it moves, and its path."""
+
+    def __init__(self, parent, frame, home, keys, hand, start, length, how, styles, preset):
+        from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QFormLayout
+        super().__init__(parent)
+        self.setWindowTitle('Hand motion')
+        self.preset = [tuple(k) for k in preset]
+        layout = QVBoxLayout(self)
+        help_text = QLabel('The waiting hand leaves its corner (green), goes through the purple points and comes '
+                           'back. Drag the points anywhere, also outside the video (the dashed edge). Double-click '
+                           'the path to add a point, right-click one to remove it. No picture is needed.')
+        help_text.setWordWrap(True)
+        layout.addWidget(help_text)
+        form = QFormLayout()
+
+        def number(value, low, high):
+            box = QDoubleSpinBox(); box.setRange(low, high); box.setSingleStep(.1); box.setDecimals(1)
+            box.setSuffix(' s'); box.setValue(float(value)); return box
+        self.start = number(start, 0, 3600)
+        self.length = number(length, .4, 600)
+        self.how = QComboBox(); self.how.addItems(list(styles))
+        self.how.setCurrentText(how if how in styles else 'Smooth')
+        form.addRow('Starts', self.start)
+        form.addRow('Length', self.length)
+        form.addRow('How it moves', self.how)
+        layout.addLayout(form)
+        self.canvas = MotionCanvas(frame, home, home, keys)
+        self.canvas.hand = hand
+        self.canvas.style = self.how.currentText()
+        self.how.currentTextChanged.connect(self._style)
+        layout.addWidget(self.canvas, 1)
+        row = QHBoxLayout()
+        reset = QPushButton('Back to the start'); reset.clicked.connect(self.reset)
+        row.addWidget(reset)
+        row.addWidget(QLabel('Try:'))
+        self.slider = QSlider(Qt.Orientation.Horizontal); self.slider.setRange(0, 1000)
+        self.slider.valueChanged.connect(lambda v: (setattr(self.canvas, 'try_at', v / 1000.), self.canvas.update()))
+        row.addWidget(self.slider, 1)
+        play = QPushButton('Play'); play.clicked.connect(self.play)
+        row.addWidget(play)
+        layout.addLayout(row)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.remove = buttons.addButton('Delete', QDialogButtonBox.ButtonRole.DestructiveRole)
+        self.deleted = False
+        self.remove.clicked.connect(lambda: (setattr(self, 'deleted', True), self.accept()))
+        buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.timer = QTimer(self); self.timer.timeout.connect(self._step)
+
+    def _style(self, text):
+        self.canvas.style = text; self.canvas.update()
+
+    def reset(self):
+        self.canvas.keys = list(self.preset); self.canvas.update()
+
+    def play(self):
+        """At the clip's own speed (its Length)."""
+        import time
+        self._t0 = time.monotonic(); self.slider.setValue(0); self.timer.start(20)
+
+    def _step(self):
+        import time
+        u = (time.monotonic() - self._t0) / max(.2, self.length.value())
+        self.slider.setValue(min(1000, round(u * 1000)))
+        if u >= 1:
+            self.timer.stop()
