@@ -53,7 +53,7 @@ class Layout:
     boundaries: list = field(default_factory=list)
 
 
-def layout(lengths, joins, starts=None, tracks=None, already=None):
+def layout(lengths, joins, starts=None, tracks=None, already=None, video_end=None):
     """lengths[k]: seconds of element k; joins[k]: seconds of the camera move after it
     (for the last element: the Show everything move, 0 if none); starts[k]: its own
     start (None: after the element before it); tracks[k]: its track (0: Track 1)."""
@@ -77,6 +77,11 @@ def layout(lengths, joins, starts=None, tracks=None, already=None):
         moves.append(Move(n - 1, last_end, last_end + float(joins[-1])))
     total = max([last_end] + [m.end for m in moves])
     sequential = all(s is None for s in starts) and not any(tracks) and not any(it.already for it in items)
+    if video_end is not None and float(video_end) > total + 1e-6:
+        # exp.230 (the user): the video goes on after its last element (the Background row was
+        # dragged longer): the last page stays, and the hand can still move (Hand motion)
+        total = float(video_end)
+        sequential = False
     points = {0., total}
     for it in items:
         points.update((it.start, it.end))
