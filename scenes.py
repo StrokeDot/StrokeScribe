@@ -267,14 +267,18 @@ def flow_hands(items, elements, frames, hidden=()):
         plan_a = travel_plan(elements[it.k]['drawing'], o)
         n = elements[nxt.k]['options']
         plan_b = travel_plan(elements[nxt.k]['drawing'], n)
-        a_tip, b_tip = last_tip(elements[it.k]['drawing'], o), first_tip(elements[nxt.k]['drawing'], n)
+        from frame_render import phase_tip
+        # exp.221: the points where the pen leaves / reaches, as the video draws them
+        a_tip = phase_tip(elements[it.k]['drawing'], o, 'out')
+        b_tip = phase_tip(elements[nxt.k]['drawing'], n, 'in')
         if plan_a is None or plan_b is None or a_tip is None or b_tip is None or plan_a[2] <= 0:
             continue
         tail, lead = float(plan_a[2]), float(plan_b[0])
-        o['_flow_next'] = dict(tip=b_tip, tail=tail, lead=lead, mode=mode,
+        shared = dict(a=a_tip, b=b_tip, tail=tail, lead=lead, mode=mode, hand_scale=float(o.get('hand_scale', .18)))
+        o['_flow_next'] = dict(shared,
                                way=(n.get('hand_glide_style_in') or 'Smooth', n.get('hand_glide_bend_in') or 'Auto',
                                     n.get('hand_glide_path_in') or None))
-        n['_flow_prev'] = dict(tip=a_tip, tail=tail, lead=lead, mode=mode,
+        n['_flow_prev'] = dict(shared,
                                way=(o.get('hand_glide_style_out') or 'Smooth', o.get('hand_glide_bend_out') or 'Auto',
                                     o.get('hand_glide_path_out') or None))
 
