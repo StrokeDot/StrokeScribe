@@ -70,6 +70,7 @@ def new_clip(kind='Zoom in', start=0., duration=None):
     if kind == MOVE:                     # exp.224: its own path, from the corner and back
         clip['path'] = [list(p) for p in MOVE_PATH]
         clip['how'] = 'Smooth'
+        clip['back'] = False             # exp.231 (the user): it stays where its path ends
         clip['duration'] = 3.
     fit(clip)
     return clip
@@ -248,7 +249,7 @@ def away_at(clips, seconds):
 def hand_moves(clips):
     """exp.224: the Hand motion clips as plain data for the render options."""
     return tuple(dict(start=float(c['start']), duration=float(c['duration']), how=c.get('how') or 'Smooth',
-                      path=tuple(tuple(p) for p in c.get('path') or MOVE_PATH))
+                      path=tuple(tuple(p) for p in c.get('path') or MOVE_PATH), back=c.get('back', True) is not False)
                  for c in clips or () if c.get('kind') == MOVE and not c.get('off'))
 
 
@@ -257,7 +258,8 @@ def hand_signature(clips):
     return tuple((c.get('id'), round(float(c['start']), 4), round(float(c['duration']), 4),
                   round(float(c.get('in_s', IN_SECONDS)), 4), round(float(c.get('out_s', OUT_SECONDS)), 4),
                   c.get('side') or 'Right', c.get('kind', HAND))
-                 + ((c.get('how') or 'Smooth', tuple(tuple(p) for p in c.get('path') or MOVE_PATH))
+                 + ((c.get('how') or 'Smooth', tuple(tuple(p) for p in c.get('path') or MOVE_PATH),
+                     c.get('back', True) is not False, bool(c.get('off')))
                     if c.get('kind') == MOVE else ()) for c in hand_clips(clips))
 
 
