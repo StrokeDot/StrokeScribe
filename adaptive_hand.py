@@ -32,6 +32,9 @@ def qimage(image):
     return QImage(data, rgba.width, rgba.height, rgba.width*4,
                   QImage.Format.Format_RGBA8888).copy()
 
+HAND_GLIDE = .12          # exp.227: seconds of brush points the painting hand follows on each side
+
+
 @dataclass(frozen=True)
 class Segment:
     a: tuple
@@ -68,6 +71,50 @@ class PaintPlan:
         # hand stays visible and glides to the next region. Hiding it here made
         # the hand blink out for a frame at every transfer.
         return segment, point
+
+    def hand_point(self, progress, seconds=None):
+        """exp.227 (the user: the painting hand jumps around; it must follow a line): where the
+        HAND is drawn at `progress`. The brush itself sweeps very fast (hundreds of strokes in a
+        few seconds), so frame by frame its point jumped back and forth across the picture. The
+        hand follows it smoothly: the brush's points over a short moment around now (HAND_GLIDE
+        seconds of the paint time `seconds`), averaged. That moment shrinks to nothing at the
+        first and the last brush point, so the hand still starts exactly where it arrives and
+        ends exactly on the last stroke (where its way back starts)."""
+        segment, point = self.state(progress)
+        if point is None or not seconds or seconds <= 0:
+            return segment, point
+        clock = max(0., min(1., float(progress)))/.98*self.total
+        last = self.__dict__.get('_last_paint')
+        if last is None:
+            last = max((s.end for s in self.segments if s.painting), default=self.total)
+            self.__dict__['_last_paint'] = last
+        span = HAND_GLIDE/float(seconds)/.98*self.total
+        if span <= 1e-9 or clock > last:
+            return segment, point
+        n = 24
+        sx = sy = sw = 0.
+        for i in range(-n, n+1):
+            c = max(0., min(last, clock+span*i/n))    # before the first / after the last point: there
+            weight = 1.-abs(i)/(n+1.)              # nearer moments count more
+            _, q = self.state(c/self.total*.98)
+            if q is None:
+                continue
+            sx += q[0]*weight; sy += q[1]*weight; sw += weight
+        if sw <= 0:
+            return segment, point
+        smooth = (sx/sw, sy/sw)
+        # gently onto the exact first / last point over that moment (no jump at either end)
+        edge = min(clock, last-clock)/span
+        if edge >= 1.:
+            return segment, smooth
+        e = edge*edge*(3-2*edge)
+        if clock < last-clock:
+            _, exact = self.state(0.)
+        else:                                      # the end of the last stroke (as finished_tip)
+            exact = next((s.b for s in reversed(self.segments) if s.painting), None)
+        if exact is None:
+            return segment, smooth
+        return segment, (exact[0]+(smooth[0]-exact[0])*e, exact[1]+(smooth[1]-exact[1])*e)
 
     def mask(self, progress):
         clock = max(0., min(1., float(progress)))/.98*self.total
@@ -690,7 +737,7 @@ def adaptive_paint_mask(drawing,image,width,height,rect,progress,brush_width,str
     # Classic: nearest-neighbour keeps the exact discrete footprint (as before exp.177).
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     painter.drawImage(rect,qimage(small)); painter.end()
-    segment,tip=plan.state(progress)
+    segment,tip=plan.hand_point(progress,getattr(drawing,'paint_seconds',None))      # exp.227
     if tip is not None:
         tip=(rect.x()+tip[0]*rect.width()/plan.size[0],
              rect.y()+tip[1]*rect.height()/plan.size[1])
