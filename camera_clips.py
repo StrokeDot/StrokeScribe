@@ -205,7 +205,7 @@ def assign_lanes(clips):
 
 def moving(clip):
     """A clip on the Moving camera rows (not a fixed camera, not the hand's)."""
-    return clip.get('kind') not in (FIXED, HAND, HIDE)
+    return clip.get('kind') not in (FIXED,) + HAND_KINDS     # exp.232: Hand motion is not a camera either
 
 
 def hand_clips(clips, kinds=HAND_KINDS):
