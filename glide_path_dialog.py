@@ -180,3 +180,141 @@ class GlidePathDialog(QDialog):
         if keys == [tuple(round(v, 4) for v in k) for k in self.preset]:
             return None
         return keys
+
+
+class PathsCanvas(PathCanvas):
+    """exp.220: the canvas of Hand paths: the chosen way with its keyframes, the other ways
+    faint (with their element number) so they are seen together."""
+
+    def __init__(self, parent=None):
+        from PySide6.QtGui import QImage
+        blank = QImage(960, 540, QImage.Format.Format_ARGB32); blank.fill(0)
+        super().__init__(blank, (0, 0), (1, 1), [], parent)
+        self.others = []                       # [(a, b, keys, label, done)]
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        from frame_render import path_polyline
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        for a, b, keys, label, done in self.others:
+            line = path_polyline(a, b, keys or [])
+            path = QPainterPath(self.to_widget(line[0]))
+            for q in line[1:]:
+                path.lineTo(self.to_widget(q))
+            colour = QColor('#8a7cff') if not done else QColor(160, 160, 170)
+            colour.setAlpha(150)
+            p.setPen(QPen(colour, 2, Qt.PenStyle.DashLine)); p.setBrush(Qt.BrushStyle.NoBrush); p.drawPath(path)
+            mid = self.to_widget(line[len(line) // 2])
+            p.setPen(QColor('white')); p.drawText(QRectF(mid.x() + 6, mid.y() - 9, 140, 18),
+                                                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label)
+        p.end()
+
+
+class HandPathsDialog(QDialog):
+    """exp.220 (the user): every way of the hands in the video together: a list of the ways in
+    the order they happen, the chosen one with its keyframes on the picture of its moment, the
+    others faint; Play goes through them all with the hand; OK keeps every change."""
+
+    def __init__(self, parent, moves):
+        from PySide6.QtWidgets import QListWidget, QSplitter
+        super().__init__(parent)
+        self.setWindowTitle('Hand paths')
+        self.resize(1180, 760)
+        self.moves = moves
+        for mv in self.moves:
+            mv['edit'] = list(mv['keys'] or mv['preset'])
+        layout = QVBoxLayout(self)
+        tip = QLabel('Every way of the hands, in the order they happen. Choose one to shape it: drag its purple '
+                     'keyframes (double-click the path to add one, right-click to remove one). The other ways are '
+                     'the dashed lines. Play goes through them all.')
+        tip.setWordWrap(True)
+        layout.addWidget(tip)
+        split = QSplitter()
+        self.list = QListWidget()
+        for mv in self.moves:
+            t0, t1 = mv['times']
+            self.list.addItem(f"{t0:.1f}–{t1:.1f} s   Element {mv['k'] + 1}: "
+                              + ('to the drawing' if mv['which'] == 'in' else 'back to the corner'))
+        self.list.setMinimumWidth(330)
+        split.addWidget(self.list)
+        self.canvas = PathsCanvas()
+        split.addWidget(self.canvas)
+        split.setStretchFactor(1, 1)
+        layout.addWidget(split, 1)
+        row = QHBoxLayout()
+        reset = QPushButton('Back to the preset'); reset.clicked.connect(self.reset)
+        row.addWidget(reset)
+        row.addWidget(QLabel('Try:'))
+        self.slider = QSlider(Qt.Orientation.Horizontal); self.slider.setRange(0, 100)
+        self.slider.valueChanged.connect(self.tried)
+        row.addWidget(self.slider, 1)
+        play = QPushButton('Play this one'); play.clicked.connect(lambda: self.play(False))
+        row.addWidget(play)
+        play_all = QPushButton('Play all'); play_all.clicked.connect(lambda: self.play(True))
+        row.addWidget(play_all)
+        layout.addLayout(row)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.timer = QTimer(self); self.timer.timeout.connect(self._step)
+        self.all = False
+        self.current = -1
+        self.list.currentRowChanged.connect(self.choose)
+        self.list.setCurrentRow(0)
+
+    def _keep(self):
+        if 0 <= self.current < len(self.moves):
+            self.moves[self.current]['edit'] = list(self.canvas.keys)
+
+    def choose(self, row):
+        self._keep()
+        if not 0 <= row < len(self.moves):
+            return
+        self.current = row
+        mv = self.moves[row]
+        c = self.canvas
+        c.frame, c.a, c.b, c.keys, c.style, c.hand = mv['image'], tuple(mv['a']), tuple(mv['b']), \
+            list(mv['edit']), mv['style'], mv['hand']
+        c.others = [(o['a'], o['b'], o['edit'], f"{o['k'] + 1} " + ('in' if o['which'] == 'in' else 'back'),
+                     o['times'][1] <= mv['times'][0])
+                    for i, o in enumerate(self.moves) if i != row]
+        c.try_at = self.slider.value() / 100.
+        c.update()
+
+    def reset(self):
+        if 0 <= self.current < len(self.moves):
+            self.canvas.keys = list(self.moves[self.current]['preset']); self.canvas.update()
+
+    def tried(self, value):
+        self.canvas.try_at = value / 100.; self.canvas.update()
+
+    def play(self, everything):
+        self.all = everything
+        if everything:
+            self.list.setCurrentRow(0)
+        self.slider.setValue(0)
+        self.timer.start(25)
+
+    def _step(self):
+        mv = self.moves[self.current] if 0 <= self.current < len(self.moves) else None
+        seconds = max(.2, (mv['times'][1] - mv['times'][0])) if mv else 1.
+        step = max(1, round(100 * .025 / seconds))       # about its real speed
+        if self.slider.value() >= 100:
+            if self.all and self.current + 1 < len(self.moves):
+                self.list.setCurrentRow(self.current + 1); self.slider.setValue(0); return
+            self.timer.stop(); return
+        self.slider.setValue(min(100, self.slider.value() + step))
+
+    def changed(self):
+        """{(element, 'in' / 'out'): keyframes (None: back to the preset)} of the ways changed."""
+        self._keep()
+        out = {}
+        for mv in self.moves:
+            now = [tuple(round(v, 4) for v in k) for k in mv['edit']]
+            preset = [tuple(round(v, 4) for v in k) for k in mv['preset']]
+            before = [tuple(round(v, 4) for v in k) for k in mv['keys']] if mv['keys'] else None
+            new = None if now == preset else now
+            if new != before:
+                out[(mv['k'], mv['which'])] = new
+        return out

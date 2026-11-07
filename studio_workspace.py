@@ -3874,6 +3874,15 @@ def build_workspace(w, Canvas, BRAND_ICON):
                                         'choose where the camera goes.')
     w.add_camera_clip_button.clicked.connect(lambda checked=False: w.add_camera_menu(w.add_camera_clip_button))
     timeline_head.addWidget(w.add_camera_clip_button)
+    # exp.220 (the user): Hand paths: every hand way of the video together
+    w.hand_paths_button=QPushButton(); w.hand_paths_button.setObjectName('subtle')
+    from ui_icons import icon as _hicon
+    w.hand_paths_button.setIcon(_hicon('hand')); w.hand_paths_button.setIconSize(_QS(22,22))
+    w.hand_paths_button.setFixedSize(38,32)
+    w.hand_paths_button.setToolTip('Hand paths: see every way of the hands in the video together (to the drawing, '
+                                   'back, from one drawing to the next), play them, and shape any of them with keyframes.')
+    w.hand_paths_button.clicked.connect(lambda checked=False: w.open_hand_paths())
+    timeline_head.addWidget(w.hand_paths_button)
     w.timeline_status=label('','panelHint')
     timeline_head.addWidget(w.timeline_status)
     body=QWidget();body.setObjectName('panelBody')

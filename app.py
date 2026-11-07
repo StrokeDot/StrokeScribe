@@ -5981,31 +5981,28 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.hand_rest_changed()
         self.sync_camera_timeline()
 
-    def edit_glide_path(self,k,which,style,bend,keys):
-        """exp.217: the Edit path window for element k's way in / back. Returns the keyframes
-        (None: the preset's path) or False (cancelled / no frame to show)."""
+    def glide_snapshot(self,k,which,style=None,bend=None):
+        """exp.217/220: the moment of element k's way in / back: dict(image (without the hand),
+        a, b (its start and end on the screen), size, hand, style, bend, keys, times), or a
+        reason (text) when there is none."""
         import frame_render
-        from PySide6.QtWidgets import QDialog
-        from glide_path_dialog import GlidePathDialog
         from timeline_model import state_at
-        lay=self.timeline_layout()
-        it=next((i for i in lay.items if i.k==k),None)
         marks=next((m for m in self.hand_marks() if len(m)>4 and m[4]==k),None)
-        if it is None or marks is None:
-            self.status.setText('Edit path: this element has no hand way in the whole video.'); return False
+        if marks is None: return 'this element has no hand way in the whole video.'
         start,lead,busy,tail=marks[:4]
-        if which=='out' and tail<=0:
-            self.status.setText('Edit path: this hand has no way back (it is linked to the next one).'); return False
-        t=start+lead*.5 if which=='in' else start+lead+busy+tail*.5
-        # the frame of that moment, with the way as it is (its start and end on the screen)
+        if which=='out' and tail<=0: return 'this hand has no way back (it is linked to the next one).'
         saved=self.scenes[k].get('glide')
         g=list(saved or (0.,0.,'Smooth','Smooth'))+['Smooth','Smooth','Auto','Auto']
-        g=g[:6]; g[2 if which=='in' else 3]=style; g[4 if which=='in' else 5]=bend
+        g=g[:6]
+        style=style or g[2 if which=='in' else 3] or 'Smooth'; bend=bend or g[4 if which=='in' else 5] or 'Auto'
+        g[2 if which=='in' else 3]=style; g[4 if which=='in' else 5]=bend
+        t0,t1=(start,start+lead) if which=='in' else (start+lead+busy,start+lead+busy+tail)
+        t=(t0+t1)/2.
+        W=960; H=round(W*self.board_aspect())
         self.scenes[k]['glide']=tuple(g); self._scene_cache={}; self.__dict__.pop('_memo',None)
         try:
             frame_render._HAND.glide=None
-            W=960; H=round(W*self.board_aspect())
-            image=self.timeline_frame(state_at(self.timeline_layout(),t),W,H,t)
+            self.timeline_frame(state_at(self.timeline_layout(),t),W,H,t)
             info=getattr(frame_render._HAND,'glide',None)
             # exp.219: the picture under the path without the hand (the window shows its own)
             had=self.scenes[k].get('hand_off'); self.scenes[k]['hand_off']=True
@@ -6017,23 +6014,72 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 else: self.scenes[k].pop('hand_off',None)
         finally:
             self.scenes[k]['glide']=saved; self._scene_cache={}; self.__dict__.pop('_memo',None)
-        if info is None or image is None:
-            self.status.setText('Edit path: the hand could not be found at that moment.'); return False
-        a,b=info['a'],info['b']
-        preset=frame_render.preset_keyframes(a,b,style,(W/2.,H/2.),bend)
-        dialog=GlidePathDialog(self,image,a,b,keys,preset,style,
-                               f'Hand path: element {k+1}, '+('to the drawing' if which=='in' else 'back'))
-        # exp.219 (the user): Play shows the hand itself going along the path
+        if info is None or image is None: return 'the hand could not be found at that moment.'
+        hand=None
         try:
             _,opts,_,_=self.preview_scene(k,W,H)
-            hand=opts.get('hand')
-            if hand is not None and not hand.isNull():
-                size=W*float(opts.get('hand_scale',.18))*float(opts.get('artwork_scale',1.) or 1.)
-                dialog.canvas.hand=(hand,tuple(opts.get('anchor',(.1,.1))),size)
+            picture=opts.get('hand')
+            if picture is not None and not picture.isNull():
+                hand=(picture,tuple(opts.get('anchor',(.1,.1))),
+                      W*float(opts.get('hand_scale',.18))*float(opts.get('artwork_scale',1.) or 1.))
         except Exception as exc:
-            import applog; applog.error('Edit path: the hand',exc)
+            import applog; applog.error('Hand path: the hand',exc)
+        keys=(self.scenes[k].get('glide_path') or {}).get(which)
+        return dict(k=k,which=which,image=image,a=info['a'],b=info['b'],size=(W,H),hand=hand,style=style,
+                    bend=bend,keys=[tuple(x) for x in keys] if keys else None,times=(t0,t1),
+                    preset=frame_render.preset_keyframes(info['a'],info['b'],style,(W/2.,H/2.),bend))
+
+    def edit_glide_path(self,k,which,style,bend,keys):
+        """exp.217: the Edit path window for element k's way in / back. Returns the keyframes
+        (None: the preset's path) or False (cancelled / no frame to show)."""
+        from PySide6.QtWidgets import QDialog
+        from glide_path_dialog import GlidePathDialog
+        snap=self.glide_snapshot(k,which,style,bend)
+        if isinstance(snap,str):
+            self.status.setText('Edit path: '+snap); return False
+        dialog=GlidePathDialog(self,snap['image'],snap['a'],snap['b'],keys,snap['preset'],snap['style'],
+                               f'Hand path: element {k+1}, '+('to the drawing' if which=='in' else 'back'))
+        dialog.canvas.hand=snap['hand']            # exp.219: Play shows the hand itself
         if dialog.exec()!=QDialog.DialogCode.Accepted: return False
         return dialog.keyframes()
+
+    def open_hand_paths(self):
+        """exp.220 (the user): Hand paths: every way of every hand in the video together, to
+        see how they follow each other and to shape any of them with keyframes."""
+        from PySide6.QtWidgets import QDialog
+        from glide_path_dialog import HandPathsDialog
+        if len(self.scenes)<2 or not getattr(self,'hand_rest',None) or not self.hand_rest.isChecked():
+            self.status.setText('Hand paths: the hand ways are there when the hand waits in its corner '
+                                '(Hand panel) in a video of more than one element.'); return
+        self.store_scene(thumbnail=False)
+        moves=[]
+        self.show_busy_now('Hand paths','Finding every way of the hands…')
+        try:
+            for m in sorted(self.hand_marks(),key=lambda m: m[0]):
+                if len(m)<5: continue
+                for which in ('in','out'):
+                    snap=self.glide_snapshot(m[4],which)
+                    if isinstance(snap,dict): moves.append(snap)
+        finally:
+            self.clear_busy()
+        if not moves:
+            self.status.setText('Hand paths: no hand ways in this video.'); return
+        moves.sort(key=lambda mv: mv['times'][0])
+        dialog=HandPathsDialog(self,moves)
+        if dialog.exec()!=QDialog.DialogCode.Accepted: return
+        changed=dialog.changed()
+        if not changed: return
+        self.record_structure('hand paths')
+        for (k,which),keys in changed.items():
+            paths=dict(self.scenes[k].get('glide_path') or {})
+            if keys: paths[which]=keys
+            else: paths.pop(which,None)
+            if paths: self.scenes[k]['glide_path']=paths
+            else: self.scenes[k].pop('glide_path',None)
+        self.project_changes.mark_changed()
+        self._scene_cache={}; self.__dict__.pop('_memo',None)
+        self.refresh()
+        self.status.setText(f'Hand paths: {len(changed)} way(s) changed.')
 
     def shift_camera_move(self,k,shift):
         """exp.167 (the user): a move between pages dragged along the timeline: the element it
