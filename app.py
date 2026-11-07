@@ -65,12 +65,23 @@ class Canvas(QWidget):
         self.rest_frame=None        # exp.143: the hand waiting in its corner (screen)
         self._press=None
         self.highlight=[]           # selected lines: polylines in frame pixels
+        self.view_box=None          # exp.228: (x, y, w, h) shares of the frame shown (This element = the video's camera)
         self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
     DRAG_START=6                    # pixels the mouse moves before a click becomes a drag
-    def _frame_point(self,pos):
+    def picture_rect(self):
+        """exp.228: where the whole frame is drawn (the screen shows view_box of it)."""
+        from PySide6.QtCore import QRectF
         x,y,size=self.frame_rect()
-        return ((pos.x()-x)*self.frame.width()/max(1,size.width()),
-                (pos.y()-y)*self.frame.height()/max(1,size.height()))
+        box=self.view_box
+        if not box:
+            return QRectF(x,y,size.width(),size.height())
+        bx,by,bw,bh=box
+        w,h=size.width()/max(1e-6,bw),size.height()/max(1e-6,bh)
+        return QRectF(x-bx*w,y-by*h,w,h)
+    def _frame_point(self,pos):
+        r=self.picture_rect()
+        return ((pos.x()-r.x())*self.frame.width()/max(1e-6,r.width()),
+                (pos.y()-r.y())*self.frame.height()/max(1e-6,r.height()))
     def mousePressEvent(self,event):
         self._press=None
         if self.frame is None or self.busy_text is not None or event.button()!=Qt.MouseButton.LeftButton:
@@ -90,8 +101,8 @@ class Canvas(QWidget):
                 self._press=None; return
             self._press=(start,True)
             self.setCursor(Qt.CursorShape.ClosedHandCursor)
-        _,_,size=self.frame_rect()
-        self.on_drag('move',d.x()/max(1,size.width()),d.y()/max(1,size.height()))
+        r=self.picture_rect()
+        self.on_drag('move',d.x()/max(1.,r.width()),d.y()/max(1.,r.height()))
     def mouseReleaseEvent(self,event):
         press=getattr(self,'_press',None); self._press=None
         if press is None: return super().mouseReleaseEvent(event)
@@ -174,7 +185,7 @@ class Canvas(QWidget):
             # moving pencil, including during partially painted frames.
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             from blend_modes import composition_mode
-            rect=QRectF(x,y,size.width(),size.height())
+            rect=self.picture_rect()                # exp.228: the part of it the video's camera shows
             if self.art_frame is not None:
                 from artwork_compositor import bounded_opacity
                 p.setCompositionMode(composition_mode(self.blend_mode))
@@ -193,15 +204,17 @@ class Canvas(QWidget):
             box=self.box_provider() if self.box_provider is not None else None
             if box:
                 from PySide6.QtGui import QPen
-                k=size.width()/max(1,self.frame.width())
+                k=rect.width()/max(1,self.frame.width())
                 bx,by,bw,bh=box
+                ox,oy=rect.x(),rect.y()
                 p.setBrush(Qt.BrushStyle.NoBrush)
-                p.setPen(QPen(QColor(255,255,255,200),3)); p.drawRoundedRect(QRectF(x+bx*k-3,y+by*k-3,bw*k+6,bh*k+6),6,6)
-                p.setPen(QPen(QColor(c['accent']),2,Qt.PenStyle.DashLine)); p.drawRoundedRect(QRectF(x+bx*k-3,y+by*k-3,bw*k+6,bh*k+6),6,6)
+                p.setPen(QPen(QColor(255,255,255,200),3)); p.drawRoundedRect(QRectF(ox+bx*k-3,oy+by*k-3,bw*k+6,bh*k+6),6,6)
+                p.setPen(QPen(QColor(c['accent']),2,Qt.PenStyle.DashLine)); p.drawRoundedRect(QRectF(ox+bx*k-3,oy+by*k-3,bw*k+6,bh*k+6),6,6)
             if self.highlight:
                 from PySide6.QtGui import QPainterPath, QPen
                 from PySide6.QtCore import QPointF
-                k=size.width()/max(1,self.frame.width())
+                k=rect.width()/max(1,self.frame.width())
+                x,y=rect.x(),rect.y()
                 path=QPainterPath()
                 for line in self.highlight:
                     if not line: continue
@@ -1078,7 +1091,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def line_at(self,x,y,tolerance=14.):
         """Index of the line nearest to (x, y) in preview pixels, or None."""
         import numpy as np
-        best,best_d=None,tolerance*self.canvas.frame.width()/max(1,self.canvas.frame_rect()[2].width())
+        best,best_d=None,tolerance*self.canvas.frame.width()/max(1.,self.canvas.picture_rect().width())
         for i,line in enumerate(self.preview_lines()):
             if not line: continue
             pts=np.asarray(line,float)
@@ -3884,7 +3897,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         p.drawText(box.adjusted(12,0,-12,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
                    p.fontMetrics().elidedText(hint,Qt.TextElideMode.ElideRight,int(box.width()-24)))
         p.end()
-        self.canvas.frame=image; self.canvas.highlight=[]; self.canvas.titles_frame=None; self.canvas.rest_frame=None; self.canvas.update()   # exp.195: no waiting hand left over from the video (it showed a second, big hand)
+        self.canvas.frame=image; self.canvas.view_box=None; self.canvas.highlight=[]; self.canvas.titles_frame=None; self.canvas.rest_frame=None; self.canvas.update()   # exp.195: no waiting hand left over from the video (it showed a second, big hand)
         segments,lengths,joins=self.whole_segments(960,round(960*aspect))
         self.show_whole_timeline(segments,lengths,joins,self.options())
         total=self.timeline_layout(960,round(960*aspect)).total
@@ -6280,15 +6293,19 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 window=hand_window(drawing,opts)
                 if window is None:
                     others.append((drawing,opts,it.start)); continue     # exp.153: slides out for it
-                if options is None or it.start<=seconds: options=opts; source=drawing; source_k=it.k
+                if options is None or it.start<=seconds:
+                    options=opts; source=drawing; source_k=it.k
+                    finished=seconds>=it.start+window[0]-1e-6    # exp.228: its hand has been and gone
                 if it.start-1e-6<=seconds<it.start+window[0]-1e-6 and not busy_too:
                     return None                     # this element's own hand
             if options is None: return None
             out=rest_out(others,seconds)
             if out>=1. and not busy_too: return None
-            if self.scenes[source_k].get('hand_flow') and not options.get('hand_link_out'):
+            # exp.228 (the user: before the first hand the waiting hand was not in its corner): where
+            # a hand finished counts only once it has finished (it took the spot of a hand to come)
+            if finished and self.scenes[source_k].get('hand_flow') and not options.get('hand_link_out'):
                 options=self._flow_rest(options,source_k,width,height,seconds)      # exp.225
-            if options.get('hand_link_out') and source is not None:
+            if finished and options.get('hand_link_out') and source is not None:
                 from frame_render import last_tip
                 tip=last_tip(source,options)                              # exp.210: waits where it finished
                 if tip is not None:
@@ -6310,6 +6327,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             window=hand_window(drawing,options)
             if window is None: return None
             if self.position*window[1]<window[0]-1e-6 and not busy_too: return None
+            box=self.element_view_box(self.scene_index)                    # exp.228
+            if box: options=dict(options,_rest_place=(box[0]*width,box[1]*height,box[2]*width,box[3]*height))
         place=self.page_place_at(width,height,seconds) if self.all_scenes() else None     # exp.161: on the page
         if place is not None:
             import camera_clips
@@ -6346,16 +6365,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             import applog; applog.error('Flowing hand spot',exc)
             return options
 
-    def element_hand_view(self,k):
-        """exp.226 (the user: in This element the picture was small next to a big hand; it must
-        follow the same rule as the whole video): This element shows element k's whole page,
-        while the video's camera shows a part of it (or more than it). The hand keeps the size
-        it has next to the picture in the video: like everything else, it looks smaller from
-        further away. 1 when the video shows exactly that page."""
+    def element_view_box(self,k):
+        """exp.228 (the user: inside the element it must have the same camera view as the whole
+        video): the part of element k's page the video's camera shows (in the middle of its
+        time), as (x, y, w, h) shares of the page, or None when it shows the whole page."""
         memo=self.__dict__.setdefault('_memo',{})
-        key=('element_hand_view',k,len(self.scenes))
+        key=('element_view_box',k,len(self.scenes))
         if key in memo: return memo[key]
-        value=1.
+        box=None
         try:
             if len(self.scenes)>1 and 0<=k<len(self.scenes):
                 import timeline_render
@@ -6366,15 +6383,22 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 if item is not None:
                     world=self.preview_world(W,H)
                     els=self.timeline_elements(W,H)
-                    t=item.start+item.length/2.
-                    view=timeline_render.fixed_view(world,lay,state_at(lay,t),els)
-                    page=world.frames[k][2]
-                    if view and page>0:
-                        value=max(.05,min(20.,float(view[2])/float(page)))
+                    view=timeline_render.fixed_view(world,lay,state_at(lay,item.start+item.length/2.),els)
+                    x,y,w,h=world.place(world.frames[k],view,W,H)
+                    if w>1 and h>1:
+                        box=(-x/w,-y/h,W/w,H/h)
+                        if max(abs(box[0]),abs(box[1]),abs(box[2]-1),abs(box[3]-1))<1e-3: box=None
         except Exception as exc:
-            import applog; applog.error('Hand size in This element',exc)
-        memo[key]=value
-        return value
+            import applog; applog.error('Camera view in This element',exc)
+        memo[key]=box
+        return box
+
+    def element_hand_view(self,k):
+        """exp.226/228: in This element the hand is drawn on the whole page, which the screen
+        shows magnified (element_view_box): it is drawn that much smaller, so on the screen it
+        is its size in the video."""
+        box=self.element_view_box(k)
+        return max(.05,min(20.,float(box[2]))) if box else 1.
 
     def hand_zoom_at(self,width,height,seconds):
         """exp.223: how much bigger the hand looks at `seconds` because of the camera's zooms."""
@@ -6519,6 +6543,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.status.setText('Preview could not be updated: '+str(exc)[:220])
             return
         self.canvas.frame=frame
+        self.canvas.view_box=None if view['all'] else view.get('box')     # exp.228
         self.apply_background_at(self.shown_seconds())       # exp.207: the Background row
         self.sync_background_row()
         self.sync_titles_timeline()
@@ -6607,7 +6632,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.clear_frames(); self._view=None
         self.sync_workspace()
         if not self.drawing:
-            self.canvas.frame=None;self.canvas.highlight=[];self.canvas.titles_frame=None;self.canvas.rest_frame=None
+            self.canvas.frame=None;self.canvas.view_box=None;self.canvas.highlight=[];self.canvas.titles_frame=None;self.canvas.rest_frame=None
             self.canvas.update()
             # exp.198 (the user: New Project left the old project on the timeline): an empty
             # project shows an empty timeline (no elements, cameras, texts or hand bars).
@@ -6667,6 +6692,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if page: options['background']=False
         self.schedule_render_bar()
         self._view=dict(all=False,options=options,page=page,ratio=ratio,length=self.timeline_length(),
+                        box=self.element_view_box(self.scene_index),
                         token=self._view_token(),width=self.PREVIEW_WIDTH,
                         height=round(self.PREVIEW_WIDTH*ratio))
         self.show_hand_pictures(options)
@@ -6716,7 +6742,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if view['all']:
             return self.all_scenes_frame(width,height,fraction)[0]
         from frame_render import compose_frame
+        box=view.get('box')
+        if box and box[2]<1:
+            # exp.228: the screen shows a part of the page: the page drawn bigger stays sharp
+            width=min(4096,round(width/box[2])); height=round(width*view['ratio'])
         options=dict(view['options'],width=width,height=height)
+        if box:      # exp.228: its corner is a corner of what the camera shows, as in the video
+            options['_rest_place']=(box[0]*width,box[1]*height,box[2]*width,box[3]*height)
         camera=self.preview_camera(options)
         if view['page']:
             from artwork_compositor import composite_element

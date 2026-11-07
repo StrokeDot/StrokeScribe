@@ -411,6 +411,7 @@ def _resting_options(lay, elements, seconds, hidden=()):
             chosen = e['options']
             chosen_drawing = e['drawing']
             chosen_k = it.k
+            finished = seconds >= it.start + window[0] - 1e-6   # exp.228: its hand has been and gone
         if it.start - 1e-6 <= seconds < it.start + window[0] - 1e-6:
             return None
     if chosen is not None:
@@ -419,9 +420,12 @@ def _resting_options(lay, elements, seconds, hidden=()):
             return None
         if out > 0:
             chosen = dict(chosen, _rest_out=out)
-        if chosen.get('_flow_next'):
+        if not finished:
+            # exp.228: before its hand came, it waits in its corner (not where that hand will finish)
+            chosen = {k: v for k, v in chosen.items() if k not in ('_flow_next',)}
+        elif chosen.get('_flow_next'):
             chosen = dict(chosen, _rest_k=chosen_k)             # exp.225: whose page its way is on
-        if chosen.get('hand_link_out') and chosen_drawing is not None:
+        if finished and chosen.get('hand_link_out') and chosen_drawing is not None:
             from frame_render import last_tip
             tip = last_tip(chosen_drawing, chosen)              # exp.210: waits where it finished
             if tip is not None:
