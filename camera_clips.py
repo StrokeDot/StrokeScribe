@@ -320,8 +320,22 @@ def signature(clips):
     return tuple((c.get('id'), c.get('kind'), round(float(c['start']), 4), round(float(c['duration']), 4),
                   tuple(c['from']) if c.get('from') else None, tuple(c.get('to') or REST),
                   round(float(c.get('in_s', IN_SECONDS)), 4), round(float(c.get('out_s', OUT_SECONDS)), 4),
-                  c.get('how'), int(c.get('lane', 0) or 0))
+                  c.get('how'), int(c.get('lane', 0) or 0), bool(c.get('hand_fixed')))
                  for c in clips or ())
+
+
+def fixed_hand_weight(clips, seconds):
+    """exp.222 (the user: two kinds of zoom): [(weight 0..1, clip start)] of the camera
+    clips at `seconds` during which the waiting hand stays where it is on the screen."""
+    return [(_ramp(c, float(seconds)), float(c['start'])) for c in clips or ()
+            if c.get('hand_fixed') and _ramp(c, float(seconds)) > 0]
+
+
+def blend_place(place, base, weight):
+    """(x, y, w, h) between two places of the page on the screen."""
+    if place is None or base is None:
+        return place
+    return tuple(a + (b - a) * weight for a, b in zip(place, base))
 
 
 class VideoCamera:

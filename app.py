@@ -1396,6 +1396,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                                '(more than the page).'),close_row)
         form.addRow(help_label('Left / right','Where the camera looks, from the left (0 %) to the right (100 %).'),x_row)
         form.addRow(help_label('Up / down','Where the camera looks, from the top (0 %) to the bottom (100 %).'),y_row)
+        # exp.222 (the user: two kinds of zoom): the waiting hand moves with the page, or stays put
+        from PySide6.QtWidgets import QCheckBox
+        stays=QCheckBox('The waiting hand stays where it is on the screen')
+        stays.setChecked(bool(clip.get('hand_fixed')))
+        stays.setToolTip('Off (usual): the waiting hand is on its spot of the page, so it moves with the zoom '
+                         '(it can go out of view when zooming in). On: during this zoom it stays where it is '
+                         'on the screen. Either way it keeps its size; a hand drawing is always on its line.')
+        form.addRow(help_label('Hand',stays.toolTip()),stays)
         def framing():
             return camera_clips.keep_in((close.value()/100.,px.value()/100.,py.value()/100.))
         previous_selected=getattr(self,'selected_camera',None)
@@ -1432,6 +1440,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         clip['start']=round(start.value(),2)
         clip['in_s'],clip['out_s']=round(go.value(),2),round(back.value(),2)
         clip['duration']=round(go.value()+stay.value()+back.value(),2)
+        if stays.isChecked(): clip['hand_fixed']=True
+        else: clip.pop('hand_fixed',None)
         camera_clips.fit(clip)
         if new_kind in ('Zoom in',camera_clips.ZOOM_OUT,camera_clips.CUSTOM):
             clip['to']=framing()
@@ -4446,6 +4456,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             camera=self.video_camera(k,camera,length)            # exp.119: the camera clips
             options=dict(options,**self.hand_video(k))           # exp.147: the Hand row
             if self.scenes[k].get('art_off'): options['art_off']=True     # exp.209: E, the picture off
+            fixed=[c for c in self.live_clips() if c.get('hand_fixed')]
+            if fixed: options['_fixed_hand_clips']=tuple(dict(c) for c in fixed)   # exp.222
             if self.scenes[k].get('hand_off'): options['hand_off']=True   # E on its Hand bar
             tool=self.eraser_tool()
             if tool is not None: options['eraser_tool']=tool     # exp.196: one for the video
@@ -6224,6 +6236,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if self.position*window[1]<window[0]-1e-6: return None
         layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
         place=self.page_place_at(width,height,seconds) if self.all_scenes() else None     # exp.161: on the page
+        if place is not None:
+            import camera_clips
+            for weight,start in camera_clips.fixed_hand_weight(self.live_clips(),seconds):   # exp.222
+                place=camera_clips.blend_place(place,self.page_place_at(width,height,start),weight)
         view=1./max(1.,float(getattr(self,'preview_zoom_out',1.))) if self.zoomed_out() else 1.   # exp.216
         return paint_rest_hand(layer,dict(options,layers='all',_rest_out=out,_hand_view=view,**self.hand_video(None)),seconds,place)
 
