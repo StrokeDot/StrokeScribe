@@ -798,6 +798,32 @@ def flow_point(A, C, B, u, out_way, in_way, mode, centre):
     return _along_polyline(line, e)
 
 
+def flow_rest_spot(options, width, height, place, corner_place, seconds=None):
+    """exp.225 (the user: a one-frame jump between two hands that flow into each other):
+    where the hand is when its way back ends, on a screen of width x height, when that way
+    flows on into the next hand (_flow_next): the same point the way back's last frame drew
+    (place: the element's page on the screen, corner_place: where its corner belongs). A
+    moment between the two hands then shows the hand there, not in its corner. None when
+    its way back does not flow on."""
+    flow = options.get('_flow_next')
+    if not flow or place is None or flow.get('a') is None or flow.get('b') is None:
+        return None
+    corner = rest_rect(width, height, dict(options, _rest_place=corner_place, _wait_tip=None, _rest_out=0.),
+                       seconds)
+    if corner is None:
+        return None
+    ax, ay = options.get('anchor', (.1, .1))
+    home = (corner.x() + float(ax) * corner.width(), corner.y() + float(ay) * corner.height())
+    px, py, pw, ph = place
+    A = (px + float(flow['a'][0]) * pw, py + float(flow['a'][1]) * ph)
+    B = (px + float(flow['b'][0]) * pw, py + float(flow['b'][1]) * ph)
+    whole = max(1e-6, float(flow['tail']) + float(flow['lead']))
+    mine = (options.get('hand_glide_style_out') or 'Smooth', options.get('hand_glide_bend_out') or 'Auto',
+            options.get('hand_glide_path_out') or None)
+    return flow_point(A, home, B, float(flow['tail']) / whole, mine, tuple(flow['way']),
+                      flow.get('mode', 'near'), (width / 2., height / 2.))
+
+
 def hand_window(drawing, options):
     """(seconds from the element's start to when the hand is back in its corner, element
     seconds), or None."""

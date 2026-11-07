@@ -419,6 +419,8 @@ def _resting_options(lay, elements, seconds, hidden=()):
             return None
         if out > 0:
             chosen = dict(chosen, _rest_out=out)
+        if chosen.get('_flow_next'):
+            chosen = dict(chosen, _rest_k=chosen_k)             # exp.225: whose page its way is on
         if chosen.get('hand_link_out') and chosen_drawing is not None:
             from frame_render import last_tip
             tip = last_tip(chosen_drawing, chosen)              # exp.210: waits where it finished
@@ -504,6 +506,17 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
             if rest is not None:                     # exp.143: the hand waiting in its corner
                 from frame_render import paint_rest_hand
                 place = timeline_render.page_place(world, lay, state, elements, width, height)   # exp.161: on the page
+                if rest.get('_flow_next') and not rest.get('hand_link_out'):
+                    # exp.225: between two hands that flow into each other: where the way back ended
+                    from frame_render import flow_rest_spot
+                    spot = flow_rest_spot(dict(rest, _hand_view=timeline_render.hand_camera_zoom(
+                        world, lay, state, elements, [c for c in cameras or () if c.get('hand_fixed')], i / fps)),
+                        width, height, timeline_render.element_place(world, lay, state, elements,
+                                                                     rest.get('_rest_k', 0), width, height),
+                        place, i / fps)
+                    if spot is not None and place is not None:
+                        rest = dict(rest, _wait_tip=((spot[0] - place[0]) / max(1., place[2]),
+                                                     (spot[1] - place[1]) / max(1., place[3])), _spot_place=place)
                 if any(c.get('kind') == camera_clips.MOVE for c in cameras or ()):
                     rest = dict(rest, _hand_moves=camera_clips.hand_moves(cameras))      # exp.224
                 rest = dict(rest, _hand_view=timeline_render.hand_camera_zoom(               # exp.223

@@ -6286,6 +6286,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if options is None: return None
             out=rest_out(others,seconds)
             if out>=1. and not busy_too: return None
+            if self.scenes[source_k].get('hand_flow') and not options.get('hand_link_out'):
+                options=self._flow_rest(options,source_k,width,height,seconds)      # exp.225
             if options.get('hand_link_out') and source is not None:
                 from frame_render import last_tip
                 tip=last_tip(source,options)                              # exp.210: waits where it finished
@@ -6318,6 +6320,30 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         view=1./max(1.,float(getattr(self,'preview_zoom_out',1.))) if self.zoomed_out() else 1.   # exp.216
         if self.all_scenes(): view*=self.hand_zoom_at(width,height,seconds)      # exp.223: the camera's zoom
         return dict(options,layers='all',_rest_out=out,_hand_view=view,**self.hand_video(None)),place
+
+    def _flow_rest(self,options,k,width,height,seconds):
+        """exp.225: between a hand whose way back flows on and the next hand, the hand stays
+        where that way back ended (it showed in its corner for a frame: a jump)."""
+        try:
+            import timeline_render
+            from frame_render import flow_rest_spot
+            from timeline_model import state_at
+            els=self.timeline_elements(width,height)
+            o=els[k]['options']
+            if not o.get('_flow_next'): return options
+            zoom=self.zoomed_out()
+            args=(self.preview_world(width,height),self.timeline_layout(),state_at(self.timeline_layout(),max(0.,float(seconds))),els)
+            more=(self.preview_zoom_out if zoom else 1.,getattr(self,'preview_pan',(0.,0.)) if zoom else (0.,0.))
+            place=timeline_render.element_place(*args,k,width,height,*more)
+            corner=timeline_render.page_place(*args,width,height,*more)
+            view=(1./max(1.,float(more[0])))*self.hand_zoom_at(width,height,seconds)
+            spot=flow_rest_spot(dict(o,_hand_view=view,**self.hand_video(None)),width,height,place,corner,seconds)
+            if spot is None or corner is None: return options
+            px,py,pw,ph=corner
+            return dict(options,_wait_tip=((spot[0]-px)/max(1.,pw),(spot[1]-py)/max(1.,ph)),_spot_place=corner)
+        except Exception as exc:
+            import applog; applog.error('Flowing hand spot',exc)
+            return options
 
     def hand_zoom_at(self,width,height,seconds):
         """exp.223: how much bigger the hand looks at `seconds` because of the camera's zooms."""
