@@ -587,6 +587,36 @@ def travel_plan(drawing, options):
 _WINDOW = {}
 
 
+def _plan_digest(drawing, options):
+    """exp.229 (the user: I moved the last stroke near the head and the hand still ended where
+    the old last stroke was): everything that decides where and when the hand paints and draws
+    (the brush plan with its spacing, part order, circles, regions, and the lines in their order
+    with their pace), so a remembered start / end point is never one of an older plan."""
+    try:
+        lines = hash(tuple((len(s.points), tuple(s.points[0]) if s.points else None,
+                            tuple(s.points[-1]) if s.points else None,
+                            getattr(s, 'pace', 1.), getattr(s, 'pause', 0.), getattr(s, 'reversed', False))
+                           for s in getattr(drawing, 'strokes', ()) or ()))
+    except Exception:
+        lines = None
+    plan = None
+    image = options.get('final_image')
+    mode = options.get('reveal_mode')
+    if image is not None and not image.isNull() and mode in ('adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag', 'painter'):
+        try:
+            from adaptive_hand import _plan_key
+            had = getattr(drawing, 'paint_method', None)
+            drawing.paint_method = mode
+            plan = hash(_plan_key(drawing, image, float(options.get('brush_width', .14)),
+                                  float(options.get('stroke_spacing', .55))))
+            if had is not None:
+                drawing.paint_method = had
+        except Exception:
+            plan = None
+    return (lines, plan, options.get('stroke_spacing'), options.get('duration'), options.get('fade_duration'),
+            options.get('hold_duration'), getattr(drawing, 'image_animation', None))
+
+
 def _paint_window(drawing, options):
     """(first, last): seconds of the element (without the travel) when the painting hand
     first and last really paints, for the planned paintings (adaptive, painter, rows...)."""
@@ -597,7 +627,7 @@ def _paint_window(drawing, options):
     if options.get('painting_hand') is None:
         return None
     key = (id(drawing), image.cacheKey(), mode, options.get('brush_width'), options.get('stroke_spacing'),
-           options.get('duration'), options.get('fade_duration'))
+           options.get('duration'), options.get('fade_duration'), _plan_digest(drawing, options))
     if key in _WINDOW:
         return _WINDOW[key]
     try:
@@ -654,7 +684,7 @@ def last_tip(drawing, options):
     key = (id(drawing), round(lead, 4), round(hand_end, 4), round(hand_start, 4), round(total, 4),
            options.get('width'), options.get('height'), repr(options.get('offset')), options.get('artwork_scale'),
            options.get('reveal_mode'), options.get('brush_width'), options.get('hand_scale'),
-           picture.cacheKey() if picture is not None and not picture.isNull() else None)
+           picture.cacheKey() if picture is not None and not picture.isNull() else None, _plan_digest(drawing, options))
     if key in _LAST_TIP:
         return _LAST_TIP[key]
     found = None
@@ -700,7 +730,9 @@ def phase_tip(drawing, options, phase):
     key = (phase, id(drawing), round(lead, 4), round(hand_end, 4), round(tail, 4), round(total, 4),
            opts.get('width'), opts.get('height'), repr(opts.get('offset')), opts.get('artwork_scale'),
            opts.get('reveal_mode'), opts.get('brush_width'), opts.get('hand_scale'), repr(opts.get('anchor')),
-           picture.cacheKey() if picture is not None and not picture.isNull() else None)
+           picture.cacheKey() if picture is not None and not picture.isNull() else None,
+           _plan_digest(drawing, opts), repr(opts.get('hand_glide_path_in')), repr(opts.get('hand_glide_path_out')),
+           opts.get('hand_glide_style_in'), opts.get('hand_glide_style_out'))
     if key in _PHASE_TIP:
         return _PHASE_TIP[key]
     found = None
@@ -736,7 +768,8 @@ def first_tip(drawing, options):
     lead, hand_end, tail, inner_total, inner, hand_start = plan
     total = inner_total - hand_start + lead + tail
     key = (id(drawing), round(lead, 4), round(total, 4), options.get('width'), options.get('height'),
-           repr(options.get('offset')), options.get('artwork_scale'), options.get('reveal_mode'))
+           repr(options.get('offset')), options.get('artwork_scale'), options.get('reveal_mode'),
+           options.get('brush_width'), _plan_digest(drawing, options))
     if key in _FIRST_TIP:
         return _FIRST_TIP[key]
     found = None
