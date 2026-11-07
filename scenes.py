@@ -472,6 +472,8 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
             options.update(hand_away=hand_sig, hand_video_start=lay.items[len(elements)].start)
         own = scenes[len(elements)]
         if own.get('art_off'): options['art_off'] = True        # exp.208/209: E (picture off, hand on)
+        if cameras and any(c.get('hand_fixed') for c in cameras):
+            options['_fixed_hand_clips'] = tuple(dict(c) for c in cameras if c.get('hand_fixed'))   # exp.222
         if own.get('hand_off'): options['hand_off'] = True      # E on its Hand bar
         elements.append(dict(drawing=p['drawing'], options=options, camera=camera, uid=uids[len(elements)],
                              transition=p['transition'], move_seconds=p['move_seconds']))
@@ -502,6 +504,9 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
             if rest is not None:                     # exp.143: the hand waiting in its corner
                 from frame_render import paint_rest_hand
                 place = timeline_render.page_place(world, lay, state, elements, width, height)   # exp.161: on the page
+                for weight, start in camera_clips.fixed_hand_weight(cameras or (), i / fps):     # exp.222
+                    place = camera_clips.blend_place(place, timeline_render.page_place(
+                        world, lay, state_at(lay, start), elements, width, height), weight)
                 if rest.get('_wait_k') is not None:      # exp.216: a linked hand waits on its page
                     rest = dict(rest, _spot_place=timeline_render.element_place(
                         world, lay, state, elements, rest['_wait_k'], width, height))

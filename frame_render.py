@@ -949,6 +949,65 @@ def rest_out(items, seconds):
     return best
 
 
+_ARM = {}
+
+
+def draw_hand_picture(painter, rect, image):
+    """exp.222 (the user: the hand is there beyond the frame too; zoomed out, more of it
+    shows, never a cut): draw the hand picture in `rect`, its arm going on past the edges
+    where the picture cuts it (an edge with the arm on it is carried on straight, far), so
+    the end of the picture never shows when the hand comes further into the view."""
+    from PySide6.QtCore import QRectF
+    ext, (pl, pt, w, h) = _with_arm(image)
+    sx, sy = rect.width() / max(1, w), rect.height() / max(1, h)
+    painter.drawImage(QRectF(rect.x() - pl * sx, rect.y() - pt * sy, ext.width() * sx, ext.height() * sy), ext)
+
+
+def _with_arm(image):
+    key = (image.cacheKey(), image.width(), image.height())
+    found = _ARM.get(key)
+    if found is not None:
+        return found
+    from PySide6.QtCore import QRect, QRectF
+    from PySide6.QtGui import QImage, QPainter
+    w, h = image.width(), image.height()
+    img = image.convertToFormat(QImage.Format.Format_ARGB32)
+
+    def cut(edge):
+        n = w if edge in ('top', 'bottom') else h
+        hits = 0
+        for i in range(0, n, max(1, n // 120)):
+            x, y = {'top': (i, 0), 'bottom': (i, h - 1), 'left': (0, i), 'right': (w - 1, i)}[edge]
+            if (img.pixel(x, y) >> 24) & 255 > 128:
+                hits += 1
+        return hits >= 3
+    pad = {e: (int(1.5 * (h if e in ('top', 'bottom') else w)) if cut(e) else 0) for e in ('top', 'bottom', 'left', 'right')}
+    if not any(pad.values()):
+        found = (image, (0, 0, w, h))
+    else:
+        W, H = w + pad['left'] + pad['right'], h + pad['top'] + pad['bottom']
+        ext = QImage(W, H, QImage.Format.Format_ARGB32_Premultiplied); ext.fill(0)
+        p = QPainter(ext)
+        L, T = pad['left'], pad['top']
+        # the rows / columns on the cut edges, stretched out (the arm going on straight)
+        if pad['bottom']: p.drawImage(QRectF(L, T + h, w, pad['bottom']), img, QRectF(0, h - 1, w, 1))
+        if pad['top']: p.drawImage(QRectF(L, 0, w, T), img, QRectF(0, 0, w, 1))
+        if pad['right']: p.drawImage(QRectF(L + w, T, pad['right'], h), img, QRectF(w - 1, 0, 1, h))
+        if pad['left']: p.drawImage(QRectF(0, T, L, h), img, QRectF(0, 0, 1, h))
+        for (cx, cy, on) in ((w - 1, h - 1, pad['right'] and pad['bottom']), (0, h - 1, pad['left'] and pad['bottom']),
+                             (w - 1, 0, pad['right'] and pad['top']), (0, 0, pad['left'] and pad['top'])):
+            if on:
+                x0 = L + w if cx else 0; y0 = T + h if cy else 0
+                p.drawImage(QRectF(x0, y0, pad['right'] if cx else L, pad['bottom'] if cy else T), img, QRectF(cx, cy, 1, 1))
+        p.drawImage(L, T, img)
+        p.end()
+        found = (ext, (L, T, w, h))
+    if len(_ARM) > 16:
+        _ARM.clear()
+    _ARM[key] = found
+    return found
+
+
 def paint_rest_hand(frame, options, seconds=None, place=None):
     """The hand waiting in its corner, painted on (a copy of) the frame (place: the page on
     the screen, exp.161)."""
@@ -963,7 +1022,7 @@ def paint_rest_hand(frame, options, seconds=None, place=None):
     p = QPainter(out)
     p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     p.setOpacity(shown)
-    p.drawImage(rect, options['hand'])
+    draw_hand_picture(p, rect, options['hand'])      # exp.222: its arm goes on past the picture
     p.end()
     return out
 
@@ -1341,7 +1400,7 @@ def paint_hand_spec(frame, spec, options, place=None):
     painter.setOpacity(shown)
     if abs(tilt) > .05:
         painter.translate(tip[0], tip[1]); painter.rotate(tilt); painter.translate(-tip[0], -tip[1])
-    painter.drawImage(QRectF(tip[0] - anchor[0] * hw, tip[1] - anchor[1] * hh, hw, hh), image)
+    draw_hand_picture(painter, QRectF(tip[0] - anchor[0] * hw, tip[1] - anchor[1] * hh, hw, hh), image)   # exp.222
     painter.end()
     return out
 

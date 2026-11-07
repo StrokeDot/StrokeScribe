@@ -406,7 +406,17 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
             # shows it. exp.161: its corner is a spot of the page too, so on its way between them
             # the hand is carried by the camera like the page (its size never changes).
             if spec is not None and spec.get('phase') in ('in', 'out') and view_fn is not None:
-                opts = dict(opts, _rest_place=world.place(fixed_view(world, lay, state, elements), view_fn(state), width, height))
+                corner_place = world.place(fixed_view(world, lay, state, elements), view_fn(state), width, height)
+                fixed = opts.get('_fixed_hand_clips')
+                if fixed and seconds is not None:
+                    # exp.222: during a zoom that leaves the hand alone, its corner stays put
+                    import camera_clips
+                    from timeline_model import state_at
+                    for weight, start in camera_clips.fixed_hand_weight(fixed, seconds):
+                        st = state_at(lay, start)
+                        base = world.place(fixed_view(world, lay, st, elements), view_fn(st), width, height)
+                        corner_place = camera_clips.blend_place(corner_place, base, weight)
+                opts = dict(opts, _rest_place=corner_place)
             hand_layer = (layer, world.frames[k], spec, place, opts)
     for k in above:
         if elements[k]['options'].get('art_off'):
