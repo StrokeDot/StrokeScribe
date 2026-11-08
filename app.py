@@ -2903,6 +2903,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             QMessageBox.warning(self,'Open project',str(exc)); return False
         self.project_path=str(path)
         try:
+            fitted=self.fit_areas_to_cameras()              # exp.235: a camera moved off its page
+            if fitted: import applog; applog.info('Elements given their camera place as their area: %s',fitted)
+        except Exception as exc:
+            import applog; applog.error('Camera areas',exc)
+        try:
             moved=self.exits_to_clips()                     # exp.194: older projects
             if moved: import applog; applog.info('Ways out moved to Goes out clips: %d',moved)
         except Exception as exc:
@@ -3418,6 +3423,64 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.status.setText(f'Scene {self.scene_index+1} added as a copy. Import an SVG or image for it '
                             '(Import, Library or Create image); its settings are its own.')
 
+    def fit_areas_to_cameras(self,which=None):
+        """exp.235 (the user: the picture was cut, the hand went out of the frame and This
+        element did not match, after its camera moved to a new place): an element whose own
+        camera shows a place that is not inside its page draws in that place: the camera view
+        becomes its area (its frame), so nothing past the old page's edge is cut, its hand's
+        corner is a corner of what the camera shows, and This element shows exactly that. Its
+        picture keeps where it is on the board (position and size converted); the elements after
+        it on the old page stay on that page. Returns the elements changed."""
+        import board
+        aspect=self.board_aspect()
+        changed=[]
+        for k in (range(len(self.scenes)) if which is None else which):
+            if not 0<=k<len(self.scenes): continue
+            scene=self.scenes[k]
+            v=(scene.get('board') or {}).get('view')
+            if not v: continue
+            frames=board.frames(self.scenes,aspect)
+            page=frames[k]
+            view=(float(v[0]),float(v[1]),max(.02,float(v[2])))
+            pl,pt,pr,pb=board.rect(page,aspect); vl,vt,vr,vb=board.rect(view,aspect)
+            if vl>=pl-1e-4 and vt>=pt-1e-4 and vr<=pr+1e-4 and vb<=pb+1e-4:
+                continue                                  # a closer look inside its page: it stays
+            if all(abs(a-b)<1e-6 for a,b in zip(page,view)):
+                continue
+            # the elements after it on the same page keep that page
+            j=k+1
+            while j<len(self.scenes) and self.scenes[j-1].get('transition')=='Same page' \
+                    and board.frame_of(self.scenes[j]) is None and tuple(frames[j])==tuple(page):
+                bj=dict(self.scenes[j].get('board') or {}); bj.update(cx=page[0],cy=page[1],w=page[2])
+                self.scenes[j]['board']=bj; j+=1
+            # its picture stays where it is on the board
+            if k==self.scene_index:
+                x,y,size=self.picture_x.value(),self.picture_y.value(),self.artwork_size.value()
+            else:
+                st=((scene.get('state') or {}).get('settings') or {})
+                x,y,size=float(st.get('picture_x',0) or 0),float(st.get('picture_y',0) or 0),float(st.get('artwork_size',100) or 100)
+            wx=page[0]+x/100.*page[2]; wy=page[1]+y/100.*page[2]*aspect
+            nx=(wx-view[0])/view[2]*100.; ny=(wy-view[1])/(view[2]*aspect)*100.
+            nsize=size*page[2]/view[2]
+            nx,ny=max(-100.,min(100.,nx)),max(-100.,min(100.,ny))
+            if k==self.scene_index:
+                for box,value in ((self.picture_x,nx),(self.picture_y,ny),(self.artwork_size,nsize)):
+                    box.blockSignals(True); box.setValue(round(value,2)); box.blockSignals(False)
+                self.store_scene(thumbnail=False)
+            else:
+                st=scene.get('state') or {}
+                st.setdefault('settings',{}).update(picture_x=round(nx,2),picture_y=round(ny,2),artwork_size=round(nsize,2))
+                scene['state']=st
+            b=dict(scene.get('board') or {}); b.update(cx=view[0],cy=view[1],w=view[2])
+            scene['board']=b
+            if k>0 and self.scenes[k-1].get('transition') not in board.CAMERA_KINDS:
+                # the camera moves there (a move on the Fixed camera row, to click and change)
+                self.scenes[k-1]['transition']='Camera move'
+            changed.append(k)
+        if changed:
+            self._scene_cache={}; self.__dict__.pop('_memo',None); self.__dict__.pop('_elements_memo',None)
+        return changed
+
     def set_camera(self,k=None):
         """exp.200 (the user, like VideoScribe): where the camera looks for element k: its
         own view on the board (closer, further, anywhere), kept with the element."""
@@ -3469,6 +3532,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if chosen is None: b.pop('view',None)
         else: b['view']=list(chosen)
         self.scenes[k]['board']=b or None
+        self.fit_areas_to_cameras([k])                   # exp.235: a place off the page becomes its area
         self.project_changes.mark_changed()
         self.__dict__.pop('_memo',None)
         if not self.all_scenes(): self.preview_scope.setCurrentIndex(1)
@@ -4146,6 +4210,19 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             plan=travel_plan(drawing,options) if (options.get('entrance') or 'draw')=='draw' else None
         except Exception:
             plan=None
+        if plan is not None and plan[0]>0 and not float(options.get('pause',0) or 0)>0 \
+                and not (options.get('erase') or {}).get('mode'):
+            # exp.235 (the user: Hold = the hand going back): Hand (glide in), Draw / Paint up to
+            # the hand's last stroke, Hold = the way back; the element ends with it
+            lead,hand_end,tail,_,_,hand_start=plan
+            d=dict(parts); draw=float(d.get('draw',0) or 0)
+            busy=max(.05,float(hand_end)-float(hand_start))
+            drawn=max(0.,min(draw,float(hand_end))-float(hand_start))
+            out=[('glide',float(lead))]
+            if 'move' in d: out.append(('move',float(d['move'])))
+            out+=[('draw',drawn),('paint',max(0.,busy-drawn)),('hold',max(0.,float(length)-float(lead)-busy)),
+                  ('erase',float(d.get('erase',0) or 0))]
+            return out
         if plan is not None and plan[0]>0:
             lead=float(plan[0])
             rest=float(length)-lead-sum(v for _,v in parts)

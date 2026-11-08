@@ -249,6 +249,15 @@ class ArtworkWorkflow:
                     scene['transition']=current['transition']
                     scene['transition_seconds']=current['transition_seconds']
                     current['transition']='Same page'
+                elif not ctx.get('same_spot'):
+                    # exp.235 (the user: the new element was cut and its camera did not follow): "In a
+                    # new place" means the camera moves to it: the element before goes there with a
+                    # camera move (it said Same page, so the new one landed on the same page)
+                    import board as _board
+                    current=self.scenes[self.scene_index]
+                    if current.get('transition') not in _board.CAMERA_KINDS:
+                        current['transition']=DEFAULT_TRANSITION if DEFAULT_TRANSITION in _board.CAMERA_KINDS else 'Camera move'
+                    ctx['ask_camera']=True
                 self.scene_index+=1;self.scenes.insert(self.scene_index,scene)
                 self.fresh_element_settings()        # exp.112: from zero, not the element before
             if placement!='replace':
@@ -297,6 +306,12 @@ class ArtworkWorkflow:
                 import applog
                 applog.error('Could not preserve artwork in the Library',exc)
             self.status.setText('Artwork added.' if placement=='add' else 'Selected artwork replaced.' if placement=='replace' else 'Artwork added to New Project.')
+            import sys as _sys
+            if ctx.get('ask_camera') and len(self.scenes)>1 and 'unittest' not in _sys.modules:
+                # exp.235 (the user: if it goes to a new camera place, ask me to select the place)
+                from PySide6.QtCore import QTimer
+                k=self.scene_index
+                QTimer.singleShot(0,lambda k=k: self.set_camera(k) if 0<=k<len(self.scenes) else None)
         except Exception as exc:
             self.apply_project(previous)
             self.project_changes=tracker;self.history=history;self.project_path=old_path
