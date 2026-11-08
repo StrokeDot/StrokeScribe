@@ -130,8 +130,8 @@ def is_model_file_ready(paths, file):
     path = paths.model_path(file)
     if not path.is_file():
         return False
-    if path.stat().st_size == file.size:
-        return True
+    if path.stat().st_size == file.size or path.stat().st_size in getattr(file, 'previous_sizes', ()):
+        return True                               # exp.234: an earlier official upload counts
     return recorded_revision(paths, file) is not None
 
 

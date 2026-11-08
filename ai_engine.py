@@ -79,6 +79,22 @@ def save_settings(data):
     path.write_text(json.dumps(data, indent=2))
 
 
+
+def reserve_vram_gb():
+    """exp.234: graphics memory (GB) the engine keeps free besides the model: on a Windows PC
+    with an NVIDIA card of up to 24 GB, 3 GB (2 GB on bigger cards). None elsewhere (Linux
+    raises an error when the card is full; nothing to guard)."""
+    if os.name != 'nt':
+        return None
+    try:
+        from ai_models import detect_hardware
+        hw = detect_hardware()
+    except Exception:
+        return None
+    if not hw.nvidia or not hw.vram_gb:
+        return None
+    return 3.0 if hw.vram_gb <= 24.5 else 2.0
+
 class Paths:
     def __init__(self, root=None):
         self.root = Path(root or load_settings()['root'])
@@ -119,7 +135,8 @@ class Paths:
             path = self.model_path(item)
             if not path.is_file():
                 return False
-            if path.stat().st_size != item.size:
+            if not (item.size_ok(path.stat().st_size) if hasattr(item, 'size_ok')
+                    else path.stat().st_size == item.size):
                 # A verified official model revision can differ in size from
                 # the original static registry entry; require the recorded
                 # size and file timestamp from the completed update swap.
@@ -710,6 +727,14 @@ class Engine:
         cmd = [str(self.paths.python), str(self.paths.comfy / 'main.py'), '--listen', '127.0.0.1',
                '--port', str(self.port), '--base-directory', str(self.paths.data),
                '--disable-auto-launch', '--preview-method', 'none']
+        reserve = reserve_vram_gb()
+        if reserve:
+            # exp.234 (the user: Qwen-Image-Edit stuck at 0% for minutes): a model that just fits
+            # (12.7 GB of 13.2 GB usable) left no room to work; Windows then quietly spills the
+            # graphics memory into system memory and a step takes minutes. Kept free, the engine
+            # keeps part of a too-big model in system memory and moves it in as needed instead.
+            cmd += ['--reserve-vram', f'{reserve:g}']
+            self.record(f'Keeping {reserve:g} GB of graphics memory free for the work itself.')
         from owned_process import OwnedProcess
         owner = OwnedProcess(cmd, cwd=str(self.paths.comfy), stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT, text=True, errors='replace',

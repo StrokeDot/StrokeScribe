@@ -24,6 +24,11 @@ class ModelFile:
     folder: str          # ComfyUI models sub-folder
     size: int            # bytes (checked after download)
     sha256: str | None = None  # trusted publisher checksum, when available
+    previous_sizes: tuple = ()  # exp.234: earlier official uploads, still accepted when installed
+
+    def size_ok(self, size):
+        """exp.234: an installed file of the current or an earlier official upload."""
+        return size == self.size or size in self.previous_sizes
 
     @property
     def name(self):
@@ -67,8 +72,8 @@ class ImageModel:
         return self.shared
 
 
-def _f(path, folder, size):
-    return ModelFile(HF + path, folder, size)
+def _f(path, folder, size, previous=()):
+    return ModelFile(HF + path, folder, size, previous_sizes=tuple(previous))
 
 
 QWEN_VAE = _f('Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors',
@@ -104,16 +109,16 @@ QWEN_EDIT = ImageModel(
                 _f('Comfy-Org/Qwen-Image-Edit_ComfyUI/resolve/main/split_files/diffusion_models/'
                    'qwen_image_edit_2511_fp8mixed.safetensors', 'diffusion_models', 20533762817)),
         Variant('q5', 'High (GGUF Q5_K_M)', 18,
-                _f(QWEN_GGUF + 'Q5_K_M.gguf', 'diffusion_models', 15027501664), 'gguf'),
+                _f(QWEN_GGUF + 'Q5_K_M.gguf', 'diffusion_models', 15395662432, (15027501664,)), 'gguf'),
         Variant('q4', 'Balanced (GGUF Q4_K_M)', 15,
-                _f(QWEN_GGUF + 'Q4_K_M.gguf', 'diffusion_models', 13244758624), 'gguf'),
+                _f(QWEN_GGUF + 'Q4_K_M.gguf', 'diffusion_models', 12842830432, (13244758624,)), 'gguf'),
         Variant('q4_0', 'Compact (GGUF Q4_0)', 11.5,
                 _f(QWEN_GGUF + 'Q4_0.gguf', 'diffusion_models', 11852773984), 'gguf'),
         Variant('q3', 'Small (GGUF Q3_K_M)', 9.5,
                 _f(QWEN_GGUF + 'Q3_K_M.gguf', 'diffusion_models', 9920805472), 'gguf',
                 'Noticeably less detail.'),
         Variant('q2', 'Smallest (GGUF Q2_K)', 7.5,
-                _f(QWEN_GGUF + 'Q2_K.gguf', 'diffusion_models', 7468022368), 'gguf',
+                _f(QWEN_GGUF + 'Q2_K.gguf', 'diffusion_models', 7736355424, (7468022368,)), 'gguf',
                 'Lowest quality; for 8 GB cards.'),
     ),
     shared=(QWEN_TEXT, QWEN_VAE, QWEN_LIGHTNING),
