@@ -4510,12 +4510,35 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def timeline_elements(self,width,height):
         """The elements as timeline_render takes them (exp.193: also for the Board playing)."""
+        # exp.233 (audit C4): the same elements every frame until something changes; the hand
+        # joins (link, hand-over, flow) were worked out again for every frame
+        made=[self.preview_scene(k,width,height) for k in range(len(self.scenes))]
+        import camera_clips as _cc
+        try:
+            sig=(width,height,tuple((id(m[0]),id(m[1]),id(m[3]),m[2]) for m in made),
+                 repr(self.hand_video(None)),repr([dict(c) for c in self.live_clips()]),
+                 tuple((s.get('art_off'),s.get('hand_off'),s.get('hand_link'),s.get('hand_flow'),
+                        s.get('transition'),s.get('transition_seconds'),s.get('uid')) for s in self.scenes),
+                 repr(self.eraser_tool()),repr(self.board_frames()),tuple(sorted(self.hidden_elements())),
+                 tuple((it.k,it.start,it.length) for it in self.timeline_layout().items),self.timeline_layout().total,
+                 repr([self.hand_video(k).get('hand_video_start') for k in range(len(self.scenes))]))
+        except Exception:
+            sig=None
+        kept=self.__dict__.get('_elements_memo')
+        if sig is not None and kept is not None and kept[0]==sig:
+            return [dict(e,options=dict(e['options'])) for e in kept[1]]
+        elements=self._timeline_elements(width,height,made)
+        if sig is not None:
+            self._elements_memo=(sig,[dict(e,options=dict(e['options'])) for e in elements],made)   # keeps `made` alive
+        return elements
+
+    def _timeline_elements(self,width,height,made):
         elements=[]
         for k in range(len(self.scenes)):
             # exp.169: its own length in `length` (it was `seconds`, which replaced the moment
             # shown: the texts were drawn as at the last element's length, the first one too
             # early and the later ones never).
-            drawing,options,length,camera=self.preview_scene(k,width,height)
+            drawing,options,length,camera=made[k]
             camera=self.video_camera(k,camera,length)            # exp.119: the camera clips
             options=dict(options,**self.hand_video(k))           # exp.147: the Hand row
             if self.scenes[k].get('art_off'): options['art_off']=True     # exp.209: E, the picture off

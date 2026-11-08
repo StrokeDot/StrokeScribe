@@ -92,5 +92,7 @@ def envelope(path, points=600):
         chunks = np.array_split(data, min(points, len(data)))
         levels = np.array([c.max() for c in chunks])
         out = (levels / max(1., levels.max())).round(3).tolist()
+    while len(_ENVELOPES) >= 16:              # exp.233 (audit): bounded
+        _ENVELOPES.pop(next(iter(_ENVELOPES)))
     _ENVELOPES[key] = out
     return out

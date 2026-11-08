@@ -123,6 +123,8 @@ def _picture(path):
         except Exception:
             from PySide6.QtGui import QImage
             picture, spot = QImage(str(path)), (.2, .85)
+        while len(_PICTURES) >= 8:            # exp.233 (audit): bounded
+            _PICTURES.pop(next(iter(_PICTURES)))
         _PICTURES[path] = (picture, spot)
     return _PICTURES[path]
 

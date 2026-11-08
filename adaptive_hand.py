@@ -474,6 +474,38 @@ def _plan_key(drawing,image,brush_width,stroke_spacing):
             tuple(getattr(drawing,'paint_part_order',None) or ()),
             repr(getattr(drawing,'paint_circles',None) or ()))
 
+_FAST=OrderedDict()      # exp.233 (audit C2): quick identity of a plan's inputs -> its full key
+
+
+def _fast_entry(drawing,image,brush_width,stroke_spacing):
+    """exp.233: the full plan key holds every stroke point (12,000+ here) and was built and hashed
+    many times per frame. Edits replace stroke objects (never change their points in place), so
+    the objects' identities tell when it must be built again; the entry keeps those objects
+    alive, so their ids cannot be reused by other ones while it is kept."""
+    strokes=drawing.strokes
+    region_map=getattr(drawing,'image_regions',None)
+    fast=(id(drawing),tuple(id(s) for s in strokes),id(region_map),
+          getattr(drawing,'image_region_priority',False),repr(getattr(drawing,'image_semantic_order',())),
+          tuple(drawing.bounds),image.cacheKey(),image.width(),image.height(),
+          float(brush_width),float(stroke_spacing),getattr(drawing,'paint_method','adaptive'),
+          COLOUR_SPLIT,getattr(drawing,'ai_parts_digest',None),
+          tuple(getattr(drawing,'paint_part_order',None) or ()),repr(getattr(drawing,'paint_circles',None) or ()))
+    entry=_FAST.get(fast)
+    if entry is None:
+        key=_plan_key(drawing,image,brush_width,stroke_spacing)
+        entry=dict(key=key,h=hash(key),plan=None,keep=(drawing,list(strokes),region_map,image))
+        _FAST[fast]=entry
+        while len(_FAST)>32: _FAST.popitem(last=False)
+    else:
+        _FAST.move_to_end(fast)
+    return entry
+
+
+def plan_digest(drawing,image,brush_width=.14,stroke_spacing=.55):
+    """exp.233: a number standing for everything the brush plan depends on (computed once)."""
+    return _fast_entry(drawing,image,brush_width,stroke_spacing)['h']
+
+
 def plan_ready(drawing,image,brush_width=.14,stroke_spacing=.55):
     """True when plan_for would return at once (the brush plan is cached)."""
     try:
@@ -491,36 +523,59 @@ def _plan_file(key):
     except Exception:
         APP_VERSION=''
     name=hashlib.sha1(pickle.dumps((APP_VERSION,key),protocol=4)).hexdigest()[:24]
-    return default_folder().parent/'plan-cache'/f'{name}.plan'
+    return default_folder().parent/'plan-cache'/f'{name}.npz'       # exp.233: no pickle (audit S1)
 
 PLAN_FILES=40
 
 def _plan_from_disk(key):
-    import pickle
+    """exp.233 (audit S1): the plan is kept as plain numbers (NumPy, pickle off), so a file in the
+    cache folder can never run code when a project opens (it was a pickle)."""
+    import numpy as np
     try:
         path=_plan_file(key)
         if not path.exists(): return None
-        with open(path,'rb') as f: plan=pickle.load(f)
+        with np.load(path,allow_pickle=False) as z:
+            seg=z['segments']
+            segments=[Segment((float(r[0]),float(r[1])),(float(r[2]),float(r[3])),float(r[4]),int(r[5]),bool(r[6]),
+                              float(r[7]),float(r[8])) for r in seg.tolist()]
+            plan=PaintPlan(size=tuple(int(v) for v in z['size'].tolist()),labels=z['labels'].tolist(),
+                           segments=segments,ends=z['ends'].tolist(),arrival=z['arrival'].tolist(),
+                           origin=tuple(float(v) for v in z['origin'].tolist()),total=float(z['total']),
+                           warnings=[str(v) for v in z['warnings'].tolist()],region_count=int(z['region_count']))
         os.utime(path,None)
         return plan
     except Exception:
         return None
 
 def _plan_to_disk(key,plan):
-    import pickle
+    import numpy as np
     try:
         path=_plan_file(key)
         path.parent.mkdir(parents=True,exist_ok=True)
-        tmp=path.with_suffix('.tmp')
-        with open(tmp,'wb') as f: pickle.dump(plan,f,protocol=4)
+        tmp=path.with_name(path.stem+'.tmp.npz')
+        np.savez(tmp,size=np.array(plan.size,dtype=np.int64),labels=np.array(plan.labels,dtype=np.int64),
+                 segments=np.array([(s.a[0],s.a[1],s.b[0],s.b[1],s.radius,s.region,1. if s.painting else 0.,s.start,s.end)
+                                    for s in plan.segments],dtype=np.float64).reshape(-1,9),
+                 ends=np.array(plan.ends,dtype=np.float64),arrival=np.array(plan.arrival,dtype=np.float64),
+                 origin=np.array(plan.origin,dtype=np.float64),total=np.float64(plan.total),
+                 warnings=np.array([str(w) for w in plan.warnings],dtype=str),region_count=np.int64(plan.region_count))
         os.replace(tmp,path)
-        files=sorted(path.parent.glob('*.plan'),key=lambda p:p.stat().st_mtime)
+        for old in path.parent.glob('*.plan'): old.unlink(missing_ok=True)      # the old pickle files
+        files=sorted(path.parent.glob('*.npz'),key=lambda p:p.stat().st_mtime)
         for old in files[:-PLAN_FILES]: old.unlink(missing_ok=True)
     except Exception:
         pass
 
 def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
-    key=_plan_key(drawing,image,brush_width,stroke_spacing)
+    entry=_fast_entry(drawing,image,brush_width,stroke_spacing)
+    plan=entry['plan']
+    if plan is not None and any(v is plan for v in _CACHE.values()):
+        return plan                                  # exp.233: still kept: no rebuild or re-hash of the key
+    entry['plan']=plan=_plan_for(entry['key'],drawing,image,brush_width,stroke_spacing)
+    return plan
+
+
+def _plan_for(key,drawing,image,brush_width,stroke_spacing):
     if key not in _CACHE:
         disk=PLAN_DISK and _disk_allowed()
         kept=_plan_from_disk(key) if disk else None
