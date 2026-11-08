@@ -124,6 +124,8 @@ def load_recording(path):
         data = _trim_silence(data)
         if len(data) < RATE // 10:
             data = None
+    while len(_RECORDINGS) >= 8:              # exp.233 (audit): a few recordings, not every one ever used
+        _RECORDINGS.pop(next(iter(_RECORDINGS)))
     _RECORDINGS[key] = data
     return data
 

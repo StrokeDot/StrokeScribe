@@ -587,28 +587,41 @@ def travel_plan(drawing, options):
 _WINDOW = {}
 
 
+_LINES_DIGEST = {}        # exp.233: stroke identities -> the lines' digest (kept with the strokes)
+
+
 def _plan_digest(drawing, options):
     """exp.229 (the user: I moved the last stroke near the head and the hand still ended where
     the old last stroke was): everything that decides where and when the hand paints and draws
     (the brush plan with its spacing, part order, circles, regions, and the lines in their order
-    with their pace), so a remembered start / end point is never one of an older plan."""
-    try:
-        lines = hash(tuple((len(s.points), tuple(s.points[0]) if s.points else None,
-                            tuple(s.points[-1]) if s.points else None,
-                            getattr(s, 'pace', 1.), getattr(s, 'pause', 0.), getattr(s, 'reversed', False))
-                           for s in getattr(drawing, 'strokes', ()) or ()))
-    except Exception:
-        lines = None
+    with their pace), so a remembered start / end point is never one of an older plan.
+    exp.233 (audit C2): computed once per drawing state, not 11 times per frame."""
+    strokes = getattr(drawing, 'strokes', ()) or ()
+    ids = (id(drawing), tuple(id(s) for s in strokes))
+    found = _LINES_DIGEST.get(ids)
+    if found is None:
+        try:
+            lines = hash(tuple((len(s.points), tuple(s.points[0]) if s.points else None,
+                                tuple(s.points[-1]) if s.points else None,
+                                getattr(s, 'pace', 1.), getattr(s, 'pause', 0.), getattr(s, 'reversed', False))
+                               for s in strokes))
+        except Exception:
+            lines = None
+        found = (lines, (drawing, list(strokes)))   # keeps them alive: their ids stay theirs
+        if len(_LINES_DIGEST) > 32:
+            _LINES_DIGEST.clear()
+        _LINES_DIGEST[ids] = found
+    lines = found[0]
     plan = None
     image = options.get('final_image')
     mode = options.get('reveal_mode')
     if image is not None and not image.isNull() and mode in ('adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag', 'painter'):
         try:
-            from adaptive_hand import _plan_key
+            from adaptive_hand import plan_digest
             had = getattr(drawing, 'paint_method', None)
             drawing.paint_method = mode
-            plan = hash(_plan_key(drawing, image, float(options.get('brush_width', .14)),
-                                  float(options.get('stroke_spacing', .55))))
+            plan = plan_digest(drawing, image, float(options.get('brush_width', .14)),
+                               float(options.get('stroke_spacing', .55)))
             if had is not None:
                 drawing.paint_method = had
         except Exception:
@@ -1029,10 +1042,42 @@ def draw_hand_picture(painter, rect, image):
     painter.drawImage(QRectF(rect.x() - pl * sx, rect.y() - pt * sy, ext.width() * sx, ext.height() * sy), ext)
 
 
+_ARM_DIGEST = {}          # exp.233: QImage.cacheKey() -> what the picture holds
+ARM_BUDGET = 96 * 1024 * 1024     # exp.233: bytes of extended hand pictures kept
+
+
+def _picture_digest(image):
+    """exp.233 (audit B1): what a picture holds, so the same hand loaded again (a new QImage,
+    a new cacheKey) finds the work done for it instead of keeping another 27 MB copy."""
+    ck = image.cacheKey()
+    found = _ARM_DIGEST.get(ck)
+    if found is None:
+        import hashlib
+        from PySide6.QtGui import QImage
+        img = image if image.format() == QImage.Format.Format_ARGB32 else image.convertToFormat(QImage.Format.Format_ARGB32)
+        found = hashlib.blake2b(bytes(img.constBits()), digest_size=16).hexdigest()
+        if len(_ARM_DIGEST) > 64:
+            _ARM_DIGEST.clear()
+        _ARM_DIGEST[ck] = found
+    return found
+
+
+def _keep_arm(key, found):
+    """exp.233: keep an extended hand, the least recently used ones going first past
+    ARM_BUDGET bytes (it counted entries: 16 of 27 MB each could pile up)."""
+    _ARM.pop(key, None)
+    _ARM[key] = found
+    total = sum(v[0].sizeInBytes() for v in _ARM.values())
+    while len(_ARM) > 1 and total > ARM_BUDGET:
+        old = next(iter(_ARM))
+        total -= _ARM.pop(old)[0].sizeInBytes()
+
+
 def _with_arm(image):
-    key = (image.cacheKey(), image.width(), image.height())
+    key = (_picture_digest(image), image.width(), image.height())
     found = _ARM.get(key)
     if found is not None:
+        _ARM[key] = _ARM.pop(key)                    # most recently used last
         return found
     from PySide6.QtCore import QRect, QRectF
     from PySide6.QtGui import QImage, QPainter
@@ -1084,9 +1129,7 @@ def _with_arm(image):
         if length < 1e-6:
             # cut all round (or on two opposite sides): no arm to carry on (a plain picture)
             found = (image, (0, 0, w, h))
-            if len(_ARM) > 16:
-                _ARM.clear()
-            _ARM[key] = found
+            _keep_arm(key, found)
             return found
         dx, dy = dx / length, dy / length
         far = 1.5 * max(w, h)
@@ -1109,9 +1152,7 @@ def _with_arm(image):
         p.drawImage(L, T, img)
         p.end()
         found = (ext, (L, T, w, h))
-    if len(_ARM) > 16:
-        _ARM.clear()
-    _ARM[key] = found
+    _keep_arm(key, found)
     return found
 
 
