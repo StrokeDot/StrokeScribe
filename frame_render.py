@@ -334,7 +334,7 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
     if plan is not None:
         # exp.143: the hand comes from its corner before drawing and goes back after it.
         lead, hand_end, tail, inner_total, inner, hand_start = plan
-        t = max(0., min(1., float(fraction))) * (inner_total - hand_start + lead + tail)
+        t = max(0., min(1., float(fraction))) * travel_total(plan, options)
         inner_t, phase, p = travel_phase(t, lead, hand_end, tail, hand_start)
         if phase == 'in':
             # the pen on the first point it really paints (exp.151)
@@ -509,7 +509,7 @@ def timeline_seconds(drawing, options):
     if options.get('hand_travel'):
         plan = travel_plan(drawing, options)
         if plan is not None:                 # exp.143: + the hand's way there and back
-            return plan[3] - plan[5] + plan[0] + plan[2]
+            return travel_total(plan, options)
         options = {k: v for k, v in options.items() if k not in ('hand_travel', 'hand_travel_out')}
     erase = options.get('erase')
     if erase and erase.get('mode'):
@@ -556,6 +556,19 @@ def hand_seconds(drawing, options):
     if getattr(drawing, 'source_kind', None) == 'image' and getattr(drawing, 'image_animation', None) == 'paint_only':
         return max(.001, float(options.get('fade_duration', .4)))
     return max(.001, float(options.get('duration', 4) or 4))
+
+
+def travel_total(plan, options):
+    """exp.235 (the user: the Hold makes no sense; it should be the hand going back): seconds of
+    an element with a travelling hand: its way in, its drawing up to its last stroke, and its
+    way back; it ends when the hand is in its corner (it waited a further Hold after that). A
+    Pause or an eraser stage the user put after the drawing still runs in full."""
+    lead, hand_end, tail, inner_total, inner, hand_start = plan
+    old = inner_total - hand_start + lead + tail
+    erase = (options or {}).get('erase')
+    if float((options or {}).get('pause', 0) or 0) > 0 or (erase and erase.get('mode')):
+        return old
+    return min(old, lead + max(.05, hand_end - hand_start) + tail)
 
 
 def travel_plan(drawing, options):
@@ -692,7 +705,7 @@ def last_tip(drawing, options):
     if plan is None:
         return None
     lead, hand_end, tail, inner_total, inner, hand_start = plan
-    total = inner_total - hand_start + lead + tail
+    total = travel_total(plan, options)
     picture = options.get('final_image')
     key = (id(drawing), round(lead, 4), round(hand_end, 4), round(hand_start, 4), round(total, 4),
            options.get('width'), options.get('height'), repr(options.get('offset')), options.get('artwork_scale'),
@@ -738,7 +751,7 @@ def phase_tip(drawing, options, phase):
     if plan is None:
         return None
     lead, hand_end, tail, inner_total, inner, hand_start = plan
-    total = inner_total - hand_start + lead + tail
+    total = travel_total(plan, options)
     picture = opts.get('final_image')
     key = (phase, id(drawing), round(lead, 4), round(hand_end, 4), round(tail, 4), round(total, 4),
            opts.get('width'), opts.get('height'), repr(opts.get('offset')), opts.get('artwork_scale'),
@@ -779,7 +792,7 @@ def first_tip(drawing, options):
     if plan is None:
         return None
     lead, hand_end, tail, inner_total, inner, hand_start = plan
-    total = inner_total - hand_start + lead + tail
+    total = travel_total(plan, options)
     key = (id(drawing), round(lead, 4), round(total, 4), options.get('width'), options.get('height'),
            repr(options.get('offset')), options.get('artwork_scale'), options.get('reveal_mode'),
            options.get('brush_width'), _plan_digest(drawing, options))
@@ -877,7 +890,7 @@ def hand_window(drawing, options):
     if plan is None:
         return None
     lead, hand_end, tail, inner_total, _, hand_start = plan
-    return lead + hand_end - hand_start + tail, inner_total - hand_start + lead + tail
+    return lead + hand_end - hand_start + tail, travel_total(plan, options)
 
 
 def hand_busy(drawing, options, fraction):
