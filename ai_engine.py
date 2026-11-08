@@ -135,7 +135,8 @@ class Paths:
             path = self.model_path(item)
             if not path.is_file():
                 return False
-            if path.stat().st_size != item.size:
+            if not (item.size_ok(path.stat().st_size) if hasattr(item, 'size_ok')
+                    else path.stat().st_size == item.size):
                 # A verified official model revision can differ in size from
                 # the original static registry entry; require the recorded
                 # size and file timestamp from the completed update swap.

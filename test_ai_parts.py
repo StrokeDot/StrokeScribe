@@ -99,7 +99,8 @@ class PainterPartsTests(unittest.TestCase):
             self.assertFalse(w.find_parts_button.isVisible())
             w.reveal_mode.setCurrentText(w.PAINTER_TEXT); w.show_right_panel('animation')
             w.section_painting.set_expanded(True); self.app.processEvents()
-            self.assertTrue(w.find_parts_button.isVisible())
+            # exp.184: Parts are chosen in the Paint mode window (with a preview), not in this row
+            self.assertFalse(w.find_parts_button.isVisible())
             self.assertIn('colour areas', w.painter_parts_note.text())
         finally:
             w.close()

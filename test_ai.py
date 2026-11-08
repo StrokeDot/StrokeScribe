@@ -358,7 +358,7 @@ class CreateImageWindowTests(unittest.TestCase):
             self.assertFalse(dialog.generate_button.isEnabled())      # engine not installed
             self.assertTrue(dialog.install_button.isVisibleTo(dialog))
             self.assertIn('Q4_K_M', dialog.variant_box.currentText())
-            self.assertIn('23.7 GB', dialog.download_button.text())   # model + text encoder + VAE + LoRA
+            self.assertIn('23.3 GB', dialog.download_button.text())   # model + text encoder + VAE + LoRA (Q4_K_M re-uploaded, exp.234)
             self.assertEqual(dialog.prompt.toPlainText(), LINE_ART_PROMPT)
             dialog.set_task('generate')
             names = [dialog.model_box.itemText(i) for i in range(dialog.model_box.count())]
@@ -447,3 +447,24 @@ class CreateImageWindowTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class PreviousUploadTests(unittest.TestCase):
+    """exp.234: a model re-uploaded with a new size keeps an installed earlier upload working."""
+
+    def test_earlier_official_size_still_counts_as_installed(self):
+        import tempfile
+        from pathlib import Path
+        import ai_engine
+        from ai_models import ModelFile
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = ai_engine.Paths(Path(tmp))
+            item = ModelFile('https://example.invalid/m/model.gguf', 'diffusion_models', 12, previous_sizes=(10,))
+            target = paths.model_path(item)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b'x' * 10)                 # the earlier upload
+            self.assertTrue(paths.has_files([item]))
+            target.write_bytes(b'x' * 12)                 # the current one
+            self.assertTrue(paths.has_files([item]))
+            target.write_bytes(b'x' * 11)                 # neither: broken
+            self.assertFalse(paths.has_files([item]))
