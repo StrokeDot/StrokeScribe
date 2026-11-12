@@ -66,7 +66,7 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     options['pause'] = max(0., float(s.get('pause_after', 0) or 0))
     import move_in
     options['entrance_part'] = move_in.PARTS.get(s.get('entrance_part') or '', move_in.PART_ALL)
-    options['move_hand'], options['move_hand_grip'] = move_in.move_hand(s)
+    options['move_hand'], options['move_hand_grip'] = move_in.move_hand(s, hand)
     options['move_hand_size'] = float(s.get('move_hand_size', 35) or 35) / 100.
     options['workers'] = 0 if s.get('fast_export', True) else 1
     # exp.143: the hand waits in a corner between drawings (its way there and back is added).

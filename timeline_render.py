@@ -378,34 +378,24 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
     """hand_out (exp.246): a list; the hand is drawn on its own layer appended to it (to be
     put over other pictures by the caller) instead of into the page."""
     erasers = erasers or {}
-    # exp.206: an element Already there stays at its place among the tracks: one above a
-    # picture still coming in is drawn after it (not covered by it, then popping back on top).
+    # exp.247 (the user: "if something is above, every aspect of the element has to be under
+    # that"; a finished picture went over a higher track's picture, a picture being drawn came
+    # over the pictures of higher tracks and went back under when done): ONE order for
+    # everything on the page - by track, lower first (then by element) - for finished
+    # pictures, pictures being drawn and pictures moving in alike. Only the hand is over all.
     order = {it.k: (it.track, it.k) for it in lay.items}
-    # exp.246 (the user: "whatever is in a higher track is above"; picture 5 on Track 3 went
-    # under picture 4 of Track 2 while 4 was still being drawn): every finished picture, not
-    # only an Already there one, keeps its track's place over pictures still being drawn on
-    # lower tracks. (A picture with a Goes out stays with the others.)
-    already = {k for k in state.finished
-               if not (0 <= k < len(elements) and (elements[k]['options'].get('erase') or {}).get('mode'))}
-    above = sorted((k for k in already - set(erasers)
-                    if any(order.get(a, (0, a)) < order[k] for a, _ in state.active)), key=lambda k: order[k])
-    skip = (set(range(len(elements))) - set(state.finished)) | set(erasers) | set(above)
-    # exp.209 (the user: E on a picture): its picture is not drawn, its hand still is
-    skip |= {k for k, el in enumerate(elements) if el['options'].get('art_off')}
-    out = world.view(view, width, height, upto=len(elements), skip=skip)
+    art_off = {k for k, el in enumerate(elements) if el['options'].get('art_off')}
+    out = world.view(view, width, height, upto=len(elements), skip=set(range(len(elements))))
     out = _erasing(world, elements, erasers, view, out, width, height, state, glides)
     tracks = {it.k: it.track for it in lay.items}
     waiting = sorted(titles or (), key=lambda o: int(o.get('track', 0)))
     hand_k = _hand_element(state, elements, tracks)
     hand_layer = None
-    active = list(state.active)
-    if _drawing_now(state, elements, hand_k):
-        # exp.152 (the user): the picture the hand is drawing is always seen while it draws:
-        # it comes over the other pictures on the page (a nun on a lower track was drawn
-        # under a book that was still sliding in, so her lines were hidden and the hand
-        # drew nothing). When its hand is done, it goes back to its track's place.
-        active = [a for a in active if a[0] != hand_k] + [a for a in active if a[0] == hand_k]
-    for k, fraction in active:
+    active = dict(state.active)
+    finished = [k for k in state.finished if k not in erasers and k not in active]
+    sequence = sorted(set(finished) | set(active), key=lambda k: order.get(k, (0, k)))
+    more_hands = []                     # exp.247: a move-in hand at the same time as the drawing hand
+    for k in sequence:
         under = [o for o in waiting if int(o.get('track', 0)) < tracks.get(k, 0)]
         if under:
             out = _texts(out, under, seconds, world, view)
@@ -415,43 +405,65 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
             continue
         el = elements[k]
         opts = el['options']
-        if k not in erasers and not opts.get('art_off'):   # exp.186: being erased: _erasing draws it
+        if k not in active:
+            if k not in art_off:
+                out = world.put(out, world.finished(k, w), world.frames[k], view,
+                                opts.get('blend_mode', 'Normal'), opts.get('artwork_opacity', 100))
+            continue
+        fraction = active[k]
+        if k not in erasers and k not in art_off:      # exp.186: being erased: _erasing draws it
             art = element_frame(el['drawing'], opts, fraction, w, h, 'art')
             out = world.put(out, art, world.frames[k], view, opts.get('blend_mode', 'Normal'),
                             opts.get('artwork_opacity', 100))
+        if opts.get('layers', 'all') == 'art' or opts.get('hand_off'):
+            continue
+        if k != hand_k:
+            if opts.get('move_hand') is not None and (opts.get('entrance') or 'draw') != 'draw':
+                from frame_render import last_hand_spec, _set_spec
+                _set_spec(None)
+                layer = element_frame(el['drawing'], opts, fraction, w, h, 'hand')
+                spec = last_hand_spec()
+                if spec is not None and spec.get('kind') == 'move':
+                    more_hands.append((layer, world.frames[k], spec, (x, y, w, h), opts))
+            continue
         # exp.196 (the user: the hand vanished when a Goes out clip began while it was still on
         # its way back to the corner): its hand is still drawn.
-        if k == hand_k and opts.get('layers', 'all') != 'art' and not opts.get('hand_off'):
-            from frame_render import last_hand_spec
-            layer = element_frame(el['drawing'], opts, fraction, w, h, 'hand')   # eraser, move-in hand
-            spec = last_hand_spec()
-            place = (x, y, w, h)
-            # exp.160 (the user): the pencil is always on the line it draws, wherever the camera
-            # shows it. exp.161: its corner is a spot of the page too, so on its way between them
-            # the hand is carried by the camera like the page (its size never changes).
-            if spec is not None and spec.get('phase') in ('in', 'out') and view_fn is not None:
-                corner_place = world.place(fixed_view(world, lay, state, elements), view_fn(state), width, height)
-                fixed = opts.get('_fixed_hand_clips')
-                if fixed and seconds is not None:
-                    # exp.222: during a zoom that leaves the hand alone, its corner stays put
-                    import camera_clips
-                    from timeline_model import state_at
-                    for weight, start in camera_clips.fixed_hand_weight(fixed, seconds):
-                        st = state_at(lay, start)
-                        base = world.place(fixed_view(world, lay, st, elements), view_fn(st), width, height)
-                        corner_place = camera_clips.blend_place(corner_place, base, weight)
-                opts = dict(opts, _rest_place=corner_place)
-            hand_layer = (layer, world.frames[k], spec, place, opts)
-    for k in above:
-        if elements[k]['options'].get('art_off'):
-            continue
-        x, y, w, h = world.place(world.frames[k], view, width, height)
-        if w < 2 or x > width or y > height or x + w < 0 or y + h < 0:
-            continue
-        opts = elements[k]['options']
-        art = element_frame(elements[k]['drawing'], opts, 1., w, h, 'art')
-        out = world.put(out, art, world.frames[k], view, opts.get('blend_mode', 'Normal'), opts.get('artwork_opacity', 100))
+        from frame_render import last_hand_spec
+        layer = element_frame(el['drawing'], opts, fraction, w, h, 'hand')   # eraser, move-in hand
+        spec = last_hand_spec()
+        place = (x, y, w, h)
+        # exp.160 (the user): the pencil is always on the line it draws, wherever the camera
+        # shows it. exp.161: its corner is a spot of the page too, so on its way between them
+        # the hand is carried by the camera like the page (its size never changes).
+        if spec is not None and spec.get('phase') in ('in', 'out') and view_fn is not None:
+            corner_place = world.place(fixed_view(world, lay, state, elements), view_fn(state), width, height)
+            fixed = opts.get('_fixed_hand_clips')
+            if fixed and seconds is not None:
+                # exp.222: during a zoom that leaves the hand alone, its corner stays put
+                import camera_clips
+                from timeline_model import state_at
+                for weight, start in camera_clips.fixed_hand_weight(fixed, seconds):
+                    st = state_at(lay, start)
+                    base = world.place(fixed_view(world, lay, st, elements), view_fn(st), width, height)
+                    corner_place = camera_clips.blend_place(corner_place, base, weight)
+            opts = dict(opts, _rest_place=corner_place)
+        hand_layer = (layer, world.frames[k], spec, place, opts)
     out = _texts(out, waiting, seconds, world, view)
+    for layer, frame, spec, place, opts in more_hands:
+        # exp.247 (the user: two hands can appear together): the hand carrying a picture in,
+        # while another element's hand draws
+        from frame_render import paint_hand_spec
+        target = out
+        if hand_out is not None:
+            from PySide6.QtGui import QImage
+            target = QImage(out.width(), out.height(), QImage.Format.Format_ARGB32_Premultiplied)
+            target.fill(0)
+        target = paint_hand_spec(world.put(target, layer, frame, view), spec,
+                                 dict(opts, width=width, height=height, _hand_view=hand_view), place)
+        if hand_out is not None:
+            hand_out.append(target)
+        else:
+            out = target
     if hand_layer is not None:
         # exp.148 (the user): the hand is always over everything (it was drawn under the
         # pictures of higher tracks, e.g. under a book). exp.149: on the screen, its own size.

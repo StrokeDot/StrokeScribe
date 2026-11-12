@@ -125,13 +125,28 @@ def builtin_hand_path():
     return Path(__file__).resolve().parent / 'assets' / 'default_hand.png'
 
 
-def move_hand(settings):
+def move_hand(settings, drawing_hand=None):
     """(image, grip) for the move-in hand chosen in the Hand tab, or (None, None) when it is off.
+
+    exp.247 (the user: the moving hand is the other hand of the one I uploaded): with no
+    move-in hand of its own, it is the drawing hand mirrored (the left hand of a right-handed
+    drawer), holding the picture where the drawing hand holds its pencil.
 
     Cached, so the same settings give the very same image (frame caches compare cacheKey)."""
     s = settings
     if not s.get('move_hand', False):
         return None, None
+    if not s.get('move_hand_path') and drawing_hand is not None and not drawing_hand.isNull():
+        key = ('drawing', drawing_hand.cacheKey())
+        if key not in _HANDS:
+            from PySide6.QtGui import QImage
+            from tools_kit import mirrored
+            image = mirrored(drawing_hand.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied))
+            if len(_HANDS) > 8:
+                _HANDS.clear()
+            _HANDS[key] = image
+        ax, ay = float(s.get('ax', .08)), float(s.get('ay', .13))
+        return _HANDS[key], (1 - ax, ay)
     path = str(s.get('move_hand_path') or '') or str(builtin_hand_path())
     try:
         stamp = Path(path).stat().st_mtime
