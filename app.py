@@ -3580,6 +3580,21 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if not first:
             menu.addSeparator()
             menu.addAction('Copy of this element',lambda: choose('copy'))
+            # exp.242 (UI clean-up step 5): one place to add anything. The timeline's add
+            # buttons stay as shortcuts for the same things.
+            menu.addSeparator()
+            menu.addSection('At the playhead')
+            menu.addAction('Picture on top…',lambda: self.add_overlay_picture())
+            menu.addAction('Title on top…',lambda: self.add_overlay_text())
+            menu.addAction('Eraser…',lambda: self.add_eraser())
+            cam=getattr(self,'add_camera_clip_button',None)
+            menu.addAction('Camera move or zoom…',lambda: self.add_camera_menu(cam))
+            menu.addAction('Hand motion',lambda: self.add_hand_motion())
+            menu.addSeparator()
+            menu.addSection('Sound')
+            if hasattr(self,'show_left_panel'):
+                menu.addAction('Pencil, brush and eraser sounds…',lambda: self.show_left_panel('sound'))
+                menu.addAction('Music…',lambda: self.show_left_panel('music'))
         menu.exec(where)
 
     def new_element(self,how,same_spot=False,path=None,text=None,item=None):
