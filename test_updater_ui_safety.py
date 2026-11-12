@@ -91,7 +91,7 @@ class DialogSafetyTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.old = os.environ.get('STROKESCRIBE_CONFIG_DIR')
         os.environ['STROKESCRIBE_CONFIG_DIR'] = self.tmp.name
-        self.d = UpdateDialog(None, latest='0.5.3-experimental.999', auto_check=False)
+        self.d = UpdateDialog(None, latest='99.0.1-experimental.999', auto_check=False)
         self.d.show()
         APP.processEvents()
 
@@ -149,7 +149,7 @@ class DialogSafetyTests(unittest.TestCase):
             def restart_after_update(self):
                 return False
         parent = Parent()
-        d = UpdateDialog(parent, latest='0.5.3-experimental.999', auto_check=False)
+        d = UpdateDialog(parent, latest='99.0.1-experimental.999', auto_check=False)
         d.show(); APP.processEvents()
         try:
             d.restart()

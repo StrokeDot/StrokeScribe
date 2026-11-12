@@ -195,9 +195,9 @@ class UpdateBeforeSaveTests(unittest.TestCase):
         class Parent(QDialog):
             def confirm_before_app_update(self): return False
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ,{'STROKESCRIBE_CONFIG_DIR':tmp}):
-            parent=Parent();d=UpdateDialog(parent,latest='0.5.3-experimental.999',auto_check=False)
+            parent=Parent();d=UpdateDialog(parent,latest='99.0.1-experimental.999',auto_check=False)
             try:
-                with patch.object(d,'_start') as start,patch('updater.zip_version',return_value='0.5.3-experimental.999'):
+                with patch.object(d,'_start') as start,patch('updater.zip_version',return_value='99.0.1-experimental.999'):
                     d.update_online()
                     d.update_from_zip('sample.zip')
                     self.assertEqual(start.call_count,0,'Cancel must prevent all installation workers')
@@ -227,7 +227,7 @@ class UpdateBeforeSaveTests(unittest.TestCase):
         w=fixture.w
         try:
             w.duration.setValue(w.duration.value()+.5)
-            w.update_found('0.5.3-experimental.999')
+            w.update_found('99.0.1-experimental.999')
             with patch.object(QMessageBox,'exec',return_value=int(QMessageBox.StandardButton.Cancel)),\
                  patch('update_dialog.UpdateWorker') as worker:
                 w.banner_update_clicked()

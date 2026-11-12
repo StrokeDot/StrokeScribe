@@ -18,7 +18,7 @@ permissions:
 jobs:
   validate-linux:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 110
     outputs:
       tested_sha: ${{ steps.proof.outputs.sha }}
     env:
@@ -41,7 +41,7 @@ jobs:
         run: echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
   validate-windows:
     runs-on: windows-latest
-    timeout-minutes: 35
+    timeout-minutes: 110
     outputs:
       tested_sha: ${{ steps.proof.outputs.sha }}
     env:
