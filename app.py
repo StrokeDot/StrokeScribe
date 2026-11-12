@@ -613,6 +613,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.brand_wordmark.setText(wordmark_html())
         self.update_theme_button()
         self.update_transport_icons()
+        if hasattr(self,'refresh_timeline_icons'): self.refresh_timeline_icons()
         self.canvas.update(); self.stage_timeline.update()
 
     def toggle_theme(self):
@@ -624,7 +625,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from studio_workspace import transport_icon
         from PySide6.QtCore import QSize
         c=theme.colors()
-        self.play.setIcon(transport_icon('pause' if self.playing else 'play',c['accent_text']))
+        self.play.setIcon(transport_icon('pause' if self.playing else 'play',c['window']))
         self.play.setIconSize(QSize(18,18))
         for button,kind in ((self.to_start,'start'),(self.restart_button,'restart'),(self.to_end,'end')):
             button.setIcon(transport_icon(kind,c['text'] if button.isEnabled() else c['dim']))

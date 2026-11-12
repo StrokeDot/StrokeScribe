@@ -2684,7 +2684,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.source_type.setVisible(False)
     src_l.addWidget(w.source_type)
     w.import_button=QPushButton('Import SVG…')
-    w.import_button.setObjectName('primary')
+    w.import_button.setObjectName('soft')
     w.import_button.setToolTip('Import an SVG drawing. You can add it to the project or replace the selected element.')
     w.import_button.clicked.connect(lambda checked=False: w.open_svg_source())
     src_l.addWidget(w.import_button)
@@ -2930,7 +2930,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     lines_box_l=QVBoxLayout(w.lines_box);lines_box_l.setContentsMargins(0,0,0,0);lines_box_l.setSpacing(8)
     # The big Line order window (line_order_dialog): see, pick, move several lines, auto order.
     w.line_order_button=QPushButton('✎  Line order…')
-    w.line_order_button.setObjectName('primary')
+    w.line_order_button.setObjectName('soft')
     w.line_order_button.setToolTip('Open the Line order window: see the drawing big, pick several lines '
                                    'and move them together, or order them automatically.')
     w.line_order_button.clicked.connect(lambda checked=False: w.open_line_order())
@@ -3654,7 +3654,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     output_l.addWidget(w.keep_png)
     output_l.addWidget(help_note('No format ticked: PNG frames','If no video format is selected, all transparent PNG frames are kept. Export progress appears below the timeline.'))
     w.export=QPushButton('Export animation…')
-    w.export.setObjectName('primary');w.export.clicked.connect(w.save)
+    w.export.setObjectName('soft');w.export.clicked.connect(w.save)
     output_l.addWidget(w.export)
     w.batch_button=QPushButton('Batch export…')
     w.batch_button.setToolTip('Export many images, SVGs or projects in one go.')
@@ -3783,7 +3783,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # exp.119: the Camera track. A camera clip moves the camera for the whole picture.
     camera_l.addWidget(label('CAMERA (fixed or moving)'))
     w.camera_clip_add=QPushButton('+  Add camera')
-    w.camera_clip_add.setObjectName('primary')
+    w.camera_clip_add.setObjectName('soft')
     w.camera_clip_add.clicked.connect(lambda checked=False: w.add_camera_menu(w.camera_clip_add))
     camera_l.addWidget(w.camera_clip_add)
     w.camera_clip_box=QWidget(); cb=QVBoxLayout(w.camera_clip_box); cb.setContentsMargins(0,0,0,0); cb.setSpacing(6)
@@ -3856,7 +3856,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
         button.clicked.connect(lambda checked=False,t=task: w.open_create_image(t))
         ai_l.addWidget(button)
         w.ai_buttons[task]=button
-    w.ai_buttons['lineart'].setObjectName('primary')
+    w.ai_buttons['lineart'].setObjectName('soft')
     ai_l.addStretch(1)
     tabs.insertTab(TABS['ai'],scroll_view(ai_page),'AI')
     # The rail replaces the tab strip; the panel title names the open page.
@@ -3882,11 +3882,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     def plus_icon(name):
         """exp.122: an icon with a small + (add a picture / a text / a camera clip)."""
         from ui_icons import pixmap
-        base=pixmap(name,'#E8E6F0',22)
+        import theme as _theme
+        c=_theme.colors()
+        base=pixmap(name,c['text'],22)        # exp.238: the theme's text colour (was white in Light too)
         out=base.copy(); painter=_QP(out); painter.setRenderHint(_QP.RenderHint.Antialiasing)
         ratio=out.devicePixelRatio() or 1.
         size=out.width()/ratio
-        painter.setPen(_QC(0,0,0,0)); painter.setBrush(_QC('#6E4FF2'))
+        painter.setPen(_QC(0,0,0,0)); painter.setBrush(_QC(c['accent']))
         painter.drawEllipse(int(size-11),int(size-11),11,11)
         painter.drawPixmap(int(size-10),int(size-10),pixmap('plus','#FFFFFF',9))
         painter.end()
@@ -3939,6 +3941,17 @@ def build_workspace(w, Canvas, BRAND_ICON):
                                         'No picture needed. Double-click its clip on the Hand row to shape it.')
     w.add_hand_motion_button.clicked.connect(lambda checked=False: w.add_hand_motion())
     timeline_head.addWidget(w.add_hand_motion_button)
+
+    def refresh_timeline_icons():
+        """exp.238: the timeline's add buttons follow the theme (Dark / Light)."""
+        import theme as _theme
+        for button,name in ((w.add_picture_overlay,'image'),(w.add_text_overlay,'text'),
+                            (w.add_eraser_clip,'eraser'),(w.add_camera_clip_button,'camera'),
+                            (w.add_hand_motion_button,'handwriting')):
+            button.setIcon(plus_icon(name))
+        w.hand_paths_button.setIcon(_hicon('hand',_theme.colors()['text']))
+    w.refresh_timeline_icons=refresh_timeline_icons
+    refresh_timeline_icons()
     w.timeline_status=label('','panelHint')
     timeline_head.addWidget(w.timeline_status)
     body=QWidget();body.setObjectName('panelBody')
@@ -3990,7 +4003,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.scene_picture.hide()
     scene_buttons.addWidget(w.scene_add)
     move_row=QHBoxLayout();move_row.setSpacing(4)
-    w.scene_edit=QPushButton('Edit…');w.scene_edit.setObjectName('primary')
+    w.scene_edit=QPushButton('Edit…');w.scene_edit.setObjectName('soft')
     w.scene_edit.setToolTip('Settings of this element in a window of its own, with its own preview: how it '
                             'comes in, times, colours, how it goes out and the move to the next one.')
     w.scene_edit.clicked.connect(lambda checked=False: w.edit_element(w.scene_index))
