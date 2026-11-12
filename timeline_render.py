@@ -374,12 +374,19 @@ def _erasing(world, elements, erasers, view, out, width, height, state, glides=N
 
 
 def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None, view_fn=None, erasers=None,
-          glides=None, hand_view=1.):
+          glides=None, hand_view=1., hand_out=None):
+    """hand_out (exp.246): a list; the hand is drawn on its own layer appended to it (to be
+    put over other pictures by the caller) instead of into the page."""
     erasers = erasers or {}
     # exp.206: an element Already there stays at its place among the tracks: one above a
     # picture still coming in is drawn after it (not covered by it, then popping back on top).
     order = {it.k: (it.track, it.k) for it in lay.items}
-    already = {it.k for it in lay.items if getattr(it, 'already', False)} & set(state.finished)
+    # exp.246 (the user: "whatever is in a higher track is above"; picture 5 on Track 3 went
+    # under picture 4 of Track 2 while 4 was still being drawn): every finished picture, not
+    # only an Already there one, keeps its track's place over pictures still being drawn on
+    # lower tracks. (A picture with a Goes out stays with the others.)
+    already = {k for k in state.finished
+               if not (0 <= k < len(elements) and (elements[k]['options'].get('erase') or {}).get('mode'))}
     above = sorted((k for k in already - set(erasers)
                     if any(order.get(a, (0, a)) < order[k] for a, _ in state.active)), key=lambda k: order[k])
     skip = (set(range(len(elements))) - set(state.finished)) | set(erasers) | set(above)
@@ -450,11 +457,19 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
         # pictures of higher tracks, e.g. under a book). exp.149: on the screen, its own size.
         from frame_render import paint_hand_spec
         layer, frame, spec, place, opts = hand_layer
+        page = out
+        if hand_out is not None:
+            from PySide6.QtGui import QImage
+            out = QImage(page.width(), page.height(), QImage.Format.Format_ARGB32_Premultiplied)
+            out.fill(0)
         out = world.put(out, layer, frame, view)
         # exp.216 (the user: zoomed out, the hand is outside the frame too): its size follows
         # the zoom out like everything else (it stayed the screen size, twice too big)
         zoom = hand_camera_zoom(world, lay, state, elements, opts.get('_fixed_hand_clips'), seconds) if view_fn else 1.
         out = paint_hand_spec(out, spec, dict(opts, width=width, height=height, _hand_view=hand_view * zoom), place)
+        if hand_out is not None:
+            hand_out.append(out)
+            out = page
     if glides:
         out = _glide_tool(world, elements, glides, view, out, width, height)     # exp.197
     return out
