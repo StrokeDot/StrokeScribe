@@ -29,7 +29,8 @@ class StudioTests(unittest.TestCase):
     def test_three_part_workspace_and_visible_timeline(self):
         w=self.window
         self.assertIn('Studio',w.windowTitle())
-        self.assertIn('Prototype',w.windowTitle())
+        from version import DISPLAY_NAME
+        self.assertIn(DISPLAY_NAME,w.windowTitle())        # 1.0.0: 'StrokeScribe v1.0.0' (no 'Prototype')
         # Source joined the right panel as the last page (the rail shows it first),
         # so the long-standing indexes of the other pages are unchanged.
         self.assertEqual(w.inspector_tabs.count(),5)

@@ -229,7 +229,8 @@ class PrototypeTests(unittest.TestCase):
         w=Window(); w.show(); APP.processEvents(); w.slider.setValue(500); APP.processEvents()
         self.assertIn(DISPLAY_NAME,w.windowTitle())
         self.assertIn('v'+APP_VERSION,w.version_button.text())
-        self.assertTrue(PACKAGE_NAME.startswith('StrokeScribe-Prototype-v'))
+        from version import RELEASE_CHANNEL
+        self.assertTrue(PACKAGE_NAME.startswith('StrokeScribe-v' if RELEASE_CHANNEL=='Release' else 'StrokeScribe-Prototype-v'))
         self.assertAlmostEqual(w.position,.5); self.assertIsNotNone(w.canvas.frame)
         old=w.drawing.strokes[0]; w.order.setCurrentRow(0); w.move(1); self.assertIs(w.drawing.strokes[1],old)
         w.restart(); time.sleep(.04); w.tick(); self.assertGreater(w.position,0)

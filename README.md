@@ -1,13 +1,17 @@
-# StrokeScribe — Prototype v0.5.2
+# StrokeScribe v1.0.0
 
-**Current official downloadable prototype:** [StrokeScribe-Prototype-v0.5.2.zip](https://github.com/StrokeDot/StrokeScribe/releases/download/prototype-v0.5.2/StrokeScribe-Prototype-v0.5.2.zip).
+**Current official release:** [StrokeScribe 1.0.0](https://github.com/StrokeDot/StrokeScribe/releases/tag/v1.0.0) — Windows installer (`StrokeScribe-Setup-1.0.0.exe`). Installed copies update in place with StrokeScribe's Update button.
 
-This version includes the StrokeScribe Studio UI, direct SVG animation, raster image source reconstruction (PNG/JPG/WebP/BMP), Adaptive Hand Painting, other painting modes, and compressed transparent VP9 WebM alongside ProRes 4444 and PNG export. Requires 64-bit Windows Python 3.12–3.14 and local Setup.cmd; FFmpeg is required for video encoding. Some image-specific tracing/painting alignment artifacts are still under refinement.
-
-**Previous versions remain available:** [v0.5.1](https://github.com/StrokeDot/StrokeScribe/releases/tag/prototype-v0.5.1) and [v0.5.0](https://github.com/StrokeDot/StrokeScribe/releases/tag/prototype-v0.5.0). Always extract a new release into its own folder.
-
+**Earlier prototypes remain available:** [v0.5.2](https://github.com/StrokeDot/StrokeScribe/releases/tag/prototype-v0.5.2), [v0.5.1](https://github.com/StrokeDot/StrokeScribe/releases/tag/prototype-v0.5.1) and [v0.5.0](https://github.com/StrokeDot/StrokeScribe/releases/tag/prototype-v0.5.0).
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
+
+## StrokeScribe 1.0.0 — first official release (v1.0.0)
+
+- The first official, non-prototype StrokeScribe: everything from the 0.5.3 experimental builds (up to experimental.249), frozen and tested on Windows and Linux.
+- Hand-drawn SVG and picture animation with the drawing, painting and move-in hands; a whole-video timeline with tracks (higher tracks always above), camera clips, Hand motion and an Already there element; one drawing order by track; Hand in / Hand out on the Hand row.
+- Tidier interface: short labels with "?" help, one calm look, small fading notices, Ctrl+K to find any command, one "+ Add element" menu, panels that follow the selected element, Delete to remove an element (Ctrl+Z brings it back).
+- Kept safe as the GitHub release **v1.0.0** with its tested installer; new prototypes (1.0.1-experimental.N) are built on top of it.
 
 ## Hand controls and preview responsiveness (v0.5.3-experimental.203)
 

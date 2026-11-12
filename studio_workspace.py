@@ -2556,7 +2556,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.brand_wordmark.setObjectName('brandWordmark')
     w.brand_wordmark.setFont(QFont('Segoe UI',15,QFont.Weight.Bold))
     title.addWidget(w.brand_wordmark)
-    w.brand_version=label(f'Prototype v{APP_VERSION}','subtitle')
+    from version import RELEASE_CHANNEL
+    w.brand_version=label(f'v{APP_VERSION}' if RELEASE_CHANNEL=='Release' else f'{RELEASE_CHANNEL} v{APP_VERSION}','subtitle')
     title.addWidget(w.brand_version)
     w.brand_version.hide()           # the version button already shows it
     bar_l.addLayout(title)

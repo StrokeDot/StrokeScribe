@@ -53,9 +53,19 @@ class CancelledUpdate(UpdateError):
 # ------------------------------------------------------------ versions
 
 def parse_version(text):
-    """'0.5.3-experimental.38' -> (0, 5, 3, 38); unknown parts count as 0."""
-    numbers = [int(n) for n in re.findall(r'\d+', str(text or ''))]
-    return tuple((numbers + [0, 0, 0, 0])[:4])
+    """Sortable version: (major, minor, patch, release, build).
+
+    '0.5.3-experimental.38' -> (0, 5, 3, 0, 38); '1.0.0' -> (1, 0, 0, 1, 0).
+    An experimental build comes before the release of the same number (1.0.1-experimental.7
+    < 1.0.1), as in semantic versioning; unknown parts count as 0."""
+    text = str(text or '')
+    main, dash, pre = text.partition('-')
+    numbers = [int(n) for n in re.findall(r'\d+', main)]
+    major, minor, patch = (numbers + [0, 0, 0])[:3]
+    if not dash:
+        return (major, minor, patch, 1, 0)
+    build = [int(n) for n in re.findall(r'\d+', pre)]
+    return (major, minor, patch, 0, build[-1] if build else 0)
 
 
 def is_newer(candidate, current):

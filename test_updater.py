@@ -48,7 +48,13 @@ class UpdaterTests(unittest.TestCase):
         return path
 
     def test_versions(self):
-        self.assertEqual(updater.parse_version('0.5.3-experimental.38'), (0, 5, 3, 38))
+        self.assertEqual(updater.parse_version('0.5.3-experimental.38'), (0, 5, 3, 0, 38))
+        # 1.0.0: an official release is newer than every experimental build before it, and
+        # an experimental build comes before the release of its own number
+        self.assertTrue(updater.is_newer('1.0.0', '0.5.3-experimental.249'))
+        self.assertTrue(updater.is_newer('1.0.1-experimental.1', '1.0.0'))
+        self.assertTrue(updater.is_newer('1.0.1', '1.0.1-experimental.30'))
+        self.assertFalse(updater.is_newer('1.0.0', '1.0.0'))
         self.assertTrue(updater.is_newer('0.5.3-experimental.39', '0.5.3-experimental.38'))
         self.assertTrue(updater.is_newer('0.5.3-experimental.100', '0.5.3-experimental.99'))
         self.assertFalse(updater.is_newer('0.5.3-experimental.38', '0.5.3-experimental.38'))
@@ -136,7 +142,7 @@ class UpdaterTests(unittest.TestCase):
         token = os.environ['STROKESCRIBE_TEST_TOKEN']
         branch = os.environ.get('STROKESCRIBE_TEST_BRANCH') or updater.DEFAULT_BRANCH
         version = updater.latest_version(token, branch)
-        self.assertGreaterEqual(updater.parse_version(version), (0, 5, 3, 38))
+        self.assertGreaterEqual(updater.parse_version(version), (0, 5, 3, 0, 38))
         zip_path = updater.download(token, self.dir / 'real.zip', branch)
         self.assertEqual(updater.zip_version(zip_path), version)
         # The real development branch has a different requirements.txt from
@@ -181,7 +187,7 @@ class UpdateWindowTests(unittest.TestCase):
             try:
                 from update_dialog import UpdateDialog, KeyDialog
                 from PySide6.QtWidgets import QLineEdit
-                d = UpdateDialog(None, latest='0.5.3-experimental.999', auto_check=False)
+                d = UpdateDialog(None, latest='99.0.1-experimental.999', auto_check=False)
                 self.assertTrue(d.update_button.isEnabled())              # public project: no key needed
                 self.assertIn('999', d.version_label.text())
                 self.assertEqual(d.key_button.text(), 'Key…')

@@ -181,13 +181,26 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=$(python -c 'import version; print(version.APP_VERSION)')
-          tag="installer-${version}"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release $tag already exists; refusing to overwrite a previously published build."
-            exit 1
-          fi
+          channel=$(python -c 'import version; print(version.RELEASE_CHANNEL)')
           file=$(find dist -type f -name 'StrokeScribe-Setup-*.exe' | head -1)
           test -n "$file"
-          gh release create "$tag" "$file" --prerelease --target "$GITHUB_SHA" \
-            --title "StrokeScribe ${version} (Windows installer)" \
-            --notes "Verified Windows installer built from $GITHUB_SHA after Linux and Windows tests passed."
+          if [ "$channel" = "Release" ]; then
+            # An official release: its own v-tag, a full (not pre-) release, marked latest.
+            tag="v${version}"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "Release $tag already exists; refusing to overwrite a previously published build."
+              exit 1
+            fi
+            gh release create "$tag" "$file" --latest --target "$GITHUB_SHA" \
+              --title "StrokeScribe ${version} — official release" \
+              --notes "Official StrokeScribe ${version}. Verified Windows installer built from $GITHUB_SHA after the full Linux and Windows test suites passed."
+          else
+            tag="installer-${version}"
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "Release $tag already exists; refusing to overwrite a previously published build."
+              exit 1
+            fi
+            gh release create "$tag" "$file" --prerelease --target "$GITHUB_SHA" \
+              --title "StrokeScribe ${version} (Windows installer)" \
+              --notes "Verified Windows installer built from $GITHUB_SHA after Linux and Windows tests passed."
+          fi
