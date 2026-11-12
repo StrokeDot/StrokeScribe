@@ -116,7 +116,7 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(w.scene_index, 1)
         self.assertEqual(w.scenes[0]['transition'], scenes.SAME_PAGE)
         self.assertTrue(scenes.on_page(w.scenes, 1))
-        self.assertLess(w.artwork_size.value(), 100)
+        self.assertEqual(w.artwork_size.value(), 100)            # exp.244: its normal size, placed by hand
         # exp.200 (the user): the first picture is never moved or made smaller to make room
         first_settings = (w.scenes[0]['state'] or {}).get('settings', {})
         self.assertEqual(float(first_settings.get('artwork_size', 100)), 100.)
@@ -128,8 +128,7 @@ class WindowTests(unittest.TestCase):
         w.slider.setValue(0); self.app.processEvents()
         base = w.scene_base(1, w.canvas.frame.width(), w.canvas.frame.height())
         self.assertIsNotNone(base)
-        # exp.189 (the user): This element shows that element alone, so picture 1 is seen
-        # under it only in the whole video (checked below).
+        # exp.243: This element shows picture 1 under it again (and the whole video, below).
         self.assertIsNotNone(first)
         # All scenes: no move between the two pictures.
         w.preview_scope.setCurrentIndex(1)
