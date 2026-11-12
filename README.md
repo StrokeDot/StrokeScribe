@@ -6,6 +6,10 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Hand drawing follows the traces, smooth ending (v1.0.1-experimental.3)
+- **Hand drawing** follows Painter's traces (around every shape, from the edge inwards) and zigzags across them in big, clearly visible back-and-forth strokes.
+- Smooth ending: faint soft edges (a vignette) appear with the nearest stroke instead of all at once after the last one.
+
 ## More hand movement, Painter's parts, pencil first then colour (v1.0.1-experimental.2)
 - **Hand drawing** moves more: short quick back-and-forth strokes (a pencil-sized stroke, each at most a few strokes wide) instead of long sweeps across a part.
 - **Hand drawing** draws Painter's parts in Painter's order, with the same **Parts** choice (Colour areas or AI parts) in the Paint mode window.
