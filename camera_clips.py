@@ -246,20 +246,34 @@ def away_at(clips, seconds):
     return best, side
 
 
-def hand_moves(clips):
+def parked_until(clip, hands=()):
+    """exp.236 (the user: the hand did not go back to the corner; it left the frame): a Hand
+    motion that leaves the hand at its last point keeps it there only until the next drawing's
+    hand has come from there (`hands`: (start, way in seconds) of the elements' hands); after
+    that the corner is its place again (it was its place for the rest of the video). None: no
+    later hand."""
+    end = float(clip['start']) + float(clip['duration'])
+    for start, lead in sorted(hands or ()):
+        if float(start) >= end - 1e-3:
+            return round(float(start) + float(lead), 4)
+    return None
+
+
+def hand_moves(clips, hands=()):
     """exp.224: the Hand motion clips as plain data for the render options."""
     return tuple(dict(start=float(c['start']), duration=float(c['duration']), how=c.get('how') or 'Smooth',
-                      path=tuple(tuple(p) for p in c.get('path') or MOVE_PATH), back=c.get('back', True) is not False)
+                      path=tuple(tuple(p) for p in c.get('path') or MOVE_PATH), back=c.get('back', True) is not False,
+                      until=parked_until(c, hands))
                  for c in clips or () if c.get('kind') == MOVE and not c.get('off'))
 
 
-def hand_signature(clips):
+def hand_signature(clips, hands=()):
     """Plain data of the hand clips (for render options and fingerprints)."""
     return tuple((c.get('id'), round(float(c['start']), 4), round(float(c['duration']), 4),
                   round(float(c.get('in_s', IN_SECONDS)), 4), round(float(c.get('out_s', OUT_SECONDS)), 4),
                   c.get('side') or 'Right', c.get('kind', HAND))
                  + ((c.get('how') or 'Smooth', tuple(tuple(p) for p in c.get('path') or MOVE_PATH),
-                     c.get('back', True) is not False, bool(c.get('off')))
+                     c.get('back', True) is not False, bool(c.get('off')), parked_until(c, hands))
                     if c.get('kind') == MOVE else ()) for c in hand_clips(clips))
 
 

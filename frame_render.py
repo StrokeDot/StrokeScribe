@@ -1172,15 +1172,14 @@ def _with_arm(image):
 def _moves_of(options):
     """exp.231: the Hand motion clips in these render options (given as _hand_moves, or found
     in the Hand row's clips, hand_away, which every element's options carry)."""
-    moves = options.get('_hand_moves')
-    if moves:
-        return moves
+    if '_hand_moves' in options:                  # exp.236: given (even none) wins over the Hand row's
+        return options.get('_hand_moves') or ()
     import camera_clips
     found = []
     for r in options.get('hand_away') or ():
         if len(r) > 8 and r[6] == camera_clips.MOVE and not (len(r) > 10 and r[10]):
             found.append(dict(start=float(r[1]), duration=float(r[2]), how=r[7] or 'Smooth', path=tuple(r[8]),
-                              back=bool(r[9]) if len(r) > 9 else True))
+                              back=bool(r[9]) if len(r) > 9 else True, until=r[11] if len(r) > 11 else None))
     return tuple(found)
 
 
@@ -1196,8 +1195,11 @@ def hand_motion_at(options, seconds, home, place, size):
     t = float(seconds)
     px, py, pw, ph = place if place is not None else (0., 0., float(size[0]), float(size[1]))
     pos = None                                   # None: in its corner
+    until = None                                 # exp.236: a parked hand stays until the next hand came
     for m in sorted(moves, key=lambda m: float(m['start'])):
         start, length = float(m['start']), max(.2, float(m['duration']))
+        if until is not None and start >= until:
+            pos = until = None                   # the next drawing's hand took it back to its corner
         if t < start:
             break
         pts = [(px + float(x) * pw, py + float(y) * ph) for x, y in m['path']]
@@ -1206,6 +1208,9 @@ def hand_motion_at(options, seconds, home, place, size):
             line = [pos if pos is not None else home] + pts + ([home] if back else [])
             return _along_polyline(spline(line), _glide_ease((t - start) / length, m.get('how') or 'Smooth'))
         pos = None if back or not pts else pts[-1]
+        until = None if pos is None else m.get('until')
+    if pos is not None and until is not None and t >= float(until):
+        return None
     return pos
 
 

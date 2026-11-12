@@ -3473,13 +3473,26 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 scene['state']=st
             b=dict(scene.get('board') or {}); b.update(cx=view[0],cy=view[1],w=view[2])
             scene['board']=b
+            scene['thumb']=None          # exp.236: its picture is made again for its new area (it showed cut)
             if k>0 and self.scenes[k-1].get('transition') not in board.CAMERA_KINDS:
                 # the camera moves there (a move on the Fixed camera row, to click and change)
                 self.scenes[k-1]['transition']='Camera move'
             changed.append(k)
         if changed:
             self._scene_cache={}; self.__dict__.pop('_memo',None); self.__dict__.pop('_elements_memo',None)
+            QTimer.singleShot(0,self.refresh_thumbs)
         return changed
+
+    def refresh_thumbs(self):
+        """exp.236: the elements whose picture is missing (their area or picture place changed)
+        get it again; the selected one at once, so the Image panel card shows it right."""
+        if getattr(self,'_closed',False) or not self.drawing: return
+        k=self.scene_index
+        if 0<=k<len(self.scenes) and self.scenes[k].get('thumb') is None:
+            self.store_scene(thumbnail=True)
+            try: self.update_element_panels()
+            except Exception: pass
+        self.fill_scenes(); self.make_missing_thumbs()
 
     def set_camera(self,k=None):
         """exp.200 (the user, like VideoScribe): where the camera looks for element k: its
@@ -3528,6 +3541,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 st=self.scenes[k].get('state') or {}
                 st.setdefault('settings',{}).update(picture_x=moved[0],picture_y=moved[1],artwork_size=moved[2])
                 self._scene_cache={}
+            self.scenes[k]['thumb']=None; QTimer.singleShot(0,self.refresh_thumbs)
         b=dict(self.scenes[k].get('board') or {})
         if chosen is None: b.pop('view',None)
         else: b['view']=list(chosen)
@@ -6009,7 +6023,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """exp.147: render options for the Hand row: its clips (the hand slides out of the
         picture and back) and where element k starts in the whole video."""
         import camera_clips
-        sig=camera_clips.hand_signature([c for c in getattr(self,'cameras',()) if not c.get('off')]+self.eraser_hand_clips())
+        sig=camera_clips.hand_signature([c for c in getattr(self,'cameras',()) if not c.get('off')]+self.eraser_hand_clips(),
+                                        self.hand_starts())                # exp.236
         if not sig: return {}
         start=0.
         if k is not None:
@@ -6018,6 +6033,25 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             except Exception:
                 start=0.
         return dict(hand_away=sig,hand_video_start=start)
+
+    def hand_starts(self):
+        """exp.236: (start, way in seconds) of the elements' hands on the timeline (the way in: the
+        element's own, or the Hand panel's)."""
+        try:
+            if len(self.scenes)<2 or not getattr(self,'hand_rest',None) or not self.hand_rest.isChecked():
+                return ()
+            default=float(self.hand_rest_travel.value())
+            hidden=self.hidden_elements()
+            out=[]
+            for it in self.timeline_layout().items:
+                s=self.scenes[it.k]
+                if it.k in hidden or s.get('hand_off') or s.get('art_off'): continue
+                glide=s.get('glide') or ()
+                lead=float(glide[0]) if glide and float(glide[0] or 0)>0 else default
+                out.append((round(it.start,4),round(lead,4)))
+            return tuple(out)
+        except Exception:
+            return ()
 
     def eraser_hand_clips(self):
         """exp.186: while an Eraser clip works on the page being shown, the waiting hand goes down."""
@@ -6114,11 +6148,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         # exp.210 (the user): link this hand to the next one: no way back to the corner, the
         # next element's hand starts from where this one finished, in one movement.
         from PySide6.QtWidgets import QCheckBox
-        link=QCheckBox('Go straight on to the next drawing (linked)')
+        link=QCheckBox('Stays where it finished (no way back; the next drawing\'s hand starts there)')
         link.setChecked(bool(self.scenes[k].get('hand_link')))
-        link.setToolTip('The hand does not go back to its corner after this element: it goes on from '
-                        'where it finished to the first line of the next element (on the same page), '
-                        'in one smooth movement. The next element\'s "To the drawing" time and way are used.')
+        link.setToolTip('Off (the usual): after drawing, the hand goes back to its corner. On: it stays where '
+                        'it finished; the next element\'s hand goes on from there to its first line in one '
+                        'movement (the next element\'s "To the drawing" time and way are used).')
         # exp.218 (the user): back to the corner, but on to the next drawing without stopping
         flow=QComboBox()
         flow.addItem('Stop and wait',None)
@@ -6134,7 +6168,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             flow.setEnabled(not on)
         link.toggled.connect(linked); linked(link.isChecked())
         form.addRow(help_label('At the corner','After the way back: stop there, or go on to the next drawing without stopping.'),flow)
-        form.addRow(help_label('Then','Back to the corner, or on to the next drawing.'),link)
+        form.addRow(help_label('When it finishes','Back to its corner (the usual), or stays where it finished.'),link)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
@@ -6353,7 +6387,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if image is None:
             self.status.setText('Hand motion: that moment of the video could not be shown.'); return
         # exp.231: it starts where the hand is then (an earlier Hand motion may have left it elsewhere)
-        earlier=tuple(m for m in camera_clips.hand_moves(self.cameras) if m['start']<start-1e-6)
+        earlier=tuple(m for m in camera_clips.hand_moves(self.cameras,self.hand_starts()) if m['start']<start-1e-6)
         begin=frame_render.hand_motion_at(dict(_hand_moves=earlier),start-1e-4,home,place,(W,H)) if earlier else None
         dialog=HandMotionDialog(self,image,home,[to_frame(q) for q in clip.get('path') or camera_clips.MOVE_PATH],
                                 (options['hand'],(float(ax),float(ay)),rect.width()),start,length,
@@ -6484,7 +6518,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             import camera_clips
             for weight,start in camera_clips.fixed_hand_weight(self.live_clips(),seconds):   # exp.222
                 place=camera_clips.blend_place(place,self.page_place_at(width,height,start),weight)
-        moves=__import__('camera_clips').hand_moves(getattr(self,'cameras',()))    # exp.224: Hand motion clips (also while chosen)
+        moves=__import__('camera_clips').hand_moves(getattr(self,'cameras',()),self.hand_starts())    # exp.224/236
         if moves: options=dict(options,_hand_moves=moves)
         view=1./max(1.,float(getattr(self,'preview_zoom_out',1.))) if self.zoomed_out() else 1.   # exp.216
         if self.all_scenes(): view*=self.hand_zoom_at(width,height,seconds)      # exp.223: the camera's zoom
