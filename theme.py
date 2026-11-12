@@ -142,6 +142,10 @@ QFrame#iconRail {{ background: {c['panel']}; border: 0px; border-radius: 14px; }
 QToolButton#railButton {{ background: transparent; color: {c['muted']}; border: 1px solid transparent;
     border-radius: 8px; padding: 5px 0px; font-size: 9px; font-weight: 600; min-width: 44px; max-width: 44px; }}
 QToolButton#railButton:hover {{ background: {c['raised']}; color: {c['text']}; }}
+QToolButton#helpDot {{ background: transparent; color: {c['muted']}; border: 1px solid {c['border']};
+    border-radius: 9px; min-width: 16px; max-width: 16px; min-height: 16px; max-height: 16px;
+    padding: 0px; font-size: 10px; font-weight: 700; }}
+QToolButton#helpDot:hover {{ color: {c['text']}; border-color: {c['accent']}; }}
 QToolButton#railButton:checked {{ background: {c['accent']}; border-color: {c['accent_hover']}; color: {c['accent_text']}; }}
 QFrame#sectionHeader {{ background: transparent; border: 0px; border-bottom: 1px solid {c['border']}; border-radius: 0px; }}
 QFrame#sectionHeader:hover {{ background: {c['raised']}; }}

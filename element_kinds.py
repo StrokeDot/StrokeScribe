@@ -71,5 +71,8 @@ def source_card(kind, title='', filename='', text=''):
         return ('Handwriting element', lettering_title(text) +
                 '. Edit its text and style in the Handwriting panel.')
     name = str(filename or '').strip()
+    import re
+    if re.fullmatch(r'[0-9a-fA-F]{24,}(\.[A-Za-z0-9]+)?', name):
+        name = ''          # exp.237: a stored picture's code name (e.g. an AI edit) is no name to show
     label = 'SVG drawing' if kind == SVG else 'Image'
     return (label, name or (str(title or '').strip() or 'Imported ' + label.lower()))
