@@ -38,28 +38,27 @@ class MenuTests(unittest.TestCase):
     def test_menu_bar(self):
         w = self.window()
         names = [a.text().replace('&', '') for a in w.menuBar().actions()]
-        self.assertEqual(names, ['File', 'Edit', 'View', 'Effects', 'Help'])
+        self.assertEqual(names, ['File', 'Edit', 'View', 'Help'])      # exp.240: no Effects menu
         file_items = self.titles(w.menus['file'])
         for wanted in ('Open project…\tCtrl+O', 'Save project\tCtrl+S', 'Import SVG artwork…', 'Batch export…',
-                       'Update StrokeScribe…', 'Exit'):
+                       'Exit'):
             self.assertIn(wanted, file_items)
-        # Effects -> Camera follow is the same setting as the Animation tab.
-        fx = w.menus['effects']
-        camera = w.submenus['Camera follow']
-        camera.aboutToShow.emit()
-        choices = [a for a in camera.actions()]
-        self.assertEqual([a.text() for a in choices], [w.camera.itemText(i) for i in range(w.camera.count())])
-        self.assertTrue(choices[0].isChecked())
-        choices[1].trigger()
-        self.assertEqual(w.camera.currentIndex(), 1)
-        camera.aboutToShow.emit()
-        self.assertTrue(camera.actions()[1].isChecked())
-        # A toggle follows its checkbox both ways.
-        sound = next(a for a in fx.actions() if a.text().startswith('Pencil, brush'))
-        fx.aboutToShow.emit()
-        self.assertEqual(sound.isChecked(), w.sound_on.isChecked())
-        sound.trigger()
-        self.assertTrue(w.sound_on.isChecked())
+        self.assertNotIn('Update StrokeScribe…', file_items)                 # once, in Help
+        self.assertIn('Check for updates…', self.titles(w.menus['help']))
+        # View -> Preview background is the same setting as the box above the preview.
+        view = w.menus['view']
+        background = w.submenus['Preview background']
+        background.aboutToShow.emit()
+        choices = [a for a in background.actions()]
+        self.assertEqual([a.text() for a in choices],
+                         [w.preview_background.itemText(i) for i in range(w.preview_background.count())])
+        other = next(k for k in range(len(choices)) if k != w.preview_background.currentIndex())
+        choices[other].trigger()
+        self.assertEqual(w.preview_background.currentIndex(), other)
+        background.aboutToShow.emit()
+        self.assertTrue(background.actions()[other].isChecked())
+        # A setting changed from the window can be undone.
+        w.sound_on.setChecked(True)
         # Edit -> Undo goes back.
         w.undo()
         self.assertFalse(w.sound_on.isChecked())
