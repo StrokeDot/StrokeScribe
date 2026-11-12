@@ -51,6 +51,7 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
         brush_width=float(s.get('brush_width', .14)),
         stroke_spacing=float(s.get('stroke_spacing', .55)),
         paint_look=__import__('adaptive_hand').PAINT_LOOKS.get(s.get('paint_look') or 'Classic', 'classic'),
+        pencil_first=REVEAL_BY_TEXT.get(s.get('pencil_first') or 'Off', ''),     # exp.2
         artwork_scale=float(s.get('artwork_size', 100)) / 100.,
         offset=(float(s.get('picture_x', 0)) / 100., float(s.get('picture_y', 0)) / 100.),
         painting_hand=None)
