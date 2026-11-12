@@ -847,6 +847,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self.history.record(self.snapshot()):
             self.project_changes.mark_changed()
             self.project_redo.clear()                # a new change: nothing to redo any more
+            if self.prune_hand_links():              # exp.245: e.g. the next element lost its hand
+                QTimer.singleShot(0,self.refresh)
         self.update_history_controls()
 
     # ---------------------------------------------- project undo (elements added, deleted, moved)
@@ -2938,6 +2940,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if fitted: import applog; applog.info('Elements given their camera place as their area: %s',fitted)
         except Exception as exc:
             import applog; applog.error('Camera areas',exc)
+        self.prune_hand_links()                             # exp.245: a link with no hand next
         try:
             moved=self.exits_to_clips()                     # exp.194: older projects
             if moved: import applog; applog.info('Ways out moved to Goes out clips: %d',moved)
@@ -4413,9 +4416,46 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         scene=self.scenes[k]
         scene['start']=round(max(0.,float(start)),2); scene['track']=max(0,int(track))
         self.project_changes.mark_changed()
+        self.prune_hand_links()                      # exp.245
         self.status.setText(f'Element {k+1} starts at {scene["start"]:.1f} s on Track {scene["track"]+1}. '
                             'Right-click it on the timeline to put it back after the element before it.')
         self.fill_scenes(); self.refresh()
+
+    def has_drawing_hand(self,k):
+        """exp.245: element k is drawn by a hand that travels (not Already there, not a Move in
+        effect, its hand not switched off)."""
+        try:
+            if self.scenes[k].get('hand_off'): return False
+            from frame_render import hand_window
+            drawing,options,_,_=self.preview_scene(k,960,540)
+            return bool(options.get('hand_travel')) and hand_window(drawing,options) is not None
+        except Exception:
+            return False
+
+    def prune_hand_links(self):
+        """exp.245 (the user: the Hand out of element 4 disappeared after adding element 5, an
+        Already there picture): a hand that "goes straight on to the next hand" has nowhere to
+        go when the next element on its page has no hand; it goes back to its corner again.
+        Returns the elements whose link was dropped."""
+        linked={k for k,s in enumerate(self.scenes) if s.get('hand_link')}
+        if not linked: return []
+        dropped=[]
+        try:
+            items=sorted(self.timeline_layout().items,key=lambda it:(it.start,it.k))
+            frames=self.board_frames(); hidden=set(self.hidden_elements())
+            for i,it in enumerate(items):
+                if it.k not in linked: continue
+                nxt=next((o for o in items[i+1:] if o.k not in hidden and o.start>=it.start
+                          and tuple(frames[o.k])==tuple(frames[it.k])),None)
+                if nxt is not None and not self.has_drawing_hand(nxt.k):
+                    self.scenes[it.k].pop('hand_link',None); self.scenes[it.k].pop('_snap_to',None)
+                    dropped.append(it.k)
+        except Exception as exc:
+            import applog; applog.error('Linked hands without a next hand',exc)
+        if dropped:
+            import applog; applog.info('Hand link dropped (no hand next): %s',dropped)
+            self._scene_cache={}; self.__dict__.pop('_memo',None); self.__dict__.pop('_elements_memo',None)
+        return dropped
 
     def snap_hands(self,k,j):
         """exp.211 (the user, like Filmora's green line): element k was let go right where
@@ -4425,7 +4465,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         for other,scene in enumerate(self.scenes):
             if scene.get('hand_link')=='snap' and other!=j and scene.get('_snap_to')==k:
                 scene.pop('hand_link',None); scene.pop('_snap_to',None); changed=True
-        if 0<=j<len(self.scenes) and j!=k and not self.scenes[j].get('hand_link'):
+        if 0<=j<len(self.scenes) and j!=k and not self.scenes[j].get('hand_link') and self.has_drawing_hand(k):
             self.scenes[j]['hand_link']='snap'; self.scenes[j]['_snap_to']=k; changed=True
             self.status.setText(f'Element {k+1} follows on from element {j+1}: the hand goes straight from '
                                 f'its last line to this one (linked). Double-click the Hand bar to change it.')
@@ -4561,6 +4601,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         segments=[]
         for n,(length,join) in enumerate(zip(lengths,joins)):
             parts=self.real_parts(n,length,width,height)     # exp.176: at their real times
+            try:
+                from frame_render import is_already
+                if is_already(self.preview_scene(n,width,height)[1]):
+                    # exp.245 (the user: the Already there picture looked like a Hand out clip):
+                    # its time on screen is its own part, not the hand's way back
+                    parts=[('still' if key=='hold' else key,v) for key,v in parts]
+            except Exception as exc:
+                import applog; applog.error('Already there on the timeline',exc)
             segments.append((f'{n+1} · {self.scene_label(n)}',length,'scene',parts))
             if join>0: segments.append((self.scenes[n]['transition'],join,'join',()))
         return segments,lengths,joins
@@ -5434,6 +5482,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             able(self.entrance,effect,'Drawing is on: the hand draws this element. Turn on Move in to choose an effect.')
             able(self.move_time,effect and not already,'Drawing is on: Draw time is used.' if not already else
                  'Already there: it does not come in; Pause after is how long the camera looks at it.')
+        if hasattr(self,'move_in_with_hand'):
+            slide=self.entrance.currentText().startswith('Slide in')
+            able(self.move_in_with_hand,effect and slide,
+                 'the hand carries a picture that slides in: choose a "Slide in from …" in Comes in.')
+            self.move_in_with_hand.setChecked(self.move_hand.isChecked())
         able(self.entrance_part,effect and colours and not already,
              'turn on Move in (and have colours) to pick what moves in.')
         why='there are no colours to paint.' if not colours else \

@@ -1306,12 +1306,13 @@ class StageTimeline(QFrame):
         self._paint_snap(p,small)           # exp.211: the green snap line, on top of everything
         p.end()
 
-    STAGE_NAMES={'draw':'Draw','paint':'Paint','hold':'Hand out','erase':'Out','move':'Move in','glide':'Hand in'}
+    STAGE_NAMES={'draw':'Draw','paint':'Paint','hold':'Hand out','erase':'Out','move':'Move in','glide':'Hand in',
+                 'still':'Already there'}
 
     def _paint_whole(self, p, c, clips, small):
         """Whole video: one block per element with its parts inside, camera moves between."""
         colours={'draw':c['draw'],'paint':c['paint'],'hold':c['hold'],'erase':c.get('erase','#D9667E'),
-                 'move':c['draw'],'glide':c['border_strong']}
+                 'move':c['draw'],'glide':c['border_strong'],'still':c['muted']}    # exp.245: Already there
         p.save(); p.setClipRect(QRectF(self.LEFT,0,self._width(),self.height()))
         bold=QFont(self.font()); bold.setPointSizeF(8.5); bold.setBold(True)
         for k,start,secs,seg in self._blocks():
@@ -1363,7 +1364,7 @@ class StageTimeline(QFrame):
         """Whole video on tracks: the Camera row with its moves, then one row per track
         (the top row is empty: drag an element there to put it on a new track)."""
         colours={'draw':c['draw'],'paint':c['paint'],'hold':c['hold'],'erase':c.get('erase','#D9667E'),
-                 'move':c['draw'],'glide':c['border_strong']}
+                 'move':c['draw'],'glide':c['border_strong'],'still':c['muted']}
         cam=self._camera_rect()
         area=self._tracks_area()
         p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor(c['track']))
@@ -3204,6 +3205,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.move_time=w.number(.2,120,4,.1)
     w.move_time.setToolTip('How long the element takes to come in with its effect.')
     mi.addRow('Move-in time (s)',w.move_time)
+    # exp.245 (the user: per picture, the move in with the hand or without): the same switch
+    # as Hand panel > Move-in hand, here where the move in is chosen
+    w.move_in_with_hand=QCheckBox('Carried in by the hand')
+    w.move_in_with_hand.setToolTip('This picture slides in held by the hand (the hand lets go and leaves). '
+                                   'Off: it slides in on its own.')
+    mi.addRow('Hand',w.move_in_with_hand)
     # The hand that carries the picture in (Slide effects): upload it right here too.
     w.move_in_hand_button=QPushButton('Upload hand…')
     w.move_in_hand_button.setToolTip('Your own transparent PNG of a hand that holds the picture while it '
@@ -3551,6 +3558,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.move_hand.setToolTip('A hand carries the picture in when it slides in (Animation > Comes in: '
                            'Slide in from …), lets go, and leaves the way it came.')
     w.move_hand.setChecked(True);mh.addRow('',w.move_hand)
+    def _mirror_move_hand(on):
+        w.move_in_with_hand.blockSignals(True); w.move_in_with_hand.setChecked(bool(on)); w.move_in_with_hand.blockSignals(False)
+    w.move_hand.toggled.connect(_mirror_move_hand)
+    w.move_in_with_hand.toggled.connect(lambda on: w.move_hand.setChecked(bool(on)))
+    _mirror_move_hand(w.move_hand.isChecked())
     mh.setRowVisible(w.move_hand,False)          # the switch on the section header
     # 4. exp.192 (the user): the eraser hand, like the other hands: what rubs out the elements
     # (Eraser clips on the timeline) and how big it is. A hand that erases is the other hand.
