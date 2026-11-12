@@ -75,5 +75,29 @@ class Follow(unittest.TestCase):
         self.assertFalse(w.sidebar_layout.expanded['inspector'])
 
 
+
+class OneAddPlace(unittest.TestCase):
+    """exp.242: "+ Add element" lists everything that can be added."""
+
+    def test_the_add_menu_has_elements_timeline_things_and_sound(self):
+        from PySide6 import QtWidgets
+        from app import Window
+        w = Window()
+        self.addCleanup(w.close)
+        seen = []
+
+        class Menu(QtWidgets.QMenu):          # records instead of opening
+            def exec(self, *args):
+                seen.append([x.text() for x in self.actions() if x.text()])
+
+        with mock.patch.object(QtWidgets, 'QMenu', Menu):
+            w.add_element_menu(False)
+        self.assertTrue(seen)
+        texts = seen[-1]
+        for wanted in ('Picture or SVG file…', 'Text (handwriting)…', 'Camera move or zoom…',
+                       'Hand motion', 'Eraser…', 'Music…'):
+            self.assertIn(wanted, texts)
+
+
 if __name__ == '__main__':
     unittest.main()
