@@ -277,7 +277,7 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
     drawing.paint_seconds=float(fade_duration or 0)  # exp.228: the hand settles on its last stroke in time
     if final_image is None or final_image.isNull():
         return render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)
-    if reveal_mode in ('adaptive','zigzag','rows','columns','short_zigzag','painter'):
+    if reveal_mode in ('adaptive','zigzag','rows','columns','short_zigzag','painter','strokes'):
         # Zigzag sweep is a different brush ROUTE; the timed plan format,
         # renderer, hand and guide retirement are shared with Adaptive.
         drawing.paint_method=reveal_mode

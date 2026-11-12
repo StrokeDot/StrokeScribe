@@ -39,7 +39,7 @@ def format_seconds(seconds):
     return f'{hours}:{minutes:02d}:{secs:02d}' if hours else f'{minutes}:{secs:02d}'
 # Paint mode menu order (studio_workspace). Stroke-guided and Clean contour
 # painting were retired from the menu; their code remains for old renders.
-REVEAL_MODES = ('brush', 'adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag', 'painter')
+REVEAL_MODES = ('brush', 'adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag', 'painter', 'strokes')
 
 def timecode(seconds):
     """00:04.25 style time for the monitor."""
@@ -682,7 +682,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             return
         mode=options.get('reveal_mode')
         image_source=getattr(self.drawing,'source_kind',None)=='image'
-        if mode in ('adaptive','zigzag','rows','columns','short_zigzag','painter'):
+        if mode in ('adaptive','zigzag','rows','columns','short_zigzag','painter','strokes'):
             self.drawing.paint_method=mode
         elif not image_source:
             return
@@ -3119,9 +3119,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.update_paint_hand_label()
         self.move_hand_path=tools_kit.restore_paint_hand(settings.get('move_hand_path'),data.get('move_hand_png'))
         self.update_move_hand_label()
+        from sound import is_builtin
         for key in self.sound_files:
             path=settings.get(key)
-            self.sound_files[key]=path if path and Path(path).is_file() else None
+            self.sound_files[key]=path if path and (is_builtin(path) or Path(path).is_file()) else None
         self.update_sound_buttons()
         letter=data.get('letter',{})
         self.letter_ink_color=letter.get('ink',self.letter_ink_color)
@@ -3928,7 +3929,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if options.get('camera_zoom',1.)>1.0001:
                 from frame_render import camera_for
                 camera=camera_for(drawing,options,options['camera_zoom'],rate=20.)
-            if options.get('final_image') is not None and options.get('reveal_mode') in ('adaptive','zigzag','rows','columns','short_zigzag','painter'):
+            if options.get('final_image') is not None and options.get('reveal_mode') in ('adaptive','zigzag','rows','columns','short_zigzag','painter','strokes'):
                 from adaptive_hand import plan_ready, plan_for
                 drawing.paint_method=options['reveal_mode']
                 if not plan_ready(drawing,options['final_image'],options['brush_width'],options['stroke_spacing']):
@@ -5727,14 +5728,29 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         return dialog
 
     def update_sound_buttons(self):
+        from sound import sound_name,is_builtin
         for key,(button,text) in self.sound_file_buttons.items():
             path=self.sound_files.get(key)
-            button.setText(Path(path).stem if path else 'Add sound…')      # the row label names it
+            button.setText(sound_name(path) if path else 'Add sound…')      # the row label names it
             remove=getattr(self,'sound_remove_buttons',{}).get(key)
             if remove is not None:
                 remove.setVisible(bool(path))
-            button.setToolTip(f'{text} sound: {Path(path).name}. Click to choose another.' if path
-                              else f'No {text.lower()} sound yet. Click to choose a recording (MP3, WAV, M4A…).')
+            shown=sound_name(path) if is_builtin(path) else (Path(path).name if path else '')
+            button.setToolTip(f'{text} sound: {shown}. Click to choose another.' if path
+                              else f'No {text.lower()} sound yet. Click to choose a built-in sound or a '
+                                   f'recording (MP3, WAV, M4A…).')
+
+    def use_builtin_sounds(self):
+        """1.0.1: the built-in pencil on paper (drawing and colouring) and eraser, made from the
+        hand's own movement; rows with the user's own recordings are kept."""
+        from sound import BUILTIN_FOR
+        for key,kind in (('sound_pencil_file','draw'),('sound_brush_file','paint'),('sound_eraser_file','rub')):
+            if not self.sound_files.get(key):
+                self.sound_files[key]=BUILTIN_FOR[kind]
+        self.sound_on.setChecked(True)
+        self.update_sound_buttons()
+        self.note_change()
+        if self.playing: self.sync_preview_sound()
 
     def choose_sound_file(self,key):
         import audio_track
@@ -5743,7 +5759,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if name: self.set_sound_file(key,self.keep_in_library('audio',name))
 
     def set_sound_file(self,key,path):
-        if path:
+        from sound import is_builtin
+        if path and is_builtin(path):
+            self.sound_on.setChecked(True)
+        elif path:
             from sound import load_recording
             if load_recording(path) is None:
                 QMessageBox.warning(self,'Sound','This recording could not be read (or it is silent).'); return
@@ -5815,7 +5834,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def image_paint_method(self):
         mode=REVEAL_MODES[self.reveal_mode.currentIndex()]
-        return mode if mode in ('adaptive','zigzag','rows','columns','short_zigzag','painter') else 'adaptive'
+        return mode if mode in ('adaptive','zigzag','rows','columns','short_zigzag','painter','strokes') else 'adaptive'
 
     # Kept for a new element: the video's own settings (one for the whole project), your
     # hands and tools, the project's sound, and how pictures are turned into drawings.

@@ -95,8 +95,13 @@ def main(argv):
     suite = unittest.defaultTestLoader.loadTestsFromNames(argv)
     runner = unittest.TextTestRunner(verbosity=2, resultclass=_Result)
     result = runner.run(suite)
+    _current['name'] = None            # the tests are done: the watchdog has nothing to guard
     return 0 if result.wasSuccessful() else 1
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1:]))
+    code = main(sys.argv[1:])
+    # 1.0.1: end at once. After all tests passed, a Windows run hung for minutes while Python
+    # shut down what the windows left behind, and the watchdog blamed the last test.
+    sys.stdout.flush(); sys.stderr.flush()
+    os._exit(code)

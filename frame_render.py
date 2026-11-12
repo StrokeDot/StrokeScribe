@@ -628,7 +628,7 @@ def _plan_digest(drawing, options):
     plan = None
     image = options.get('final_image')
     mode = options.get('reveal_mode')
-    if image is not None and not image.isNull() and mode in ('adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag', 'painter'):
+    if image is not None and not image.isNull() and mode in ('adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag', 'painter', 'strokes'):
         try:
             from adaptive_hand import plan_digest
             had = getattr(drawing, 'paint_method', None)
@@ -648,7 +648,7 @@ def _paint_window(drawing, options):
     first and last really paints, for the planned paintings (adaptive, painter, rows...)."""
     image = options.get('final_image')
     mode = options.get('reveal_mode')
-    if image is None or image.isNull() or mode not in ('adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag', 'painter'):
+    if image is None or image.isNull() or mode not in ('adaptive', 'zigzag', 'rows', 'columns', 'short_zigzag', 'painter', 'strokes'):
         return None
     if options.get('painting_hand') is None:
         return None
