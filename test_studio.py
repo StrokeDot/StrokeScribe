@@ -123,9 +123,10 @@ class StudioTests(unittest.TestCase):
         self.assertEqual(items,['Brush painting','Adaptive Hand Painting','Zigzag sweep',
                                'Top to bottom (rows)','Left to right (columns)',
                                'Adaptive — Short up/down strokes',
-                               'Painter — real parts, strokes follow the shape'])
+                               'Painter — real parts, strokes follow the shape',
+                               'Hand drawing — real strokes and lines'])           # 1.0.1
         from app import REVEAL_MODES
-        self.assertEqual(REVEAL_MODES,('brush','adaptive','zigzag','rows','columns','short_zigzag','painter'))
+        self.assertEqual(REVEAL_MODES,('brush','adaptive','zigzag','rows','columns','short_zigzag','painter','strokes'))
         self.assertEqual(self.window.reveal_mode.currentText(),'Adaptive Hand Painting')
 
     def test_line_list_starts_collapsed_and_canvas_click_toggles_highlight(self):
