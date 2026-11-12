@@ -1174,10 +1174,10 @@ class StageTimeline(QFrame):
                 p.setBrush(QColor('#3BBF7A') if ready else QColor('#E5484D'))
                 p.drawRect(QRectF(x0,ruler_h-3,x1-x0,3))
         # Clips for each phase, like clips on an editor track.
-        stages=[('Hand',getattr(self,'lead',0.),c['border_strong']),       # exp.181: the glide in
+        stages=[('Hand in',getattr(self,'lead',0.),c['border_strong']),    # exp.181: the glide in (exp.243: named Hand in)
                 (getattr(self,'first_label','Draw'),self.draw_seconds,c['draw']),
                 ('Paint',self.paint_seconds,c['paint']),
-                ('Hold',self.hold_seconds,c['hold']),
+                ('Hand out',self.hold_seconds,c['hold']),               # exp.243 (the user): was Hold; it is the hand's way back
                 ('Out',self.erase_seconds,c.get('erase','#D9667E'))]
         if self.items:
             self._paint_tracks(p,c,small)
@@ -1306,7 +1306,7 @@ class StageTimeline(QFrame):
         self._paint_snap(p,small)           # exp.211: the green snap line, on top of everything
         p.end()
 
-    STAGE_NAMES={'draw':'Draw','paint':'Paint','hold':'Hold','erase':'Out','move':'Move in','glide':'Hand'}
+    STAGE_NAMES={'draw':'Draw','paint':'Paint','hold':'Hand out','erase':'Out','move':'Move in','glide':'Hand in'}
 
     def _paint_whole(self, p, c, clips, small):
         """Whole video: one block per element with its parts inside, camera moves between."""
@@ -3332,7 +3332,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     def _show_look(*_):
         w.reveal_mode.look=w.paint_look.currentText(); w.reveal_mode.update()
     w.paint_look.currentIndexChanged.connect(_show_look)
-    w.color_hold=w.number(0,30,.6,.1);a2.addRow('Hold (s)',w.color_hold)
+    w.color_hold=w.number(0,30,.6,.1);a2.addRow('Hand out (s)',w.color_hold)
     # "Goes out" on / off: a switch for the Goes out list (Off, or the last way chosen).
     w.erase_on=QCheckBox('Exit',animation);w.erase_on.hide()
     w.erase_on.setToolTip('The element goes away at the end (eraser or an effect).')

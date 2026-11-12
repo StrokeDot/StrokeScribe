@@ -973,9 +973,16 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def restore(self,snapshot):
         if snapshot is None: return
-        from projects import set_widget_value
+        from projects import set_widget_value,widget_value
         self._restoring=True
         source_changed=snapshot.get('source') is not self.source_snapshot()
+        # exp.243 (the user: Ctrl+Z put Edge fade back but its bar stayed; an undone Animation
+        # change left the painting as it was): every control is set first, then each one that
+        # changed tells the window, exactly as if it had been changed by hand (its bar moves,
+        # its panel rows and the picture follow). The undo history ignores these.
+        watched=[n for n in dict.fromkeys((*self.PROJECT_SETTINGS,*__import__('picture_look').DEFAULTS))
+                 if getattr(self,n,None) is not None]
+        before={n:widget_value(getattr(self,n)) for n in watched}
         try:
             self.restore_source_snapshot(snapshot.get('source'))
             settings=snapshot['settings']
@@ -1020,6 +1027,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                     if name in extras: setattr(self.drawing,name,extras[name])
                     elif hasattr(self.drawing,name): delattr(self.drawing,name)
                 self.update_painter_parts()
+            held=getattr(self,'_suspend_refresh',False); self._suspend_refresh=True
+            try:
+                for name in watched:
+                    if widget_value(getattr(self,name))!=before[name]:
+                        self._tell_changed(getattr(self,name))
+            finally:
+                self._suspend_refresh=held
         finally:
             self._restoring=False
         self.update_history_controls()
@@ -1027,6 +1041,20 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.scenes[self.scene_index]['thumb']=None
             self.fill_scenes()
         self.sync_workspace();self.refresh()
+
+    @staticmethod
+    def _tell_changed(widget):
+        """Send a control's own change signal (after it was set with its signals blocked)."""
+        from PySide6.QtWidgets import QAbstractButton,QComboBox,QDoubleSpinBox,QSpinBox
+        try:
+            if isinstance(widget,QComboBox):
+                widget.currentIndexChanged.emit(widget.currentIndex())
+            elif isinstance(widget,(QSpinBox,QDoubleSpinBox)):
+                widget.valueChanged.emit(widget.value())
+            elif isinstance(widget,QAbstractButton):
+                widget.toggled.emit(widget.isChecked())
+        except Exception as exc:
+            import applog; applog.error('Undo: telling a control it changed',exc)
 
     # ------------------------------------------------ lines: select and edit
     def fill_order(self,keep=(),current=None):
@@ -6890,8 +6918,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         # hand is as big next to the picture as in the whole video
         options['_hand_view']=self.element_hand_view(self.scene_index)
         # Pictures of earlier scenes in this frame stay on the board under it.
-        # exp.189 (the user): This element shows that element alone (not the pages under it).
-        page=False
+        # exp.189 showed the element alone; exp.243 (the user: "if the element is drawn over
+        # something, it should also show it") shows again the earlier pictures it is drawn
+        # over (finished, as in the video). Texts of the video stay out.
+        page=self.drawn_over(self.scene_index) and options.get('layers')!='hand'
         if page: options['background']=False
         self.schedule_render_bar()
         self._view=dict(all=False,options=options,page=page,ratio=ratio,length=self.timeline_length(),
