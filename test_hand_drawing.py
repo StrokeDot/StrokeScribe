@@ -257,19 +257,40 @@ class Exp2Tests(unittest.TestCase):
         from PySide6.QtWidgets import QApplication
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_strokes_are_short_zigzags(self):
-        from stroke_paint import _hatch
-        mask = np.ones((60, 200), bool)                          # a wide part
-        long = _hatch(mask, 4., .5, np.array([0., 0.]))
-        short = _hatch(mask, 4., .5, np.array([0., 0.]), leg=20.)
-        longest = lambda runs: max(math.dist(r[:2], r[2:]) for r in runs)
-        self.assertGreater(longest(long), 50)
-        self.assertLessEqual(longest(short), 20.5)
-        self.assertGreater(len(short), len(long) * 2)            # many more back-and-forth strokes
-        covered = np.zeros(mask.shape, np.uint8)
-        from stroke_paint import _capsules
-        _capsules(covered, [(*r, 4.) for r in short])
-        self.assertGreater(covered.mean(), .95)                  # still the whole part
+    def test_the_hand_zigzags_along_painters_traces(self):
+        """exp.3: big back-and-forth strokes across Painter's traces (visible hand movement)."""
+        from adaptive_hand import qimage
+        from painter_paint import build_painter_plan
+        from stroke_paint import build_stroke_plan
+        d = HandDrawingTests.drawing(self)
+        image = qimage(hatched())
+        painter = build_painter_plan(d, image, .1, .5)
+        plan = build_stroke_plan(d, image, .1, .5)
+        moves = [s for s in plan.segments if s.painting]
+        turns = sum(1 for a, b in zip(moves, moves[1:])
+                    if (a.b[0] - a.a[0]) * (b.b[0] - b.a[0]) + (a.b[1] - a.a[1]) * (b.b[1] - b.a[1]) < 0)
+        self.assertGreater(turns, len(moves) * .3)             # it keeps turning back: a zigzag
+        ring = max(s.radius for s in painter.segments if s.painting) / .75
+        legs = sorted(math.dist(s.a, s.b) for s in moves)
+        self.assertGreater(legs[len(legs) // 2], ring * .8)    # each stroke spans the trace's band
+
+    def test_nothing_waits_for_the_end(self):
+        """exp.3 (Arthur's end "glitch"): faint soft edges the strokes do not reach appear with
+        the nearest stroke, not all at once after the last stroke."""
+        from PIL import Image
+        import stroke_paint
+        from adaptive_hand import qimage
+        pil = hatched()
+        a = np.asarray(pil).copy()
+        a[:, :, 3] = np.where(a[:, :, 3] > 0, a[:, :, 3], 6)   # a faint veil all around (like a vignette)
+        image = qimage(Image.fromarray(a, 'RGBA'))
+        plan = stroke_paint.build_stroke_plan(HandDrawingTests.drawing(self), image, .1, .5)
+        moments, alpha = stroke_paint.field_for(plan, image)
+        last = max(s.end for s in plan.segments if s.painting)
+        visible = alpha > 0
+        self.assertTrue(np.isfinite(moments[visible]).all())
+        self.assertLessEqual(float(moments[visible].max()), last + 1e-3)
+        self.assertLess(float((moments[visible] >= last * .995).mean()), .03)
 
     def test_hand_drawing_draws_painters_parts_with_the_parts_choice(self):
         import paint_mode_dialog
