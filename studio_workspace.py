@@ -4287,6 +4287,9 @@ def build_workspace(w, Canvas, BRAND_ICON):
     policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
     animation.setSizePolicy(policy)
     from PySide6.QtGui import QShortcut, QKeySequence
+    # exp.239 (UI clean-up step 3): Ctrl+K finds any command by typing
+    w.command_shortcut=QShortcut(QKeySequence('Ctrl+K'),w)
+    w.command_shortcut.activated.connect(lambda: __import__('command_palette').open_palette(w))
     w.save_shortcut=QShortcut(QKeySequence(QKeySequence.StandardKey.Save),w)
     w.save_shortcut.activated.connect(lambda: w.save_project())
     w.open_shortcut=QShortcut(QKeySequence(QKeySequence.StandardKey.Open),w)

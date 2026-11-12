@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 from PySide6.QtWidgets import QFileDialog,QInputDialog,QMessageBox
+from toast import notify
 from PySide6.QtCore import Qt
 LABELS={'Add to current project':'add','Replace selected artwork':'replace','New Project':'new'}
 
@@ -118,7 +119,7 @@ class ArtworkWorkflow:
         applog.info('New Project: asked')
         if self._artwork_busy():
             applog.info('New Project: waiting for an import/export to finish')
-            QMessageBox.information(self,'New Project','Finish or cancel the current import/export first.')
+            notify(self,'Finish or cancel the current import/export first.','warning')
             return False
         if not self.confirm_leave_project('create a New Project'):
             applog.info('New Project: not made (the unsaved changes were not saved or discarded)')
@@ -159,7 +160,7 @@ class ArtworkWorkflow:
 
     def request_artwork(self,path,kind='image',original=None,placement=None,name=None,same_spot=False,assets=None,whole_preview=False):
         if self._artwork_busy():
-            QMessageBox.information(self,'Import artwork','Wait for the current import/export to finish.')
+            notify(self,'Wait for the current import/export to finish.','warning')
             return False
         placement=placement or self.choose_artwork_placement()
         if placement not in ('add','replace','new'):

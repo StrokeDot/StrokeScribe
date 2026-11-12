@@ -173,6 +173,7 @@ def build_menus(w):
 
     # ---------------------------------------------------------------- Help
     help_menu = bar.addMenu('&Help'); w.menus['help'] = help_menu
+    help_menu.addAction('Find a command…\tCtrl+K', lambda: __import__('command_palette').open_palette(w))
     help_menu.addAction('Open log folder', lambda: w.open_log_folder())
     help_menu.addAction('Copy the log (for a bug report)', lambda: w.copy_log())
     help_menu.addSeparator()

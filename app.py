@@ -5,6 +5,7 @@ from datetime import datetime
 from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl, QItemSelectionModel, QEventLoop, QObject
 from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap, QDesktopServices
 from PySide6.QtWidgets import (QListWidgetItem,QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea,QColorDialog)
+from toast import notify
 from engine import import_svg, render, export_frames, encode_mov, encode_webm, encode_mp4, scale_animation_frame, apply_lettering_background
 from lettering import make_text
 from font_library import (STARTER_FONTS, installed_font, make_font_text,
@@ -2640,7 +2641,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def save_project(self,save_as=False):
         if not self.drawing or (self.builder and self.builder.isRunning()):
-            QMessageBox.information(self,'Save project','There is no finished drawing to save yet.'); return None
+            notify(self,'There is no finished drawing to save yet.'); return None
         import projects
         path=getattr(self,'project_path',None)
         if save_as or not path:
@@ -2662,6 +2663,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             QMessageBox.warning(self,'Save project',str(exc)); return None
         self.project_path=str(path)
         self.status.setText('Project saved: '+str(path))
+        notify(self,f'Saved {Path(path).stem}','done',2.5)
         self.setWindowTitle(f'{Path(path).stem}  •  {DISPLAY_NAME}')
         self.remember_recent(path)
         self.keep_home_preview(path)
@@ -2861,7 +2863,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def open_project(self,path=None):
         if (self.builder and self.builder.isRunning()) or (self.worker and self.worker.isRunning()):
-            QMessageBox.information(self,'Open project','Please wait for the current job to finish.'); return False
+            notify(self,'Please wait for the current job to finish, then open the project.','warning'); return False
         import projects
         if path is None:
             path,_=QFileDialog.getOpenFileName(self,'Open project','','StrokeScribe project (*.strokescribe)')
@@ -4762,7 +4764,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def open_batch_export(self):
         from batch_export import BatchExportDialog
         if self.worker and self.worker.isRunning():
-            QMessageBox.information(self,'Batch export','Please wait for the current export to finish.'); return
+            notify(self,'Please wait for the current export to finish.','warning'); return
         BatchExportDialog(self,self.settings_state(),self.hand,
                           play_finished_sound if self.export_done_sound.isChecked() else None).exec()
 
@@ -4797,7 +4799,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def use_own_line_drawing(self):
         """Trace a line drawing you already have (black lines on white) over the image."""
         if not self.image_path:
-            QMessageBox.information(self,'Line drawing','Import the colour image first.'); return
+            notify(self,'Line drawing: import the colour image first.'); return
         name,_=QFileDialog.getOpenFileName(self,'Choose the line drawing of this image','',
                                            'Images (*.png *.jpg *.jpeg *.webp *.bmp)')
         if name:
@@ -4875,7 +4877,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def export_svg(self,folder=None):
         """Save the current image drawing as an editable SVG + matching PNG."""
         if not self.image_result or not self.drawing or getattr(self.drawing,'source_kind',None)!='image':
-            QMessageBox.information(self,'Export SVG','Import an image first.'); return None
+            notify(self,'Export SVG: import an image first.'); return None
         if folder is None:
             folder=QFileDialog.getExistingDirectory(self,'Choose a folder for the SVG and its colour PNG')
             if not folder: return None
@@ -5095,7 +5097,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def install_selected_font(self):
         name=self.font_select.currentText().strip()
         if name.startswith('Local: ') or name=='Built-in single-line pen' or not name:
-            QMessageBox.information(self,'Fonts','Select or type a Google Fonts family first.')
+            notify(self,'Select or type a Google Fonts family first.')
             return
         self.start_font_install((name,))
 
@@ -5235,7 +5237,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from hand_tip import find_tip
         found=find_tip(self.hand)
         if not found:
-            QMessageBox.information(self,'Pen tip','The pen tip could not be found; click it instead.'); return
+            notify(self,'The pen tip could not be found; click it instead.','warning'); return
         self.ax.setValue(round(found[0],3)); self.ay.setValue(round(found[1],3))
         self.remember_tip()
 
@@ -7358,6 +7360,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import applog; applog.info('Export finished: %s (took %s)',message,self.export_elapsed())
         if hasattr(self,'export_clock'): self.export_clock.stop()
         self.status.setText(f'{message}  •  took {self.export_elapsed()}'); self.status.setWordWrap(True)
+        notify(self,f'{message}  •  took {self.export_elapsed()}','warning' if message.startswith('Export stopped') else 'done',6)
     def export_finished(self):
         if hasattr(self,'export_clock'): self.export_clock.stop()
         self.cancel.setEnabled(False); self.progress.setRange(0,100); self.progress.setValue(100); self.sync_workspace()
