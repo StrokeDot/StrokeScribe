@@ -98,8 +98,6 @@ def build_menus(w):
     file.addAction('Export animation…', w.open_export)
     file.addAction('Batch export…', lambda: w.open_batch_export())
     file.addSeparator()
-    file.addAction('Update StrokeScribe…', lambda: w.open_updates())
-    file.addSeparator()
     file.addAction('Exit', w.quit_app)
 
     # ---------------------------------------------------------------- Edit
@@ -149,27 +147,9 @@ def build_menus(w):
     view.addAction('Sound settings', lambda: _go(w, 'sound'))
     view.addAction('Export settings', lambda: _go(w, 'export'))
 
-    # ---------------------------------------------------------------- Effects
-    fx = bar.addMenu('Effe&cts'); w.menus['effects'] = fx
-    _combo_menu(fx, 'Paint mode', w.reveal_mode)
-    _combo_menu(fx, 'Pen movement', w.pen_ease)
-    _combo_menu(fx, 'Camera follow', w.camera)
-    _combo_menu(fx, 'Erase at the end', w.erase_mode)
-    _combo_menu(fx, 'Eraser shown', w.eraser)
-    fx.addSeparator()
-    _combo_menu(fx, 'Painting hand', w.paint_hand, after=lambda: w.paint_hand_changed())
-    _toggle(fx, 'Show hand while drawing', w.showhand)
-    _toggle(fx, 'Show hand while painting', w.show_paint_hand)
-    fx.addSeparator()
-    _toggle(fx, 'Pencil, brush and eraser sounds', w.sound_on)
-    fx.addAction('Sound settings…', lambda: _go(w, 'sound'))
-    fx.addAction('Add a pencil sound…', lambda: w.choose_sound_file('sound_pencil_file'))
-    fx.addAction('Create a sound with AI…', lambda: w.open_create_image('sound'))
-    fx.addSeparator()
-    _combo_menu(fx, 'Export', w.export_layers)
-    _combo_menu(fx, 'MP4 background', w.mp4_background)
-    fx.addSeparator()
-    fx.addAction('Create image with AI…', lambda: w.open_create_image())
+    # exp.240 (UI clean-up step 4): no Effects menu. It repeated the Animation, Hand,
+    # Sound and Export panel settings one by one; those live in their panels now (and
+    # Ctrl+K finds the panels).
 
     # ---------------------------------------------------------------- Help
     help_menu = bar.addMenu('&Help'); w.menus['help'] = help_menu
