@@ -44,7 +44,7 @@ jobs:
     name: quick (${{ matrix.os }} ${{ matrix.shard }})
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ !matrix.blocking }}
-    timeout-minutes: 80      # Windows runs the same tests about twice as slowly
+    timeout-minutes: 110     # Windows runs the same tests about twice as slowly; wide changes select many
     env:
       QT_QPA_PLATFORM: offscreen
     steps:
