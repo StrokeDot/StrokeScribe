@@ -16,6 +16,34 @@ class ArtworkWorkflow:
         from element_kinds import kind_of_drawing
         return kind_of_drawing(self.drawing)
 
+    def follow_selection_panels(self):
+        """exp.241 (UI clean-up step 5): an open side panel shows the selected element.
+
+        A picture or SVG chosen while the Text panel is open: the Text panel (which has
+        nothing for it) closes, and the Image panel opens if the right side was closed. Lettering chosen while the
+        Image panel is open: the Text panel opens beside it. Closed panels stay closed and
+        the other side panels (Sound, Music, Camera, AI, Animation, Hand, Export) stay
+        as they are."""
+        layout=getattr(self,'sidebar_layout',None)
+        if layout is None or self.drawing is None or not hasattr(self,'left_tabs'):
+            return
+        try:
+            from element_kinds import LETTERING
+            from studio_workspace import LEFT,TABS
+            kind=self.element_kind()
+            left_open=bool(layout.expanded.get('source'))
+            right_open=bool(layout.expanded.get('inspector'))
+            on_text=left_open and self.left_tabs.currentIndex()==LEFT['text']
+            on_image=right_open and self.inspector_tabs.currentIndex()==TABS['source']
+            if kind!=LETTERING and on_text:
+                layout.set_expanded('source',False)
+                if not right_open:          # an open right panel (Animation, Hand…) stays on its page
+                    self.show_right_panel('source')
+            elif kind==LETTERING and on_image and not left_open:
+                self.show_left_panel('text')
+        except Exception as exc:
+            import applog; applog.error('Panels follow the selection',exc)
+
     def update_element_panels(self):
         """Show what belongs to the selected element's kind in Source and Handwriting.
 

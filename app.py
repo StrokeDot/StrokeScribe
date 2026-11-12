@@ -3406,6 +3406,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             except Exception as exc:
                 import applog; applog.error('Whole-video position',exc)
         self.status.setText(f'Editing element {row+1} of {len(self.scenes)}: {self.scene_label(row)}')
+        self.follow_selection_panels()
 
     def add_scene(self):
         """A new scene after the current one (starts as a copy; import its own artwork)."""
