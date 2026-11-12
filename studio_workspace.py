@@ -1054,9 +1054,15 @@ class StageTimeline(QFrame):
     def _edges(self):
         """[(stage key, x of its right edge, seconds before it)] of the visible stage clips."""
         out=[]; t=self.offset+getattr(self,'lead',0.)
+        back=False
+        if self.items:          # exp.249: a Hand out shown on the Hand row has no edge in the bar
+            item=next((i for i in self.items if i[0]==self.current_scene),None)
+            back=bool(item) and any(key=='back' and v>0 for key,v in (item[5] or ()))
         for key,secs in zip(self.STAGE_KEYS,(self.draw_seconds,self.paint_seconds,self.hold_seconds,self.erase_seconds)):
             if secs<=0: continue
-            out.append((key,self._x(t+secs),t)); t+=secs
+            if not (back and key=='hold'):
+                out.append((key,self._x(t+secs),t))
+            t+=secs
         return out
 
     def source_at(self,pos):
@@ -1489,17 +1495,27 @@ class StageTimeline(QFrame):
             dragged=self._ghost is not None and self._ghost[0]==k
             parts=[(key,v) for key,v in (parts or ()) if v>0] or [('draw',secs)]
             whole=sum(v for _,v in parts) or 1.
+            # exp.249 (the user: Hand in / Hand out are already on the Hand row): the bar shows the
+            # element's own work; the hand's way in ('glide') and way back ('back') are not drawn in
+            # it (their time is unchanged, seen on the Hand row as the gap)
+            full=rect
+            cut_in=sum(v for key,v in parts[:1] if key=='glide')
+            cut_out=sum(v for key,v in parts[-1:] if key=='back')
+            if cut_in+cut_out<whole-1e-6:
+                left=full.left()+full.width()*cut_in/whole
+                rect=QRectF(left,full.top(),max(1.,full.right()-full.width()*cut_out/whole-left),full.height())
+            shown_secs=max(0.,secs-cut_in-cut_out) if rect is not full else secs
             path=QPainterPath(); path.addRoundedRect(rect,7,7)
             p.save(); p.setClipPath(path,Qt.ClipOperation.IntersectClip)
             hidden=self.flag(track,'hide') or self.element_flags.get(k,{}).get('hidden')
             if hidden: p.setOpacity(.35)                      # hidden: not in the video
             elif self.element_flags.get(k,{}).get('art_off'): p.setOpacity(.5)   # exp.209: picture off (E)
-            x=rect.left()
+            x=full.left()
             for key,v in parts:
-                w=rect.width()*v/whole
+                w=full.width()*v/whole
                 fill=QColor(colours.get(key,c['draw'])); fill.setAlpha(80 if dragged else 225 if current else 120)
                 p.fillRect(QRectF(x,rect.top(),w,rect.height()),fill)
-                if x>rect.left():
+                if x>rect.left()+.5:
                     p.setPen(QPen(QColor(0,0,0,70),1)); p.drawLine(QPointF(x,rect.top()),QPointF(x,rect.bottom()))
                 x+=w
             p.restore()
@@ -1520,7 +1536,7 @@ class StageTimeline(QFrame):
                 self._mark_icon(p,QPointF(rect.right()-12-n*20,rect.center().y()),which)
             if rect.width()>=30:
                 p.setFont(bold); p.setPen(QColor(c['clip_text'] if current else c['text']))
-                text=label if rect.width()<110 else f'{label}  {secs:.1f}s'
+                text=label if rect.width()<110 else f'{label}  {shown_secs:.1f}s'
                 text=p.fontMetrics().elidedText(text,Qt.TextElideMode.ElideRight,int(rect.width()-16))
                 p.drawText(rect.adjusted(8,0,-8,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,text)
                 p.setFont(small)

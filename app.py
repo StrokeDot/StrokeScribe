@@ -4341,7 +4341,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         lay=self.timeline_layout(width,height)
         items=[]
         for it in lay.items:
-            parts=self.real_parts(it.k,it.length,width,height)
+            parts=self.display_parts(it.k,self.real_parts(it.k,it.length,width,height),width,height)
             items.append((it.k,f'{it.k+1} · {self.scene_label(it.k)}',it.start,it.length,it.track,parts))
         moves=[(m.k,self.scenes[m.k]['transition'],m.start,m.length) for m in lay.moves]
         return items,moves
@@ -4605,18 +4605,30 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         lengths,joins=self.scene_timeline(width,height)
         segments=[]
         for n,(length,join) in enumerate(zip(lengths,joins)):
-            parts=self.real_parts(n,length,width,height)     # exp.176: at their real times
-            try:
-                from frame_render import is_already
-                if is_already(self.preview_scene(n,width,height)[1]):
-                    # exp.245 (the user: the Already there picture looked like a Hand out clip):
-                    # its time on screen is its own part, not the hand's way back
-                    parts=[('still' if key=='hold' else key,v) for key,v in parts]
-            except Exception as exc:
-                import applog; applog.error('Already there on the timeline',exc)
+            parts=self.display_parts(n,self.real_parts(n,length,width,height),width,height)   # exp.176/245/249
             segments.append((f'{n+1} · {self.scene_label(n)}',length,'scene',parts))
             if join>0: segments.append((self.scenes[n]['transition'],join,'join',()))
         return segments,lengths,joins
+
+    def display_parts(self,k,parts,width=960,height=540):
+        """The parts of element k as its bar on the whole-video timeline shows them:
+        exp.245: an Already there element's time on screen is 'still' (not gold like Hand out);
+        exp.249 (the user: Hand in / Hand out are on the Hand row already): when the last part
+        is only the hand going back it is 'back', and like the way in ('glide') it is not drawn
+        in the element's bar. The times do not change."""
+        try:
+            from frame_render import is_already
+            drawing,opts,_,_=self.preview_scene(k,width,height)
+            if is_already(opts):
+                return [('still' if key=='hold' else key,v) for key,v in parts]
+            if parts and parts[0][0]=='glide' and not float(opts.get('pause',0) or 0)>0 \
+                    and not (opts.get('erase') or {}).get('mode'):
+                tail=[i for i,(key,v) in enumerate(parts) if v>0][-1:]
+                if tail and parts[tail[0]][0]=='hold':
+                    return [('back' if i==tail[0] else key,v) for i,(key,v) in enumerate(parts)]
+        except Exception as exc:
+            import applog; applog.error('Element parts on the timeline',exc)
+        return list(parts)
 
     def show_whole_timeline(self,segments,lengths,joins,options):
         """Whole video on the timeline; the edited element keeps its edges, pictures and audio."""
