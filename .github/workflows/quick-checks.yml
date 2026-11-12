@@ -79,7 +79,7 @@ jobs:
         run: |
           set -o pipefail
           python -m compileall -q .
-          python -X faulthandler tools/run_tests.py --limit 300 ${{ steps.pick.outputs.tests }} 2>&1 | tee quick-tests.log
+          python -X faulthandler tools/run_tests.py --limit 300 --each ${{ steps.pick.outputs.tests }} 2>&1 | tee quick-tests.log
       - name: Report failures to the pull request
         if: steps.tests.outcome == 'failure' && github.event_name == 'pull_request'
         env:
