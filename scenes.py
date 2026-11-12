@@ -247,6 +247,22 @@ def hand_handover(items, elements, hidden=()):
             anchor=tuple(o.get('anchor', (.1, .1))))
 
 
+def export_hand_starts(scenes, lay, settings):
+    """exp.236: (start, way in seconds) of the elements' hands (as app.hand_starts)."""
+    if not (settings or {}).get('hand_rest'):
+        return ()
+    default = float((settings or {}).get('hand_rest_travel', 1.5) or 1.5)
+    out = []
+    for it in lay.items:
+        s = scenes[it.k]
+        if s.get('hand_off') or s.get('art_off') or s.get('hidden'):
+            continue
+        glide = s.get('glide') or ()
+        lead = float(glide[0]) if glide and float(glide[0] or 0) > 0 else default
+        out.append((round(it.start, 4), round(lead, 4)))
+    return tuple(out)
+
+
 def flow_hands(items, elements, frames, hidden=()):
     """exp.218 (the user): an element whose hand goes back to its corner 'without stopping'
     (hand_flow 'exact' / 'near'): when the next hand starts the moment it is back in its
@@ -474,7 +490,7 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
         away = list(cameras or ()) + eraser_clips.hand_leaves(
             titles, [dict(uid=u) for u in uids], [q['frame'] for q in prepared],
             lambda sec: timeline_render.page_of(lay, sec))          # exp.186: the hand makes way
-        hand_sig = camera_clips.hand_signature(away)                 # exp.147: the Hand row
+        hand_sig = camera_clips.hand_signature(away, export_hand_starts(scenes, lay, settings))   # exp.147/236
         if hand_sig:
             options.update(hand_away=hand_sig, hand_video_start=lay.items[len(elements)].start)
         own = scenes[len(elements)]
@@ -523,7 +539,8 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
                         rest = dict(rest, _wait_tip=((spot[0] - place[0]) / max(1., place[2]),
                                                      (spot[1] - place[1]) / max(1., place[3])), _spot_place=place)
                 if any(c.get('kind') == camera_clips.MOVE for c in cameras or ()):
-                    rest = dict(rest, _hand_moves=camera_clips.hand_moves(cameras))      # exp.224
+                    rest = dict(rest, _hand_moves=camera_clips.hand_moves(
+                        cameras, export_hand_starts(scenes, lay, settings)))                  # exp.224/236
                 rest = dict(rest, _hand_view=timeline_render.hand_camera_zoom(               # exp.223
                     world, lay, state, elements, [c for c in cameras or () if c.get('hand_fixed')], i / fps))
                 for weight, start in camera_clips.fixed_hand_weight(cameras or (), i / fps):     # exp.222
