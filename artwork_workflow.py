@@ -262,13 +262,10 @@ class ArtworkWorkflow:
                 self._reset_artwork_project()
             elif placement=='add' and self.drawing:
                 if ctx.get('same_spot'):
+                    # exp.244 (the user): at its normal size in the middle of what the camera
+                    # shows; nothing is made smaller to fit (the existing picture is not touched)
                     self.store_scene(thumbnail=False)
-                    members=self.page_members()
-                    spot=self.free_spot(self.page_occupancy(members))
-                    if spot is None and members==[self.scene_index] and self.artwork_size.value()>60:
-                        self.artwork_size.setValue(55.);self.picture_x.setValue(-22.);self.picture_y.setValue(0.)
-                        self.store_scene(thumbnail=False)
-                        spot=self.free_spot(self.page_occupancy(members))
+                    spot=self.same_page_spot()
                 self.record_structure('add element')
                 self._leave_scene()
                 self._stash_history()

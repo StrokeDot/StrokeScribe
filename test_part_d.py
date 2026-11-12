@@ -81,11 +81,11 @@ class PageTests(unittest.TestCase):
             w.duration.setValue(1.)
             self.assertTrue(w.add_picture())                                     # room is made
             self.assertEqual(w.scenes[0]['transition'], 'Same page')
-            # exp.200: what is already on the page is never moved or made smaller; with no free
-            # place, the new picture goes in the middle, smaller, to be dragged where you want it
+            # exp.200: what is already on the page is never moved or made smaller; exp.244: the
+            # new picture comes at its normal size in the middle, to be placed by hand
             first = w.scenes[0]['state']['settings']
             self.assertEqual(float(first['picture_x']), 0.)                      # not moved
-            self.assertLess(w.artwork_size.value(), 100.)                        # the new one: smaller
+            self.assertEqual(w.artwork_size.value(), 100.)                       # its normal size
             self.assertEqual(w.scene_list.item(1).text().split()[1], '+')
             # exp.200: "On this page" always adds on the same page (a new place is the user's
             # choice: "In a new place", where the camera moves)

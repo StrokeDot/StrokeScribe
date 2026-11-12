@@ -3748,6 +3748,26 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 return size*100,round((cx-.5)*100,1),round((cy-.5)*100,1)
         return None
 
+    def same_page_spot(self):
+        """exp.244 (the user: "On this page" made the new picture smaller to fit what the camera
+        shows; "you don't need to do that, I will do it manually"): (artwork size, x %, y %) of
+        a new element on this page: its normal size (100), in the middle of what this
+        element's camera shows (the middle of the page without a camera of its own). What is
+        already on the page is never moved or made smaller (exp.200)."""
+        centre=(0.,0.)
+        try:
+            view=(self.scenes[self.scene_index].get('board') or {}).get('view')
+            if view:
+                import board as _board
+                aspect=self.board_aspect()
+                frame=self.board_frames()[self.scene_index]
+                fl,ft,fr,fb=_board.rect(frame,aspect); vl,vt,vr,vb=_board.rect(view,aspect)
+                cx=((vl+vr)/2-fl)/max(1e-9,fr-fl); cy=((vt+vb)/2-ft)/max(1e-9,fb-ft)
+                centre=(round((min(1.,max(0.,cx))-.5)*100,1),round((min(1.,max(0.,cy))-.5)*100,1))
+        except Exception as exc:
+            import applog; applog.error('Middle of the camera',exc)
+        return (100.,centre[0],centre[1])
+
     def add_picture(self):
         """Another picture on the same page (like VideoScribe): it goes to the biggest
         free place on the page; when the page is full, to a new page (the camera moves).
@@ -3756,37 +3776,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import copy
         self.playing=False
         self.store_scene(thumbnail=False)
-        members=self.page_members()
         current_board=copy.deepcopy(self.scenes[self.scene_index].get('board'))
-        view=(current_board or {}).get('view')
-        used=self.page_occupancy(members)
-        sizes=(.6,.55,.5,.42,.34); centre=(0.,0.); share=1.
-        if view:
-            # exp.208 (the user: the text went outside what the camera showed, and the camera
-            # pulled back to show it): the new element goes in a free place of what the camera
-            # of this element shows, at a size that fits there.
-            try:
-                aspect=self.board_aspect()
-                frame=self.board_frames()[self.scene_index]
-                import board as _board
-                fl,ft,fr,fb=_board.rect(frame,aspect); vl,vt,vr,vb=_board.rect(view,aspect)
-                h,w=used.shape
-                x0=int(max(0,min(w,round((vl-fl)/(fr-fl)*w)))); x1=int(max(0,min(w,round((vr-fl)/(fr-fl)*w))))
-                y0=int(max(0,min(h,round((vt-ft)/(fb-ft)*h)))); y1=int(max(0,min(h,round((vb-ft)/(fb-ft)*h))))
-                if x1-x0>8 and y1-y0>8:
-                    outside=used.copy(); outside[:]=True; outside[y0:y1,x0:x1]=used[y0:y1,x0:x1]
-                    used=outside
-                    share=min(1.,(x1-x0)/w)
-                    sizes=tuple(s*share for s in sizes)
-                    centre=(round(((x0+x1)/2/w-.5)*100,1),round(((y0+y1)/2/h-.5)*100,1))
-            except Exception as exc:
-                import applog; applog.error('Free place in the camera',exc)
-        spot=self.free_spot(used,sizes)
-        # exp.200 (the user): what is already on the page is never moved or made smaller.
-        # With no free place, the new picture goes in the middle, smaller, to be dragged
-        # where you want it (and Set camera chooses what the camera shows).
-        if spot is None:
-            spot=(40.*share,centre[0],centre[1])
+        spot=self.same_page_spot()
         self.record_structure('add picture on the same page')
         self._leave_scene()
         self._stash_history()
@@ -3802,8 +3793,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.scenes.insert(self.scene_index+1,new)
         self._base_cache=OrderedDict()
         self._enter_scene(self.scene_index+1)
-        self.status.setText('Picture added in a free place on the same page. Drag it on the preview to move it; '
-                            'Artwork size makes it bigger or smaller. When the page is full, the next one goes to a new page.')
+        self.status.setText('Picture added on the same page, at its normal size. Drag it on the preview to move it; '
+                            'Artwork size makes it bigger or smaller.')
         return True
 
     def delete_scene(self):
@@ -4242,7 +4233,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from frame_render import is_already, timeline_seconds
         if is_already(options):
             # exp.206: Already there: only the time the camera looks at it
-            return [('hold',timeline_seconds(None,{k:v for k,v in options.items() if k!='erase'})),
+            # exp.244 (the user: the timeline broke after an "Already there" element): every
+            # part is named, the ones it does not have are 0 s (the timeline reads them all)
+            return [('draw',0.),('paint',0.),
+                    ('hold',timeline_seconds(None,{k:v for k,v in options.items() if k!='erase'})),
                     ('erase',float(erase['seconds']) if erase else 0.)]
         if (options.get('entrance') or 'draw')!='draw':
             # Comes in with an effect: one Move in clip (then the painting, when only the lines move in).
