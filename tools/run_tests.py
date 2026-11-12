@@ -4,8 +4,14 @@ If one test runs longer than the limit (for example a window waiting for a
 click that never comes), print where every thread is, name the test, and stop
 with an error instead of hanging until the CI job times out.
 
-    python tools/run_tests.py [--limit SECONDS] module [module ...]
+    python tools/run_tests.py [--limit SECONDS] [--each] module [module ...]
+
+--each (1.0.0 release suite): every module runs in its own fresh process. In one
+process the whole suite slowed down from window to window (two minutes for the
+first fifty tests, more than half an hour for fifty later ones) and could not
+finish in the release time; separate processes keep every module as fast as alone.
 """
+import subprocess
 import os
 import sys
 import threading
@@ -47,10 +53,33 @@ def _watch(limit):
             os._exit(3)
 
 
+def _each(modules, limit):
+    failed = []
+    for name in modules:
+        started = time.monotonic()
+        print(f'\n===== {name} =====', flush=True)
+        code = subprocess.call([sys.executable, '-X', 'faulthandler', str(Path(__file__).resolve()),
+                                '--limit', str(limit), name], cwd=str(ROOT))
+        print(f'===== {name}: {"ok" if code == 0 else f"FAILED ({code})"} '
+              f'in {time.monotonic() - started:.0f} s =====', flush=True)
+        if code != 0:
+            failed.append(name)
+    print(f'\n{len(modules) - len(failed)} of {len(modules)} modules passed', flush=True)
+    if failed:
+        print('FAILED modules: ' + ' '.join(failed), flush=True)
+    return 1 if failed else 0
+
+
 def main(argv):
     limit = 420.
-    if argv[:1] == ['--limit']:
-        limit = float(argv[1]); argv = argv[2:]
+    each = False
+    while argv[:1] in (['--limit'], ['--each']):
+        if argv[0] == '--each':
+            each = True; argv = argv[1:]
+        else:
+            limit = float(argv[1]); argv = argv[2:]
+    if each:
+        return _each(argv, limit)
     threading.Thread(target=_watch, args=(limit,), daemon=True).start()
     if os.environ.get('QT_QPA_PLATFORM') == 'offscreen':
         # Only the headless regression harness opts into unattended shutdown;
