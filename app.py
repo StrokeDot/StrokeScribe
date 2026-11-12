@@ -7001,7 +7001,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             import move_in
             move=move_in.move_hand({'move_hand':True,'move_hand_path':getattr(self,'move_hand_path',None),
                                     'move_hand_gx':self.move_hand_gx.value(),'move_hand_gy':self.move_hand_gy.value(),
-                                    'left_handed':self.left_handed.isChecked()})[0] \
+                                    'left_handed':self.left_handed.isChecked(),
+                                    'ax':self.ax.value() if hasattr(self,'ax') else .08,
+                                    'ay':self.ay.value() if hasattr(self,'ay') else .13},self.hand)[0] \
                 if hasattr(self,'move_hand_gx') else options.get('move_hand')
             erase=None
             if hasattr(self,'eraser_hand'):
