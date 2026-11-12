@@ -138,7 +138,7 @@ class ReportedBugTests(unittest.TestCase):
             self.assertIn('Stroke',w.brand_wordmark.text())
             self.assertIn('Scribe',w.brand_wordmark.text())
             self.assertIn('#9A82FF',w.brand_wordmark.text())
-            self.assertEqual(w.brand_version.text().startswith('Prototype v'),True)
+            self.assertTrue(w.brand_version.text().endswith('v'+__import__('version').APP_VERSION))
             self.assertFalse(w.undo_button.isEnabled())
             self.assertFalse(w.redo_button.isEnabled())
             w.order.setCurrentRow(0)
