@@ -24,6 +24,24 @@ def element_frame(drawing, options, fraction, width, height, layers):
     return compose_frame(drawing, max(0., min(1., fraction)), opts)
 
 
+_FINISHED_FRAMES = {}
+
+
+def _finished_frame(el, width, height):
+    """The element's own last frame (art only) at this size, kept while it does not change."""
+    w, h = max(2, int(round(width))), max(2, int(round(height)))
+    opts = el['options']
+    key = (id(el['drawing']), id(opts), w, h)
+    hit = _FINISHED_FRAMES.get(key)
+    if hit is not None and hit[0] is el['drawing'] and hit[1] is opts:
+        return hit[2]
+    image = element_frame(el['drawing'], opts, 1., w, h, 'art')
+    if len(_FINISHED_FRAMES) > 24:
+        _FINISHED_FRAMES.pop(next(iter(_FINISHED_FRAMES)))
+    _FINISHED_FRAMES[key] = (el['drawing'], opts, image)
+    return image
+
+
 def camera_at(camera, state, k):
     """exp.170 (the user: a zoom got stuck between two elements, then jumped): element k's
     camera at this moment. The camera clips run on the video's own clock, so after the element
@@ -389,7 +407,14 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
     out = _erasing(world, elements, erasers, view, out, width, height, state, glides)
     tracks = {it.k: it.track for it in lay.items}
     waiting = sorted(titles or (), key=lambda o: int(o.get('track', 0)))
-    hand_k = _hand_element(state, elements, tracks)
+    # exp.248 (the user: with picture 5 above, the hand going to draw 4 was not seen): the
+    # drawing hand is the main hand; a hand carrying a picture in comes as well (more_hands)
+    drawing = [(k, f) for k, f in state.active if (elements[k]['options'].get('entrance') or 'draw') == 'draw']
+    if drawing:
+        from dataclasses import replace
+        hand_k = _hand_element(replace(state, active=drawing, top=drawing[-1][0]), elements, tracks)
+    else:
+        hand_k = _hand_element(state, elements, tracks)
     hand_layer = None
     active = dict(state.active)
     finished = [k for k in state.finished if k not in erasers and k not in active]
@@ -407,7 +432,9 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
         opts = el['options']
         if k not in active:
             if k not in art_off:
-                out = world.put(out, world.finished(k, w), world.frames[k], view,
+                # exp.248 (the user: the picture jumped a little when it finished): drawn exactly
+                # as in its last frame (same size and place), not from the board's smaller copy
+                out = world.put(out, _finished_frame(el, w, h), world.frames[k], view,
                                 opts.get('blend_mode', 'Normal'), opts.get('artwork_opacity', 100))
             continue
         fraction = active[k]
