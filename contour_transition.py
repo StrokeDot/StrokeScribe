@@ -119,6 +119,10 @@ def render_transition(drawing, image, width, height, progress, thickness,
     painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
     painter.drawImage(0,0,mask)
     painter.end()
+    if reveal_mode == 'adaptive' and paint_progress < 1:     # exp.2: pencil first, then colour
+        from adaptive_hand import under_pencil
+        painted = under_pencil(painted,drawing,image,width,height,rect,paint_progress,
+                               brush_width,stroke_spacing)
     contours = remaining_contours(drawing,progress,
                                   getattr(drawing,'retirement_direction','forward'))
     outline = render(contours,1,width,height,thickness)

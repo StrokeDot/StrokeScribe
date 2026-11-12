@@ -138,6 +138,8 @@ def paint_frame(drawing,image,width,height,progress,thickness,brush_width,
     p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
     p.drawImage(0,0,mask)
     p.end()
+    from adaptive_hand import under_pencil                  # exp.2: pencil first, then colour
+    result=under_pencil(result,drawing,image,width,height,rect,progress,brush_width,stroke_spacing)
     if show_outlines:
         plan=plan_for(drawing,image,brush_width,stroke_spacing)
         guides=render(drawing,1,width,height,thickness,image_timing=False)

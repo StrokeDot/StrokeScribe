@@ -3358,6 +3358,14 @@ def build_workspace(w, Canvas, BRAND_ICON):
                             'Smooth brush: a smooth, clean edge that follows the brush. '
                             'Ink appearance: the paint soaks in like ink, with a ragged, grainy edge.')
     a2.addRow('Paint look',w.paint_look)
+    # exp.2 (the user: "pencil first, then colour"): a pencil pass before the colour
+    w.pencil_first=QComboBox()
+    w.pencil_first.addItems(['Off','Hand drawing — real strokes and lines','Painter — real parts, strokes follow the shape',
+                             'Adaptive Hand Painting','Zigzag sweep'])
+    w.pencil_first.setToolTip('Draw the picture in pencil first (its gray tones), then paint the colour over it '
+                              'with the Paint mode. Choose how the pencil pass is drawn; it takes half the paint time.')
+    a2.addRow('Pencil first',w.pencil_first)
+    w.pencil_first.currentIndexChanged.connect(lambda *_: w.refresh())
     a2.setRowVisible(w.paint_look,False)      # exp.181: chosen in the Paint mode picker (with its preview)
     w.paint_look.currentIndexChanged.connect(lambda *_: w.refresh())
     def _show_look(*_):

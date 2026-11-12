@@ -126,8 +126,10 @@ def strokes_on_canvas(drawing, width, height, artwork_scale=1.0):
 
 def pen_at(drawing, fraction, width=1920, height=1080, duration=4, fade_duration=.4,
            hold_duration=.6, final_image=None, reveal_mode='adaptive', brush_width=.14,
-           stroke_spacing=.55, artwork_scale=1.0, erase=None, **_ignored):
+           stroke_spacing=.55, artwork_scale=1.0, erase=None, pencil_first='', **_ignored):
     """The pen at a timeline position 0..1 (same rules as render_color_timeline)."""
+    from adaptive_hand import apply_pencil
+    apply_pencil(drawing, pencil_first)               # exp.2: the pencil pass is part of the route
     if erase and erase.get('mode'):
         from frame_render import erase_setup, split_erase
         options = dict(width=width, height=height, duration=duration, fade_duration=fade_duration,

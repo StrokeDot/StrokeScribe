@@ -131,6 +131,9 @@ def build_field(plan, image):
 
 
 PENCIL_LINES = True      # tests: False keeps the plain round strokes
+PENCIL = .6              # exp.2: the stroke is this share of the brush size (a pencil, more strokes)
+LEG = 4.5                # exp.2: a stroke is at most this many stroke radii long...
+LEG_MIN, LEG_MAX = .03, .08   # ...but between these shares of the picture's width
 
 
 SAME_COLOUR = 30.        # RGB distance: a stroke may go on into a neighbouring part of this colour
@@ -235,11 +238,14 @@ def _capsules(canvas, strokes, value=255):
     return canvas
 
 
-def _hatch(mask, r, spacing, cursor):
-    """Zigzag strokes over one part (a boolean mask, local coordinates): passes across the
-    part's narrow side, one after the other along its long side, like colouring in.
-    Returns [[(x, y), ...] per continuous pass group] as lists of stroke runs
-    [(x0, y0, x1, y1)], in drawing order."""
+def _hatch(mask, r, spacing, cursor, leg=None):
+    """Zigzag strokes over one part (a boolean mask, local coordinates): short back-and-forth
+    passes across the part's narrow side, moving along its long side, like hatching.
+
+    leg (exp.2, the user: "the drawing hand requires more zigzag movement"): the longest a
+    single stroke may be; a wider part is hatched in bands of that width, one after the other
+    (snaking), so the hand keeps making short quick strokes instead of long sweeps.
+    Returns [(x0, y0, x1, y1)] in drawing order."""
     ys, xs = np.nonzero(mask)
     if xs.size == 0:
         return []
@@ -261,39 +267,51 @@ def _hatch(mask, r, spacing, cursor):
     step = (hi - lo) / count if count > 1 else 0.
     lines = [lo + (hi - lo) / 2] if count == 1 else [lo + step * (k + .5) for k in range(count)]
     # start from the end of the part nearer the cursor
-    start_lo = np.hypot(*(c + u * lo - cursor)) <= np.hypot(*(c + u * hi - cursor))
-    if not start_lo:
+    if np.hypot(*(c + u * lo - cursor)) > np.hypot(*(c + u * hi - cursor)):
         lines.reverse()
-    runs_by_line = []
-    for uk in lines:
-        band = np.abs(pu - uk) <= .75
-        if not band.any():
-            continue
-        vs = np.sort(pn[band])
-        cuts = np.nonzero(np.diff(vs) > 2.)[0]
-        starts = np.concatenate([[0], cuts + 1]); ends = np.concatenate([cuts, [vs.size - 1]])
-        runs = []
-        for s0, s1 in zip(starts, ends):
-            v0, v1 = vs[s0] - .5, vs[s1] + .5
-            inset = min(r * .45, (v1 - v0) / 2)
-            a = c + u * uk + n * (v0 + inset)
-            b = c + u * uk + n * (v1 - inset)
-            runs.append((a, b))
-        runs_by_line.append(runs)
+    nlo, nhi = pn.min() - .5, pn.max() + .5
+    width = nhi - nlo
+    bands = max(1, int(math.ceil(width / leg))) if leg else 1
+    edges = [nlo + width * k / bands for k in range(bands + 1)]
+    pairs = list(zip(edges[:-1], edges[1:]))
+    if np.hypot(*(c + n * nlo - cursor)) > np.hypot(*(c + n * nhi - cursor)):
+        pairs.reverse()                  # the band nearer the cursor first
     out = []
     forward = True
-    for runs in runs_by_line:
-        runs = runs if forward else [(b, a) for a, b in reversed(runs)]
-        out.extend((a[0], a[1], b[0], b[1]) for a, b in runs)
-        forward = not forward
+    for index, (b0, b1) in enumerate(pairs):
+        order = lines if index % 2 == 0 else lines[::-1]       # snake from band to band
+        for uk in order:
+            sel = (np.abs(pu - uk) <= .75) & (pn >= b0 - .5) & (pn <= b1 + .5)
+            if not sel.any():
+                continue
+            vs = np.sort(pn[sel])
+            cuts = np.nonzero(np.diff(vs) > 2.)[0]
+            starts = np.concatenate([[0], cuts + 1]); ends = np.concatenate([cuts, [vs.size - 1]])
+            runs = []
+            for s0, s1 in zip(starts, ends):
+                v0, v1 = max(vs[s0] - .5, b0), min(vs[s1] + .5, b1)
+                if v1 <= v0:
+                    continue
+                inset = min(r * .45, (v1 - v0) / 2)
+                runs.append((c + u * uk + n * (v0 + inset), c + u * uk + n * (v1 - inset)))
+            if not runs:
+                continue
+            runs = runs if forward else [(b, a) for a, b in reversed(runs)]
+            out.extend((a[0], a[1], b[0], b[1]) for a, b in runs)
+            forward = not forward
     return out
 
 
 def build_stroke_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
-    """The Adaptive plan's parts and order, painted with real zigzag strokes (see module)."""
+    """Painter's parts and order, drawn with real zigzag strokes (see module).
+
+    exp.2 (the user: "only go with the painter... also have this option of colour areas, AI
+    parts"): the parts are Painter's (colour areas, or the real parts the AI found) in
+    Painter's order (big parts first, or the order set in Line order)."""
     import cv2
-    from adaptive_hand import build_plan, pil_image, PaintPlan, Segment
-    base = build_plan(drawing, image, brush_width, stroke_spacing)
+    from adaptive_hand import pil_image, PaintPlan, Segment
+    from painter_paint import build_painter_plan
+    base = build_painter_plan(drawing, image, brush_width, stroke_spacing)
     gw, gh = base.size
     source = pil_image(image).convert('RGBA')
     iw, ih = source.size
@@ -360,8 +378,10 @@ def build_stroke_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
             _, k, m = pieces.pop(0)
             m8 = m.astype(np.uint8)
             dt = cv2.distanceTransform(np.pad(m8, 1), cv2.DIST_L2, 3)[1:-1, 1:-1]
-            r = max(1.2, min(maximum, float(dt.max()) * .95))
-            strokes = _hatch(m, r, spacing, cursor - (x0, y0))
+            # a pencil-sized stroke (smaller than a brush) and short legs: many quick strokes
+            r = max(1.2, min(maximum * PENCIL, float(dt.max()) * .95))
+            leg = min(LEG_MAX * W, max(LEG_MIN * W, LEG * r))
+            strokes = _hatch(m, r, spacing, cursor - (x0, y0), leg)
             drawn = []
             for sx, sy, ex, ey in strokes:
                 a, b = (sx + x0, sy + y0), (ex + x0, ey + y0)

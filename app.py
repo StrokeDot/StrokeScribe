@@ -992,7 +992,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # historical full-opacity, no-cleanup defaults when switching.
             for name,default in (('artwork_opacity',100),('paper_cleanup',False),
                                  ('paper_tolerance',22),('paper_softness',8),('move_hand',False),
-                                 ('entrance_part','The whole picture'),('paint_look','Classic'),
+                                 ('entrance_part','The whole picture'),('paint_look','Classic'),('pencil_first','Off'),
                                  *__import__('picture_look').DEFAULTS.items()):
                 if name not in settings:
                     widget=getattr(self,name,None)
@@ -2557,7 +2557,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.refresh()
 
     # ------------------------------------------------------------ projects
-    PROJECT_SETTINGS=('eraser_hand_on','eraser_hand','eraser_hand_size','paint_look','duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
+    PROJECT_SETTINGS=('eraser_hand_on','eraser_hand','eraser_hand_size','paint_look','pencil_first','duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
                       'use_color','preserve_colors','showhand','left_handed','paint_left_handed','entrance','entrance_part','pause_after','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
@@ -3082,6 +3082,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                        # Older projects: slides came in without a hand.
                        'move_hand':False,'entrance_part':'The whole picture',
                        'paint_look':'Classic',          # exp.180: Paint look (older projects: Classic)
+                       'pencil_first':'Off',            # exp.2: no pencil pass (older projects)
                        'eraser_hand':'Built-in eraser','eraser_hand_size':45.,'eraser_hand_on':True,   # exp.192/195
                        # exp.115: the element's own camera (older projects: none).
                        'cam_start_zoom':100.,'cam_start_x':50.,'cam_start_y':50.,'cam_end_zoom':160.,
@@ -5281,7 +5282,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 # set and then silently ignored (exp.100).
                 switched=False
                 if (paint or circles) and getattr(dialog,'parts_changed',False) and \
-                        self.reveal_mode.currentText()!=self.PAINTER_TEXT:
+                        self.reveal_mode.currentText() not in (self.PAINTER_TEXT,self.HAND_DRAWING_TEXT):
                     i=self.reveal_mode.findText(self.PAINTER_TEXT)
                     if i>=0:
                         self.reveal_mode.setCurrentIndex(i); switched=True
@@ -5595,6 +5596,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     # ------------------------------------------------------------ AI parts (Painter)
     PAINTER_TEXT='Painter — real parts, strokes follow the shape'
+    HAND_DRAWING_TEXT='Hand drawing — real strokes and lines'   # exp.2: draws Painter's parts
 
     def update_painter_parts(self):
         """The Parts row shows only for Painter: which parts it paints, and the AI button."""
@@ -5718,7 +5720,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if result and dialog.chosen and allowed(dialog.chosen):
                 combo.setCurrentIndex(combo.findText(dialog.chosen))
                 self.paint_look.setCurrentText(dialog.look)       # exp.181: chosen in the picker
-                if dialog.chosen==self.PAINTER_TEXT and dialog.parts_changed():
+                if dialog.chosen in (self.PAINTER_TEXT,self.HAND_DRAWING_TEXT) and dialog.parts_changed():
                     self.set_ai_parts(dialog.ai_labels if dialog.parts=='ai' else None)   # exp.184
             self.paint_mode_dialog=None
             dialog.deleteLater()

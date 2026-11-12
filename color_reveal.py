@@ -271,9 +271,12 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
                           final_image=None, thickness=1., hand=None,
                           hand_scale=.18, anchor=(.1,.1), reveal_mode='fade',
                           brush_width=.14, painting_hand=None, stroke_spacing=.55,
-                          paper_cleanup=False,paper_tolerance=22,paper_softness=8,paint_look='classic'):
+                          paper_cleanup=False,paper_tolerance=22,paper_softness=8,paint_look='classic',
+                          pencil_first=''):
     """Show SVG drawing, then fade, brush, adaptive or zigzag painting."""
     drawing.paint_look=paint_look or 'classic'      # exp.180: Paint look (adaptive_hand.PAINT_LOOKS)
+    from adaptive_hand import apply_pencil
+    apply_pencil(drawing,pencil_first)                # exp.2: pencil first, then colour
     drawing.paint_seconds=float(fade_duration or 0)  # exp.228: the hand settles on its last stroke in time
     if final_image is None or final_image.isNull():
         return render(drawing,fraction,width,height,thickness,hand,hand_scale,anchor)

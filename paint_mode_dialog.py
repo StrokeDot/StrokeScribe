@@ -60,6 +60,9 @@ SHORT = {'Adaptive Hand Painting': 'Adaptive', 'Adaptive — Short up/down strok
 
 
 PAINTER = 'Painter — real parts, strokes follow the shape'
+HAND_DRAWING = 'Hand drawing — real strokes and lines'
+# exp.2 (the user): Hand drawing draws Painter's parts too, so both offer the Parts choice
+WITH_PARTS = (PAINTER, HAND_DRAWING)
 
 
 def short(text):
@@ -111,7 +114,7 @@ class PaintModeDialog(QDialog):
         controls.addWidget(self.pause_button); controls.addStretch(1)
         parts_row = QHBoxLayout(); side.addLayout(parts_row)
         self.parts_label = QLabel('Parts')
-        self.parts_label.setToolTip('How Painter cuts the picture into the pieces it paints one by one.')
+        self.parts_label.setToolTip('How Painter and Hand drawing cut the picture into the pieces they draw one by one.')
         parts_row.addWidget(self.parts_label)
         self.parts_buttons = {}
         for key, name, tip in (('colour', 'Colour areas', 'Pieces where the colour or shade changes (the usual way).'),
@@ -177,7 +180,7 @@ class PaintModeDialog(QDialog):
         self.chosen = mode
         self.title.setText(short(mode))
         for widget in [self.parts_label, *self.parts_buttons.values()]:
-            widget.setVisible(mode == PAINTER)            # Parts are Painter's
+            widget.setVisible(mode in WITH_PARTS)         # Painter's parts (Hand drawing uses them too)
         self.about.setText(DESCRIPTIONS.get(mode, ''))
         self.start_preview(mode)
 
@@ -199,12 +202,12 @@ class PaintModeDialog(QDialog):
             (self._parts_start[0], self._parts_start[1] if self._parts_start[0] == 'ai' else None)
 
     def _key(self):
-        return (self.chosen, self.look, self.parts if self.chosen == PAINTER else '')
+        return (self.chosen, self.look, self.parts if self.chosen in WITH_PARTS else '')
 
     def _with_parts(self, mode, make):
         """make() with this window's Parts on the element (only while it is made)."""
         drawing = self.window_.drawing
-        if mode != PAINTER or drawing is None:
+        if mode not in WITH_PARTS or drawing is None:
             return make()
         import hashlib
         names = ('ai_parts_image', 'ai_parts_digest', 'ai_parts_count')
@@ -253,7 +256,7 @@ class PaintModeDialog(QDialog):
     def start_preview(self, mode):
         self.play_timer.stop(); self.render_timer.stop()
         self._shown = 0
-        key = (mode, self.look, self.parts if mode == PAINTER else '')
+        key = (mode, self.look, self.parts if mode in WITH_PARTS else '')
         if key in self._frames and len(self._frames[key]) == PREVIEW_FRAMES:
             self.note.setText('')
             self.play(); return

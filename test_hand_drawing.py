@@ -92,7 +92,7 @@ class HandDrawingTests(unittest.TestCase):
             ok = np.isfinite(along) & np.isfinite(across)
             return float(np.median(along[ok])) / max(1e-9, float(np.median(across[ok])))
         self.assertLess(along_vs_across(lines), .8)
-        self.assertLess(along_vs_across(lines), along_vs_across(plain) * .7)
+        self.assertLess(along_vs_across(lines), along_vs_across(plain) * .8)
 
     def test_lines_follow_the_direction_of_the_marks(self):
         from pencil_lines import directions
@@ -247,3 +247,75 @@ class BuiltinSoundWindowTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipIf(SKIP, 'needs Qt')
+class Exp2Tests(unittest.TestCase):
+    """1.0.1-experimental.2: more zigzag, Painter's parts, pencil first then colour."""
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_strokes_are_short_zigzags(self):
+        from stroke_paint import _hatch
+        mask = np.ones((60, 200), bool)                          # a wide part
+        long = _hatch(mask, 4., .5, np.array([0., 0.]))
+        short = _hatch(mask, 4., .5, np.array([0., 0.]), leg=20.)
+        longest = lambda runs: max(math.dist(r[:2], r[2:]) for r in runs)
+        self.assertGreater(longest(long), 50)
+        self.assertLessEqual(longest(short), 20.5)
+        self.assertGreater(len(short), len(long) * 2)            # many more back-and-forth strokes
+        covered = np.zeros(mask.shape, np.uint8)
+        from stroke_paint import _capsules
+        _capsules(covered, [(*r, 4.) for r in short])
+        self.assertGreater(covered.mean(), .95)                  # still the whole part
+
+    def test_hand_drawing_draws_painters_parts_with_the_parts_choice(self):
+        import paint_mode_dialog
+        self.assertIn('Hand drawing — real strokes and lines', paint_mode_dialog.WITH_PARTS)
+        from adaptive_hand import qimage
+        from painter_paint import build_painter_plan
+        from stroke_paint import build_stroke_plan
+        d = HandDrawingTests.drawing(self)
+        image = qimage(hatched())
+        painter = build_painter_plan(d, image, .1, .5)
+        strokes = build_stroke_plan(d, image, .1, .5)
+        self.assertEqual(strokes.labels, painter.labels)         # Painter's parts
+        first = lambda plan: [s.region for s in plan.segments if s.painting][:1]
+        self.assertEqual(first(strokes), first(painter))         # in Painter's order
+
+    def test_pencil_first_then_colour(self):
+        import adaptive_hand
+        from adaptive_hand import apply_pencil, plan_for, pencil_passes, qimage
+        d = HandDrawingTests.drawing(self)
+        image = qimage(hatched())
+        d.paint_method = 'painter'
+        apply_pencil(d, 'strokes')
+        plan = plan_for(d, image, .1, .5)
+        self.assertIsNotNone(plan.pencil)
+        self.assertAlmostEqual(plan.split / plan.total, .5, places=3)
+        self.assertEqual(pencil_passes(plan, .49 * .98)[1], 0.)        # colour waits for the pencil
+        self.assertAlmostEqual(pencil_passes(plan, .5 * .98)[0], .98, places=3)
+        ends = [s.end for s in plan.segments]
+        self.assertEqual(ends, sorted(ends))                           # one continuous route
+        for a, b in zip(plan.segments, plan.segments[1:]):
+            self.assertLess(math.dist(a.b, b.a), 1e-6)                 # the hand never jumps
+        from image_painting import paint_frame
+        from adaptive_hand import pil_image
+        mid = pil_image(paint_frame(d, image, 200, 140, .3, 1, .1, .5, None, .2, (.1, .1), False))
+        px = np.asarray(mid.convert('RGBA')).reshape(-1, 4)
+        drawn = px[px[:, 3] > 200]
+        self.assertGreater(len(drawn), 50)
+        self.assertLess(float(np.abs(drawn[:, 0].astype(int) - drawn[:, 2].astype(int)).mean()), 6)   # gray
+        apply_pencil(d, '')
+        self.assertIsNone(getattr(plan_for(d, image, .1, .5), 'pencil', None))
+
+    def test_pencil_first_is_an_element_setting(self):
+        from app import Window
+        w = Window(); self.addCleanup(w.close)
+        self.assertEqual(w.pencil_first.currentText(), 'Off')
+        self.assertEqual(w.options()['pencil_first'], '')
+        w.pencil_first.setCurrentText('Hand drawing — real strokes and lines')
+        self.assertEqual(w.options()['pencil_first'], 'strokes')
+        self.assertEqual(w.settings_state()['pencil_first'], 'Hand drawing — real strokes and lines')

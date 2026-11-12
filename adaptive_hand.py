@@ -472,7 +472,7 @@ def _plan_key(drawing,image,brush_width,stroke_spacing):
             float(brush_width),float(stroke_spacing),getattr(drawing,'paint_method','adaptive'),
             COLOUR_SPLIT,getattr(drawing,'ai_parts_digest',None),
             tuple(getattr(drawing,'paint_part_order',None) or ()),
-            repr(getattr(drawing,'paint_circles',None) or ()))
+            repr(getattr(drawing,'paint_circles',None) or ()),pencil_key(drawing))
 
 _FAST=OrderedDict()      # exp.233 (audit C2): quick identity of a plan's inputs -> its full key
 
@@ -489,7 +489,8 @@ def _fast_entry(drawing,image,brush_width,stroke_spacing):
           tuple(drawing.bounds),image.cacheKey(),image.width(),image.height(),
           float(brush_width),float(stroke_spacing),getattr(drawing,'paint_method','adaptive'),
           COLOUR_SPLIT,getattr(drawing,'ai_parts_digest',None),
-          tuple(getattr(drawing,'paint_part_order',None) or ()),repr(getattr(drawing,'paint_circles',None) or ()))
+          tuple(getattr(drawing,'paint_part_order',None) or ()),repr(getattr(drawing,'paint_circles',None) or ()),
+          pencil_key(drawing))
     entry=_FAST.get(fast)
     if entry is None:
         key=_plan_key(drawing,image,brush_width,stroke_spacing)
@@ -575,7 +576,74 @@ def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
     return plan
 
 
+# exp.2 (the user: "pencil first, then colour"): an element can be drawn twice: first in pencil
+# (a gray version of the picture, drawn by Hand drawing or another mode), then painted in colour
+# by its paint mode over the pencil. Both passes are one plan, so the hand, the sound and the
+# camera simply follow it; the colour covers the pencil exactly where it is painted.
+PENCIL_SHARE=.5          # of the paint time, for the pencil pass
+
+
+PENCIL_METHODS=('adaptive','zigzag','rows','columns','short_zigzag','painter','strokes')
+
+
+def apply_pencil(drawing,value):
+    """Sets an element's pencil pass from its option: a paint mode code ('strokes'...), or ''
+    for none."""
+    value=value if value in PENCIL_METHODS else ''
+    drawing.pencil_first=bool(value)
+    drawing.pencil_method=value or 'strokes'
+
+
+def pencil_key(drawing):
+    if not getattr(drawing,'pencil_first',False): return None
+    return (getattr(drawing,'pencil_method','strokes') or 'strokes',
+            float(getattr(drawing,'pencil_share',PENCIL_SHARE) or PENCIL_SHARE))
+
+
+def _pencil_plan(drawing,image,brush_width,stroke_spacing):
+    """The pencil pass, then the colour pass, as one plan (.pencil / .colour keep the passes)."""
+    import copy
+    method,share=pencil_key(drawing)
+    share=min(.85,max(.15,share))
+    passes=[]
+    for paint_method in (method,getattr(drawing,'paint_method','adaptive') or 'adaptive'):
+        part=copy.copy(drawing)          # the element is not touched (the window may read it now)
+        part.pencil_first=False; part.paint_method=paint_method
+        passes.append((plan_for(part,image,brush_width,stroke_spacing),paint_method))
+    (pencil,pencil_method),(colour,colour_method)=passes
+    scale=share/(1.-share)*max(1e-9,colour.total)/max(1e-9,pencil.total)
+    segments=[Segment(a.a,a.b,a.radius,a.region,a.painting,a.start*scale,a.end*scale) for a in pencil.segments]
+    split=pencil.total*scale
+    if pencil.size!=colour.size:         # (the same picture: the grids match; else the colour's grid)
+        segments=[Segment((a.a[0]*colour.size[0]/pencil.size[0],a.a[1]*colour.size[1]/pencil.size[1]),
+                          (a.b[0]*colour.size[0]/pencil.size[0],a.b[1]*colour.size[1]/pencil.size[1]),
+                          a.radius,a.region,a.painting,a.start,a.end) for a in segments]
+    if colour.segments:                  # the hand goes on to where the colour starts
+        end=segments[-1].b if segments else colour.origin
+        segments.append(Segment(end,colour.segments[0].a,1.,0,False,split,split))
+    segments+=[Segment(a.a,a.b,a.radius,a.region,a.painting,a.start+split,a.end+split) for a in colour.segments]
+    arrival=[c+split if math.isfinite(c) else c for c in colour.arrival]
+    plan=PaintPlan(colour.size,colour.labels,segments,[a.end for a in segments],arrival,
+                   pencil.origin,split+colour.total,list(colour.warnings),colour.region_count)
+    plan.pencil,plan.pencil_method,plan.colour,plan.colour_method,plan.split=\
+        pencil,pencil_method,colour,colour_method,split
+    return plan
+
+
+def pencil_passes(plan,progress):
+    """(pencil progress, colour progress) of a pencil-first plan at progress (each 0..1, the
+    passes' own .98 = done)."""
+    clock=max(0.,min(1.,float(progress)))/.98*plan.total
+    first=min(1.,clock/max(1e-9,plan.split))*.98
+    second=min(1.,max(0.,clock-plan.split)/max(1e-9,plan.colour.total)*.98)
+    return first,second
+
+
 def _plan_for(key,drawing,image,brush_width,stroke_spacing):
+    if key not in _CACHE and pencil_key(drawing) is not None:
+        _CACHE[key]=_pencil_plan(drawing,image,brush_width,stroke_spacing)     # (memory only: quick)
+        if len(_CACHE)>PLAN_CACHE_SIZE: _CACHE.popitem(last=False)
+        return _CACHE[key]
     if key not in _CACHE:
         disk=PLAN_DISK and _disk_allowed()
         kept=_plan_from_disk(key) if disk else None
@@ -766,18 +834,25 @@ def _onto_last(plan,progress,tip,seconds):
     return (tip[0]+(last.b[0]-tip[0])*e,tip[1]+(last.b[1]-tip[1])*e)
 
 
+def _plan_alpha(plan,method,look,image,progress):
+    """Where a plan has painted at progress (PIL 'L', the picture's size)."""
+    if method=='strokes':
+        # 1.0.1: the paint appears where the round brush strokes pass, at full size
+        from stroke_paint import stroke_alpha
+        return Image.fromarray(stroke_alpha(plan,image,progress),'L')
+    if SOFT_PAINT and look!='classic':
+        return Image.fromarray(soft_paint_alpha(plan,image,progress,look),'L')
+    alpha=plan.mask(progress)
+    return alpha.resize((image.width(),image.height()),Image.Resampling.NEAREST)
+
+
 def adaptive_paint_mask(drawing,image,width,height,rect,progress,brush_width,stroke_spacing=.55):
     plan=plan_for(drawing,image,brush_width,stroke_spacing)
     look=getattr(drawing,'paint_look','classic') or 'classic'
-    if getattr(drawing,'paint_method','adaptive')=='strokes':
-        # 1.0.1: the paint appears where the round brush strokes pass, at full size
-        from stroke_paint import stroke_alpha
-        alpha=Image.fromarray(stroke_alpha(plan,image,progress),'L')
-    elif SOFT_PAINT and look!='classic':
-        alpha=Image.fromarray(soft_paint_alpha(plan,image,progress,look),'L')
+    if getattr(plan,'pencil',None) is not None:          # exp.2: the colour pass of pencil-first
+        alpha=_plan_alpha(plan.colour,plan.colour_method,look,image,pencil_passes(plan,progress)[1])
     else:
-        alpha=plan.mask(progress)
-        alpha=alpha.resize((image.width(),image.height()),Image.Resampling.NEAREST)
+        alpha=_plan_alpha(plan,getattr(drawing,'paint_method','adaptive'),look,image,progress)
     small=Image.new('RGBA',alpha.size,(255,255,255,0)); small.putalpha(alpha)
     mask=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
     mask.fill(Qt.GlobalColor.transparent)
@@ -791,6 +866,50 @@ def adaptive_paint_mask(drawing,image,width,height,rect,progress,brush_width,str
         tip=(rect.x()+tip[0]*rect.width()/plan.size[0],
              rect.y()+tip[1]*rect.height()/plan.size[1])
     return mask,tip
+
+def pencil_picture(image):
+    """The pencil version of a picture: its gray tones (the alpha is kept), a little lighter
+    in the middle tones, like graphite (QImage)."""
+    key=image.cacheKey()
+    kept=_PENCIL_PICTURES.get(key)
+    if kept is not None: return kept
+    import numpy as np
+    rgba=np.asarray(pil_image(image).convert('RGBA')).astype(np.float32)
+    gray=rgba[...,0]*.299+rgba[...,1]*.587+rgba[...,2]*.114
+    gray=255.*(gray/255.)**.85                           # graphite: mid tones a little lighter
+    out=np.dstack([gray,gray,gray*.98+2,rgba[...,3]]).clip(0,255).astype(np.uint8)
+    picture=qimage(Image.fromarray(out,'RGBA'))
+    _PENCIL_PICTURES[key]=picture
+    while len(_PENCIL_PICTURES)>4: _PENCIL_PICTURES.popitem(last=False)
+    return picture
+
+_PENCIL_PICTURES=OrderedDict()
+
+
+def under_pencil(frame,drawing,image,width,height,rect,progress,brush_width,stroke_spacing=.55):
+    """exp.2: puts the pencil pass under a frame of painted colour (frame: the colour already
+    masked by where it is painted): pencil x where it is drawn, under what is not yet coloured."""
+    if pencil_key(drawing) is None: return frame
+    try:
+        plan=plan_for(drawing,image,brush_width,stroke_spacing)
+        if getattr(plan,'pencil',None) is None: return frame
+        first,_=pencil_passes(plan,progress)
+        if first<=0: return frame
+        look=getattr(drawing,'paint_look','classic') or 'classic'
+        alpha=_plan_alpha(plan.pencil,plan.pencil_method,look,image,first)
+        picture=pil_image(pencil_picture(image)).convert('RGBA')
+        a=np.minimum(np.asarray(picture.getchannel('A'),np.uint16),
+                     np.asarray(alpha.resize(picture.size),np.uint16))
+        picture.putalpha(Image.fromarray(a.astype(np.uint8),'L'))
+        p=QPainter(frame)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOver)
+        p.drawImage(rect,qimage(picture))
+        p.end()
+    except Exception:
+        pass
+    return frame
+
 
 def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
                     stroke_spacing,hand,hand_scale,anchor):
@@ -825,6 +944,7 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
     p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
     p.drawImage(0,0,mask)
     p.end()
+    painted=under_pencil(painted,drawing,image,width,height,rect,progress,brush_width,stroke_spacing)
     from svg_guide_cleanup import remove_svg_guides
     outline=remove_svg_guides(render(drawing,1,width,height,thickness),
                               mask,image,rect,progress/.98)

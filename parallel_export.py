@@ -131,6 +131,7 @@ def _brush_plan(drawing, options):
             return None
         if options.get('reveal_mode') in ('adaptive', 'zigzag', 'rows', 'columns', 'strokes'):
             drawing.paint_method = options['reveal_mode']
+        adaptive_hand.apply_pencil(drawing, options.get('pencil_first', ''))    # exp.2
         key = adaptive_hand._plan_key(drawing, image, options['brush_width'], options['stroke_spacing'])
         plan = adaptive_hand._CACHE.get(key)
         return pack(plan) if plan is not None else None
