@@ -582,12 +582,25 @@ def _plan_for(key,drawing,image,brush_width,stroke_spacing):
         if kept is not None:
             _CACHE[key]=kept
             if len(_CACHE)>PLAN_CACHE_SIZE: _CACHE.popitem(last=False)
+            _strokes_field(drawing,image,kept)
             return kept
         _plan_build(drawing,image,brush_width,stroke_spacing,key)
         if disk: _plan_to_disk(key,_CACHE[key])
+        _strokes_field(drawing,image,_CACHE[key])
     else:
         _CACHE.move_to_end(key)
     return _CACHE[key]
+
+
+def _strokes_field(drawing,image,plan):
+    """1.0.1: Hand drawing's lines are worked out with its plan (where the plan is made: in
+    the background or behind the 'Preparing' card), not on the first frame of the preview."""
+    if getattr(drawing,'paint_method','adaptive')!='strokes': return
+    try:
+        from stroke_paint import field_for
+        field_for(plan,image)
+    except Exception:
+        pass
 
 def _disk_allowed():
     # tests count and replace plans, so they always plan afresh
@@ -612,6 +625,9 @@ def _plan_build(drawing,image,brush_width,stroke_spacing,key):
         elif method=='zigzag':
             from zigzag_paint import build_zigzag_plan
             _CACHE[key]=build_zigzag_plan(drawing,image,brush_width,stroke_spacing)
+        elif method=='strokes':
+            from stroke_paint import build_stroke_plan          # 1.0.1: real zigzag strokes
+            _CACHE[key]=build_stroke_plan(drawing,image,brush_width,stroke_spacing)
         else:
             _CACHE[key]=build_plan(drawing,image,brush_width,stroke_spacing)
         # Enough plans for a whole video's painted elements: with only 3, playing
@@ -753,7 +769,11 @@ def _onto_last(plan,progress,tip,seconds):
 def adaptive_paint_mask(drawing,image,width,height,rect,progress,brush_width,stroke_spacing=.55):
     plan=plan_for(drawing,image,brush_width,stroke_spacing)
     look=getattr(drawing,'paint_look','classic') or 'classic'
-    if SOFT_PAINT and look!='classic':
+    if getattr(drawing,'paint_method','adaptive')=='strokes':
+        # 1.0.1: the paint appears where the round brush strokes pass, at full size
+        from stroke_paint import stroke_alpha
+        alpha=Image.fromarray(stroke_alpha(plan,image,progress),'L')
+    elif SOFT_PAINT and look!='classic':
         alpha=Image.fromarray(soft_paint_alpha(plan,image,progress,look),'L')
     else:
         alpha=plan.mask(progress)

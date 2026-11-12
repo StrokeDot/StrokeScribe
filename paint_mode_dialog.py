@@ -21,7 +21,14 @@ GROUPS = (
          'The same part-by-part route as Adaptive, with quick short up and down flicks of '
          'the brush along the way.'),
     )),
-    ('PAINTER — new: paints like a person', (
+    ('HAND DRAWING — new: real strokes and lines', (
+        ('Hand drawing — real strokes and lines',
+         'Draws the picture the way a hand does: back-and-forth strokes across every part, and '
+         'the picture appears as lines that follow its own pencil or brush marks, growing from '
+         'where the hand is, instead of being uncovered by an edge. Made for pencil drawings '
+         'and sketches; works with any picture.'),
+    )),
+    ('PAINTER — paints like a person', (
         ('Painter — real parts, strokes follow the shape',
          'Paints the picture the way a person would: the big parts first, then smaller '
          'parts, details last. Each part is brushed around its own shape, from the edge '
@@ -49,7 +56,7 @@ DESCRIPTIONS = {text: about for _, modes in GROUPS for text, about in modes}
 SHORT = {'Adaptive Hand Painting': 'Adaptive', 'Adaptive — Short up/down strokes': 'Adaptive, short strokes',
          'Painter — real parts, strokes follow the shape': 'Painter', 'Zigzag sweep': 'Zigzag',
          'Top to bottom (rows)': 'Top to bottom', 'Left to right (columns)': 'Left to right',
-         'Brush painting': 'Brush'}
+         'Brush painting': 'Brush', 'Hand drawing — real strokes and lines': 'Hand drawing'}
 
 
 PAINTER = 'Painter — real parts, strokes follow the shape'

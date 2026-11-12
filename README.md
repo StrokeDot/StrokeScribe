@@ -6,6 +6,11 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Hand drawing with real lines, built-in pencil sound (v1.0.1-experimental.1)
+- New paint mode **Hand drawing — real strokes and lines**: the hand works in back-and-forth strokes, and the picture appears as lines that follow its own pencil marks (measured from the picture), growing from where the hand is, instead of an edge uncovering it. Made for pencil drawings and sketches.
+- Built-in **pencil on paper** sound (Sound tab › Use the built-in pencil sounds, or choose it per row): made from the hand's own movement, it follows the speed of every stroke and goes silent when the pen lifts. Soft brush and eraser variants. Nothing is downloaded; your recordings still work.
+- A prototype on top of the official 1.0.0 release, which stays available as it was.
+
 ## StrokeScribe 1.0.0 — first official release (v1.0.0)
 
 - The first official, non-prototype StrokeScribe: everything from the 0.5.3 experimental builds (up to experimental.249), frozen and tested on Windows and Linux.

@@ -3295,7 +3295,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.reveal_mode.addItems(['Brush painting','Adaptive Hand Painting','Zigzag sweep',
                             'Top to bottom (rows)','Left to right (columns)',
                             'Adaptive — Short up/down strokes',
-                            'Painter — real parts, strokes follow the shape'])
+                            'Painter — real parts, strokes follow the shape',
+                            'Hand drawing — real strokes and lines'])          # 1.0.1: stroke_paint
     w.reveal_mode.setItemData(3,'Like a painter: the colours are brushed in band by band from the top '
                               'down, sweeping left and right across the whole picture.',Qt.ItemDataRole.ToolTipRole)
     w.reveal_mode.setItemData(4,'The colours are brushed in band by band from the left to the right, '
@@ -3307,8 +3308,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
                               'short up/down brush flicks along that route. Does not use '
                               'top-to-bottom painting bands.',
                               Qt.ItemDataRole.ToolTipRole)
-    w.reveal_mode.setItemData(6,'New: paints like a person: big parts first, details last, each part '
+    w.reveal_mode.setItemData(6,'Paints like a person: big parts first, details last, each part '
                               'brushed around its shape from the edge inwards.',Qt.ItemDataRole.ToolTipRole)
+    w.reveal_mode.setItemData(7,'New: draws like a hand: back-and-forth strokes, and the picture appears '
+                              'as lines that follow its own pencil marks. Best for pencil drawings.',
+                              Qt.ItemDataRole.ToolTipRole)
     a2.addRow('Paint mode',w.reveal_mode)
     # Painter: which parts it paints (colour areas, or real parts found by the AI).
     w.painter_parts_note=caption('Parts: colour areas')
@@ -3706,7 +3710,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.sound_on.setToolTip('A pencil sound while the pen draws (silent during pen lifts), a brush sound '
                           'while painting and an eraser sound while erasing, matched to the animation.')
     sound_l.addWidget(w.sound_on)
-    sound_l.addWidget(help_note('Your own pencil, brush, eraser sounds','Add your own sounds: a few seconds of a pencil on paper (and a brush or an eraser if you like). They play only while the pen moves. No sound is added until you choose one.'))
+    sound_l.addWidget(help_note('Pencil, brush, eraser sounds','Use the built-in sounds (a pencil on paper, made from the hand\'s own movement: louder and brighter when it moves faster, silent when it lifts), or add your own recordings. They play only while the pen moves. No sound is added until you choose one.'))
+    w.builtin_sounds_button=QPushButton('♪ Use the built-in pencil sounds')
+    w.builtin_sounds_button.setToolTip('A pencil on paper for drawing and colouring, and an eraser, made from '
+                                       'the hand\'s own movement. Rows with your own recordings are kept.')
+    w.builtin_sounds_button.clicked.connect(lambda checked=False: w.use_builtin_sounds())
+    sound_l.addWidget(w.builtin_sounds_button)
     create_sound=QPushButton('✦ Create a sound with AI…')
     create_sound.setToolTip('Describe a sound (pencil on paper, brush, eraser) and let a free AI model '
                             'make it on your PC.')
@@ -3720,8 +3729,14 @@ def build_workspace(w, Canvas, BRAND_ICON):
         box=QWidget();box.setMinimumWidth(0)
         row=QHBoxLayout(box);row.setContentsMargins(0,0,0,0);row.setSpacing(6)
         button=QPushButton('Add sound…')
-        button.setToolTip(f'Choose a recording (MP3, WAV, M4A…) for the {text.lower()}.')
-        button.clicked.connect(lambda checked=False,k=key: w.choose_sound_file(k))
+        button.setToolTip(f'Choose a built-in sound or a recording (MP3, WAV, M4A…) for the {text.lower()}.')
+        choices=QMenu(button)                # 1.0.1: built-in sounds, or your recording
+        from sound import BUILTIN as _BUILTIN
+        for token,(name,_kind) in _BUILTIN.items():
+            choices.addAction(f'{name} (built-in)',lambda k=key,t=token: w.set_sound_file(k,t))
+        choices.addSeparator()
+        choices.addAction('Choose a recording…',lambda k=key: w.choose_sound_file(k))
+        button.setMenu(choices)
         row.addWidget(button,1)
         reset=QToolButton();reset.setObjectName('panelClose')
         reset.setIcon(_icon('trash','#E5484D'));reset.setFixedWidth(30)
