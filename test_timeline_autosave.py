@@ -196,9 +196,9 @@ class WindowTests(ConfigDir):
     def test_update_banner(self):
         w = self.w
         self.assertFalse(w.update_banner.isVisibleTo(w))
-        w.update_found('0.5.3-experimental.999')
+        w.update_found('99.0.1-experimental.999')
         self.assertTrue(w.update_banner.isVisibleTo(w))
-        self.assertIn('0.5.3-experimental.999', w.update_banner_text.text())
+        self.assertIn('99.0.1-experimental.999', w.update_banner_text.text())
         self.assertEqual(w.banner_update.text(), 'Update now')
         w.banner_later.click()
         self.assertFalse(w.update_banner.isVisibleTo(w))
