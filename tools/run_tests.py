@@ -53,13 +53,20 @@ def _watch(limit):
             os._exit(3)
 
 
+# Every module's process starts the app log first, as the single-process suite did: a
+# window started without it opens its log inside the test's temporary folder, and
+# Windows cannot delete that folder while the log is open.
+_CHILD = ("import sys,runpy,applog; applog.setup(); script=sys.argv[1]; sys.argv=sys.argv[1:]; "
+          "runpy.run_path(script, run_name='__main__')")
+
+
 def _each(modules, limit):
     failed = []
     for name in modules:
         started = time.monotonic()
         print(f'\n===== {name} =====', flush=True)
-        code = subprocess.call([sys.executable, '-X', 'faulthandler', str(Path(__file__).resolve()),
-                                '--limit', str(limit), name], cwd=str(ROOT))
+        code = subprocess.call([sys.executable, '-X', 'faulthandler', '-c', _CHILD,
+                                str(Path(__file__).resolve()), '--limit', str(limit), name], cwd=str(ROOT))
         print(f'===== {name}: {"ok" if code == 0 else f"FAILED ({code})"} '
               f'in {time.monotonic() - started:.0f} s =====', flush=True)
         if code != 0:
