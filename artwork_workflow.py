@@ -47,7 +47,9 @@ class ArtworkWorkflow:
         if lettering:
             heading,detail=source_card(LETTERING,text=self.text.toPlainText())
         elif kind==IMAGE and getattr(self,'image_result',None) is not None:
-            heading,detail=source_card(IMAGE,filename=self.image_result.filename)
+            k=getattr(self,'scene_index',-1)
+            name=self.scene_label(k) if 0<=k<len(getattr(self,'scenes',[])) and hasattr(self,'scene_label') else ''
+            heading,detail=source_card(IMAGE,filename=self.image_result.filename,title=name)
         elif imported:
             heading,detail=source_card(kind,title=getattr(self,'project_title',''))
         else:

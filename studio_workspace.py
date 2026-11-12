@@ -107,6 +107,22 @@ def caption(text):
     return w
 
 
+def help_note(short, more):
+    """exp.237 (the user: short labels with a "?" instead of long sentences): a short muted line
+    and a small "?" that shows the full explanation (hover or click)."""
+    from PySide6.QtWidgets import QToolButton, QToolTip
+    row=QWidget(); line=QHBoxLayout(row); line.setContentsMargins(0,0,0,0); line.setSpacing(6)
+    text=QLabel(short); text.setObjectName('note'); text.setWordWrap(True)
+    dot=QToolButton(); dot.setObjectName('helpDot'); dot.setText('?')
+    dot.setToolTip(more); dot.setAccessibleName('Help: '+short)
+    dot.setCursor(Qt.CursorShape.WhatsThisCursor)
+    dot.clicked.connect(lambda checked=False: QToolTip.showText(
+        dot.mapToGlobal(dot.rect().bottomLeft()), more, dot))
+    line.addWidget(text,1); line.addWidget(dot,0,Qt.AlignmentFlag.AlignTop)
+    row.help_text=more
+    return row
+
+
 def tidy_side_page(content):
     """Keep a side-panel page inside its column.
 
@@ -431,6 +447,16 @@ class StageTimeline(QFrame):
         texts are on the element tracks, like any element)."""
         return 0 if self.items else self.tracks()
 
+    def _whole_row_off(self, y):
+        """exp.237 (the user: the top track showed cut under the camera rows): the scroll stops
+        on a row's top edge, so the first row seen is whole (the bottom, mostly the empty sound
+        row, takes the cut instead)."""
+        edges=[(self.LANE_H+3)*i for i in range(self.text_lanes()+1)]
+        base=edges[-1]
+        edges+= [base+(self.CLIP_H+3)*j for j in range(1,self.lanes()+1)]
+        below=[e for e in edges if e<=y+.5]
+        return float(max(below)) if below else 0.
+
     def _content_height(self):
         n=self.lanes()
         stack=(self.CAM_H+4+(self.CLIP_H+3)*n) if n else (self.CLIP_H+4)
@@ -610,7 +636,7 @@ class StageTimeline(QFrame):
             if over>0:
                 self.vbar.setRange(0,int(over)); self.vbar.setPageStep(max(1,self.height()))
                 if getattr(self,'_scroll_to_bottom',False):
-                    self.y_off=float(over); self._scroll_to_bottom=False
+                    self.y_off=self._whole_row_off(float(over)); self._scroll_to_bottom=False
                 self.y_off=max(0.,min(float(over),self.y_off))
                 self.vbar.setValue(int(self.y_off))
                 top=int(22+6+self.CAM_H+4)
@@ -754,7 +780,9 @@ class StageTimeline(QFrame):
         (exp.123: Fixed camera = the moves between pages; Moving camera = zooms and pans)."""
         hover=getattr(self,'_hover',None)
         p.setFont(small)
-        rows=[(self._fixed_row(),'Fixed camera'),(self._moving_lane(self._cam_lane_count()-1),'Moving camera')]
+        # exp.237: the Moving camera name sits in the middle of all its rows (not on the top one only)
+        rows=[(self._fixed_row(),'Fixed camera'),
+              (self._moving_lane(self._cam_lane_count()-1).united(self._moving_lane(0)),'Moving camera')]
         if self.items: rows.append((self._hand_row(),'Hand'))
         for row,text in rows:
             self._draw_icon(p,'hand' if text=='Hand' else 'camera',QPointF(18,row.center().y()),c['muted'],13)
@@ -2649,7 +2677,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.source_page=source_page
     src_l=QVBoxLayout(source_page);src_l.setContentsMargins(9,12,9,8)
     src_l.setSpacing(9)
-    src_l.addWidget(caption('Import an SVG drawing or a picture (PNG, JPG, WebP, BMP).'))
+    src_l.addWidget(help_note('SVG, PNG, JPG, WebP or BMP','Import an SVG drawing or a picture (PNG, JPG, WebP, BMP).'))
     # The mode combo is internal state now: the two buttons below choose the
     # kind of import, and the selected element decides which settings show.
     w.source_type=QComboBox(); w.source_type.addItems(['SVG source','Image source'])
@@ -2731,8 +2759,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
             image_form.addLayout(w.image_fields)
         w.image_fields.addRow(title,control)
 
-    image_form.addWidget(caption('Line art: clean, artist-style pen strokes from any image, '
-                                 'drawn by a small built-in line model. Original colors are painted afterwards.'))
+    image_form.addWidget(help_note('Line art from any image','Line art: clean, artist-style pen strokes from any image, drawn by a small built-in line model. Original colors are painted afterwards.'))
     w.image_animation_style=QComboBox()
     w.image_animation_style.addItems(['Artist (layered)','Standard'])
     w.image_animation_style.setToolTip('Artist: light guide shapes first, then the main lines area by area '
@@ -2918,8 +2945,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     lines_l=QVBoxLayout(w.lines_group)
     lines_l.setContentsMargins(0,0,0,0); lines_l.setSpacing(8)
     lines_l.addWidget(label('LINES & ORDER'))
-    lines_l.addWidget(caption('Click a line on the preview (Ctrl+click for more) or in the list. '
-                              'Drag in the list to change the drawing order.'))
+    lines_l.addWidget(help_note('Click or drag lines to reorder','Click a line on the preview (Ctrl+click for more) or in the list. Drag in the list to change the drawing order.'))
     w.order=LineList()
     w.order.dropped.connect(lambda: w.order_dragged())
     w.order.setMinimumHeight(155)
@@ -3586,7 +3612,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.webm_quality.setMinimumWidth(110)
     e2=form_layout();e2.addRow('WebM quality',w.webm_quality)
     output_l.addLayout(e2)
-    output_l.addWidget(caption('WebM quality: 18 = best, largest file  •  42 = smallest file.'))
+    output_l.addWidget(help_note('18 = best · 42 = smallest','WebM quality: 18 = best, largest file  •  42 = smallest file.'))
     w.mov=QCheckBox('ProRes 4444 MOV (larger)')
     output_l.addWidget(w.mov)
     w.mp4=QCheckBox('Standard MP4 (H.264, solid background)')
@@ -3599,8 +3625,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     output_l.addLayout(e3)
     # One Background for everything now (top of the preview); kept for older projects.
     w.mp4_background.hide(); e3.labelForField(w.mp4_background).hide()
-    w.background_note=label('Background: chosen above the preview (the same for the whole video).','note')
-    w.background_note.setWordWrap(True)
+    w.background_note=help_note('Background: set above the preview','Background: chosen above the preview (the same for the whole video).')
     output_l.addWidget(w.background_note)
     from frame_render import LAYERS
     w.export_layers=QComboBox();w.export_layers.addItems(list(LAYERS))
@@ -3627,7 +3652,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.keep_png.setChecked(False)
     w.keep_png.setToolTip('If video encoding succeeds, frame PNGs can be removed.')
     output_l.addWidget(w.keep_png)
-    output_l.addWidget(caption('If no video format is selected, all transparent PNG frames are kept.'))
+    output_l.addWidget(help_note('No format ticked: PNG frames','If no video format is selected, all transparent PNG frames are kept. Export progress appears below the timeline.'))
     w.export=QPushButton('Export animation…')
     w.export.setObjectName('primary');w.export.clicked.connect(w.save)
     output_l.addWidget(w.export)
@@ -3638,7 +3663,6 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.cancel=QPushButton('Cancel export')
     w.cancel.setEnabled(False);w.cancel.clicked.connect(w.cancel_export)
     output_l.addWidget(w.cancel)
-    output_l.addWidget(caption('Export progress appears below the timeline.'))
     output_l.addStretch(1)
     tabs.addTab(scroll_view(output),'Export')
     # Sound tab: drawing sounds and the voiceover / music track.
@@ -3650,9 +3674,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.sound_on.setToolTip('A pencil sound while the pen draws (silent during pen lifts), a brush sound '
                           'while painting and an eraser sound while erasing, matched to the animation.')
     sound_l.addWidget(w.sound_on)
-    sound_l.addWidget(caption('Add your own sounds: a few seconds of a pencil on paper (and a brush or an '
-                               'eraser if you like). They play only while the pen moves. No sound is added '
-                               'until you choose one.'))
+    sound_l.addWidget(help_note('Your own pencil, brush, eraser sounds','Add your own sounds: a few seconds of a pencil on paper (and a brush or an eraser if you like). They play only while the pen moves. No sound is added until you choose one.'))
     create_sound=QPushButton('✦ Create a sound with AI…')
     create_sound.setToolTip('Describe a sound (pencil on paper, brush, eraser) and let a free AI model '
                             'make it on your PC.')
@@ -3682,10 +3704,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.sound_volume.setSuffix('%')
     e4=form_layout();e4.addRow('Volume',w.sound_volume)
     sound_l.addLayout(e4)
-    w.sound_preview=QCheckBox('Hear the sound when playing the preview')
+    w.sound_preview=QCheckBox('Sound in the preview')
     w.sound_preview.setChecked(True)
+    w.sound_preview.setToolTip('Hear the sound when playing the preview.')
     sound_l.addWidget(w.sound_preview)
-    sound_l.addWidget(caption('Included in MP4, WebM and MOV. PNG exports also get soundtrack.wav.'))
+    sound_l.addWidget(help_note('In MP4, WebM and MOV','Included in MP4, WebM and MOV. PNG exports also get soundtrack.wav.'))
     sound_l.addStretch(1)
     # Music: the voiceover / music track.
     music=QWidget();music_l=QVBoxLayout(music)
@@ -3754,9 +3777,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     cam_row(f,'cam_begin','Starts at',0,120,0,.1,' s',1,'Seconds into the element when the camera starts to move.')
     cam_row(f,'cam_time','Zoom time',.2,30,1.2,.1,' s',1,'How long the camera takes from the start framing to '
             'the end framing. Longer than the element: it goes on into the camera move after it.')
-    zb.addWidget(caption('The camera moves between elements (camera row of the timeline) have the last word: '
-                         'if this zoom is still running when the move starts, the move takes over from it '
-                         'gradually and lands on the next element.'))
+    zb.addWidget(help_note('Camera moves take over from zooms','The camera moves between elements (camera row of the timeline) have the last word: if this zoom is still running when the move starts, the move takes over from it gradually and lands on the next element.'))
     camera_l.addWidget(w.camera_zoom_box)
     w.camera_zoom_box.hide()   # exp.119: replaced by camera clips (kept for older projects)
     # exp.119: the Camera track. A camera clip moves the camera for the whole picture.
@@ -3796,14 +3817,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
             f.addRow(text,holder)
             w.cam_clip_fields[(key,name)]=spin
         w.cam_clip_fields[(key,'head')]=head
-    cb.addWidget(caption('Tip: with a camera clip chosen, the preview shows the page without it and a frame '
-                         'where the camera goes: drag the frame, mouse wheel to zoom.'))
+    cb.addWidget(help_note('Drag the frame on the preview','Tip: with a camera clip chosen, the preview shows the page without it and a frame where the camera goes: drag the frame, mouse wheel to zoom.'))
     w.cam_clip_delete=QPushButton('Delete camera clip'); w.cam_clip_delete.setObjectName('subtle')
     w.cam_clip_delete.clicked.connect(lambda checked=False: w.camera_clip_action(w.selected_camera,'delete'))
     cb.addWidget(w.cam_clip_delete)
     camera_l.addWidget(w.camera_clip_box)
-    w.camera_clip_none=caption('Choose a camera clip on the Camera track (top of the timeline, in Whole video) '
-                               'to change it, or add one at the playhead.')
+    w.camera_clip_none=help_note('Pick a camera clip on the timeline','Choose a camera clip on the Camera track (top of the timeline, in Whole video) to change it, or add one at the playhead.')
     camera_l.addWidget(w.camera_clip_none)
     w.camera_clip_box.hide()
     for widget in (w.cam_clip_kind,):
@@ -3826,8 +3845,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # AI: the Create Image / Create a sound tools (replaces the top-bar button).
     ai_page=QWidget();ai_l=QVBoxLayout(ai_page)
     ai_l.setContentsMargins(9,12,9,8);ai_l.setSpacing(10)
-    ai_l.addWidget(caption('Runs on your PC with the local AI engine. Each tool opens the Create '
-                           'Image window on that task.'))
+    ai_l.addWidget(help_note('Runs on your PC','Runs on your PC with the local AI engine. Each tool opens the Create Image window on that task.'))
     w.ai_buttons={}
     for task,text,tip in (
             ('lineart','Line art for my image','An AI model redraws the selected image as clean line art.'),

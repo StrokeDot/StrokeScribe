@@ -3842,8 +3842,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                                 'camera zooms in to draw there.')
             self.order.clearSelection()
         elif self.all_scenes():
-            self.status.setText('Previewing all scenes (no sound in this preview; the export has it). '
-                                'Lines can be clicked again in "This scene" preview.')
+            self.status.setText('Whole video preview (no sound; the export has it)')
+            self.status.setToolTip('Lines can be clicked again in the "This element" preview.')
             self.order.clearSelection()
         self.refresh()
 
