@@ -41,5 +41,27 @@ class PruneLinks(unittest.TestCase):
         self.assertFalse(w.scenes[0].get('hand_link'))
 
 
+
+class DeleteKey(unittest.TestCase):
+    """exp.246: click an element, press Delete: it is deleted (Ctrl+Z brings it back)."""
+
+    def test_delete_on_the_timeline_deletes_the_chosen_element(self):
+        from PySide6.QtCore import QEvent, Qt
+        from PySide6.QtGui import QKeyEvent
+        from app import Window
+        w = Window(); w.resize(1400, 860); w.show(); APP.processEvents()
+        self.addCleanup(w.close)
+        self.assertTrue(w.add_picture())
+        self.assertEqual(len(w.scenes), 2)
+        tl = w.stage_timeline
+        tl.current_scene = 1
+        tl.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier))
+        APP.processEvents()
+        self.assertEqual(len(w.scenes), 1)
+        w.undo_structure() if hasattr(w, 'undo_structure') else w.undo()
+        APP.processEvents()
+        self.assertEqual(len(w.scenes), 2)
+
+
 if __name__ == '__main__':
     unittest.main()

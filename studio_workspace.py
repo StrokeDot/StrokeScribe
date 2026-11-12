@@ -252,6 +252,7 @@ class StageTimeline(QFrame):
     element_flag=Signal(int,str)        # whole video: one element's 'mute' or 'hide' (right-click menu)
     background_menu=Signal(int,float,object)   # exp.207: Background row clicked: piece, seconds, screen point
     hand_snapped=Signal(int,int)               # exp.211: element k let go on element j's hand end (-1: not)
+    element_delete=Signal(int)                 # exp.246: Delete on a chosen element
     background_cut=Signal(int,float,bool)      # exp.207: a cut dragged: piece, its new start, let go
     video_end_moved=Signal(float,bool)         # exp.230: the end of the video dragged (seconds, let go)
 
@@ -2100,6 +2101,8 @@ class StageTimeline(QFrame):
             self.camera_action.emit(self.selected_camera,'delete'); return
         if event.key() in (Qt.Key.Key_Delete,Qt.Key.Key_Backspace) and self.selected_overlay:
             self.overlay_action.emit(self.selected_overlay,'delete'); return
+        if event.key()==Qt.Key.Key_Delete and self.current_scene>=0 and not self._something_else_chosen():
+            self.element_delete.emit(self.current_scene); return
         if event.key() in (Qt.Key.Key_Left,Qt.Key.Key_Right):
             self.slider.setValue(self.slider.value()+(-10 if event.key()==Qt.Key.Key_Left else 10))
         elif event.key()==Qt.Key.Key_Home:
@@ -4107,6 +4110,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.element_enter.connect(lambda k: w.enter_element(k))
     w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))
     w.stage_timeline.hand_snapped.connect(lambda k,j: w.snap_hands(k,j))       # exp.211
+    def _delete_element(k):
+        if 0<=k<len(w.scenes) and k!=w.scene_index: w.select_scene(k)
+        w.delete_scene(ask=False)
+    w.stage_timeline.element_delete.connect(_delete_element)                    # exp.246
     w.stage_timeline.element_reset.connect(lambda k: w.reset_element_time(k))
     w.stage_timeline.track_toggled.connect(lambda t,which: w.toggle_track(t,which))
     w.stage_timeline.element_flag.connect(lambda k,which: w.toggle_element_flag(k,which))
@@ -4330,6 +4337,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.undo_keys=UndoKeys(w)
     QApplication.instance().installEventFilter(w.undo_keys)
     w.delete_shortcuts=[]
+    element_delete=QShortcut(QKeySequence(Qt.Key.Key_Delete),w.scene_list)    # exp.246: the element strip
+    element_delete.setContext(Qt.ShortcutContext.WidgetShortcut)
+    element_delete.activated.connect(lambda: w.delete_scene(ask=False))
+    w.delete_shortcuts.append(element_delete)
     for target in (w.canvas,w.order):
         shortcut=QShortcut(QKeySequence(QKeySequence.StandardKey.Delete),target)
         shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)

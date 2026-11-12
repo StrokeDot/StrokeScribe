@@ -3800,11 +3800,16 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                             'Artwork size makes it bigger or smaller.')
         return True
 
-    def delete_scene(self):
+    def delete_scene(self,ask=True):
         if len(self.scenes)<2: return
-        answer=QMessageBox.question(self,'Delete element',
-            f'Delete element {self.scene_index+1} ({self.scene_label(self.scene_index)})?')
-        if answer!=QMessageBox.StandardButton.Yes: return
+        name=f'element {self.scene_index+1} ({self.scene_label(self.scene_index)})'
+        if ask:
+            answer=QMessageBox.question(self,'Delete element',f'Delete {name}?')
+            if answer!=QMessageBox.StandardButton.Yes: return
+        else:
+            # exp.246 (the user: click an element, press Delete, it is deleted): no question;
+            # Ctrl+Z brings it back
+            notify(self,f'Deleted {name}. Ctrl+Z brings it back.','warning',5)
         self.playing=False
         self.record_structure(f'delete element {self.scene_index+1}')
         removed=self.scene_index
@@ -6724,9 +6729,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         size=(view.get('width'),view.get('height'))
         board=repr([s.get('board') for s in self.scenes])
         if not view['all']:
-            base=None
-            if view.get('page'):
-                base=(tuple(self.element_fingerprint(i) for i in range(self.scene_index)),board)
+            # exp.246: the other elements are shown as in the whole video (all of them, their
+            # times and tracks count)
+            lay=self.timeline_layout()
+            base=(tuple(self.element_fingerprint(i) for i in range(len(self.scenes)) if i!=self.scene_index),board,
+                  tuple((it.k,round(it.start,3),round(it.length,3),it.track) for it in lay.items),
+                  tuple(sorted(self.hidden_elements())))
             return ('one',self.element_fingerprint(self.scene_index),base,size)
         cams=self.cameras_signature(*self.segment_span(where,k))     # exp.119/125: the Camera track
         if where=='scene':
@@ -7030,14 +7038,80 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if box:      # exp.228: its corner is a corner of what the camera shows, as in the video
             options['_rest_place']=(box[0]*width,box[1]*height,box[2]*width,box[3]*height)
         camera=self.preview_camera(options)
-        if view['page']:
+        from scenes import stack
+        hands=[]
+        below,above=self.others_layers(self.scene_index,width,height,fraction,camera,hands)
+        own_hand=hands.pop(0) if hands and isinstance(hands[0],bool) else True
+        if not (view['page'] or below is not None or above is not None or hands):
+            return compose_frame(self.drawing,fraction,options,camera)
+        # exp.246: the other elements as in the whole video; every hand over all the pictures
+        mine=dict(options,layers='art') if (above is not None or hands or not own_hand) else options
+        under=below if below is not None else (self.scene_base(self.scene_index,width,height,fraction,camera)
+                                               if view['page'] else None)
+        if options.get('blend_mode','Normal')!='Normal' or options.get('artwork_opacity',100)!=100:
             from artwork_compositor import composite_element
-            under=self.scene_base(self.scene_index,width,height,fraction,camera)
-            if options.get('blend_mode','Normal')!='Normal' or options.get('artwork_opacity',100)!=100:
-                return composite_element(under,self.drawing,fraction,options,camera)
-            from scenes import stack
-            return stack(under,compose_frame(self.drawing,fraction,options,camera))
-        return compose_frame(self.drawing,fraction,options,camera)
+            out=composite_element(under,self.drawing,fraction,mine,camera)
+        else:
+            out=stack(under,compose_frame(self.drawing,fraction,mine,camera))
+        if mine is not options and own_hand and float(options.get('ghost',0) or 0)>0:
+            # the faint guide of the picture (under the pictures of higher tracks)
+            out=stack(out,compose_frame(self.drawing,fraction,dict(options,layers='hand'),camera))
+        out=stack(out,above)
+        for hand in hands:
+            out=stack(out,hand)
+        if mine is not options and own_hand:
+            out=stack(out,compose_frame(self.drawing,fraction,dict(options,layers='hand',ghost=0),camera))
+        return out
+
+    def others_layers(self,k,width,height,fraction,camera=None,hands=None):
+        """exp.246 (the user: This element and the whole video are not in sync: element 4's
+        preview did not show element 5 sliding in, element 5's did not show element 4 being
+        drawn): (below, above) — the other elements as they are in the whole video at this
+        moment of element k, on k's page; below: lower tracks (and earlier on the same track),
+        above: higher ones. (None, None) when no other element is there then."""
+        try:
+            import board, timeline_render
+            from dataclasses import replace
+            from timeline_model import state_at
+            lay=self.timeline_layout(width,height)
+            item=next((it for it in lay.items if it.k==k),None)
+            if item is None or len(lay.items)<2: return None,None
+            seconds=item.start+max(0.,min(1.,float(fraction)))*item.length
+            st=state_at(lay,seconds)
+            hidden=set(self.hidden_elements())|{k}
+            order={it.k:(it.track,it.k) for it in lay.items}
+            mine=order[k]
+            world=self.preview_world(width,height)
+            view=world.frames[k]
+            if camera is not None:
+                view=board.sub_view(view,*camera.at(fraction),world.aspect)
+            def seen(j):
+                x,y,w,h=world.place(world.frames[j],view,width,height)
+                return w>=2 and x<width and y<height and x+w>0 and y+h>0
+            elements=self.timeline_elements(width,height)
+            # one hand, as in the whole video: the element whose hand is busy now
+            tracks={it.k:it.track for it in lay.items}
+            shown=[(j,f) for j,f in st.active if j not in hidden or j==k]
+            hk=timeline_render._hand_element(replace(st,active=shown,top=shown[-1][0] if shown else -1),
+                                             elements,tracks) if shown else -1
+            if hands is not None: hands.append(hk==k or hk<0)     # first item: element k draws its own hand
+            out=[]
+            for side in (lambda o:o<mine, lambda o:o>mine):
+                active=[(j,f) for j,f in st.active if j not in hidden and side(order[j]) and seen(j)]
+                finished=[j for j in st.finished if j not in hidden and side(order[j]) and seen(j)]
+                if not active and not finished:
+                    out.append(None); continue
+                part=replace(st,kind='page',active=active,finished=sorted(finished),
+                             top=active[-1][0] if active else -1)
+                layer=[]
+                page=timeline_render._page(world,lay,part,elements,view,width,height,hand_out=layer)
+                if hands is not None and any(j==hk for j,_ in active):
+                    hands.extend(layer)       # the busy hand of another element: over every picture
+                out.append(page)
+            return out[0],out[1]
+        except Exception as exc:
+            import applog; applog.error('Other elements in This element',exc)
+            return None,None
 
     def shown_seconds(self):
         """exp.126: the time of the frame on the screen. Playing (or scrubbing fast), that is
