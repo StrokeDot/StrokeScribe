@@ -6,10 +6,11 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
-## More hand movement, Painter's parts, pencil first then colour (v1.0.1-experimental.2)
-- **Hand drawing** moves more: short quick back-and-forth strokes (a pencil-sized stroke, each at most a few strokes wide) instead of long sweeps across a part.
+## Hand drawing follows the traces, smooth ending, pencil-to-colour option (v1.0.1-experimental.2)
+- **Hand drawing** follows Painter's traces (around every shape, from the edge inwards) and zigzags across them in big, clearly visible back-and-forth strokes.
+- Smooth ending: faint soft edges (a vignette) appear with the nearest stroke instead of all at once after the last one.
 - **Hand drawing** draws Painter's parts in Painter's order, with the same **Parts** choice (Colour areas or AI parts) in the Paint mode window.
-- **Pencil first** (Paint panel): the element is drawn in pencil first (its gray tones, by Hand drawing or another mode you choose), then the colour is painted over it by its Paint mode, in one continuous hand movement. Off by default.
+- **Pencil first** (Paint panel, an option): the colour picture is drawn in pencil first (its gray tones, by Hand drawing or another mode you choose), then the colour is painted over it by its Paint mode, in one continuous hand movement. Off by default.
 
 ## Hand drawing with real lines, built-in pencil sound (v1.0.1-experimental.1)
 - New paint mode **Hand drawing — real strokes and lines**: the hand works in back-and-forth strokes, and the picture appears as lines that follow its own pencil marks (measured from the picture), growing from where the hand is, instead of an edge uncovering it. Made for pencil drawings and sketches.

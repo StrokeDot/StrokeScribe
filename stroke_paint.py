@@ -110,14 +110,8 @@ def build_field(plan, image):
     if (width, height) != (iw, ih):
         rgba = cv2.resize(rgba, (width, height), interpolation=cv2.INTER_AREA)
     moments, alpha, regions, radius = _moments(plan, rgba, width, height, details=True)
-    # what the strokes do not reach: when the grid plan reaches it
     gw, gh = plan.size
-    arrival = np.asarray(plan.arrival, np.float64).reshape(gh, gw)
-    ys = np.minimum(gh - 1, ((np.arange(height) + .5) * gh / height).astype(np.int64))
-    xs = np.minimum(gw - 1, ((np.arange(width) + .5) * gw / width).astype(np.int64))
-    grid = arrival[ys[:, None], xs[None, :]].astype(np.float32)
-    left = ~np.isfinite(moments) & (alpha > 0)
-    moments[left] = grid[left]
+    moments = _fill_from_nearest(moments, alpha)
     if PENCIL_LINES:
         # the edge as lines that follow the picture's own strokes (pencil_lines.py)
         from pencil_lines import pencil_moments
@@ -130,7 +124,27 @@ def build_field(plan, image):
     return moments, alpha
 
 
+def _fill_from_nearest(moments, alpha):
+    """exp.3 (the user: Arthur's end "glitch": the last stroke revealed the rest): a visible
+    pixel the strokes do not reach (the faint soft edges, a few percent opaque, were 11% of
+    Arthur) appears with the nearest pixel they do reach, never all together at the end."""
+    import cv2
+    reached = np.isfinite(moments)
+    left = ~reached & (alpha > 0)
+    if not left.any() or not reached.any():
+        return moments
+    _, nearest = cv2.distanceTransformWithLabels((~reached).astype(np.uint8), cv2.DIST_L2, 5,
+                                                 labelType=cv2.DIST_LABEL_PIXEL)
+    values = moments[reached]            # the labels number the reached pixels in reading order
+    out = moments.copy()
+    out[left] = values[np.clip(nearest[left] - 1, 0, values.size - 1)]
+    return out
+
+
 PENCIL_LINES = True      # tests: False keeps the plain round strokes
+ZIG_SWING = .7           # exp.3: the hand swings this many ring widths to each side of the trace
+ZIG_WAVE = .9            # exp.3: and moves on this many ring widths per back-and-forth
+ZIG_PEN = .32            # exp.3: the pencil's radius, in ring widths
 PENCIL = .6              # exp.2: the stroke is this share of the brush size (a pencil, more strokes)
 LEG = 4.5                # exp.2: a stroke is at most this many stroke radii long...
 LEG_MIN, LEG_MAX = .03, .08   # ...but between these shares of the picture's width
@@ -303,7 +317,7 @@ def _hatch(mask, r, spacing, cursor, leg=None):
 
 
 def build_stroke_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
-    """Painter's parts and order, drawn with real zigzag strokes (see module).
+    """Painter's parts, order and traces, drawn with big zigzag strokes (see module).
 
     exp.2 (the user: "only go with the painter... also have this option of colour areas, AI
     parts"): the parts are Painter's (colour areas, or the real parts the AI found) in
@@ -354,68 +368,52 @@ def build_stroke_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
         ys = np.clip((np.linspace(a[1], b[1], n) - y0).astype(int), 0, mask.shape[0] - 1)
         return float(mask[ys, xs].mean())
 
-    for rid in order:
-        lo, hi = np.searchsorted(sorted_ids, [rid, rid + 1])
-        if hi - lo < 3:
-            continue
-        cells = idx[lo:hi]
-        py, px = cells // W, cells % W
-        x0, x1, y0, y1 = px.min(), px.max() + 1, py.min(), py.max() + 1
-        part = np.zeros((y1 - y0, x1 - x0), np.uint8)
-        part[py - y0, px - x0] = 1
-        part &= visible[y0:y1, x0:x1]
-        if part.sum() < 3:
-            continue
-        count, comp = cv2.connectedComponents(part, connectivity=8)
-        pieces = []
+    # exp.3 (the user: "follow the traces, but with increasing the hand movement... the hand is
+    # not visible"): the hand follows Painter's traces (its strokes around every shape, from the
+    # edge inwards) and zigzags across them in big, clearly visible back-and-forth strokes, wide
+    # enough to cover the trace's whole band, so the movement reads as drawing.
+    def zigzag(points, band, r, rid):
+        """Back-and-forth strokes along a trace (WORK pixels), each across the band."""
+        pts = np.asarray(points, np.float64)
+        if len(pts) < 2:
+            return
+        steps = np.hypot(*np.diff(pts, axis=0).T)
+        along = np.concatenate([[0.], np.cumsum(steps)])
+        length = float(along[-1])
+        if length < 1e-6:
+            return
+        wave = max(1.5, band * ZIG_WAVE)                # how far the hand moves on per stroke
+        count = max(2, int(math.ceil(length / (wave / 2))) + 1)
+        at = np.linspace(0., length, count)
+        xs = np.interp(at, along, pts[:, 0]); ys = np.interp(at, along, pts[:, 1])
+        dx = np.gradient(xs); dy = np.gradient(ys)
+        norm = np.maximum(1e-9, np.hypot(dx, dy))
+        nx, ny = -dy / norm, dx / norm
+        swing = band * ZIG_SWING
+        side = np.where(np.arange(count) % 2 == 0, 1., -1.)
+        side[0] = side[-1] = 0.                         # start and end on the trace
+        zx = np.clip(xs + nx * swing * side, 0, W - 1); zy = np.clip(ys + ny * swing * side, 0, H - 1)
+        if math.dist(cursor, (zx[0], zy[0])) > 1e-6:
+            add(tuple(cursor), (zx[0], zy[0]), r, rid, math.dist(cursor, (zx[0], zy[0])) <= band * 1.5)
         for k in range(1, count):
-            m = comp == k
-            if m.sum() >= 3:
-                ys, xs = np.nonzero(m)
-                pieces.append((math.hypot(xs.mean() + x0 - cursor[0], ys.mean() + y0 - cursor[1]), k, m))
-        while pieces:
-            pieces.sort(key=lambda t: math.hypot(*(np.argwhere(t[2]).mean(0)[::-1] + (x0, y0) - cursor)))
-            _, k, m = pieces.pop(0)
-            m8 = m.astype(np.uint8)
-            dt = cv2.distanceTransform(np.pad(m8, 1), cv2.DIST_L2, 3)[1:-1, 1:-1]
-            # a pencil-sized stroke (smaller than a brush) and short legs: many quick strokes
-            r = max(1.2, min(maximum * PENCIL, float(dt.max()) * .95))
-            leg = min(LEG_MAX * W, max(LEG_MIN * W, LEG * r))
-            strokes = _hatch(m, r, spacing, cursor - (x0, y0), leg)
-            drawn = []
-            for sx, sy, ex, ey in strokes:
-                a, b = (sx + x0, sy + y0), (ex + x0, ey + y0)
-                if math.dist(cursor, a) > 1e-6:
-                    turn = inside_share(m, x0, y0, cursor, a) >= TURN_INSIDE and len(drawn) > 0
-                    add(tuple(cursor), a, r, rid, turn)
-                    if turn:
-                        drawn.append((cursor[0] - x0, cursor[1] - y0, a[0] - x0, a[1] - y0, r))
-                add(a, b, r, rid, True)
-                drawn.append((sx, sy, ex, ey, r))
-            # what the passes missed: short strokes along each missed spot
-            for _repair in range(2):
-                cover = _capsules(np.zeros(m.shape, np.uint8), drawn)
-                missing = (m & (cover == 0)).astype(np.uint8)
-                if missing.sum() < 4:
-                    break
-                n, lab, stats, _ = cv2.connectedComponentsWithStats(missing, connectivity=8)
-                for j in range(1, n):
-                    if stats[j, cv2.CC_STAT_AREA] < 4:
-                        continue
-                    ys, xs = np.nonzero(lab == j)
-                    pts = np.stack([xs + .5, ys + .5], 1)
-                    cm = pts.mean(0)
-                    if len(pts) > 2:
-                        w, v = np.linalg.eigh(np.cov((pts - cm).T)); u = v[:, 1]
-                    else:
-                        u = np.array([1., 0.])
-                    proj = (pts - cm) @ u
-                    blob = (lab == j).astype(np.uint8)
-                    rr = max(1.2, float(cv2.distanceTransform(np.pad(blob, 1), cv2.DIST_L2, 3).max()) + .8)
-                    a = tuple(cm + u * proj.min() + (x0, y0)); b = tuple(cm + u * proj.max() + (x0, y0))
-                    add(tuple(cursor), a, rr, rid, False)
-                    add(a, b, rr, rid, True)
-                    drawn.append((a[0] - x0, a[1] - y0, b[0] - x0, b[1] - y0, rr))
+            add((zx[k - 1], zy[k - 1]), (zx[k], zy[k]), r, rid, True)
+
+    trace, trace_rid, trace_r = [], None, 1.
+    for seg in base.segments + [None]:
+        if seg is not None and seg.painting and (not trace or seg.region == trace_rid):
+            a = (seg.a[0] / gw * W, seg.a[1] / gh * H); b = (seg.b[0] / gw * W, seg.b[1] / gh * H)
+            if not trace:
+                trace = [a]; trace_rid = seg.region
+                trace_r = seg.radius / .75 / to_grid        # Painter's ring width, in WORK pixels
+            trace.append(b)
+            continue
+        if trace:
+            band = max(2., trace_r)
+            zigzag(trace, band, max(1.2, band * ZIG_PEN), trace_rid)
+            trace = []
+        if seg is not None and seg.painting:              # a new part starts right here
+            a = (seg.a[0] / gw * W, seg.a[1] / gh * H); b = (seg.b[0] / gw * W, seg.b[1] / gh * H)
+            trace = [a, b]; trace_rid = seg.region; trace_r = seg.radius / .75 / to_grid
     plan = PaintPlan(base.size, base.labels, segments, [s.end for s in segments], [], base.origin,
                      clock, list(base.warnings), base.region_count)
     # the grid of moments (for everything that reads the plan's cells): the first moment the
