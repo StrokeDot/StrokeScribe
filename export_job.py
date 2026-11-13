@@ -122,6 +122,11 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     import picture_look
     if options.get('final_image') is not None:
         options['final_image'] = picture_look.adjusted(options['final_image'], s)
+    if s.get('ink_on'):
+        # exp.4: graphite darkens the page (multiply) instead of covering it; the fold
+        if s.get('ink_colour') == picture_look.GRAPHITE and (options.get('blend_mode') or 'Normal') == 'Normal':
+            options['blend_mode'] = 'Multiply'
+        options['follow_fold'] = bool(s.get('ink_fold'))
     return options
 
 

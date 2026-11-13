@@ -4539,6 +4539,15 @@ def build_look_sections(w):
     w.ink_colour.setToolTip('The colour of the ink. "The picture\'s own colours" keeps its colours, as ink.')
     w.look_widgets['ink_colour']=w.ink_colour
     f.addRow('Ink colour',w.ink_colour)
+    # exp.4: bend into an open book's fold and fade in its gutter (page_fold.py)
+    w.ink_fold=QCheckBox('Follow the page fold')
+    w.ink_fold.setToolTip('On an open book: the drawing bends into the fold between the pages and fades in '
+                          'the gutter, like pencil on real pages (the fold is found in the page underneath).')
+    w.look_widgets['ink_fold']=w.ink_fold
+    f.addRow('',w.ink_fold)
+    w.ink_colour.setItemData(w.ink_colour.findText(picture_look.GRAPHITE),
+                             'The ink darkens the page like graphite: the page\'s tone, stains and grain stay '
+                             'in the darks, the paper\'s tooth breaks the strokes a little.',Qt.ItemDataRole.ToolTipRole)
     # Colour, like Filmora.
     colour_on=switch('look_colour_on','Colour','Temperature, tint and saturation of the picture.')
     w.section_look_colour=Section('Colour',switch=colour_on)

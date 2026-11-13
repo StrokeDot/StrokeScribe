@@ -307,12 +307,21 @@ class World:
         p.end()
         return out
 
-    def put(self, under, image, frame, view, blend_mode='Normal', opacity=100):
-        """`image` (a frame of one scene, the frame's own picture) placed into a view picture."""
+    def put(self, under, image, frame, view, blend_mode='Normal', opacity=100, fold=False):
+        """`image` (a frame of one scene, the frame's own picture) placed into a view picture.
+        fold (exp.4): bend it into the page's fold found underneath (page_fold.py)."""
         from PySide6.QtCore import QRectF
         from PySide6.QtGui import QPainter
         out = under.copy()
         x, y, w, h = self.place(frame, view, out.width(), out.height())
+        if fold:
+            try:
+                import page_fold
+                fx = page_fold.find_fold(under, x, y, w, h)
+                if fx is not None:
+                    image = page_fold.follow_fold(image, fx, x, w, out.width())
+            except Exception:
+                pass
         p = QPainter(out)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         from blend_modes import composition_mode
