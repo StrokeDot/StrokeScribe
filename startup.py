@@ -31,6 +31,19 @@ def main():
     # file under another name and must not open a window or touch the log.
     os.chdir(root)
     if sys.platform=='win32':
+        # exp.8 (the user: Task Manager showed "Python"): the installed app runs as its own
+        # StrokeScribe.exe (win_branding.py); an installation started on Python's pythonw.exe
+        # makes it once and starts again through it.
+        try:
+            import win_branding
+            launcher=win_branding.startup_launcher(root)
+            if launcher is not None:
+                import subprocess
+                env=dict(os.environ,STROKESCRIBE_LAUNCHER='1')
+                subprocess.Popen([str(launcher),str(root/'startup.py'),*sys.argv[1:]],cwd=str(root),env=env)
+                return
+        except Exception:
+            pass                        # it goes on as before (as "Python")
         try:
             # Own taskbar icon (matches the Start menu shortcut of the installer).
             import ctypes

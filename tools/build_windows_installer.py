@@ -25,9 +25,9 @@ PYTHON_NUPKG = f'https://api.nuget.org/v3-flatcontainer/python/{PYTHON_VERSION}/
 STAGE = ROOT / 'build' / 'stage'
 
 
-def run(*cmd):
+def run(*cmd, cwd=None):
     print('>', ' '.join(str(c) for c in cmd), flush=True)
-    subprocess.run([str(c) for c in cmd], check=True)
+    subprocess.run([str(c) for c in cmd], check=True, cwd=None if cwd is None else str(cwd))
 
 
 def main():
@@ -59,6 +59,13 @@ def main():
         '-r', ROOT / 'requirements.txt')
     run(python, '-c', 'import PySide6.QtWidgets, PySide6.QtMultimedia, numpy, cv2, onnxruntime, PIL, '
                       'svgelements; print("packages OK")')
+    # exp.8: the app's own launcher, StrokeScribe.exe (Task Manager names it StrokeScribe, not
+    # Python); the shortcuts start it (win_branding.py)
+    run(python, '-c', 'import sys, win_branding, version; '
+                      't = win_branding.ensure_launcher(sys.argv[1], sys.argv[2], version.APP_VERSION); '
+                      'd = win_branding.description(t); print("launcher", t, d); '
+                      'assert d == "StrokeScribe", d',
+        runtime, STAGE / 'assets' / 'strokescribe.ico', cwd=STAGE)
     for cache in runtime.rglob('__pycache__'):
         shutil.rmtree(cache, ignore_errors=True)
     size = sum(p.stat().st_size for p in STAGE.rglob('*') if p.is_file())

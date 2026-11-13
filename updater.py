@@ -689,16 +689,16 @@ def install_requirements(app_dir=APP_DIR, log=lambda text: None):
 
 
 def console_python():
-    """python.exe next to pythonw.exe (the installed app runs windowless)."""
+    """python.exe next to pythonw.exe / StrokeScribe.exe (the installed app runs windowless)."""
     exe = Path(sys.executable)
-    if exe.name.lower() == 'pythonw.exe' and (exe.parent / 'python.exe').is_file():
+    if exe.name.lower() in ('pythonw.exe', 'strokescribe.exe') and (exe.parent / 'python.exe').is_file():
         return str(exe.parent / 'python.exe')
     return sys.executable
 
 
 def restart(app_dir=APP_DIR):
     """Start the updated StrokeScribe (the caller then closes this one)."""
-    windowless = Path(sys.executable).name.lower() == 'pythonw.exe'     # installed version
+    windowless = Path(sys.executable).name.lower() in ('pythonw.exe', 'strokescribe.exe')   # installed version
     flags = 0 if windowless else getattr(subprocess, 'CREATE_NEW_CONSOLE', 0)
     subprocess.Popen([sys.executable, '-u', str(Path(app_dir) / 'startup.py')], cwd=str(app_dir),
                      creationflags=flags)
