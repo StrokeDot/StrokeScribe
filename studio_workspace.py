@@ -3718,10 +3718,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.sound_on.setToolTip('A pencil sound while the pen draws (silent during pen lifts), a brush sound '
                           'while painting and an eraser sound while erasing, matched to the animation.')
     sound_l.addWidget(w.sound_on)
-    sound_l.addWidget(help_note('Pencil, brush, eraser sounds','Use the built-in sounds (a pencil on paper, made from the hand\'s own movement: louder and brighter when it moves faster, silent when it lifts), or add your own recordings. They play only while the pen moves. No sound is added until you choose one.'))
+    sound_l.addWidget(help_note('Pencil, brush, eraser sounds','Use the built-in sounds (real recordings of a pencil on paper and an eraser), or add your own recordings. Every stroke of the hand gets its own pencil stroke, as loud as the hand is quick, with the background noise cleaned out; silent when the pen lifts. No sound is added until you choose one.'))
     w.builtin_sounds_button=QPushButton('♪ Use the built-in pencil sounds')
-    w.builtin_sounds_button.setToolTip('A pencil on paper for drawing and colouring, and an eraser, made from '
-                                       'the hand\'s own movement. Rows with your own recordings are kept.')
+    w.builtin_sounds_button.setToolTip('Real recordings of a pencil on paper (drawing and colouring) and an eraser, '
+                                       'following every stroke of the hand. Rows with your own recordings are kept.')
     w.builtin_sounds_button.clicked.connect(lambda checked=False: w.use_builtin_sounds())
     sound_l.addWidget(w.builtin_sounds_button)
     create_sound=QPushButton('✦ Create a sound with AI…')

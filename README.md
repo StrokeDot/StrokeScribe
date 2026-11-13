@@ -6,6 +6,10 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## A real pencil sound that follows the drawing (v1.0.1-experimental.6)
+- The built-in **Pencil on paper** and **Eraser** sounds are now real recordings (CC0: "pencil_write" by NachtmahrTV, "pencil_erase" by damsur; see assets/sounds/CREDITS.md), replacing the synthesized sound.
+- Every recording (built-in or your own) is cleaned of its background noise (spectral gating, rumble removed), cut into its single pencil strokes, and played stroke by stroke with the hand: each back-and-forth gets its own stroke, as loud as the hand is quick, panned with it, and silence while the pen is up.
+
 ## Fixes: painting order with Sketch edges, no lag, no card while switching (v1.0.1-experimental.5)
 - The painting order no longer changes with **Sketch edges** or **Graphite on paper**: the hand's route is planned on the plain ink look; the chosen look is what is shown (switching edges or ink no longer plans the route again).
 - **Follow the page fold** no longer slows the preview: only the strip around the fold is reworked (about 10 ms a frame instead of a third of a second), and the fold is found on a small copy of the page. Sketch edges are worked out on a smaller copy too.
