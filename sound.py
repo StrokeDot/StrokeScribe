@@ -92,6 +92,17 @@ def synthesize(samples, total_seconds, width, height, volume=.8, seed=11, record
     mono = np.zeros(count)
     for kind, level, attack, gain in (('draw', draw, .012, 1.4), ('paint', paint, .03, 1.), ('rub', rub, .02, 1.)):
         if kind in recordings:
+            # exp.6 (the user: a sound that adjusts to the drawing): the recording's own strokes,
+            # one for every stroke of the hand (sound_strokes.py); a recording without separate
+            # strokes (a steady hiss) is looped under the pen's loudness as before
+            import sound_strokes
+            rec = recordings[kind]
+            key = (id(rec), len(rec))
+            if len(sound_strokes.pieces(rec, key)) >= 3:
+                part, _ = sound_strokes.render(samples, total_seconds, width, rec,
+                                               {'rub': 'erase'}.get(kind, kind), seed, key)
+                mono += part[:count] * gain
+                continue
             env = _smooth(np.interp(t_audio, times, level), int(attack * RATE))
             mono += _bed(recordings[kind], count, rng) * np.clip(env * 1.5, 0, 1) * gain
     if builtin:
