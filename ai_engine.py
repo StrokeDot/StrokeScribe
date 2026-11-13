@@ -517,7 +517,7 @@ def _run(cmd, log, cancelled, cwd=None):
 
 def _base_python():
     exe = Path(getattr(sys, '_base_executable', None) or sys.executable)
-    if exe.name.lower() == 'pythonw.exe' and (exe.parent / 'python.exe').is_file():
+    if exe.name.lower() in ('pythonw.exe', 'strokescribe.exe') and (exe.parent / 'python.exe').is_file():
         exe = exe.parent / 'python.exe'          # the installed app runs windowless
     return str(exe)
 

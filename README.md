@@ -6,6 +6,10 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## StrokeScribe in Task Manager, not "Python" (v1.0.1-experimental.8)
+- The installed app now runs as its own **StrokeScribe.exe** (a copy of the private Python's pythonw.exe carrying StrokeScribe's name, description and icon), so Task Manager, the taskbar and Windows' "open with" lists show **StrokeScribe** with its icon instead of "Python".
+- New installers start it from their shortcuts. An existing installation makes it on its next start and restarts through it once: no reinstall needed.
+
 ## Sound back to your own recordings (v1.0.1-experimental.7)
 - The built-in pencil/eraser sounds and the stroke-following sound engine are removed: sounds are your own recordings again, played as in 1.0.0.
 - **Create a sound** (AI) is removed: no sound task in the Create window or the AI tab, and no Stable Audio model in the model list.

@@ -43,11 +43,11 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Source: "..\build\stage\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
-Name: "{autoprograms}\StrokeScribe"; Filename: "{app}\runtime\pythonw.exe"; Parameters: """{app}\startup.py"""; WorkingDir: "{app}"; IconFilename: "{app}\assets\strokescribe.ico"; AppUserModelID: "StrokeDot.StrokeScribe"; Comment: "Hand-drawn whiteboard animations"
-Name: "{autodesktop}\StrokeScribe"; Filename: "{app}\runtime\pythonw.exe"; Parameters: """{app}\startup.py"""; WorkingDir: "{app}"; IconFilename: "{app}\assets\strokescribe.ico"; AppUserModelID: "StrokeDot.StrokeScribe"; Tasks: desktopicon
+Name: "{autoprograms}\StrokeScribe"; Filename: "{app}\runtime\StrokeScribe.exe"; Parameters: """{app}\startup.py"""; WorkingDir: "{app}"; IconFilename: "{app}\assets\strokescribe.ico"; AppUserModelID: "StrokeDot.StrokeScribe"; Comment: "Hand-drawn whiteboard animations"
+Name: "{autodesktop}\StrokeScribe"; Filename: "{app}\runtime\StrokeScribe.exe"; Parameters: """{app}\startup.py"""; WorkingDir: "{app}"; IconFilename: "{app}\assets\strokescribe.ico"; AppUserModelID: "StrokeDot.StrokeScribe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\runtime\pythonw.exe"; Parameters: """{app}\startup.py"""; WorkingDir: "{app}"; Description: "Start StrokeScribe"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\runtime\StrokeScribe.exe"; Parameters: """{app}\startup.py"""; WorkingDir: "{app}"; Description: "Start StrokeScribe"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 ; Files added after installing (updates, the update backup, logs, caches).
