@@ -6,6 +6,10 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Sound back to your own recordings (v1.0.1-experimental.7)
+- The built-in pencil/eraser sounds and the stroke-following sound engine are removed: sounds are your own recordings again, played as in 1.0.0.
+- **Create a sound** (AI) is removed: no sound task in the Create window or the AI tab, and no Stable Audio model in the model list.
+
 ## A real pencil sound that follows the drawing (v1.0.1-experimental.6)
 - The built-in **Pencil on paper** and **Eraser** sounds are now real recordings (CC0: "pencil_write" by NachtmahrTV, "pencil_erase" by damsur; see assets/sounds/CREDITS.md), replacing the synthesized sound.
 - Every recording (built-in or your own) is cleaned of its background noise (spectral gating, rumble removed), cut into its single pencil strokes, and played stroke by stroke with the hand: each back-and-forth gets its own stroke, as loud as the hand is quick, panned with it, and silence while the pen is up.

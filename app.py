@@ -3136,10 +3136,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.update_paint_hand_label()
         self.move_hand_path=tools_kit.restore_paint_hand(settings.get('move_hand_path'),data.get('move_hand_png'))
         self.update_move_hand_label()
-        from sound import is_builtin
         for key in self.sound_files:
             path=settings.get(key)
-            self.sound_files[key]=path if path and (is_builtin(path) or Path(path).is_file()) else None
+            self.sound_files[key]=path if path and Path(path).is_file() else None
         self.update_sound_buttons()
         letter=data.get('letter',{})
         self.letter_ink_color=letter.get('ink',self.letter_ink_color)
@@ -3673,7 +3672,6 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 made=[]
                 CreateImageDialog(self,None,lambda kind,p,original=None:made.append((kind,p,original)),
                                   self.ai_engine).exec()
-                made=[m for m in made if m[0]!='sound']
                 if not made:return False
                 kind,path,original=made[-1]
             else:kind,original='image',None
@@ -4900,20 +4898,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         dialog.exec()
 
     def use_ai_result(self,kind,path,original=None,as_element=False,placement=None,same_spot=False):
-        """Line art: trace it over `original`; image: import it as the image source;
-        sound: use it as the pencil/brush/eraser sound (original = which one)."""
-        if kind=='sound':
-            # Keep a copy in the Library: the engine's output folder is not a safe home.
-            import library
-            try:
-                kept=str(library.Library().add('audio',path).path)
-            except Exception:
-                kept=str(path)
-            self.set_sound_file(original or 'sound_pencil_file',kept)
-            self.status.setText('New '+{'sound_pencil_file':'pencil','sound_brush_file':'brush',
-                                       'sound_eraser_file':'eraser'}.get(original,'pencil')
-                                +' sound in use (saved in the Library → Audio). Press Play to hear it.')
-            return
+        """Line art: trace it over `original`; image: import it as the image source."""
         return self.request_artwork(path,kind=kind,original=original,
                                     placement='add' if as_element else placement,same_spot=same_spot,whole_preview=as_element)
 
@@ -5746,29 +5731,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         return dialog
 
     def update_sound_buttons(self):
-        from sound import sound_name,is_builtin
         for key,(button,text) in self.sound_file_buttons.items():
             path=self.sound_files.get(key)
-            button.setText(sound_name(path) if path else 'Add sound…')      # the row label names it
+            button.setText(Path(path).stem if path else 'Add sound…')      # the row label names it
             remove=getattr(self,'sound_remove_buttons',{}).get(key)
             if remove is not None:
                 remove.setVisible(bool(path))
-            shown=sound_name(path) if is_builtin(path) else (Path(path).name if path else '')
-            button.setToolTip(f'{text} sound: {shown}. Click to choose another.' if path
-                              else f'No {text.lower()} sound yet. Click to choose a built-in sound or a '
-                                   f'recording (MP3, WAV, M4A…).')
-
-    def use_builtin_sounds(self):
-        """1.0.1: the built-in pencil on paper (drawing and colouring) and eraser (real CC0
-        recordings, exp.6); rows with the user's own recordings are kept."""
-        from sound import BUILTIN_FOR
-        for key,kind in (('sound_pencil_file','draw'),('sound_brush_file','paint'),('sound_eraser_file','rub')):
-            if not self.sound_files.get(key):
-                self.sound_files[key]=BUILTIN_FOR[kind]
-        self.sound_on.setChecked(True)
-        self.update_sound_buttons()
-        self.note_change()
-        if self.playing: self.sync_preview_sound()
+            button.setToolTip(f'{text} sound: {Path(path).name}. Click to choose another.' if path
+                              else f'No {text.lower()} sound yet. Click to choose a recording (MP3, WAV, M4A…).')
 
     def choose_sound_file(self,key):
         import audio_track
@@ -5777,10 +5747,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if name: self.set_sound_file(key,self.keep_in_library('audio',name))
 
     def set_sound_file(self,key,path):
-        from sound import is_builtin
-        if path and is_builtin(path):
-            self.sound_on.setChecked(True)
-        elif path:
+        if path:
             from sound import load_recording
             if load_recording(path) is None:
                 QMessageBox.warning(self,'Sound','This recording could not be read (or it is silent).'); return

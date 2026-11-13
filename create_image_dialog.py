@@ -27,8 +27,9 @@ import ai_models
 import model_updates_live
 from ai_workflows import LINE_ART_PROMPT, SIZES, SOUND_PROMPTS, build
 
+# exp.7 (the user): no "Create a sound" (the user makes the sounds another way)
 TASKS = (('lineart', 'Line art for my image'), ('generate', 'Create from text'),
-         ('edit', 'Edit an image'), ('sound', 'Create a sound'))
+         ('edit', 'Edit an image'))
 GENERATE_PROMPT = ('A friendly cartoon coffee cup with steam, bold clean shapes, '
                    'flat colours, white background')
 EDIT_PROMPT = 'Make the background plain white.'
@@ -788,6 +789,8 @@ class CreateImageDialog(QDialog):
         return [m for m in ai_models.MODELS if need in m.tasks]
 
     def set_task(self, key):
+        if key not in dict(TASKS):          # (exp.7: no sound task any more)
+            key = 'generate'
         if self.task is not None:
             self.memory[self.task] = dict(self.memory.get(self.task, {}), prompt=self.prompt.toPlainText(),
                                           result_path=self.result_path, kept_path=self.kept_path)

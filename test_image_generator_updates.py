@@ -164,9 +164,9 @@ class DrawerTests(unittest.TestCase):
 
     def test_image_only_panel_and_compact_layout(self):
         d = self.dialog
-        d.set_task("sound")
+        d.set_task("generate")
         drawer = self.show_drawer()
-        self.assertEqual(d.task, "sound")
+        self.assertEqual(d.task, "generate")
         self.assertNotIn("Stable Audio", " ".join(x.text() for x in drawer.findChildren(QLabel)))
         for width, height in ((1000, 740), (1480, 900)):
             d.resize(width, height)
