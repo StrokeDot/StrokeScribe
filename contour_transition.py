@@ -79,12 +79,12 @@ def source_frame(drawing, image, width, height):
 
 def render_transition(drawing, image, width, height, progress, thickness,
                       brush_width, stroke_spacing, hand, hand_scale, anchor,
-                      reveal_mode='adaptive'):
+                      reveal_mode='adaptive', display_image=None):
     from color_reveal import artwork_rect, paint_mask, draw_hand, last_stroke_canvas_endpoint
     progress = max(0., min(1., float(progress)))
     if progress <= 0:
         return render(drawing,1,width,height,thickness)
-    original = source_frame(drawing, image, width, height)
+    original = source_frame(drawing, display_image if display_image is not None else image, width, height)
     if progress >= RETIRE_END:
         return original
     rect = artwork_rect(drawing, image, width, height)

@@ -91,13 +91,20 @@ def _paper_tooth(h, w):
 
 def _sketch_edges(lum, size):
     """0..1: fading towards the border in ragged strokes along the picture's own marks."""
+    import cv2
     import pencil_lines
     h, w = lum.shape
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
     d = np.minimum.reduce([xx, w - 1 - xx, yy, h - 1 - yy]) / max(1., size / 100. * min(w, h))
-    scale = max(w, h) / 1280.
-    dx, dy = pencil_lines.directions(lum.astype(np.float32), scale)
-    streak = pencil_lines.streaks(dx, dy, max(1.2, 1.6 * scale), max(10., 22. * scale))
+    # exp.5 (lag): the strokes' directions and streaks on a copy at most 640 pixels across
+    k = min(1., 640. / max(w, h))
+    small = cv2.resize(lum.astype(np.float32), (max(8, round(w * k)), max(8, round(h * k))),
+                       interpolation=cv2.INTER_AREA) if k < 1 else lum.astype(np.float32)
+    scale = max(small.shape) / 1280.
+    dx, dy = pencil_lines.directions(small, scale)
+    streak = pencil_lines.streaks(dx, dy, max(1.2, 1.6 * scale), max(8., 22. * scale))
+    if k < 1:
+        streak = cv2.resize(streak, (w, h), interpolation=cv2.INTER_LINEAR)
     # ragged inside, but nothing at the rectangle's own border (no straight cut line)
     f = np.clip(d * 1.15 + (streak - .5) * .6 * np.clip(d * 4, 0, 1), 0, 1)
     return f * f * (3 - 2 * f)
@@ -142,6 +149,26 @@ def ink(rgba, removal=50., strength=100., colour_rgb=(41, 41, 44), edges='soft',
         out[..., :3] = np.asarray(colour_rgb, np.float32) / 255.
     out[..., 3] = np.clip(amount, 0, 1) * alpha
     return out
+
+
+def route_settings(s):
+    """exp.5 (the user: with Sketch edges "it doesn't follow the painting order"): the hand's
+    route is planned on the plain ink look (dark grey, soft edges), so how the edges and the
+    graphite look never changes the parts, the order or the route (and switching them does not
+    plan the route again). The full look is what is shown."""
+    out = dict(s)
+    if out.get('ink_edges') == 'Sketch edges':
+        out['ink_edges'] = 'Soft edges'
+    if out.get('ink_colour') == GRAPHITE:
+        out['ink_colour'] = 'Dark grey (like printed text)'
+    return out
+
+
+def pictures(image, s):
+    """(the picture the hand's route is planned on, the picture shown or None when the same)."""
+    route = adjusted(image, route_settings(s))
+    shown = adjusted(image, s)
+    return route, (None if shown is route else shown)
 
 
 def active(s):

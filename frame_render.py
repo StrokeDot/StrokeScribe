@@ -10,7 +10,7 @@ from __future__ import annotations
 RENDER_KEYS = {'width', 'height', 'duration', 'fade_duration', 'hold_duration', 'final_image', 'thickness',
                'hand', 'hand_scale', 'anchor', 'reveal_mode', 'brush_width', 'painting_hand',
                'stroke_spacing', 'artwork_scale', 'paper_cleanup','paper_tolerance','paper_softness',
-               'paint_look', 'pencil_first'}
+               'paint_look', 'pencil_first', 'display_image'}
 
 
 # What a frame shows (Export tab -> Export): everything, only the moving hand
@@ -643,6 +643,12 @@ def _plan_digest(drawing, options):
             options.get('hold_duration'), getattr(drawing, 'image_animation', None))
 
 
+def _shown_key(options):
+    """exp.5: the shown picture's identity (its look can differ from the route's picture)."""
+    shown = options.get('display_image')
+    return shown.cacheKey() if shown is not None and not shown.isNull() else None
+
+
 def _paint_window(drawing, options):
     """(first, last): seconds of the element (without the travel) when the painting hand
     first and last really paints, for the planned paintings (adaptive, painter, rows...)."""
@@ -710,7 +716,8 @@ def last_tip(drawing, options):
     key = (id(drawing), round(lead, 4), round(hand_end, 4), round(hand_start, 4), round(total, 4),
            options.get('width'), options.get('height'), repr(options.get('offset')), options.get('artwork_scale'),
            options.get('reveal_mode'), options.get('brush_width'), options.get('hand_scale'),
-           picture.cacheKey() if picture is not None and not picture.isNull() else None, _plan_digest(drawing, options))
+           picture.cacheKey() if picture is not None and not picture.isNull() else None,
+           _shown_key(options), _plan_digest(drawing, options))
     if key in _LAST_TIP:
         return _LAST_TIP[key]
     found = None
@@ -757,6 +764,7 @@ def phase_tip(drawing, options, phase):
            opts.get('width'), opts.get('height'), repr(opts.get('offset')), opts.get('artwork_scale'),
            opts.get('reveal_mode'), opts.get('brush_width'), opts.get('hand_scale'), repr(opts.get('anchor')),
            picture.cacheKey() if picture is not None and not picture.isNull() else None,
+           _shown_key(opts),
            _plan_digest(drawing, opts), repr(opts.get('hand_glide_path_in')), repr(opts.get('hand_glide_path_out')),
            opts.get('hand_glide_style_in'), opts.get('hand_glide_style_out'))
     if key in _PHASE_TIP:

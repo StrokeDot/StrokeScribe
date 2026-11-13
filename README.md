@@ -6,6 +6,11 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Fixes: painting order with Sketch edges, no lag, no card while switching (v1.0.1-experimental.5)
+- The painting order no longer changes with **Sketch edges** or **Graphite on paper**: the hand's route is planned on the plain ink look; the chosen look is what is shown (switching edges or ink no longer plans the route again).
+- **Follow the page fold** no longer slows the preview: only the strip around the fold is reworked (about 10 ms a frame instead of a third of a second), and the fold is found on a small copy of the page. Sketch edges are worked out on a smaller copy too.
+- No "Preparing brush route" card when you change something while paused (another element, a setting, the paint mode): the route is planned in the background and the window keeps working. Only Play or a scrub before it is ready waits for it.
+
 ## The drawing embedded in the page (v1.0.1-experimental.4)
 Three new choices in **Ink on the page** (existing projects look the same until you pick them):
 - **Ink colour › Graphite on paper**: the drawing darkens the page like graphite instead of covering it, so the page's tone, stains and grain stay in the darks; never pure black; the paper's tooth breaks the strokes slightly.

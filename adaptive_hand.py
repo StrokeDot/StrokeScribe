@@ -912,7 +912,7 @@ def under_pencil(frame,drawing,image,width,height,rect,progress,brush_width,stro
 
 
 def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
-                    stroke_spacing,hand,hand_scale,anchor):
+                    stroke_spacing,hand,hand_scale,anchor,display_image=None):
     from color_reveal import artwork_rect,draw_hand
     from engine import render
     rect=artwork_rect(drawing,image,width,height)
@@ -925,7 +925,7 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
         painter=QPainter(frame)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         from source_render import draw_source
-        draw_source(painter,rect,image)
+        draw_source(painter,rect,display_image if display_image is not None else image)
         draw_hand(painter,finished_tip(drawing,image,rect,progress,brush_width,stroke_spacing),
                   hand,width,hand_scale,anchor)       # exp.182: the hand stays on its last stroke
         painter.end()
@@ -940,7 +940,7 @@ def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
     p=QPainter(painted)
     p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     from source_render import draw_source
-    draw_source(p,rect,image)
+    draw_source(p,rect,display_image if display_image is not None else image)
     p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
     p.drawImage(0,0,mask)
     p.end()
