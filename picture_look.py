@@ -21,16 +21,27 @@ COLOUR = (('look_temperature', 'Temperature'), ('look_tint', 'Tint'), ('look_sat
 LIGHT = (('look_exposure', 'Exposure'), ('look_brightness', 'Brightness'), ('look_contrast', 'Contrast'),
          ('look_highlights', 'Highlight'), ('look_shadows', 'Shadow'), ('look_whites', 'White'),
          ('look_blacks', 'Black'))
-EDGES = {'Soft edges': 'soft', 'Oval fade': 'oval', 'No fading': 'none'}
+EDGES = {'Soft edges': 'soft', 'Oval fade': 'oval', 'Sketch edges': 'sketch', 'No fading': 'none'}
+GRAPHITE = 'Graphite on paper'
 INK_COLOURS = {'Dark grey (like printed text)': (41, 41, 44), 'Black': (12, 12, 12),
-               'Sepia': (74, 52, 34), "The picture's own colours": None}
+               'Sepia': (74, 52, 34), "The picture's own colours": None, GRAPHITE: (51, 51, 56)}
+# exp.4 (the user, with a game screenshot of a sketch in a journal: make the drawing look
+# embedded in the page):
+# * Graphite on paper: the ink darkens the page (multiplies it) instead of covering it, so the
+#   page's tone, stains and light stay in the darks; it is never pure black; the paper's tooth
+#   breaks the strokes a little (graphite skips the paper's low spots); slightly soft, like a
+#   page photographed.
+# * Sketch edges: the drawing ends in ragged, stroke-like edges along its own pencil marks
+#   instead of a smooth photo fade.
+# * Follow the page fold (ink_fold): bends into an open book's fold and fades in its gutter
+#   (page_fold.py, where the picture is put on the page).
 
 DEFAULTS = dict(look_colour_on=False, look_light_on=False, ink_on=False,
                 look_temperature=0., look_tint=0., look_saturation=0.,
                 look_exposure=0., look_brightness=0., look_contrast=0., look_highlights=0.,
                 look_shadows=0., look_whites=0., look_blacks=0.,
                 ink_edges='Soft edges', ink_removal=50., ink_strength=100., ink_colour='Dark grey (like printed text)',
-                ink_edge_size=15.)
+                ink_edge_size=15., ink_fold=False)
 
 
 def _smooth(a, b, x):
@@ -68,7 +79,32 @@ def light(rgb, exposure=0., brightness=0., contrast=0., highlights=0., shadows=0
     return np.clip(out, 0, 1)
 
 
-def ink(rgba, removal=50., strength=100., colour_rgb=(41, 41, 44), edges='soft', edge_size=15.):
+def _paper_tooth(h, w):
+    """The fine bumps of a sheet of paper, 0..1 (the same for the same size)."""
+    import cv2
+    rng = np.random.default_rng(1913)
+    fine = cv2.GaussianBlur(rng.standard_normal((h, w)).astype(np.float32), (0, 0), max(.6, w / 2400))
+    coarse = cv2.GaussianBlur(rng.standard_normal((h, w)).astype(np.float32), (0, 0), max(2., w / 500))
+    t = fine / max(1e-6, float(fine.std())) * .8 + coarse / max(1e-6, float(coarse.std())) * .35
+    return np.clip(.5 + .22 * t, 0, 1)
+
+
+def _sketch_edges(lum, size):
+    """0..1: fading towards the border in ragged strokes along the picture's own marks."""
+    import pencil_lines
+    h, w = lum.shape
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    d = np.minimum.reduce([xx, w - 1 - xx, yy, h - 1 - yy]) / max(1., size / 100. * min(w, h))
+    scale = max(w, h) / 1280.
+    dx, dy = pencil_lines.directions(lum.astype(np.float32), scale)
+    streak = pencil_lines.streaks(dx, dy, max(1.2, 1.6 * scale), max(10., 22. * scale))
+    # ragged inside, but nothing at the rectangle's own border (no straight cut line)
+    f = np.clip(d * 1.15 + (streak - .5) * .6 * np.clip(d * 4, 0, 1), 0, 1)
+    return f * f * (3 - 2 * f)
+
+
+def ink(rgba, removal=50., strength=100., colour_rgb=(41, 41, 44), edges='soft', edge_size=15.,
+        graphite=False):
     """Ink with transparency: paper tone -> see-through, lines -> ink. rgba: float 0..1."""
     rgb, alpha = rgba[..., :3], rgba[..., 3]
     lum = _lum(rgb)
@@ -82,7 +118,15 @@ def ink(rgba, removal=50., strength=100., colour_rgb=(41, 41, 44), edges='soft',
     t = np.clip((lum - black) / max(1e-3, white - black), 0, 1)
     amount = (1 - t) * (float(strength) / 100.)
     h, w = lum.shape
-    if edges in ('soft', 'oval') and edge_size > 0:
+    if graphite:
+        import cv2
+        tooth = _paper_tooth(h, w)
+        amount = np.clip(amount, 0, 1) ** 1.05
+        amount = np.clip(amount * (1.25 - .5 * (1 - tooth)) - .12 * (1 - tooth) * (amount < .9), 0, 1)
+        amount = cv2.GaussianBlur(amount.astype(np.float32), (0, 0), max(.4, w / 1800)) * .9
+    if edges == 'sketch' and edge_size > 0:
+        amount = amount * _sketch_edges(lum, edge_size)
+    elif edges in ('soft', 'oval') and edge_size > 0:
         yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
         if edges == 'soft':
             d = np.minimum.reduce([xx, w - 1 - xx, yy, h - 1 - yy])
@@ -120,7 +164,8 @@ def adjust_array(rgba, s):
     if get('ink_on'):
         out = ink(out, float(get('ink_removal')), float(get('ink_strength')),
                   INK_COLOURS.get(get('ink_colour'), INK_COLOURS['Dark grey (like printed text)']),
-                  EDGES.get(get('ink_edges'), 'soft'), float(get('ink_edge_size')))
+                  EDGES.get(get('ink_edges'), 'soft'), float(get('ink_edge_size')),
+                  graphite=get('ink_colour') == GRAPHITE)
     return out
 
 

@@ -6,6 +6,12 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## The drawing embedded in the page (v1.0.1-experimental.4)
+Three new choices in **Ink on the page** (existing projects look the same until you pick them):
+- **Ink colour › Graphite on paper**: the drawing darkens the page like graphite instead of covering it, so the page's tone, stains and grain stay in the darks; never pure black; the paper's tooth breaks the strokes slightly.
+- **Edges › Sketch edges**: the drawing ends in ragged, stroke-like edges along its own pencil marks instead of a smooth photo fade.
+- **Follow the page fold**: on an open book, the drawing bends into the fold and fades in the gutter (the fold is found in the page underneath).
+
 ## Hand drawing follows the traces, smooth ending (v1.0.1-experimental.3)
 - **Hand drawing** follows Painter's traces (around every shape, from the edge inwards) and zigzags across them in big, clearly visible back-and-forth strokes.
 - Smooth ending: faint soft edges (a vignette) appear with the nearest stroke instead of all at once after the last one.

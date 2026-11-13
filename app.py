@@ -2567,7 +2567,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                       'camera','audio_volume','audio_offset','pen_ease','paint_hand','paint_hand_size','fast_export','export_layers','clean_color','export_done_sound',
                       'move_hand','move_hand_size','move_hand_gx','move_hand_gy','hand_rest','hand_rest_corner','hand_rest_travel','hand_under',
                       'cam_start_zoom','cam_start_x','cam_start_y','cam_end_zoom','cam_end_x','cam_end_y','cam_begin','cam_time',
-                      'ink_on','ink_edges','ink_edge_size','ink_removal','ink_strength','ink_colour','look_colour_on','look_temperature','look_tint','look_saturation','look_light_on','look_exposure','look_brightness','look_contrast','look_highlights','look_shadows','look_whites','look_blacks')
+                      'ink_on','ink_edges','ink_edge_size','ink_removal','ink_strength','ink_colour','ink_fold','look_colour_on','look_temperature','look_tint','look_saturation','look_light_on','look_exposure','look_brightness','look_contrast','look_highlights','look_shadows','look_whites','look_blacks')
 
     def project_state(self):
         """Everything needed to reopen this project: the edited scene plus all scenes."""

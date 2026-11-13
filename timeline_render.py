@@ -371,7 +371,8 @@ def _erasing(world, elements, erasers, view, out, width, height, state, glides=N
             from frame_render import effect_frame, EXITS
             frame = effect_frame(world.finished(k, q), EXITS[effect], 1. - p)
             out = world.put(out, frame, world.frames[k], view, el['options'].get('blend_mode', 'Normal'),
-                            el['options'].get('artwork_opacity', 100))
+                            el['options'].get('artwork_opacity', 100),
+                            fold=bool(el['options'].get('follow_fold')))
             continue
         opts = eraser_clips.erase_options(el['options'], item)
         tool = opts['erase']
@@ -380,7 +381,8 @@ def _erasing(world, elements, erasers, view, out, width, height, state, glides=N
         frame = frame.copy() if frame is hold else frame
         point, _ = plan.state(p)
         out = world.put(out, frame, world.frames[k], view, el['options'].get('blend_mode', 'Normal'),
-                        el['options'].get('artwork_opacity', 100))
+                        el['options'].get('artwork_opacity', 100),
+                            fold=bool(el['options'].get('follow_fold')))
         if point is not None:
             # exp.190: the eraser (or eraser hand) on the screen, at its own size, so an arm
             # can reach past the picture's edge (it was cut off at the edge of the page)
@@ -435,13 +437,13 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
                 # exp.248 (the user: the picture jumped a little when it finished): drawn exactly
                 # as in its last frame (same size and place), not from the board's smaller copy
                 out = world.put(out, _finished_frame(el, w, h), world.frames[k], view,
-                                opts.get('blend_mode', 'Normal'), opts.get('artwork_opacity', 100))
+                                opts.get('blend_mode', 'Normal'), opts.get('artwork_opacity', 100), fold=bool(opts.get('follow_fold')))
             continue
         fraction = active[k]
         if k not in erasers and k not in art_off:      # exp.186: being erased: _erasing draws it
             art = element_frame(el['drawing'], opts, fraction, w, h, 'art')
             out = world.put(out, art, world.frames[k], view, opts.get('blend_mode', 'Normal'),
-                            opts.get('artwork_opacity', 100))
+                            opts.get('artwork_opacity', 100), fold=bool(opts.get('follow_fold')))
         if opts.get('layers', 'all') == 'art' or opts.get('hand_off'):
             continue
         if k != hand_k:
