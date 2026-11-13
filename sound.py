@@ -4,12 +4,7 @@ The sounds are YOUR recordings (or sounds made with Create sound): the
 soundtrack plays them only while the pen is down and moving (louder when it
 moves faster, silent during pen lifts), following the pen track (motion.py) so
 it always matches the animation, and pans gently with the hand's position.
-
-1.0.1: or a built-in sound: real CC0 recordings of a pencil writing and of an
-eraser (assets/sounds, credited in CREDITS.md), chosen like a file as
-'builtin:pencil' / 'builtin:eraser'. exp.6: every recording is played stroke by
-stroke with the hand (sound_strokes.py), cleaned of its background noise.
-Nothing is added until you choose a sound.
+There are no built-in sounds.
 """
 from __future__ import annotations
 
@@ -55,48 +50,16 @@ def envelopes(samples, width, height):
     return times, draw, paint, rub, pan
 
 
-# 1.0.1: built-in sounds, chosen like a file. exp.6 (the user: the made sound was "terrible...
-# horrible noise"): real CC0 recordings (assets/sounds/CREDITS.md), played stroke by stroke
-SOUNDS = Path(__file__).resolve().parent / 'assets' / 'sounds'
-BUILTIN = {'builtin:pencil': ('Pencil on paper', 'pencil_write.wav'),
-           'builtin:eraser': ('Eraser', 'pencil_erase.wav')}
-OLD_BUILTIN = {'builtin:brush': 'builtin:pencil'}          # (experimental.1's soft brush)
-BUILTIN_FOR = {'draw': 'builtin:pencil', 'paint': 'builtin:pencil', 'rub': 'builtin:eraser'}
-
-
-def builtin_path(token):
-    token = OLD_BUILTIN.get(token, token)
-    return SOUNDS / BUILTIN[token][1] if token in BUILTIN else None
-
-
-def is_builtin(path):
-    return isinstance(path, str) and (path in BUILTIN or path in OLD_BUILTIN)
-
-
-def sound_name(path):
-    """What a chosen sound is called on its button."""
-    if is_builtin(path):
-        return BUILTIN[OLD_BUILTIN.get(path, path)][0] + ' (built-in)'
-    return Path(path).stem if path else ''
-
-
-def synthesize(samples, total_seconds, width, height, volume=.8, seed=11, recordings=None,
-               builtin=None):
+def synthesize(samples, total_seconds, width, height, volume=.8, seed=11, recordings=None):
     """Stereo int16 soundtrack (n, 2) for the animation.
 
     recordings: {'draw'|'paint'|'rub': mono samples} — YOUR recordings (or sounds
-    made with Create sound). builtin: {'draw'|'paint'|'rub': 'pencil'|'eraser'} — the
-    built-in recordings. A tool with neither is silent.
+    made with Create sound). There are no built-in sounds: a tool without a
+    recording is silent.
     """
     recordings = {k: v for k, v in (recordings or {}).items() if v is not None}
-    for kind, name in (builtin or {}).items():          # the built-in recordings
-        if name and kind not in recordings:
-            rec = load_recording(builtin_path(f'builtin:{name}'))
-            if rec is not None:
-                recordings[kind] = rec
-    builtin = {}
     count = max(1, int(round(total_seconds * RATE)))
-    if not samples or not (recordings or builtin):
+    if not samples or not recordings:
         return np.zeros((count, 2), np.int16)
     t_audio = np.arange(count) / RATE
     times, draw, paint, rub, pan = envelopes(samples, width, height)
@@ -105,17 +68,6 @@ def synthesize(samples, total_seconds, width, height, volume=.8, seed=11, record
     mono = np.zeros(count)
     for kind, level, attack, gain in (('draw', draw, .012, 1.4), ('paint', paint, .03, 1.), ('rub', rub, .02, 1.)):
         if kind in recordings:
-            # exp.6 (the user: a sound that adjusts to the drawing): the recording's own strokes,
-            # one for every stroke of the hand (sound_strokes.py); a recording without separate
-            # strokes (a steady hiss) is looped under the pen's loudness as before
-            import sound_strokes
-            rec = recordings[kind]
-            key = (id(rec), len(rec))
-            if len(sound_strokes.pieces(rec, key)) >= 3:
-                part, _ = sound_strokes.render(samples, total_seconds, width, rec,
-                                               {'rub': 'erase'}.get(kind, kind), seed, key)
-                mono += part[:count] * gain
-                continue
             env = _smooth(np.interp(t_audio, times, level), int(attack * RATE))
             mono += _bed(recordings[kind], count, rng) * np.clip(env * 1.5, 0, 1) * gain
     peak = np.abs(mono).max()
@@ -242,17 +194,13 @@ def soundtrack(drawing, options, path, volume=.8):
     w, h = options.get('width', 1920), options.get('height', 1080)
     samples = motion.track(drawing, options, total, TRACK_RATE)
     files = options.get('sound_files') or ()
-    recordings = {kind: load_recording(builtin_path(p) if is_builtin(p) else p)
-                  for kind, p in zip(SOUND_KINDS, files) if p}
-    builtin = {}
+    recordings = {kind: load_recording(p) for kind, p in zip(SOUND_KINDS, files) if p}
     if (options.get('entrance') or 'draw') != 'draw':        # comes in with an effect: no pencil / brush
         import move_in
         quiet = ('draw',) if move_in.part_of(options) == move_in.PART_LINES else ('draw', 'paint')
         recordings = {k: v for k, v in recordings.items() if k not in quiet}
-        builtin = {k: v for k, v in builtin.items() if k not in quiet}
     erase = options.get('erase') or {}
     from frame_render import EXITS
     if erase.get('mode') in EXITS:                             # goes out with an effect: no eraser sound
         recordings.pop('rub', None)
-        builtin.pop('rub', None)
-    return write_wav(path, synthesize(samples, total, w, h, volume, recordings=recordings, builtin=builtin))
+    return write_wav(path, synthesize(samples, total, w, h, volume, recordings=recordings))

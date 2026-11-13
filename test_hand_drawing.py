@@ -1,5 +1,5 @@
 """1.0.1-experimental.1: Hand drawing (real strokes, the picture appearing as lines that follow
-its own pencil marks) and the built-in pencil-on-paper sound."""
+its own pencil marks)."""
 import math
 import os
 import tempfile
@@ -149,95 +149,6 @@ class HandDrawingTests(unittest.TestCase):
                                         hold_duration=.2, final_image=image, reveal_mode='strokes',
                                         brush_width=.1, stroke_spacing=.5) for f in (.4, .7, 1.)]
         self.assertTrue(all(not f.isNull() for f in frames))
-
-
-def track(seconds=6.):
-    """Draw a circle, lift, draw a fast line, paint, then nothing."""
-    samples = []
-    for i in range(int(seconds * 120) + 1):
-        t = i / 120
-        if t < 2:
-            s = Pen((960 + 300 * math.cos(t * 3), 540 + 300 * math.sin(t * 3)), 'draw')
-        elif t < 2.5:
-            s = Pen((1200, 300), 'lift')
-        elif t < 4:
-            s = Pen((600 + 400 * (t - 2.5), 700), 'draw')
-        elif t < 5.5:
-            s = Pen((800 + 200 * math.sin(t * 8), 500), 'paint')
-        else:
-            s = Pen(None, None)
-        samples.append((t, s))
-    return samples
-
-
-class BuiltinSoundTests(unittest.TestCase):
-    def test_pencil_on_paper_follows_the_pen(self):
-        import sound
-        audio = sound.synthesize(track(), 6, 1920, 1080, builtin={'draw': 'pencil', 'paint': 'pencil'})
-        self.assertEqual(audio.shape, (6 * sound.RATE, 2))
-        mono = audio.astype(float).mean(1)
-        rms = lambda a, b: float(np.sqrt((mono[int(a * sound.RATE):int(b * sound.RATE)] ** 2).mean()))
-        self.assertGreater(rms(.2, 1.8), 800)               # drawing
-        self.assertLess(rms(2.1, 2.4), 5)                   # pen lifted: silent
-        self.assertGreater(rms(4.2, 5.3), 300)              # colouring in
-        self.assertLess(rms(5.7, 5.95), 5)                  # done: silent
-        again = sound.synthesize(track(), 6, 1920, 1080, builtin={'draw': 'pencil', 'paint': 'pencil'})
-        self.assertTrue(np.array_equal(audio, again))       # the preview and the export sound the same
-
-    def test_the_builtin_sounds_are_the_bundled_cc0_recordings(self):
-        """exp.6: real recordings (CC0, credited), not a synthesized sound."""
-        import sound
-        for token in ('builtin:pencil', 'builtin:eraser'):
-            path = sound.builtin_path(token)
-            self.assertTrue(path.is_file(), path)
-            self.assertIsNotNone(sound.load_recording(path))
-        self.assertEqual(sound.builtin_path('builtin:brush'), sound.builtin_path('builtin:pencil'))
-        credits = (sound.SOUNDS / 'CREDITS.md').read_text(encoding='utf-8')
-        self.assertIn('CC0', credits); self.assertIn('freesound.org/s/571800', credits)
-
-    def test_builtin_sounds_are_chosen_like_files(self):
-        import sound
-        self.assertTrue(sound.is_builtin('builtin:pencil'))
-        self.assertFalse(sound.is_builtin('C:/sounds/pencil.wav'))
-        self.assertEqual(sound.sound_name('builtin:pencil'), 'Pencil on paper (built-in)')
-        self.assertEqual(sound.sound_name('C:/sounds/my pencil.wav'), 'my pencil')
-        # a recording of a tool wins over a built-in sound for it
-        rec = (np.sin(np.arange(2 * sound.RATE) * 2 * np.pi * 700 / sound.RATE) * .5).astype(np.float32)
-        both = sound.synthesize(track(), 6, 1920, 1080, recordings={'draw': rec}, builtin={'draw': 'pencil'})
-        only = sound.synthesize(track(), 6, 1920, 1080, recordings={'draw': rec})
-        self.assertTrue(np.array_equal(both, only))
-
-
-@unittest.skipIf(SKIP, 'needs Qt')
-class BuiltinSoundWindowTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        from PySide6.QtWidgets import QApplication
-        cls.app = QApplication.instance() or QApplication([])
-
-    def test_use_the_builtin_pencil_sounds_and_keep_them_in_the_project(self):
-        from app import Window
-        import projects
-        w = Window(); self.addCleanup(w.close)
-        self.assertFalse(w.sound_on.isChecked())            # still no sound until you choose one
-        w.use_builtin_sounds()
-        self.assertTrue(w.sound_on.isChecked())
-        self.assertEqual(w.options()['sound_files'], ('builtin:pencil', 'builtin:pencil', 'builtin:eraser'))
-        self.assertEqual(w.sound_file_buttons['sound_pencil_file'][0].text(), 'Pencil on paper (built-in)')
-        w.set_sound_file('sound_brush_file', 'builtin:brush')      # (experimental.1): the pencil now
-        self.assertEqual(w.sound_file_buttons['sound_brush_file'][0].text(), 'Pencil on paper (built-in)')
-        menu = w.sound_file_buttons['sound_eraser_file'][0].menu()
-        self.assertIn('Choose a recording…', [a.text() for a in menu.actions()])
-        with tempfile.TemporaryDirectory() as tmp:
-            saved = projects.save(Path(tmp) / 'snd', w.project_state())
-            other = Window(); self.addCleanup(other.close)
-            self.assertTrue(other.open_project(str(saved)))
-            self.assertEqual(other.sound_files['sound_brush_file'], 'builtin:brush')
-            self.assertEqual(other.sound_files['sound_pencil_file'], 'builtin:pencil')
-
-
-if __name__ == '__main__':
-    unittest.main()
 
 
 @unittest.skipIf(SKIP, 'needs Qt')

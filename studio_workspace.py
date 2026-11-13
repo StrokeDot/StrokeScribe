@@ -3718,17 +3718,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.sound_on.setToolTip('A pencil sound while the pen draws (silent during pen lifts), a brush sound '
                           'while painting and an eraser sound while erasing, matched to the animation.')
     sound_l.addWidget(w.sound_on)
-    sound_l.addWidget(help_note('Pencil, brush, eraser sounds','Use the built-in sounds (real recordings of a pencil on paper and an eraser), or add your own recordings. Every stroke of the hand gets its own pencil stroke, as loud as the hand is quick, with the background noise cleaned out; silent when the pen lifts. No sound is added until you choose one.'))
-    w.builtin_sounds_button=QPushButton('♪ Use the built-in pencil sounds')
-    w.builtin_sounds_button.setToolTip('Real recordings of a pencil on paper (drawing and colouring) and an eraser, '
-                                       'following every stroke of the hand. Rows with your own recordings are kept.')
-    w.builtin_sounds_button.clicked.connect(lambda checked=False: w.use_builtin_sounds())
-    sound_l.addWidget(w.builtin_sounds_button)
-    create_sound=QPushButton('✦ Create a sound with AI…')
-    create_sound.setToolTip('Describe a sound (pencil on paper, brush, eraser) and let a free AI model '
-                            'make it on your PC.')
-    create_sound.clicked.connect(lambda checked=False: w.open_create_image('sound'))
-    sound_l.addWidget(create_sound)
+    sound_l.addWidget(help_note('Your own pencil, brush, eraser sounds','Add your own recordings: a few seconds of a pencil on paper (and a brush or an eraser if you like). They play only while the pen moves. No sound is added until you choose one.'))
     w.sound_file_buttons={}
     from ui_icons import icon as _icon
     sound_files=form_layout();sound_l.addLayout(sound_files)
@@ -3737,14 +3727,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
         box=QWidget();box.setMinimumWidth(0)
         row=QHBoxLayout(box);row.setContentsMargins(0,0,0,0);row.setSpacing(6)
         button=QPushButton('Add sound…')
-        button.setToolTip(f'Choose a built-in sound or a recording (MP3, WAV, M4A…) for the {text.lower()}.')
-        choices=QMenu(button)                # 1.0.1: built-in sounds, or your recording
-        from sound import BUILTIN as _BUILTIN
-        for token,(name,_kind) in _BUILTIN.items():
-            choices.addAction(f'{name} (built-in)',lambda k=key,t=token: w.set_sound_file(k,t))
-        choices.addSeparator()
-        choices.addAction('Choose a recording…',lambda k=key: w.choose_sound_file(k))
-        button.setMenu(choices)
+        button.setToolTip(f'Choose a recording (MP3, WAV, M4A…) for the {text.lower()}.')
+        button.clicked.connect(lambda checked=False,k=key: w.choose_sound_file(k))
         row.addWidget(button,1)
         reset=QToolButton();reset.setObjectName('panelClose')
         reset.setIcon(_icon('trash','#E5484D'));reset.setFixedWidth(30)
@@ -3897,7 +3881,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.left_tabs.addTab(scroll_view(music),'Music')
     w.left_tabs.addTab(scroll_view(camera_page),'Camera')
     tabs.insertTab(TABS['source'],scroll_view(source_page),'Image')
-    # AI: the Create Image / Create a sound tools (replaces the top-bar button).
+    # AI: the Create Image tools (replaces the top-bar button).
     ai_page=QWidget();ai_l=QVBoxLayout(ai_page)
     ai_l.setContentsMargins(9,12,9,8);ai_l.setSpacing(10)
     ai_l.addWidget(help_note('Runs on your PC','Runs on your PC with the local AI engine. Each tool opens the Create Image window on that task.'))
@@ -3905,8 +3889,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     for task,text,tip in (
             ('lineart','Line art for my image','An AI model redraws the selected image as clean line art.'),
             ('generate','Create image from text','Describe a picture and create it on your PC.'),
-            ('edit','Edit an image','Change an image with a written instruction.'),
-            ('sound','Create a sound','Make a pencil, brush or eraser sound.')):
+            ('edit','Edit an image','Change an image with a written instruction.')):
         button=QPushButton(text);button.setToolTip(tip)
         button.clicked.connect(lambda checked=False,t=task: w.open_create_image(t))
         ai_l.addWidget(button)
