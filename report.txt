@@ -1,0 +1,12 @@
+left-text                    content  320 / visible  320  OK
+left-sound                   content  320 / visible  320  OK
+left-music                   content  320 / visible  320  OK
+left-camera                  content  320 / visible  320  OK
+right-animation              content  434 / visible  434  OK
+right-hand                   content  434 / visible  434  OK
+right-export                 content  434 / visible  434  OK
+right-source                 content  434 / visible  434  OK
+right-ai                     content  434 / visible  434  OK
+image-imported               content  434 / visible  434  OK
+image-after-apply            content  434 / visible  434  OK
+hand-after-image             content  434 / visible  434  OK
