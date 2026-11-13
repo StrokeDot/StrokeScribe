@@ -732,7 +732,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         return True
 
     def plan_in_background(self,image,bw,sp):
-        key=(id(self.drawing),image.cacheKey(),round(bw,4),round(sp,4))
+        # exp.5: the paint mode and the pencil pass too (a mode change plans in the background
+        # now; the same picture with another mode is another route)
+        from adaptive_hand import pencil_key
+        key=(id(self.drawing),image.cacheKey(),round(bw,4),round(sp,4),
+             getattr(self.drawing,'paint_method','adaptive'),pencil_key(self.drawing))
         worker=getattr(self,'plan_worker',None)
         if worker is not None and worker.isRunning():
             self._plan_pending=True
