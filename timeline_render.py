@@ -1,0 +1,516 @@
+"""Draw one moment of the whole video when elements overlap in time (timeline_model.py).
+
+The classic video (every element after the one before it, all on Track 1) keeps its
+own, older drawing code in the preview and the export; this is used once elements
+are placed on tracks or given their own start.
+
+At a moment: the camera view (the current element's page, or a camera move), the
+finished pictures of the elements already drawn, then every element being drawn at
+that moment, bottom track first, each at its own point in time. Only the top one
+shows its hand (two hands drawing at once would look wrong); an element's own
+"show hand" settings still apply to it.
+"""
+from __future__ import annotations
+
+
+def element_frame(drawing, options, fraction, width, height, layers):
+    """One element alone at `fraction` of its own time, `width` x `height`, layers 'art' or 'hand'."""
+    from frame_render import compose_frame
+    opts = {k: v for k, v in options.items() if k not in ('fps', 'audio', 'workers')}
+    opts.update(width=max(2, int(round(width))), height=max(2, int(round(height))), layers=layers, ghost=0,
+                _hand_later=True)            # exp.149: the page draws the hand (screen size)
+    if layers == 'hand':
+        opts['background'] = False
+    return compose_frame(drawing, max(0., min(1., fraction)), opts)
+
+
+_FINISHED_FRAMES = {}
+
+
+def _finished_frame(el, width, height):
+    """The element's own last frame (art only) at this size, kept while it does not change."""
+    w, h = max(2, int(round(width))), max(2, int(round(height)))
+    opts = el['options']
+    key = (id(el['drawing']), id(opts), w, h)
+    hit = _FINISHED_FRAMES.get(key)
+    if hit is not None and hit[0] is el['drawing'] and hit[1] is opts:
+        return hit[2]
+    image = element_frame(el['drawing'], opts, 1., w, h, 'art')
+    if len(_FINISHED_FRAMES) > 24:
+        _FINISHED_FRAMES.pop(next(iter(_FINISHED_FRAMES)))
+    _FINISHED_FRAMES[key] = (el['drawing'], opts, image)
+    return image
+
+
+def camera_at(camera, state, k):
+    """exp.170 (the user: a zoom got stuck between two elements, then jumped): element k's
+    camera at this moment. The camera clips run on the video's own clock, so after the element
+    has finished (a gap before the next one) a zoom keeps going instead of waiting at the
+    element's last moment."""
+    import camera_clips
+    when = getattr(state, 'seconds', None)
+    if when is not None and isinstance(camera, camera_clips.VideoCamera):
+        return camera.at_seconds(max(0., float(when) - camera.start))
+    return camera.at(dict(state.active).get(k, 1.))
+
+
+def view_of(world, lay, state, elements):
+    """The camera's view (cx, cy, w) on the board for this state."""
+    import board
+    frames = getattr(world, 'views', world.frames)          # exp.200: the cameras that were set
+    if state.kind == 'move':
+        k = state.move
+        kind = elements[k].get('transition', 'Camera move')
+        nxt = elements[k + 1].get('camera') if k + 1 < len(elements) else None
+        return board.join_view(frames, k, kind, state.t, world.aspect, elements[k].get('move_seconds', 1.),
+                               leaving=elements[k].get('camera'), arriving=nxt)
+    k = state.current
+    view = _rest_view(world, lay, state, k)
+    camera = elements[k].get('camera')
+    if camera is not None:
+        view = board.sub_view(view, *camera_at(camera, state, k), world.aspect)
+    return view
+
+
+VIEW_GLIDE = 1.2       # exp.200: seconds the camera takes to reach an element's view on the same page
+
+
+def _rest_view(world, lay, state, k):
+    """exp.200: element k's camera view. On the same page (no move between them) the camera
+    glides from where the element before it had it to this element's view, as it starts."""
+    import board
+    views = getattr(world, 'views', world.frames)
+    view = views[k]
+    if k <= 0 or world.frames[k] != world.frames[k - 1] or views[k - 1] == view:
+        return view
+    when = getattr(state, 'seconds', None)
+    item = next((it for it in lay.items if it.k == k), None)
+    if when is None or item is None:
+        return view
+    t = (float(when) - item.start) / VIEW_GLIDE
+    if t >= 1.:
+        return view
+    return board.move_view(views[k - 1], view, 'Camera move', max(0., t), world.aspect)
+
+
+def plain_view(world, state):
+    """exp.155: the view with no camera at all (no zoom, no pan): the page shown."""
+    views = getattr(world, 'views', world.frames)
+    if state.kind == 'move':
+        return views[min(state.move + 1, len(views) - 1)] if state.t >= .5 else views[state.move]
+    return views[state.current]
+
+
+def fixed_view(world, lay, state, elements):
+    """exp.162 (the user): what the Fixed camera shows (its moves and the moves between pages),
+    without the Moving camera's zooms: the waiting hand's corner is a corner of this view, so a
+    fixed camera leaves the hand in the corner of the picture and a zoom carries it."""
+    import board
+    import camera_clips
+    if state.kind == 'move':
+        return view_of(world, lay, state, elements)
+    k = state.current
+    camera = elements[k].get('camera')
+    clips = [c for c in (getattr(camera, 'clips', None) or ()) if camera_clips.fixed(c)]
+    base = _rest_view(world, lay, state, k)
+    if not clips:
+        return base
+    cam = camera_clips.VideoCamera(None, camera.start, clips, camera.moves, camera.total)
+    return board.sub_view(base, *camera_at(cam, state, k), world.aspect)
+
+
+def hand_camera_zoom(world, lay, state, elements, fixed_clips=None, seconds=None):
+    """exp.223 (the user: the zoom affects everything, the hand too): how much bigger the
+    hand looks because of the camera's zooms (the Moving camera's clips and the element's own
+    camera) compared with its default view: 2 when the camera is twice as close, .5 twice as
+    far. A camera clip with 'Leave the hand out' does not count while it is on."""
+    import camera_clips
+    try:
+        zoom = fixed_view(world, lay, state, elements)[2] / max(1e-9, view_of(world, lay, state, elements)[2])
+    except Exception:
+        return 1.
+    if fixed_clips and seconds is not None:
+        weights = [w for w, _ in camera_clips.fixed_hand_weight(fixed_clips, seconds)]
+        if weights:
+            zoom = 1. + (zoom - 1.) * (1. - max(weights))
+    return max(.05, min(20., zoom))
+
+
+def element_place(world, lay, state, elements, k, width, height, view_scale=1., view_pan=(0., 0.)):
+    """exp.216: (x, y, w, h) on the screen of element k's page (its frame on the board)."""
+    v = view_of(world, lay, state, elements)
+    if view_scale > 1.:
+        w = v[2] * view_scale
+        v = (v[0] + view_pan[0] * w, v[1] + view_pan[1] * w * world.aspect, w)
+    return world.place(world.frames[k], v, width, height)
+
+
+def page_place(world, lay, state, elements, width, height, view_scale=1., view_pan=(0., 0.)):
+    """exp.161/162: (x, y, w, h) on the screen of what the Fixed camera shows: the Moving
+    camera's zooms move and size it; the waiting hand keeps its corner on it."""
+    v = view_of(world, lay, state, elements)
+    if view_scale > 1.:
+        w = v[2] * view_scale
+        v = (v[0] + view_pan[0] * w, v[1] + view_pan[1] * w * world.aspect, w)
+    return world.place(fixed_view(world, lay, state, elements), v, width, height)
+
+
+def compose(world, lay, state, elements, width, height, titles=None, seconds=None, view_scale=1., view_pan=(0., 0.)):
+    """The whole video at this moment, width x height.
+
+    elements[k]: {'drawing', 'options' (compose_frame options at the video size),
+                  'camera' (camera follow path or None), 'transition', 'move_seconds'}.
+
+    titles (exp.118): texts / pictures on top, each on a track like the elements: drawn on
+    the screen at `seconds`, over the elements of lower tracks and under the elements being
+    drawn on higher tracks."""
+    import board
+    from scenes import transition_frame
+    # exp.186: Eraser clips come with the texts (they are clips on the tracks like them).
+    import eraser_clips
+    erasers = eraser_clips.at(titles, elements, seconds)
+    glides = eraser_clips.glides(titles, elements, seconds)
+    titles = [o for o in titles or () if o.get('kind') != 'eraser']
+    if state.kind == 'move':
+        k = state.move
+        kind = elements[k].get('transition', 'Camera move')
+        last = k == len(elements) - 1
+        if kind in board.SCREEN_KINDS and not last and view_scale <= 1.:
+            vs = getattr(world, 'views', world.frames)
+            a = _page(world, lay, state, elements, vs[k], width, height, erasers=erasers, glides=glides)
+            b = _page(world, lay, state, elements, vs[k + 1], width, height, erasers=erasers, glides=glides)
+            return _texts(transition_frame(a, b, kind, state.t), titles, seconds)
+    def view_fn(st, plain=False):
+        v = plain_view(world, st) if plain else view_of(world, lay, st, elements)
+        if view_scale > 1.:              # exp.121: the preview stepped back (Ctrl + wheel)
+            w = v[2] * view_scale        # exp.122: and moved around by dragging it
+            v = (v[0] + view_pan[0] * w, v[1] + view_pan[1] * w * world.aspect, w)
+        return v
+    return _page(world, lay, state, elements, view_fn(state), width, height, titles, seconds, view_fn, erasers, glides,
+                 hand_view=1. / max(1., float(view_scale)))
+
+
+def page_of(lay, seconds):
+    """exp.123: the page a text belongs to: the page the camera shows when it starts."""
+    from timeline_model import state_at
+    if not lay.items:
+        return 0
+    st = state_at(lay, max(0., float(seconds)))
+    if st.kind == 'page':
+        return st.current
+    return min(st.move + 1, len(lay.items) - 1)
+
+
+def paint_texts(out, items, seconds, frames=None, place=None, view=None):
+    """exp.123: texts live on their page like the drawings: each is drawn where its page is
+    in this view (so the camera moves and zooms past it). Without a view: on the screen."""
+    import overlays
+    if not items or seconds is None:
+        return out
+    shown = [o for o in items if overlays.state_at(o, seconds) is not None]
+    if not shown:
+        return out
+    out = out.copy()                     # never draw into a picture kept by the board
+    w, h = out.width(), out.height()
+    if view is None or frames is None or place is None:
+        return overlays.paint(out, shown, seconds)
+    from PySide6.QtCore import QRectF
+    from PySide6.QtGui import QImage, QPainter
+    groups = {}
+    for o in shown:
+        groups.setdefault(min(max(0, int(o.get('_page', 0) or 0)), len(frames) - 1), []).append(o)
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    for k, group in groups.items():
+        x, y, rw, rh = place(frames[k], view, w, h)
+        if rw < 2 or x > w or y > h or x + rw < 0 or y + rh < 0:
+            continue
+        layer = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
+        overlays.paint(layer, group, seconds)
+        painter.drawImage(QRectF(x, y, rw, rh), layer)
+    painter.end()
+    return out
+
+
+def _texts(out, items, seconds, world=None, view=None):
+    if world is None:
+        return paint_texts(out, items, seconds)
+    return paint_texts(out, items, seconds, world.frames, world.place, view)
+
+
+def _hand_element(state, elements, tracks):
+    """exp.146: the element whose hand shows: the highest one whose hand is drawing or
+    travelling now. It used to be simply the top element being drawn, so an element still
+    holding its finished picture on a higher track hid the hand of the one drawing (the
+    user: the hand disappeared going to the drawing and always going back)."""
+    from frame_render import hand_busy
+    busy = [k for k, f in state.active
+            if elements[k]['options'].get('layers', 'all') != 'art'
+            and hand_busy(elements[k]['drawing'], elements[k]['options'], f)]
+    if not busy:
+        return state.top
+    return max(busy, key=lambda k: (tracks.get(k, 0), k))
+
+
+def _glide_target(world, lay, elements, k, fraction, phase, seconds, view_fn, width, height):
+    """exp.154 (the user: while the camera zooms and nothing is drawn yet, the hand must not
+    follow the camera): where on the screen the pen will be when the drawing starts (the way
+    in) or was when it stopped (the way back). The hand glides straight between its corner
+    and that point; it used to aim at the first point as the camera showed it at each moment,
+    so during a zoom it chased the camera."""
+    from frame_render import travel_plan, timeline_seconds, last_hand_spec
+    from timeline_model import state_at
+    el = elements[k]
+    drawing, opts = el['drawing'], el['options']
+    try:
+        plan = travel_plan(drawing, opts)
+        if plan is None:
+            return None
+        lead, hand_end, tail, inner_total, _, hand_start = plan
+        total = timeline_seconds(drawing, opts)
+        t = float(fraction) * total
+        eps = .02
+        when = lead + eps if phase == 'in' else lead + hand_end - hand_start - eps
+        st = state_at(lay, max(0., seconds + when - t))
+        f = dict(st.active).get(k)
+        if f is None:
+            return None
+        view = view_fn(st)
+        x, y, w, h = world.place(world.frames[k], view, width, height)
+        if w < 2:
+            return None
+        element_frame(drawing, opts, f, w, h, 'hand')
+        spec = last_hand_spec()
+        if spec is None or spec.get('tip') is None or spec.get('phase') in ('in', 'out'):
+            return None
+        fw, fh = spec['frame']
+        return (x + spec['tip'][0] * w / max(1, fw), y + spec['tip'][1] * h / max(1, fh))
+    except Exception:
+        return None
+
+
+def _drawing_now(state, elements, k):
+    """True when element k's hand is drawing, painting or travelling now."""
+    from frame_render import hand_busy
+    for j, f in state.active:
+        if j == k:
+            o = elements[k]['options']
+            return o.get('layers', 'all') != 'art' and hand_busy(elements[k]['drawing'], o, f)
+    return False
+
+
+_ERASING = {}
+
+
+def _erase_plan(world, el, k, item, opts):
+    from frame_render import erase_setup
+    import eraser_clips
+    q = eraser_clips.WORK_WIDTH
+    key = (repr(world.items[k].get('key')), item.get('mode'), q, world.aspect)
+    found = _ERASING.get(key)
+    if found is None:
+        plain = {kk: v for kk, v in opts.items() if kk not in ('fps', 'audio', 'workers', 'erase', 'overlays')}
+        plain.update(width=q, height=max(2, round(q * world.aspect)), layers='art', ghost=0)
+        found = erase_setup(el['drawing'], plain, opts['erase'])
+        if len(_ERASING) > 8:
+            _ERASING.clear()
+        _ERASING[key] = found
+    return found
+
+
+def _glide_tool(world, elements, glides, view, out, width, height):
+    """exp.197 (the user): the eraser hand comes in from the bottom on its own side (the left
+    hand from the bottom left) to its first rub, and after the last one goes back the same way."""
+    import eraser
+    import eraser_clips
+    from frame_render import glide_point
+    for k, item, phase, e in glides or ():
+        el = elements[k]
+        if eraser_clips.effect_of(item) is not None:
+            continue
+        opts = eraser_clips.erase_options(el['options'], item)
+        tool = opts['erase']
+        if tool.get('image') is None or tool['image'].isNull():
+            continue
+        hold, plan = _erase_plan(world, el, k, item, opts)
+        x, y, w, h = world.place(world.frames[k], view, width, height)
+        point, _ = plan.state(.002 if phase == 'in' else eraser.FINISH - .002)
+        if point is None:
+            continue
+        spot = (x + point[0] * w / hold.width(), y + point[1] * h / hold.height())
+        size = float(tool.get('width', .18)) * float(el['options'].get('_hand_zoom', 1.))
+        th = size * width * tool['image'].height() / max(1, tool['image'].width())
+        side = eraser_clips.side_of(el['options'], item)
+        away = (width * (.12 if side == 'left' else .88), height + th * (1 - tool.get('anchor', (0, 0))[1]) + 8)
+        a, b = (away, spot) if phase == 'in' else (spot, away)
+        where = glide_point(a, b, max(0., min(1., e)), 'Smooth')
+        out = out.copy()
+        out = eraser.draw_eraser(out, where, tool['image'], tool.get('anchor', eraser.ERASER_TIP), size)
+    return out
+
+
+def _erasing(world, elements, erasers, view, out, width, height, state, glides=None):
+    """exp.186: the elements Eraser clips are rubbing out (gone once their clip is over), with
+    the eraser on them. exp.190 (the user: every click lagged): the eraser's route is planned
+    once per element and kept (the element's own key), not again each time the preview is
+    made over, and drawn at one size whatever the zoom."""
+    import eraser
+    import eraser_clips
+    from frame_render import erase_setup
+    for k, (p, item) in sorted(erasers.items()):
+        if p >= 1. or (k not in state.finished and k not in dict(state.active)):
+            continue
+        x, y, w, h = world.place(world.frames[k], view, width, height)
+        if w < 2 or x > width or y > height or x + w < 0 or y + h < 0:
+            continue
+        el = elements[k]
+        q = eraser_clips.WORK_WIDTH
+        effect = eraser_clips.effect_of(item)
+        if effect is not None:
+            # exp.192: a way out with an effect (fade, pop, zoom, spin, move out): no eraser
+            from frame_render import effect_frame, EXITS
+            frame = effect_frame(world.finished(k, q), EXITS[effect], 1. - p)
+            out = world.put(out, frame, world.frames[k], view, el['options'].get('blend_mode', 'Normal'),
+                            el['options'].get('artwork_opacity', 100),
+                            fold=bool(el['options'].get('follow_fold')))
+            continue
+        opts = eraser_clips.erase_options(el['options'], item)
+        tool = opts['erase']
+        hold, plan = _erase_plan(world, el, k, item, opts)
+        frame = eraser.erase_frame(hold, plan, p)
+        frame = frame.copy() if frame is hold else frame
+        point, _ = plan.state(p)
+        out = world.put(out, frame, world.frames[k], view, el['options'].get('blend_mode', 'Normal'),
+                        el['options'].get('artwork_opacity', 100),
+                            fold=bool(el['options'].get('follow_fold')))
+        if point is not None:
+            # exp.190: the eraser (or eraser hand) on the screen, at its own size, so an arm
+            # can reach past the picture's edge (it was cut off at the edge of the page)
+            spot = (x + point[0] * w / hold.width(), y + point[1] * h / hold.height())
+            out = out.copy() if out is not None else out
+            out = eraser.draw_eraser(out, spot, tool.get('image'), tool.get('anchor', eraser.ERASER_TIP),
+                                     float(tool.get('width', .18)) * float(el['options'].get('_hand_zoom', 1.)))
+    return out
+
+
+def _page(world, lay, state, elements, view, width, height, titles=None, seconds=None, view_fn=None, erasers=None,
+          glides=None, hand_view=1., hand_out=None):
+    """hand_out (exp.246): a list; the hand is drawn on its own layer appended to it (to be
+    put over other pictures by the caller) instead of into the page."""
+    erasers = erasers or {}
+    # exp.247 (the user: "if something is above, every aspect of the element has to be under
+    # that"; a finished picture went over a higher track's picture, a picture being drawn came
+    # over the pictures of higher tracks and went back under when done): ONE order for
+    # everything on the page - by track, lower first (then by element) - for finished
+    # pictures, pictures being drawn and pictures moving in alike. Only the hand is over all.
+    order = {it.k: (it.track, it.k) for it in lay.items}
+    art_off = {k for k, el in enumerate(elements) if el['options'].get('art_off')}
+    out = world.view(view, width, height, upto=len(elements), skip=set(range(len(elements))))
+    out = _erasing(world, elements, erasers, view, out, width, height, state, glides)
+    tracks = {it.k: it.track for it in lay.items}
+    waiting = sorted(titles or (), key=lambda o: int(o.get('track', 0)))
+    # exp.248 (the user: with picture 5 above, the hand going to draw 4 was not seen): the
+    # drawing hand is the main hand; a hand carrying a picture in comes as well (more_hands)
+    drawing = [(k, f) for k, f in state.active if (elements[k]['options'].get('entrance') or 'draw') == 'draw']
+    if drawing:
+        from dataclasses import replace
+        hand_k = _hand_element(replace(state, active=drawing, top=drawing[-1][0]), elements, tracks)
+    else:
+        hand_k = _hand_element(state, elements, tracks)
+    hand_layer = None
+    active = dict(state.active)
+    finished = [k for k in state.finished if k not in erasers and k not in active]
+    sequence = sorted(set(finished) | set(active), key=lambda k: order.get(k, (0, k)))
+    more_hands = []                     # exp.247: a move-in hand at the same time as the drawing hand
+    for k in sequence:
+        under = [o for o in waiting if int(o.get('track', 0)) < tracks.get(k, 0)]
+        if under:
+            out = _texts(out, under, seconds, world, view)
+            waiting = [o for o in waiting if o not in under]
+        x, y, w, h = world.place(world.frames[k], view, width, height)
+        if w < 2 or x > width or y > height or x + w < 0 or y + h < 0:
+            continue
+        el = elements[k]
+        opts = el['options']
+        if k not in active:
+            if k not in art_off:
+                # exp.248 (the user: the picture jumped a little when it finished): drawn exactly
+                # as in its last frame (same size and place), not from the board's smaller copy
+                out = world.put(out, _finished_frame(el, w, h), world.frames[k], view,
+                                opts.get('blend_mode', 'Normal'), opts.get('artwork_opacity', 100), fold=bool(opts.get('follow_fold')))
+            continue
+        fraction = active[k]
+        if k not in erasers and k not in art_off:      # exp.186: being erased: _erasing draws it
+            art = element_frame(el['drawing'], opts, fraction, w, h, 'art')
+            out = world.put(out, art, world.frames[k], view, opts.get('blend_mode', 'Normal'),
+                            opts.get('artwork_opacity', 100), fold=bool(opts.get('follow_fold')))
+        if opts.get('layers', 'all') == 'art' or opts.get('hand_off'):
+            continue
+        if k != hand_k:
+            if opts.get('move_hand') is not None and (opts.get('entrance') or 'draw') != 'draw':
+                from frame_render import last_hand_spec, _set_spec
+                _set_spec(None)
+                layer = element_frame(el['drawing'], opts, fraction, w, h, 'hand')
+                spec = last_hand_spec()
+                if spec is not None and spec.get('kind') == 'move':
+                    more_hands.append((layer, world.frames[k], spec, (x, y, w, h), opts))
+            continue
+        # exp.196 (the user: the hand vanished when a Goes out clip began while it was still on
+        # its way back to the corner): its hand is still drawn.
+        from frame_render import last_hand_spec
+        layer = element_frame(el['drawing'], opts, fraction, w, h, 'hand')   # eraser, move-in hand
+        spec = last_hand_spec()
+        place = (x, y, w, h)
+        # exp.160 (the user): the pencil is always on the line it draws, wherever the camera
+        # shows it. exp.161: its corner is a spot of the page too, so on its way between them
+        # the hand is carried by the camera like the page (its size never changes).
+        if spec is not None and spec.get('phase') in ('in', 'out') and view_fn is not None:
+            corner_place = world.place(fixed_view(world, lay, state, elements), view_fn(state), width, height)
+            fixed = opts.get('_fixed_hand_clips')
+            if fixed and seconds is not None:
+                # exp.222: during a zoom that leaves the hand alone, its corner stays put
+                import camera_clips
+                from timeline_model import state_at
+                for weight, start in camera_clips.fixed_hand_weight(fixed, seconds):
+                    st = state_at(lay, start)
+                    base = world.place(fixed_view(world, lay, st, elements), view_fn(st), width, height)
+                    corner_place = camera_clips.blend_place(corner_place, base, weight)
+            opts = dict(opts, _rest_place=corner_place)
+        hand_layer = (layer, world.frames[k], spec, place, opts)
+    out = _texts(out, waiting, seconds, world, view)
+    for layer, frame, spec, place, opts in more_hands:
+        # exp.247 (the user: two hands can appear together): the hand carrying a picture in,
+        # while another element's hand draws
+        from frame_render import paint_hand_spec
+        target = out
+        if hand_out is not None:
+            from PySide6.QtGui import QImage
+            target = QImage(out.width(), out.height(), QImage.Format.Format_ARGB32_Premultiplied)
+            target.fill(0)
+        target = paint_hand_spec(world.put(target, layer, frame, view), spec,
+                                 dict(opts, width=width, height=height, _hand_view=hand_view), place)
+        if hand_out is not None:
+            hand_out.append(target)
+        else:
+            out = target
+    if hand_layer is not None:
+        # exp.148 (the user): the hand is always over everything (it was drawn under the
+        # pictures of higher tracks, e.g. under a book). exp.149: on the screen, its own size.
+        from frame_render import paint_hand_spec
+        layer, frame, spec, place, opts = hand_layer
+        page = out
+        if hand_out is not None:
+            from PySide6.QtGui import QImage
+            out = QImage(page.width(), page.height(), QImage.Format.Format_ARGB32_Premultiplied)
+            out.fill(0)
+        out = world.put(out, layer, frame, view)
+        # exp.216 (the user: zoomed out, the hand is outside the frame too): its size follows
+        # the zoom out like everything else (it stayed the screen size, twice too big)
+        zoom = hand_camera_zoom(world, lay, state, elements, opts.get('_fixed_hand_clips'), seconds) if view_fn else 1.
+        out = paint_hand_spec(out, spec, dict(opts, width=width, height=height, _hand_view=hand_view * zoom), place)
+        if hand_out is not None:
+            hand_out.append(out)
+            out = page
+    if glides:
+        out = _glide_tool(world, elements, glides, view, out, width, height)     # exp.197
+    return out

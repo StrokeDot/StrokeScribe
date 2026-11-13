@@ -26,7 +26,8 @@ def sample_font():
 
 class FontAndScaleTests(unittest.TestCase):
     def test_ten_handwriting_choices(self):
-        self.assertEqual(len(STARTER_FONTS),10)
+        self.assertGreaterEqual(len(STARTER_FONTS),50)
+        self.assertEqual(len(set(STARTER_FONTS)),len(STARTER_FONTS))
         self.assertEqual(font_slug('Indie Flower'),'indieflower')
         with self.assertRaises(ValueError):font_slug('../')
 
@@ -101,8 +102,9 @@ class FontAndScaleTests(unittest.TestCase):
         w=Window()
         try:
             self.assertAlmostEqual(w.handsize.value(),.75)
-            self.assertAlmostEqual(w.ax.value(),.20)
-            self.assertAlmostEqual(w.ay.value(),.20)
+            # Defaults are calibrated for the bundled built-in hand.
+            self.assertAlmostEqual(w.ax.value(),.08)
+            self.assertAlmostEqual(w.ay.value(),.13)
             self.assertTrue(w.showhand.isChecked())
             self.assertTrue(w.show_paint_hand.isChecked())
             self.assertEqual(w.font_bg_mode.currentIndex(),0)
@@ -127,13 +129,18 @@ class FontAndScaleTests(unittest.TestCase):
             self.assertEqual(json.loads((folder/'sequence.json').read_text())['artwork_scale'],.5)
             expected=scale_animation_frame(render(d,.5,240,160),.5)
             actual=QImage(str(folder/'frame_000001.png'))
-            self.assertEqual(bytes(actual.convertToFormat(QImage.Format.Format_RGBA8888).constBits()),
-                             bytes(expected.convertToFormat(QImage.Format.Format_RGBA8888).constBits()))
+            # Keep converted images alive while copying their pixels; a
+            # temporary image can be freed before bytes() reads its buffer.
+            got=actual.convertToFormat(QImage.Format.Format_RGBA8888)
+            want=expected.convertToFormat(QImage.Format.Format_RGBA8888)
+            self.assertEqual(bytes(got.constBits()),bytes(want.constBits()))
         w=Window()
         self.assertEqual(w.artwork_size.value(),100)
         w.artwork_size.setValue(65)
         self.assertEqual(w.options()['artwork_scale'],.65)
-        self.assertEqual(w.font_select.count(),11)
+        from font_library import FONT_GROUPS, STARTER_FONTS
+        # Built-in pen + every font + one separator per group.
+        self.assertEqual(w.font_select.count(),1+len(STARTER_FONTS)+len(FONT_GROUPS))
         w.close()
 
 if __name__=='__main__':

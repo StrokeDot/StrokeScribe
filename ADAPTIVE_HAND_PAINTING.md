@@ -12,7 +12,7 @@ uses the existing hand PNG and pen contact anchor.
 Every revealed mask cell has a first-contact timestamp from a brush stamp on a
 timed painting segment. The same segment and clock determine the visible hand
 contact point. There is no flood fill of arrival times, diffusion, global fade,
-or final whole-image reveal. Pen-up transfers never stamp and hide the hand.
+or final whole-image reveal. Pen-up transfers never stamp; the hand stays visible and glides to the next region.
 The route starts at the endpoint of the final stroke in the user's current order.
 If that point is outside PNG alpha, the first segment is a hidden transfer to the
 nearest valid region: painting outside the source would violate the alpha constraint.

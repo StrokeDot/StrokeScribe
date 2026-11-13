@@ -15,7 +15,25 @@ class RegionMap:
     count: int
     simplified: bool
 
+_CACHE={}
+
+
 def segment_regions(image, detail='medium'):
+    """exp.120: the same picture gives the same (frozen) regions: worked out once per
+    picture and detail, not every time an element is opened or switched to."""
+    import hashlib
+    key=(image.size,image.mode,detail,hashlib.blake2b(image.tobytes(),digest_size=16).digest())
+    hit=_CACHE.get(key)
+    if hit is not None:
+        return hit
+    result=_segment_regions(image,detail)
+    _CACHE[key]=result
+    while len(_CACHE)>24:
+        _CACHE.pop(next(iter(_CACHE)))
+    return result
+
+
+def _segment_regions(image, detail='medium'):
     w,h=image.size
     ratio=min(1.,GRID_LIMIT/max(w,h))
     gw,gh=max(1,int(np.ceil(w*ratio))),max(1,int(np.ceil(h*ratio)))
