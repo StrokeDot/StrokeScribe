@@ -677,6 +677,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def ensure_brush_plan(self,options):
         """Build a missing brush plan behind a loading card before showing it."""
+        self._plan_waiting=False
         image=options.get('final_image')
         if image is None or self.drawing is None:
             return
@@ -711,8 +712,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # setting, a paint mode) plans the route in the background, without the card; the
             # window keeps working. Play or a scrub before it is done waits for it (card).
             self._plan_deferred=False
+            self._plan_waiting=True               # the view is built; the frame waits for the route
             self.plan_in_background(image,bw,sp)
-            return False
+            return 'background'
         self._plan_deferred=False                 # planned now (here or in the background)
         self._preparing=True
         try:
@@ -6866,7 +6868,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self.position=self.finished_position(view)
         self._look_preview=False
         try:
-            frame=self.preview_frame(self.position,playing=self.playing or getattr(self,'_scrub_fast',False))
+            if getattr(self,'_plan_waiting',False) and self.canvas.frame is not None and not self.playing:
+                frame=self.canvas.frame         # exp.5: the last picture until the route is planned
+            else:
+                frame=self.preview_frame(self.position,playing=self.playing or getattr(self,'_scrub_fast',False))
         except Exception as exc:
             # An invalid/expensive brush configuration must not throw out of
             # the Qt signal handler and terminate the application.
@@ -6914,7 +6919,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         length=view['length']
         self.clock.setText(timecode(self.position*length))
         self.clock_total.setText(timecode(length))
-        if not self.playing and not getattr(self,'_plan_deferred',False): self.start_prerender()
+        if not self.playing and not getattr(self,'_plan_deferred',False) and not getattr(self,'_plan_waiting',False):
+            self.start_prerender()
 
     def finished_position(self,view):
         """Where the playhead shows the finished element (painted, before it goes out)."""
@@ -7234,7 +7240,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def prerender_step(self):
         view=getattr(self,'_view',None)
         if (view is None or not self.isVisible() or self.playing or self.busy or self._preparing or not self.drawing
-                or getattr(self,'_plan_deferred',False)
+                or getattr(self,'_plan_deferred',False) or getattr(self,'_plan_waiting',False)
                 or (self.builder and self.builder.isRunning()) or (self.worker and self.worker.isRunning())
                 or view['token']!=self._view_token()):
             return

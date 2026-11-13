@@ -165,7 +165,8 @@ class Exp5Tests(unittest.TestCase):
         w.final_image = self.picture(); w.use_color.setChecked(True)
         w._animating = False
         o = w.options(); o['reveal_mode'] = 'painter'
-        self.assertIs(w.ensure_brush_plan(o), False)              # planned in the background
+        self.assertEqual(w.ensure_brush_plan(o), 'background')    # planned in the background
+        self.assertTrue(w._plan_waiting)                          # the frame waits; the view is built
         self.assertEqual(cards, [])
         if getattr(w, 'plan_worker', None) is not None:
             w.plan_worker.wait(30000)

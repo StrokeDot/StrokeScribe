@@ -146,6 +146,10 @@ class ImageAnimationTests(unittest.TestCase):
             with patch('image_painting.paint_frame',side_effect=RuntimeError(
                     'controlled preview failure')):
                 w.refresh()
+                # exp.5: a change while paused plans the route in the background first
+                worker=getattr(w,'plan_worker',None)
+                if worker is not None: worker.wait(60000)
+                w.refresh()
             self.assertIn('controlled preview failure',w.status.text())
             w.image_animation.setCurrentIndex(0)
             self.assertTrue(w.duration.isEnabled())
