@@ -184,25 +184,16 @@ class BuiltinSoundTests(unittest.TestCase):
         again = sound.synthesize(track(), 6, 1920, 1080, builtin={'draw': 'pencil', 'paint': 'pencil'})
         self.assertTrue(np.array_equal(audio, again))       # the preview and the export sound the same
 
-    def test_sounds_like_graphite_on_paper(self):
-        """Mostly a scratchy 1-6 kHz noise (not a tone, no rumble), brighter when faster."""
-        import sound_synth
-        rng = np.random.default_rng(3)
-        n = 3 * sound_synth.RATE
-
-        def centroid(speed):
-            s = np.full(n, float(speed))
-            x = sound_synth.tool_sound('pencil', np.cumsum(s) / sound_synth.RATE, s, np.ones(n), rng)
-            spec = np.abs(np.fft.rfft(x * np.hanning(n))) ** 2
-            f = np.fft.rfftfreq(n, 1 / sound_synth.RATE)
-            return float((spec * f).sum() / spec.sum()), spec, f, x
-        c, spec, f, x = centroid(50.)
-        self.assertGreater(c, 1800.); self.assertLess(c, 6000.)
-        low = spec[f < 200].sum() / spec.sum()
-        self.assertLess(low, .01)                           # no rumble
-        self.assertGreater(centroid(90.)[0], centroid(20.)[0])
-        self.assertGreater(float(np.sqrt((centroid(90.)[3] ** 2).mean())),
-                           float(np.sqrt((centroid(15.)[3] ** 2).mean())))   # louder when faster
+    def test_the_builtin_sounds_are_the_bundled_cc0_recordings(self):
+        """exp.6: real recordings (CC0, credited), not a synthesized sound."""
+        import sound
+        for token in ('builtin:pencil', 'builtin:eraser'):
+            path = sound.builtin_path(token)
+            self.assertTrue(path.is_file(), path)
+            self.assertIsNotNone(sound.load_recording(path))
+        self.assertEqual(sound.builtin_path('builtin:brush'), sound.builtin_path('builtin:pencil'))
+        credits = (sound.SOUNDS / 'CREDITS.md').read_text(encoding='utf-8')
+        self.assertIn('CC0', credits); self.assertIn('freesound.org/s/571800', credits)
 
     def test_builtin_sounds_are_chosen_like_files(self):
         import sound
@@ -233,8 +224,8 @@ class BuiltinSoundWindowTests(unittest.TestCase):
         self.assertTrue(w.sound_on.isChecked())
         self.assertEqual(w.options()['sound_files'], ('builtin:pencil', 'builtin:pencil', 'builtin:eraser'))
         self.assertEqual(w.sound_file_buttons['sound_pencil_file'][0].text(), 'Pencil on paper (built-in)')
-        w.set_sound_file('sound_brush_file', 'builtin:brush')
-        self.assertEqual(w.sound_file_buttons['sound_brush_file'][0].text(), 'Soft brush (built-in)')
+        w.set_sound_file('sound_brush_file', 'builtin:brush')      # (experimental.1): the pencil now
+        self.assertEqual(w.sound_file_buttons['sound_brush_file'][0].text(), 'Pencil on paper (built-in)')
         menu = w.sound_file_buttons['sound_eraser_file'][0].menu()
         self.assertIn('Choose a recording…', [a.text() for a in menu.actions()])
         with tempfile.TemporaryDirectory() as tmp:

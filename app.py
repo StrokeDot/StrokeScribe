@@ -5759,8 +5759,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                                    f'recording (MP3, WAV, M4A…).')
 
     def use_builtin_sounds(self):
-        """1.0.1: the built-in pencil on paper (drawing and colouring) and eraser, made from the
-        hand's own movement; rows with the user's own recordings are kept."""
+        """1.0.1: the built-in pencil on paper (drawing and colouring) and eraser (real CC0
+        recordings, exp.6); rows with the user's own recordings are kept."""
         from sound import BUILTIN_FOR
         for key,kind in (('sound_pencil_file','draw'),('sound_brush_file','paint'),('sound_eraser_file','rub')):
             if not self.sound_files.get(key):
