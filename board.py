@@ -314,20 +314,36 @@ class World:
         from PySide6.QtGui import QPainter
         out = under.copy()
         x, y, w, h = self.place(frame, view, out.width(), out.height())
+        strip = None
         if fold:
             try:
                 import page_fold
                 fx = page_fold.find_fold(under, x, y, w, h)
                 if fx is not None:
-                    image = page_fold.follow_fold(image, fx, x, w, out.width())
+                    strip = page_fold.fold_strip(image, fx, x, w, out.width())
             except Exception:
-                pass
+                strip = None
         p = QPainter(out)
         p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         from blend_modes import composition_mode
         from artwork_compositor import bounded_opacity
         p.setCompositionMode(composition_mode(blend_mode))
         p.setOpacity(bounded_opacity(opacity))
-        p.drawImage(QRectF(x, y, w, h), image)
+        if strip is None:
+            p.drawImage(QRectF(x, y, w, h), image)
+        else:
+            # exp.5: the picture without its strip around the fold, then the bent strip
+            from PySide6.QtGui import QRegion
+            from PySide6.QtCore import QRect
+            picture, c0 = strip
+            sx = x + c0 * w / image.width()
+            sw = picture.width() * w / image.width()
+            whole = QRegion(QRect(int(x) - 1, int(y) - 1, int(w) + 3, int(h) + 3))
+            band = QRegion(QRect(int(round(sx)), int(y) - 1, max(1, int(round(sx + sw)) - int(round(sx))), int(h) + 3))
+            p.setClipRegion(whole.subtracted(band))
+            p.drawImage(QRectF(x, y, w, h), image)
+            p.setClipRegion(band)
+            p.drawImage(QRectF(sx, y, sw, h), picture)
+            p.setClipping(False)
         p.end()
         return out

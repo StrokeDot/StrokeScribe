@@ -112,9 +112,24 @@ class ThemeAndBusyTests(unittest.TestCase):
         w.final_image = image
         w.use_color.setEnabled(True)
         w.use_color.setChecked(True)
+        cards = []
+        shown = w.show_busy_now
+        w.show_busy_now = lambda text, detail='': (cards.append(text), shown(text, detail))
         w.reveal_mode.setCurrentIndex(w.reveal_mode.findText('Zigzag sweep'))
         APP.processEvents()
+        # exp.5 (the user: no "Preparing brush route" while switching things): a change while
+        # paused plans the route in the background, without the card
+        # (a route still being planned for the previous mode runs first; this one comes next)
+        import time
+        give_up = time.monotonic() + 60
+        while (not plan_ready(w.drawing, image, w.brush_width.value(), w.stroke_spacing.value())
+               and time.monotonic() < give_up):
+            worker = getattr(w, 'plan_worker', None)
+            if worker is not None:
+                worker.wait(200)
+            APP.processEvents()
         self.assertTrue(plan_ready(w.drawing, image, w.brush_width.value(), w.stroke_spacing.value()))
+        self.assertEqual(cards, [])
         self.assertFalse(w.busy)
         self.assertTrue(w.play.isEnabled())
 

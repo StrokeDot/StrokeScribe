@@ -272,7 +272,7 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
                           hand_scale=.18, anchor=(.1,.1), reveal_mode='fade',
                           brush_width=.14, painting_hand=None, stroke_spacing=.55,
                           paper_cleanup=False,paper_tolerance=22,paper_softness=8,paint_look='classic',
-                          pencil_first=''):
+                          pencil_first='',display_image=None):
     """Show SVG drawing, then fade, brush, adaptive or zigzag painting."""
     drawing.paint_look=paint_look or 'classic'      # exp.180: Paint look (adaptive_hand.PAINT_LOOKS)
     from adaptive_hand import apply_pencil
@@ -286,8 +286,12 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         drawing.paint_method=reveal_mode
         reveal_mode='adaptive'
     # Keep raw source for brush-plan geometry; clean the visible colour pixels only.
-    display_image=(__import__('paper_cleanup').clean_paper(final_image,paper_tolerance,paper_softness)
-                   if paper_cleanup and getattr(drawing,'source_kind',None)=='image' else None)
+    # exp.5: display_image (given): the picture shown, when its look differs from the picture the
+    # route is planned on (picture_look.pictures)
+    shown=display_image if display_image is not None and not display_image.isNull() else final_image
+    display_image=(__import__('paper_cleanup').clean_paper(shown,paper_tolerance,paper_softness)
+                   if paper_cleanup and getattr(drawing,'source_kind',None)=='image'
+                   else (display_image if shown is not final_image else None))
     image_animation=getattr(drawing,'image_animation',None)
     if getattr(drawing,'source_kind',None)=='image' and image_animation in ('draw_paint','paint_only'):
         # This is a choice of visible animation, not an AI recognition mode.
@@ -322,12 +326,12 @@ def render_color_timeline(drawing, fraction, width=1920, height=1080,
         from contour_transition import render_transition
         return render_transition(drawing,final_image,width,height,reveal_progress,
                                  thickness,brush_width,stroke_spacing,painting_hand,
-                                 hand_scale,anchor,reveal_mode)
+                                 hand_scale,anchor,reveal_mode,display_image=display_image)
     if reveal_mode == 'adaptive' and elapsed >= duration:
         from adaptive_hand import render_adaptive
         return render_adaptive(drawing,final_image,width,height,reveal_progress,
                                thickness,brush_width,stroke_spacing,
-                               painting_hand,hand_scale,anchor)
+                               painting_hand,hand_scale,anchor,display_image=display_image)
     if reveal_progress == 0:
         frame = render(drawing,stroke_progress,width,height,thickness,hand,hand_scale,anchor)
         # At the exact phase boundary, keep the painting hand at the endpoint

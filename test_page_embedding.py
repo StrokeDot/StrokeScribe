@@ -99,3 +99,74 @@ class EmbeddingTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@unittest.skipIf(SKIP, 'needs Qt')
+class Exp5Tests(unittest.TestCase):
+    """exp.5: the painting order does not change with the edges' look; no lag; no card while
+    switching."""
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def picture(self):
+        rng = np.random.default_rng(4)
+        a = np.zeros((120, 200, 4), np.float32)
+        a[..., :3] = rng.random((120, 200, 1)) * 200 + 30
+        a[..., 3] = 255
+        return qimage(a)
+
+    def test_the_route_is_planned_on_the_plain_look(self):
+        import picture_look
+        image = self.picture()
+        s = dict(picture_look.DEFAULTS, ink_on=True)
+        plain, shown = picture_look.pictures(image, s)
+        self.assertIsNone(shown)                                   # the plain look: one picture
+        for extra in (dict(ink_edges='Sketch edges'), dict(ink_colour=picture_look.GRAPHITE),
+                      dict(ink_edges='Sketch edges', ink_colour=picture_look.GRAPHITE)):
+            route, shown = picture_look.pictures(image, dict(s, **extra))
+            self.assertIs(route, plain)                            # the same route: same order
+            self.assertIsNotNone(shown)                            # the look itself is shown
+
+    def test_the_shown_look_is_what_appears(self):
+        import picture_look
+        from color_reveal import render_color_timeline
+        from engine import Drawing, Stroke
+        from adaptive_hand import pil_image
+        image = self.picture()
+        s = dict(picture_look.DEFAULTS, ink_on=True, ink_colour=picture_look.GRAPHITE)
+        route, shown = picture_look.pictures(image, s)
+        d = Drawing([Stroke('a', [(0, 0), (200, 0), (200, 120)], width=2)], (0, 0, 200, 120), [])
+        d.source_kind = 'image'; d.image_animation = 'paint_only'
+        end = lambda img: np.asarray(pil_image(render_color_timeline(
+            d, 1., 200, 120, duration=0, fade_duration=1, hold_duration=.2, final_image=route,
+            reveal_mode='adaptive', display_image=img)).convert('RGBA')).astype(int)
+        self.assertGreater(np.abs(end(shown) - end(None)).mean(), 1.)
+
+    def test_the_fold_reworks_only_a_strip(self):
+        import time
+        import page_fold
+        from PySide6.QtGui import QImage
+        frame = QImage(4000, 2200, QImage.Format.Format_ARGB32_Premultiplied); frame.fill(0xff202020)
+        started = time.perf_counter()
+        picture, c0 = page_fold.fold_strip(frame, 1000., -200, 4000, 1920)
+        self.assertLess(picture.width(), 400)                      # a strip, not the whole frame
+        self.assertLess(time.perf_counter() - started, .25)
+
+    def test_no_card_when_changing_the_paint_mode_while_paused(self):
+        from app import Window
+        from engine import Drawing, Stroke
+        w = Window(); self.addCleanup(w.close)
+        cards = []
+        w.show_busy_now = lambda text, detail='': cards.append(text)
+        w.canvas.frame = self.picture()
+        w.drawing = Drawing([Stroke('a', [(0, 0), (200, 0), (200, 120)], width=2)], (0, 0, 200, 120), [])
+        w.final_image = self.picture(); w.use_color.setChecked(True)
+        w._animating = False
+        o = w.options(); o['reveal_mode'] = 'painter'
+        self.assertEqual(w.ensure_brush_plan(o), 'background')    # planned in the background
+        self.assertTrue(w._plan_waiting)                          # the frame waits; the view is built
+        self.assertEqual(cards, [])
+        if getattr(w, 'plan_worker', None) is not None:
+            w.plan_worker.wait(30000)

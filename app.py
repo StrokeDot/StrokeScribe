@@ -677,6 +677,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def ensure_brush_plan(self,options):
         """Build a missing brush plan behind a loading card before showing it."""
+        self._plan_waiting=False
         image=options.get('final_image')
         if image is None or self.drawing is None:
             return
@@ -691,19 +692,30 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if plan_ready(self.drawing,image,bw,sp):
             self._plan_deferred=False
             return True
-        if getattr(self,'_look_preview',False) and not self.playing and not self.all_scenes():
+        now=getattr(self,'_plan_now',False); self._plan_now=False
+        if getattr(self,'_look_preview',False) and not self.playing and not self.all_scenes() and not now:
             # Adjusting Ink on the page / Colour / Light (exp.100): show the finished
             # picture at once; the brush route is planned on Play, a scrub or Pre-render.
             self._plan_deferred=True
             return 'deferred'
-        self._plan_deferred=False                 # planned now (here or in the background)
         quiet=getattr(self,'_quiet_plan',False)
         self._quiet_plan=False
         if quiet and self.canvas.frame is not None:
             # Small change (brush width / spacing): plan in the background and
             # keep showing the last picture; no loading card.
+            self._plan_deferred=False
             self.plan_in_background(image,bw,sp)
             return False
+        if not getattr(self,'_animating',True) and not self.playing and not now and self.canvas.frame is not None:
+            # exp.5 (the user: "preparing the brush has to be when the animation will happen,
+            # not when you're switching stuff"): a change while paused (another element, a
+            # setting, a paint mode) plans the route in the background, without the card; the
+            # window keeps working. Play or a scrub before it is done waits for it (card).
+            self._plan_deferred=False
+            self._plan_waiting=True               # the view is built; the frame waits for the route
+            self.plan_in_background(image,bw,sp)
+            return 'background'
+        self._plan_deferred=False                 # planned now (here or in the background)
         self._preparing=True
         try:
             self.show_busy_now('Preparing brush route',
@@ -720,7 +732,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         return True
 
     def plan_in_background(self,image,bw,sp):
-        key=(id(self.drawing),image.cacheKey(),round(bw,4),round(sp,4))
+        # exp.5: the paint mode and the pencil pass too (a mode change plans in the background
+        # now; the same picture with another mode is another route)
+        from adaptive_hand import pencil_key
+        key=(id(self.drawing),image.cacheKey(),round(bw,4),round(sp,4),
+             getattr(self.drawing,'paint_method','adaptive'),pencil_key(self.drawing))
         worker=getattr(self,'plan_worker',None)
         if worker is not None and worker.isRunning():
             self._plan_pending=True
@@ -6012,7 +6028,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if not image_source and getattr(self.drawing,'svg_has_fill',False) and self.use_color.isChecked() and not self.color_path:
             from svg_appearance import render_appearance
             import picture_look
-            options['final_image']=picture_look.adjusted(
+            options['final_image'],options['display_image']=picture_look.pictures(
                 render_appearance(self.drawing,max(options['width'],options['height'])),settings)
         return options
 
@@ -6838,8 +6854,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self._preparing or getattr(self,'_suspend_refresh',False):
             return
         look=getattr(self,'_look_preview',False)
-        if getattr(self,'_plan_deferred',False) and not look:
-            playhead=False                # Play / scrub after a look change: plan the brushes now
+        # exp.5: the route is planned only when the animation is shown (Play, a scrub)
+        self._animating=bool(playhead or self.playing or getattr(self,'_scrub_fast',False))
+        if getattr(self,'_plan_deferred',False) and not look and self._animating:
+            playhead=False                # Play / scrub after a change: plan the brushes now
         if self.drawing and self.board_mode():
             self._view=None; self.clear_frames()
             self.show_board(); return
@@ -6854,7 +6872,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self.position=self.finished_position(view)
         self._look_preview=False
         try:
-            frame=self.preview_frame(self.position,playing=self.playing or getattr(self,'_scrub_fast',False))
+            if getattr(self,'_plan_waiting',False) and self.canvas.frame is not None and not self.playing:
+                frame=self.canvas.frame         # exp.5: the last picture until the route is planned
+            else:
+                frame=self.preview_frame(self.position,playing=self.playing or getattr(self,'_scrub_fast',False))
         except Exception as exc:
             # An invalid/expensive brush configuration must not throw out of
             # the Qt signal handler and terminate the application.
@@ -6902,7 +6923,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         length=view['length']
         self.clock.setText(timecode(self.position*length))
         self.clock_total.setText(timecode(length))
-        if not self.playing and not getattr(self,'_plan_deferred',False): self.start_prerender()
+        if not self.playing and not getattr(self,'_plan_deferred',False) and not getattr(self,'_plan_waiting',False):
+            self.start_prerender()
 
     def finished_position(self,view):
         """Where the playhead shows the finished element (painted, before it goes out)."""
@@ -7222,7 +7244,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def prerender_step(self):
         view=getattr(self,'_view',None)
         if (view is None or not self.isVisible() or self.playing or self.busy or self._preparing or not self.drawing
-                or getattr(self,'_plan_deferred',False)
+                or getattr(self,'_plan_deferred',False) or getattr(self,'_plan_waiting',False)
                 or (self.builder and self.builder.isRunning()) or (self.worker and self.worker.isRunning())
                 or view['token']!=self._view_token()):
             return
@@ -7310,7 +7332,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if not self.drawing or self.board_mode(): return
         self.playing=False
         if getattr(self,'_plan_deferred',False):
-            self._look_preview=False; self.refresh()          # plan the brushes first (with its card)
+            self._look_preview=False; self._plan_now=True; self.refresh()   # plan the brushes first (with its card)
             if getattr(self,'_plan_deferred',False): return
         if getattr(self,'_view',None) is None and not self.build_view(): return
         self._prerender_all=True; self._prerender_next=0; self._prerender_failures=0
