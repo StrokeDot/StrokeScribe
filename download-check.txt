@@ -1,0 +1,11 @@
+final host: us.aws.cdn.hf.co
+one 32 MB piece (final address): first byte 0.20 s, 72 MB/s
+one 32 MB piece (original address): first byte 0.27 s, 51 MB/s
+2 pieces at once: 133 MB/s total, slowest piece 0.5 s
+4 pieces at once: 240 MB/s total, slowest piece 0.6 s
+8 pieces at once: 413 MB/s total, slowest piece 0.6 s
+app download, 1 connection(s): 336 MB in 3.1 s = 108 MB/s
+app download, 4 connection(s): 336 MB in 2.5 s = 133 MB/s
+app download, 8 connection(s): 336 MB in 1.8 s = 191 MB/s
+cancel: stopped 0.05 s after Cancel
+resume: complete, sha256 d64f3a68e1cc4f9f
