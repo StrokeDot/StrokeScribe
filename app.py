@@ -610,7 +610,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.timer=QTimer(self)
         self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.timeout.connect(self.tick)
-        self.timer.start(33)
+        if self.playing: self.timer.start(33)        # exp.10: runs only while playing (see `playing`)
         self.analysis_timer=QTimer(self)
         self.analysis_timer.setInterval(1000)
         self.analysis_timer.timeout.connect(self.update_analysis_elapsed)
@@ -1171,6 +1171,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     # ------------------------------------------------------------ overlays
     def scene_seconds(self):
         from frame_render import timeline_seconds
+        view=getattr(self,'_view',None)
+        if (self._playing and view is not None and not view['all']
+                and view['token']==self._view_token()):
+            # exp.10: during playback, the element's length the preview already worked out
+            # (the same timeline_seconds); rebuilding all settings for it, up to five times a
+            # frame, was a quarter of the playback time
+            return view['length']
         return timeline_seconds(self.drawing,self.options()) if self.drawing else 4.
 
     def video_seconds(self):
@@ -7483,6 +7490,22 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 import applog; applog.info('Preview size: could not put it back, now %s' % list(split.sizes()))
             except Exception:
                 pass
+
+    @property
+    def playing(self):
+        return getattr(self,'_playing',False)
+
+    @playing.setter
+    def playing(self,value):
+        # exp.10: the 30-a-second play timer runs only while playing (it used to wake the
+        # app all the time, also when idle)
+        self._playing=bool(value)
+        timer=getattr(self,'timer',None)
+        if timer is not None:
+            if self._playing:
+                if not timer.isActive(): timer.start(33)
+            else:
+                timer.stop()
 
     def tick(self):
         if not self.playing or not self.drawing or self.busy: return

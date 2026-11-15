@@ -6,6 +6,17 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Smoother playback, nothing running while idle (v1.0.1-experimental.10)
+
+- **Each playback frame takes about half the time.** While playing, the preview re-read every
+  setting of the app up to seven times a frame, only to find the element's length again. That was
+  about a quarter of the playback time. During playback it now uses the length it already
+  knows. On the sample drawing, a frame went from about 27 ms to about 12 ms.
+- **The timeline's Background row draws faster.** Its transparent checker pattern was drawn as
+  hundreds of little squares on every frame. Now it is one tiled fill, and it looks the same.
+- **Nothing ticks while the app is idle.** The play timer woke the app 30 times a second even
+  when nothing was playing. Now it runs only while playing.
+
 ## Much less disk space for the preview (v1.0.1-experimental.9)
 
 - **Pre-rendered frames are about 17 times smaller.** They were saved as raw pixels (2 MB a

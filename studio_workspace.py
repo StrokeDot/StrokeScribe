@@ -209,6 +209,22 @@ def form_layout():
     return form
 
 
+
+_CHECKER=None
+
+
+def _checker_brush():
+    """The Background row's transparent checker: 6 px squares, #a9a9b2 on #d9d9de."""
+    global _CHECKER
+    if _CHECKER is None:
+        from PySide6.QtGui import QBrush, QPixmap
+        tile=QPixmap(12,12); tile.fill(QColor('#d9d9de'))
+        tp=QPainter(tile)
+        tp.fillRect(0,0,6,6,QColor('#a9a9b2')); tp.fillRect(6,6,6,6,QColor('#a9a9b2'))
+        tp.end()
+        _CHECKER=QBrush(tile)
+    return _CHECKER
+
 class StageTimeline(QFrame):
     """Interactive time overview, like an editor's track.
 
@@ -533,10 +549,9 @@ class StageTimeline(QFrame):
             r=QRectF(x0+1,row.top()+2,max(4.,x1-x0-2),row.height()-4)
             if colour is None:                         # transparent: a small checker
                 p.save(); p.setClipRect(r)
-                p.fillRect(r,QColor('#d9d9de'))
-                for yy in range(int(r.top()),int(r.bottom())+1,6):
-                    for xx in range(int(r.left()),int(r.right())+1,6):
-                        if ((xx-int(r.left()))//6+(yy-int(r.top()))//6)%2==0: p.fillRect(QRectF(xx,yy,6,6),QColor('#a9a9b2'))
+                # exp.10: one tiled fill (it was hundreds of little squares on every repaint)
+                p.setBrushOrigin(QPointF(int(r.left()),int(r.top())))
+                p.fillRect(r,_checker_brush())
                 p.restore()
                 ink=QColor('#202028')
             else:
