@@ -2331,7 +2331,7 @@ def build_rails(w, tabs, inspector):
     def rail_button(name, text):
         button = QToolButton(); button.setObjectName('railButton')
         button.setText(text)
-        button.setIcon(icon(name, RAIL_ICON, '#FFFFFF'))      # the open panel: white on purple
+        button.setIcon(icon(name, RAIL_ICON, '#7B6CE2'))      # exp.11: the open panel: accent icon on a soft highlight
         button.setIconSize(QSize(18, 18))
         button.setCheckable(True)
         button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)

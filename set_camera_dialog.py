@@ -66,7 +66,7 @@ class BoardFrame(QWidget):
             p.drawPixmap(target, self.picture, QRectF(self.picture.rect()))
             if self.mode == 'picture':
                 bw, bh = page.width() * .82 * self.place[2] / 100., page.height() * .78 * self.place[2] / 100.
-                p.setPen(QPen(QColor('#6E4FF2'), 2, Qt.PenStyle.DashLine)); p.setBrush(Qt.BrushStyle.NoBrush)
+                p.setPen(QPen(QColor(__import__('theme').colors()['accent']), 2, Qt.PenStyle.DashLine)); p.setBrush(Qt.BrushStyle.NoBrush)
                 p.drawRect(QRectF(new.x() - bw / 2, new.y() - bh / 2, bw, bh))
         p.setPen(QPen(QColor(150, 150, 170), 1.2, Qt.PenStyle.DashLine)); p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawRect(page)
