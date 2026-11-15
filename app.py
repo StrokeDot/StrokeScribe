@@ -262,6 +262,17 @@ class Canvas(QWidget):
                        self.busy_detail or 'The timeline unlocks when the drawing is ready.')
         p.end()
 
+
+def clear_preview_sounds():
+    """exp.9: the preview's sound files (one or two WAVs per change of the drawing) were never
+    deleted and piled up in the temp folder. Returns the folder."""
+    import tempfile
+    folder=Path(tempfile.gettempdir())/'strokescribe-sound'
+    for old in folder.glob('*.wav'):
+        try: old.unlink()
+        except OSError: pass            # still open somewhere: next time
+    return folder
+
 class PreviewSound:
     """Plays the pencil/brush soundtrack in sync with the preview."""
     def __init__(self):
@@ -272,6 +283,7 @@ class PreviewSound:
             self.player.setAudioOutput(self.output)
         except Exception:
             self.player=None            # no audio support: preview stays silent
+        clear_preview_sounds()          # exp.9: leftovers of earlier sessions
     def play(self,drawing,options,volume,seconds):
         """volume: pencil/brush sounds (None = off); options['audio']: voiceover/music."""
         if self.player is None or drawing is None: return
@@ -284,7 +296,8 @@ class PreviewSound:
         key=hashlib.sha1(signature.encode()).hexdigest()
         if key!=self.key:
             from frame_render import timeline_seconds
-            folder=Path(tempfile.gettempdir())/'strokescribe-sound'
+            self.player.setSource(QUrl())       # let go of the old file so it can be deleted
+            folder=clear_preview_sounds()       # exp.9: only the current preview's sound is kept
             folder.mkdir(exist_ok=True)
             effects=None
             if volume is not None:

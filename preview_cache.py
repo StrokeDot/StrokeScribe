@@ -15,10 +15,13 @@ Two tiers: recent frames in memory (fast, bounded), and frames made by
 "Pre-render" on disk (bounded, oldest removed first) so a long video does not
 have to fit in memory. The memory tier grows with the computer's memory.
 
-Disk frames are stored as raw pixels (exp.101): reading one back is a plain file
-read, a few milliseconds. PNG frames (older versions) took tens of milliseconds
-to decode each, too slow to play from at 30 frames a second. Older .png / .jpg
-frames are still read.
+exp.9 (the user: the cache had grown to 20 GB): disk frames are compressed. An opaque
+frame (the usual case) is a JPEG at quality 92: about 120 KB instead of 2 MB of raw
+pixels, decoded in about 4 ms (fast enough to play from at 30 frames a second; PNG,
+too slow, is not used). A frame with transparency is its raw pixels packed with fast
+zlib (about a third). The disk limit is 2 GB (about 9 minutes of pre-rendered video),
+and every app version has its own folder: frames of older versions (never shown again)
+are deleted when the app starts.
 """
 from __future__ import annotations
 
@@ -28,8 +31,11 @@ from collections import OrderedDict
 from pathlib import Path
 
 MEMORY_BUDGET = 600 * 1024 * 1024            # the least; more on computers with more memory
-DISK_BUDGET = 20 * 1024 ** 3
+DISK_BUDGET = 2 * 1024 ** 3
 RAW_MAGIC = b'SSRAW1'
+ZIP_MAGIC = b'SSZIP1'
+JPEG_QUALITY = 92
+FRAME_SUFFIXES = ('.raw', '.zraw', '.jpg', '.png')
 
 
 def physical_memory():
@@ -99,11 +105,41 @@ def _opaque(image):
 memory_budget_default = memory_budget
 
 
+def _version_folder(name):
+    return 'v-' + ''.join(c if c.isalnum() or c in '.-' else '_' for c in str(name or 'dev'))
+
+
+def remove_old_frames(base, keep):
+    """Deletes ready frames of other app versions (and of versions before exp.9, kept directly
+    in the cache folder): their names include the version, so they are never shown again."""
+    base = Path(base)
+    try:
+        entries = list(base.iterdir())
+    except OSError:
+        return
+    import shutil
+    for entry in entries:
+        try:
+            if entry.is_dir() and entry.name.startswith('v-') and entry.name != keep:
+                shutil.rmtree(entry, ignore_errors=True)
+            elif entry.is_file() and (entry.suffix.lower() in FRAME_SUFFIXES or entry.name.endswith('.part')):
+                entry.unlink()
+        except OSError:
+            pass
+
+
 class SegmentCache:
     def __init__(self, folder=None, memory_budget=None, disk_budget=DISK_BUDGET):
         self.memory_budget = memory_budget if memory_budget is not None else memory_budget_default()
         self.disk_budget = disk_budget
-        self.folder = Path(folder) if folder else default_folder()
+        if folder:
+            self.folder = Path(folder)
+        else:
+            # exp.9: one folder for this app version; older versions' frames are removed
+            base = default_folder()
+            keep = _version_folder(_VERSION)
+            remove_old_frames(base, keep)
+            self.folder = base / keep
         self._memory = OrderedDict()
         self._memory_bytes = 0
         self._disk = None                     # name -> bytes, read lazily
@@ -155,7 +191,7 @@ class SegmentCache:
             self._disk_bytes = 0
             try:
                 # Only ready frames: nothing else in the folder is ever counted or deleted.
-                files = sorted((p for p in self.folder.glob('*.*') if p.suffix.lower() in ('.raw', '.png', '.jpg')),
+                files = sorted((p for p in self.folder.glob('*.*') if p.suffix.lower() in FRAME_SUFFIXES),
                                key=lambda p: p.stat().st_mtime)
                 for path in files:
                     size = path.stat().st_size
@@ -171,7 +207,7 @@ class SegmentCache:
             return None
         from PySide6.QtGui import QImage
         path = entry[0]
-        if path.suffix == '.raw':
+        if path.suffix in ('.raw', '.zraw'):
             frame = _read_raw(path)
         else:
             frame = QImage(str(path))
@@ -199,8 +235,8 @@ class SegmentCache:
             return
         try:
             self.folder.mkdir(parents=True, exist_ok=True)
-            path = self.folder / (key + '.raw')
-            if not _write_raw(path, frame):
+            path = _write_frame(self.folder, key, frame)
+            if path is None:
                 return
             size = path.stat().st_size
         except OSError:
@@ -231,7 +267,28 @@ class SegmentCache:
             self._drop(key)
 
 
-def _write_raw(path, frame):
+def _write_frame(folder, key, frame):
+    """exp.9: an opaque frame as JPEG, one with transparency as zlib-packed pixels; the path
+    written, or None."""
+    from PySide6.QtGui import QImage
+    if _opaque(frame):
+        path = Path(folder) / (key + '.jpg')
+        temp = path.with_name(path.name + '.part')
+        try:
+            if frame.save(str(temp), 'JPG', JPEG_QUALITY):
+                os.replace(temp, path)
+                return path
+        except OSError:
+            pass
+        try:
+            temp.unlink()
+        except OSError:
+            pass
+    path = Path(folder) / (key + '.zraw')
+    return path if _write_raw(path, frame, packed=True) else None
+
+
+def _write_raw(path, frame, packed=False):
     """The frame's pixels as they are (ARGB32 premultiplied), with its size in front."""
     try:
         import struct
@@ -240,9 +297,15 @@ def _write_raw(path, frame):
             frame.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
         w, h, line = image.width(), image.height(), image.bytesPerLine()
         temp = path.with_name(path.name + '.part')
+        pixels = bytes(image.constBits())[:line * h]
         with open(temp, 'wb') as f:
-            f.write(RAW_MAGIC + struct.pack('<III', w, h, line))
-            f.write(bytes(image.constBits())[:line * h])
+            if packed:
+                import zlib
+                f.write(ZIP_MAGIC + struct.pack('<III', w, h, line))
+                f.write(zlib.compress(pixels, 1))
+            else:
+                f.write(RAW_MAGIC + struct.pack('<III', w, h, line))
+                f.write(pixels)
         os.replace(temp, path)
         return True
     except Exception:
@@ -254,10 +317,14 @@ def _read_raw(path):
         import struct
         from PySide6.QtGui import QImage
         data = Path(path).read_bytes()
-        if data[:len(RAW_MAGIC)] != RAW_MAGIC:
+        magic = data[:len(RAW_MAGIC)]
+        if magic not in (RAW_MAGIC, ZIP_MAGIC):
             return None
         w, h, line = struct.unpack('<III', data[len(RAW_MAGIC):len(RAW_MAGIC) + 12])
         pixels = data[len(RAW_MAGIC) + 12:]
+        if magic == ZIP_MAGIC:
+            import zlib
+            pixels = zlib.decompress(pixels)
         if len(pixels) < line * h:
             return None
         return QImage(pixels, w, h, line, QImage.Format.Format_ARGB32_Premultiplied).copy()

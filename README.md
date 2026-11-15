@@ -6,6 +6,21 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Much less disk space for the preview (v1.0.1-experimental.9)
+
+- **Pre-rendered frames are about 17 times smaller.** They were saved as raw pixels (2 MB a
+  frame), and the folder could grow to 20 GB. Now an ordinary frame is a JPEG of about 120 KB.
+  It still loads in about 4 ms, fast enough to play at 30 frames a second. A frame with
+  transparency is packed instead.
+- **The disk limit is 2 GB instead of 20 GB.** That is still about 9 minutes of pre-rendered
+  video. When the limit is reached, the oldest frames are deleted first.
+- **Frames from older versions are deleted.** Each version of the app keeps its frames in its
+  own folder, because frames from another version are never shown. When the app starts, it
+  deletes the other versions' frames, including the large raw frames left by earlier versions.
+- **Preview sound files no longer pile up.** Every change made one or two new sound files in the
+  temp folder, and they were never deleted. Now only the current one is kept, and leftovers are
+  removed when the app starts.
+
 ## StrokeScribe in Task Manager, not "Python" (v1.0.1-experimental.8)
 - The installed app now runs as its own **StrokeScribe.exe** (a copy of the private Python's pythonw.exe carrying StrokeScribe's name, description and icon), so Task Manager, the taskbar and Windows' "open with" lists show **StrokeScribe** with its icon instead of "Python".
 - New installers start it from their shortcuts. An existing installation makes it on its next start and restarts through it once: no reinstall needed.
