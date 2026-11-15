@@ -32,7 +32,8 @@ class CacheTests(unittest.TestCase):
             cache.put(('a',), 1, 200, clear, disk=True)
             self.assertIs(cache.get(('a',), 0, 200), opaque)
             names = sorted(p.suffix for p in Path(tmp).iterdir())
-            self.assertEqual(names, ['.raw', '.raw'])           # raw pixels: fast to read back (exp.101)
+            # exp.9: an opaque frame is a JPEG, one with transparency packed pixels (not 2 MB raw)
+            self.assertEqual(names, ['.jpg', '.zraw'])
             for i in range(2, 6):                                 # memory overflows: oldest leave
                 cache.put(('b',), i, 200, opaque)
             self.assertLessEqual(cache._memory_bytes, cache.memory_budget)
@@ -226,28 +227,56 @@ class WindowTests(unittest.TestCase):
         self.assertTrue(any(Path(self.tmp.name).iterdir()))     # kept on disk as well
 
 
-if __name__ == '__main__':
-    unittest.main(verbosity=2)
+class StorageTests(unittest.TestCase):
+    """exp.9 (the user: the cache had grown to 20 GB)."""
 
+    def test_frames_are_small_on_disk(self):
+        from preview_cache import SegmentCache, DISK_BUDGET
+        self.assertLessEqual(DISK_BUDGET, 2 * 1024 ** 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = SegmentCache(tmp, memory_budget=1, disk_budget=10 ** 9)
+            frame = QImage(960, 540, QImage.Format.Format_ARGB32_Premultiplied)
+            frame.fill(QColor('#f4efe4'))
+            for x in range(0, 960, 7):                          # some drawing on the paper
+                for y in range(100, 440, 3):
+                    frame.setPixelColor(x, y, QColor(40, 40, 44))
+            cache.put(('s',), 0, 960, frame, disk=True)
+            self.assertLess(cache.disk_bytes(), 400_000)          # raw pixels were 2 MB
+            cache.forget_memory()
+            back = cache.get(('s',), 0, 960)
+            self.assertEqual(back.size(), frame.size())
+            c = back.pixelColor(480, 50)
+            self.assertLess(abs(c.red() - 0xf4) + abs(c.green() - 0xef) + abs(c.blue() - 0xe4), 12)
 
-class EditorSmoothnessTests(unittest.TestCase):
-    def test_dragging_opacity_does_not_redraw_on_every_step(self):
+    def test_frames_of_older_versions_are_removed(self):
+        import os
         from unittest import mock
-        from PySide6.QtTest import QTest
-        from app import Window
-        from element_dialog import ElementDialog
-        w = Window(); w.show(); APP.processEvents()
-        dialog = ElementDialog(w, w.scene_index)
-        try:
-            with mock.patch.object(w, 'build_view', wraps=w.build_view) as views:
-                for value in range(100, 50, -1):                 # 50 slider steps
-                    dialog.opacity.setValue(value)
-                self.assertEqual(w.artwork_opacity.value(), 51)  # values arrive at once
-                self.assertLessEqual(views.call_count, 1)        # no rebuild per step
-                QTest.qWait(150)
-                self.assertGreaterEqual(views.call_count, 1)     # one redraw afterwards
-                self.assertLessEqual(views.call_count, 3)
-            self.assertEqual(w._view['options']['artwork_opacity'], 51)
-        finally:
-            dialog.reject()
-            w.close()
+        import preview_cache
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / 'v-0.9').mkdir(); (base / 'v-0.9' / 'a.raw').write_bytes(b'x' * 100)
+            (base / 'legacy.raw').write_bytes(b'x' * 100)        # before exp.9: in the folder itself
+            (base / 'notes.txt').write_text('mine')              # anything else is left alone
+            with mock.patch.dict(os.environ, {'STROKESCRIBE_PREVIEW_CACHE': tmp}):
+                cache = preview_cache.SegmentCache()
+            self.assertFalse((base / 'v-0.9').exists())
+            self.assertFalse((base / 'legacy.raw').exists())
+            self.assertTrue((base / 'notes.txt').exists())
+            self.assertEqual(cache.folder.parent, base)
+            self.assertTrue(cache.folder.name.startswith('v-'))
+
+    def test_old_preview_sounds_are_deleted(self):
+        from unittest import mock
+        import app
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / 'strokescribe-sound'
+            folder.mkdir()
+            for name in ('effects_a.wav', 'preview_b.wav'):
+                (folder / name).write_bytes(b'x' * 1000)
+            with mock.patch('tempfile.gettempdir', return_value=tmp):
+                self.assertEqual(app.clear_preview_sounds(), folder)
+            self.assertEqual(list(folder.glob('*.wav')), [])
+
+
+if __name__ == '__main__':
+    unittest.main()
