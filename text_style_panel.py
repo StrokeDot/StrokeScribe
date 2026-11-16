@@ -267,6 +267,7 @@ def set_state(w, layout=None, effects=None):
     for sec in (w.section_text_outline, w.section_text_shadow, w.section_text_glow, w.section_text_background):
         if sec.switch is not None:
             sec.switch.update()
+        sec.sync()                                  # exp.20: greyed out or not, as it shows
 
 
 def _layout_changed(w):

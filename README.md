@@ -6,6 +6,16 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Fully greyed-out switched-off sections, 2K export by default (v1.0.1-experimental.20)
+
+- **A switched-off section looks fully grey,** as in Filmora: its labels, sliders, number boxes,
+  dropdowns and colour buttons. Before, they were turned off but still looked active.
+- **Fixed: a section could stay grey while its switch showed On,** or the other way round. A
+  project, undo or switching elements sets the switches quietly, and the sections didn't follow.
+  They match their switch again now (for example Move in, after choosing a slide-in).
+- **New projects export in 2K:** 2560 × 1440, 60 frames a second, Compact WebM (VP9 + alpha) at
+  quality 18. Saved projects keep their own export settings.
+
 ## Fixed: the hand froze on its way back (v1.0.1-experimental.19)
 
 - **The hand goes back to its corner again.** In experimental.18, the Opacity speed-up kept
