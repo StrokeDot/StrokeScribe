@@ -6425,7 +6425,6 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         form.addRow(buttons)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return
         self.record_structure('hand glide')
-        before=next((it for it in self.timeline_layout().items if it.k==k),None)
         self.scenes[k]['glide']=(round(go.value(),2),round(back.value(),2),how_in.currentText(),how_out.currentText(),
                                  bend_in.currentText(),bend_out.currentText())
         if paths: self.scenes[k]['glide_path']=paths
@@ -6436,10 +6435,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         else: self.scenes[k].pop('hand_link',None)
         self.project_changes.mark_changed()
         self.__dict__.pop('_memo',None); self._scene_cache={}
-        if before is not None:
-            after=next((it for it in self.timeline_layout().items if it.k==k),None)
-            if after is not None:
-                self.push_after(before.end,after.length-before.length,skip=k)
+        # exp.22: the elements, hand motions, cameras and texts after it follow its new length in
+        # follow_lengths (on the next refresh), like any other change of an element's time
         self.hand_rest_changed()
         self.sync_camera_timeline()
 
@@ -6593,6 +6590,76 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.__dict__.pop('_memo',None)
         if moved:
             self.status.setText(f'Everything after it moved {"later" if delta>0 else "earlier"} by {abs(delta):.1f} s.')
+
+    def follow_lengths(self):
+        """exp.22 (the user: an element made longer overlapped the next one): when an element's
+        own time changes (its drawing time, the stay, the colour hold, the hand's way in or back,
+        an undo of one of these...), everything that starts after its end moves by the same
+        time: the elements, the hand motions and cameras, the texts and the end of the video.
+        Gaps between them stay as they were; where things are placed is still free.
+
+        It compares each element's length with the last time it looked (the same element,
+        nothing else moved); a new element list, another element chosen, or a start that
+        changed (a drag, a project undo) only takes a new look."""
+        if len(getattr(self,'scenes',[]) or [])<2 or not self.drawing: return
+        try:
+            lay=self.timeline_layout()
+            joins=self.scene_timeline()[1]
+        except Exception:
+            return
+        ids=tuple(id(s) for s in self.scenes)
+        starts=tuple(s.get('start') for s in self.scenes)
+        seen=getattr(self,'_lengths_seen',None)
+        self._lengths_seen=dict(ids=ids,starts=starts,index=self.scene_index,
+                                items=[(it.start,it.length) for it in lay.items])
+        if not seen or seen['ids']!=ids or seen['starts']!=starts or seen['index']!=self.scene_index:
+            return
+        old=seen['items']
+        if len(old)!=len(lay.items): return
+        eps=1e-3
+        # (element, its old end, how much longer it is now)
+        changes=[(k,o_start+o_len,it.length-o_len) for k,((o_start,o_len),it) in enumerate(zip(old,lay.items))
+                 if abs(it.length-o_len)>=.02]
+        if not changes: return
+
+        def shift(t,own=None):
+            """How far a thing that started at t moves: the changes of the elements that had
+            ended by then (an element's own change does not move its start)."""
+            return sum(d for k,end,d in changes if end<=t+eps and k!=own)
+        moved=False
+        new_start,new_len=[],[it.length for it in lay.items]
+        for j,scene in enumerate(self.scenes):
+            o_start=old[j][0]
+            want=max(0.,o_start+shift(o_start,j))
+            if scene.get('start') is not None:
+                if abs(want-float(scene['start']))>eps:
+                    scene['start']=round(want,3); moved=True
+            else:
+                auto=new_start[j-1]+new_len[j-1]+float(joins[j-1]) if j else 0.
+                if abs(auto-want)>eps:              # it would not land where it belongs by itself
+                    scene['start']=round(want,3); moved=True
+            new_start.append(want)
+        for clip in getattr(self,'cameras',[]) or []:
+            d=shift(float(clip.get('start',0) or 0))
+            if abs(d)>eps: clip['start']=round(max(0.,float(clip['start'])+d),2); moved=True
+        for item in getattr(self,'overlays',[]) or []:
+            d=shift(float(item.get('start',0) or 0))
+            if abs(d)>eps: item['start']=round(max(0.,float(item.get('start',0) or 0)+d),2); moved=True
+        end=getattr(self,'video_end',None)
+        if end is not None:
+            d=shift(float(end))
+            if abs(d)>eps: self.video_end=round(max(0.,float(end)+d),3); moved=True
+        if not moved: return
+        self.__dict__.pop('_memo',None)
+        self.project_changes.mark_changed()
+        try:
+            lay=self.timeline_layout()
+            self._lengths_seen=dict(ids=ids,starts=tuple(s.get('start') for s in self.scenes),
+                                    index=self.scene_index,items=[(it.start,it.length) for it in lay.items])
+        except Exception:
+            self._lengths_seen=None
+        total=sum(d for _,_,d in changes)
+        self.status.setText(f'Everything after it moved {"later" if total>0 else "earlier"} by {abs(total):.1f} s.')
 
     def add_hand_motion(self):
         """exp.224 (the user): a Hand motion at the playhead: the waiting hand goes where you
@@ -6956,6 +7023,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         playhead=getattr(self,'_playhead_only',False); self._playhead_only=False
         if self._preparing or getattr(self,'_suspend_refresh',False):
             return
+        if not playhead and not self._restoring:
+            self.follow_lengths()          # exp.22: a longer / shorter element moves what comes after it
         look=getattr(self,'_look_preview',False)
         # exp.5: the route is planned only when the animation is shown (Play, a scrub)
         self._animating=bool(playhead or self.playing or getattr(self,'_scrub_fast',False))

@@ -6,6 +6,17 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## A longer element pushes what comes after it (v1.0.1-experimental.22)
+
+- **Fixed: making an element longer made it overlap the next one.** Once elements had their own
+  place on the timeline, only the hand's way in / way back pushed the rest. Now any change to an
+  element's own time does: dragging its clip edge, Duration, Stay, Colour hold, Erase, the hand's
+  ways, or an undo of one of these. Everything that starts after its end moves by the same time:
+  the next elements with their hand in and hand out, Hand motions, cameras, texts and the end of
+  the video. A shorter element pulls them back.
+- **Your placement stays free:** gaps you left keep their size, something you put to overlap it
+  on another track stays put, and dragging elements works as before.
+
 ## Export an element as a picture: PNG or SVG (v1.0.1-experimental.21)
 
 - **Export picture (PNG / SVG)…** in the Export tab saves the element you are editing as a
