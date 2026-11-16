@@ -2265,7 +2265,9 @@ def fit_to_width(content, stacked=False):
         policy=edit.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
         edit.setSizePolicy(policy)
     for form in content.findChildren(QFormLayout):
-        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows if stacked
+        # exp.16: a form can ask for its labels above its rows at every width (slider rows in
+        # narrow sections, like Ink / Colour / Light)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapAllRows if stacked or form.property('stacked')
                               else QFormLayout.RowWrapPolicy.WrapLongRows)
 
 
@@ -2937,8 +2939,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     text_style_panel.build_style(w,asset_l)
     # exp.13: Natural handwriting (experiment), off by default: small differences per letter
     # (tilt, size, height), a line that drifts a little, uneven ink, a breath between words.
-    w.natural_hand=QCheckBox('Natural handwriting (experiment)')
-    w.natural_hand.setToolTip('Makes font lettering look hand-written: every letter a little different, '
+    w.natural_hand=QCheckBox('Natural handwriting')
+    w.natural_hand.setToolTip('(An experiment.) Makes font lettering look hand-written: every letter a little different, '
                               'lines that drift slightly, uneven ink and a short pause between words. '
                               'Fonts only (not the built-in pen).')
     w.natural_hand.toggled.connect(lambda on: w.reletter(force=True))
@@ -2977,6 +2979,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # exp.16: Fill, Outline, Shadow, Glow, Background, Animation; Letter detail and Natural
     # handwriting under Advanced
     advanced=text_style_panel.build_effects(w,asset_l)
+    font_size_form.setProperty('stacked',True)        # its label above it (narrow section)
     advanced.body.addLayout(font_size_form)
     advanced.body.addWidget(w.natural_hand)
     w.download_font=QPushButton('Download selected font')

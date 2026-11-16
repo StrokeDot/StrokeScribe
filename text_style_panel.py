@@ -36,15 +36,19 @@ def _align_icon(kind, colour='#C9C7D3'):
 def _style_button(text, tip, font_change):
     b = QToolButton(); b.setObjectName('textStyle'); b.setCheckable(True); b.setText(text)
     f = QFont(b.font()); font_change(f); b.setFont(f)
-    b.setToolTip(tip); b.setFixedWidth(34)
+    b.setToolTip(tip); b.setFixedWidth(28)
     return b
 
 
 def _slider_row(w, minimum, maximum, value, step, suffix='', decimals=0, scale=1):
     """A slider with its number (the number is the value)."""
     spin = QDoubleSpinBox(); spin.setRange(minimum, maximum); spin.setDecimals(decimals)
-    spin.setSingleStep(step); spin.setValue(value); spin.setSuffix(suffix); spin.setFixedWidth(74)
+    spin.setSingleStep(step); spin.setValue(value); spin.setSuffix(suffix); spin.setFixedWidth(70)
+    spin.setProperty('compact', True)           # a number box beside its slider (exp.111)
+    from PySide6.QtWidgets import QSizePolicy
     slider = QSlider(Qt.Orientation.Horizontal)
+    slider.setMinimumWidth(30)
+    slider.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
     slider.setRange(int(round(minimum * scale)), int(round(maximum * scale)))
     slider.setValue(int(round(value * scale)))
     slider.valueChanged.connect(lambda v: (spin.blockSignals(True), spin.setValue(v / scale),
@@ -90,25 +94,25 @@ def build_style(w, layout):
     """Bold / italic / underline and alignment buttons, letter and line spacing (after the font)."""
     from ui_sections import Section
     bar = QWidget(); bar.setMinimumWidth(0)
-    row = QHBoxLayout(bar); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(4)
+    row = QHBoxLayout(bar); row.setContentsMargins(0, 0, 0, 0); row.setSpacing(3)
     w.text_bold = _style_button('B', 'Bold', lambda f: f.setBold(True))
     w.text_italic = _style_button('I', 'Italic', lambda f: f.setItalic(True))
     w.text_underline = _style_button('U', 'Underline (the pen underlines each line after it)',
                                      lambda f: f.setUnderline(True))
     for b in (w.text_bold, w.text_italic, w.text_underline):
         row.addWidget(b)
-    row.addSpacing(10)
+    row.addSpacing(6)
     w.text_align_group = QButtonGroup(bar); w.text_align_group.setExclusive(True)
     w.text_align = {}
     for kind, tip in (('left', 'Align left'), ('center', 'Centre'), ('right', 'Align right')):
         b = QToolButton(); b.setObjectName('textStyle'); b.setCheckable(True); b.setIcon(_align_icon(kind))
-        b.setToolTip(tip); b.setFixedWidth(34)
+        b.setToolTip(tip); b.setFixedWidth(28)
         w.text_align_group.addButton(b); w.text_align[kind] = b; row.addWidget(b)
     w.text_align['left'].setChecked(True)
     row.addStretch(1)
     layout.addWidget(bar)
     from studio_workspace import form_layout
-    form = form_layout()
+    form = form_layout(); form.setProperty('stacked', True)
     w.letter_spacing, spacing_row = _slider_row(w, -20, 80, 0, 1)
     w.letter_spacing.setToolTip('Extra room between letters.')
     form.addRow('Letter spacing', spacing_row)
@@ -135,7 +139,7 @@ def build_effects(w, layout):
             box = QCheckBox(f'{title}'); box.setToolTip(f'{title} on / off'); box.hide()
             box.toggled.connect(lambda on: _effects_changed(w))
         sec = Section(title, switch=box, tip=tip)
-        form = form_layout(); sec.body.addLayout(form)
+        form = form_layout(); form.setProperty('stacked', True); sec.body.addLayout(form)
         controls = {'on': box}
         for key, label, kind, args in rows:
             if kind == 'colour':
@@ -179,7 +183,7 @@ def build_effects(w, layout):
     # Animation: the hand writing is the In; Out (a Goes out clip right after it) and Loop
     anim = Section('Animation', tip='The hand writing it is the way in. Out: how it goes away. '
                                     'Loop: how it moves while it stays on screen.')
-    form = form_layout(); anim.body.addLayout(form)
+    form = form_layout(); form.setProperty('stacked', True); anim.body.addLayout(form)
     w.text_out = QComboBox(); w.text_out.addItems(list(OUT_CHOICES))
     w.text_out.setToolTip('How the text goes away after it is written: a "Goes out" clip right after it '
                           'on the timeline (drag it there to choose when).')
