@@ -39,6 +39,7 @@
 #include "hand_png.h"   // const unsigned char kHandPng[]; const unsigned int kHandPngSize;
 
 #ifdef _WIN32
+#include <windows.h>
 #include <direct.h>
 #define SS_MKDIR(p) _mkdir(p)
 #else
@@ -47,7 +48,7 @@
 #endif
 
 static const char *kPluginId = "com.strokedot.strokescribe.test";
-static const char *kVersionLabel = "0.1.0";
+static const char *kVersionLabel = "0.1.1-diag";
 
 static OfxHost *gHost = nullptr;
 static const OfxPropertySuiteV1 *gProp = nullptr;
@@ -58,18 +59,40 @@ static const OfxParameterSuiteV1 *gParam = nullptr;
 static std::mutex gLogMutex;
 static std::atomic<long> gRenderCount{0};
 
-static std::string logPath() {
-    const char *base = std::getenv("LOCALAPPDATA");
-    std::string dir = base ? std::string(base) : std::string(".");
+static std::string gLogPathCache;
+
+static bool dirWritable(const std::string &dir, std::string &out) {
+    if (dir.empty()) return false;
 #ifdef _WIN32
-    dir += "\\StrokeScribe";
-    SS_MKDIR(dir.c_str());
-    return dir + "\\ofx-test.log";
+    std::string d = dir + "\\StrokeScribe";
+    SS_MKDIR(d.c_str());
+    std::string f = d + "\\ofx-test.log";
 #else
-    dir += "/StrokeScribe";
-    SS_MKDIR(dir.c_str());
-    return dir + "/ofx-test.log";
+    std::string d = dir + "/StrokeScribe";
+    SS_MKDIR(d.c_str());
+    std::string f = d + "/ofx-test.log";
 #endif
+    FILE *t = std::fopen(f.c_str(), "a");
+    if (!t) return false;
+    std::fclose(t);
+    out = f;
+    return true;
+}
+
+// Tries several folders, because a host's helper process may run with a
+// trimmed environment (no LOCALAPPDATA) or restricted write access.
+static std::string logPath() {
+    if (!gLogPathCache.empty()) return gLogPathCache;
+    const char *vars[] = {"LOCALAPPDATA", "TEMP", "TMP"};
+    for (const char *v : vars) {
+        const char *b = std::getenv(v);
+        if (b && dirWritable(b, gLogPathCache)) return gLogPathCache;
+    }
+    const char *up = std::getenv("USERPROFILE");
+    if (up && dirWritable(std::string(up) + "\\AppData\\Local", gLogPathCache)) return gLogPathCache;
+    if (dirWritable("C:\\Users\\Public", gLogPathCache)) return gLogPathCache;
+    gLogPathCache = "ofx-test.log";
+    return gLogPathCache;
 }
 
 static void logLine(const char *format, ...) {
@@ -343,11 +366,15 @@ static void drawHand(Canvas &c, const Params &p, float tipX, float tipY) {
 
 // ------------------------------------------------------------------ actions
 static OfxStatus onLoad() {
-    if (!gHost) return kOfxStatErrMissingHostFeature;
+    if (!gHost) { logLine("load refused: no host"); return kOfxStatErrMissingHostFeature; }
     gProp = (const OfxPropertySuiteV1 *)gHost->fetchSuite(gHost->host, kOfxPropertySuite, 1);
     gEffect = (const OfxImageEffectSuiteV1 *)gHost->fetchSuite(gHost->host, kOfxImageEffectSuite, 1);
     gParam = (const OfxParameterSuiteV1 *)gHost->fetchSuite(gHost->host, kOfxParameterSuite, 1);
-    if (!gProp || !gEffect || !gParam) return kOfxStatErrMissingHostFeature;
+    if (!gProp || !gEffect || !gParam) {
+        logLine("load refused: host lacks a suite (property %s, image effect %s, parameter %s)",
+                gProp ? "ok" : "missing", gEffect ? "ok" : "missing", gParam ? "ok" : "missing");
+        return kOfxStatErrMissingHostFeature;
+    }
     logLine("loaded StrokeScribe Test %s in host '%s' version '%s'", kVersionLabel,
             getString(gHost->host, kOfxPropName, 0, "?").c_str(),
             getString(gHost->host, kOfxPropVersionLabel, 0, "?").c_str());
@@ -502,6 +529,8 @@ static OfxStatus mainEntry(const char *action, const void *handle, OfxPropertySe
                            OfxPropertySetHandle) {
     try {
         OfxImageEffectHandle effect = (OfxImageEffectHandle)handle;
+        if (action && std::strcmp(action, kOfxImageEffectActionRender) != 0)
+            logLine("action %s", action);
         if (std::strcmp(action, kOfxActionLoad) == 0) return onLoad();
         if (std::strcmp(action, kOfxActionUnload) == 0) return kOfxStatOK;
         if (std::strcmp(action, kOfxActionDescribe) == 0) return describe(effect);
@@ -519,11 +548,50 @@ static OfxStatus mainEntry(const char *action, const void *handle, OfxPropertySe
     return kOfxStatReplyDefault;
 }
 
-static void setHost(OfxHost *host) { gHost = host; }
+static std::string processName() {
+#ifdef _WIN32
+    char buf[MAX_PATH] = {0};
+    GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    return buf;
+#else
+    return "?";
+#endif
+}
+
+static void setHost(OfxHost *host) {
+    gHost = host;
+    logLine("setHost called (host %s) in %s", host ? "given" : "NULL", processName().c_str());
+}
 
 static OfxPlugin gPlugin = {kOfxImageEffectPluginApi, 1, kPluginId, 0, 1, setHost, mainEntry};
 
 extern "C" {
-OfxExport int OfxGetNumberOfPlugins(void) { return 1; }
-OfxExport OfxPlugin *OfxGetPlugin(int nth) { return nth == 0 ? &gPlugin : nullptr; }
+OfxExport int OfxGetNumberOfPlugins(void) {
+    logLine("OfxGetNumberOfPlugins called in %s", processName().c_str());
+    return 1;
 }
+OfxExport OfxPlugin *OfxGetPlugin(int nth) {
+    logLine("OfxGetPlugin(%d) called", nth);
+    return nth == 0 ? &gPlugin : nullptr;
+}
+}
+
+#ifdef _WIN32
+BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID) {
+    if (reason == DLL_PROCESS_ATTACH) {
+        char buf[MAX_PATH] = {0};
+        GetModuleFileNameA(nullptr, buf, MAX_PATH);
+        // Plain C file write: safe inside DllMain (no locks, no threads).
+        const char *b = std::getenv("LOCALAPPDATA");
+        std::string f = std::string(b ? b : "C:\\Users\\Public") + "\\StrokeScribe-ofx-attach.log";
+        if (FILE *fp = std::fopen(f.c_str(), "a")) {
+            std::time_t now = std::time(nullptr);
+            char stamp[32] = {0};
+            std::strftime(stamp, sizeof(stamp), "%Y-%m-%d %H:%M:%S", std::localtime(&now));
+            std::fprintf(fp, "%s  plugin file opened by %s\n", stamp, buf);
+            std::fclose(fp);
+        }
+    }
+    return TRUE;
+}
+#endif
