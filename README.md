@@ -6,6 +6,15 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Ink Free, and stronger Natural handwriting (v1.0.1-experimental.14)
+
+- **Ink Free is in the font list** (bottom, under a divider). It comes with Windows 10 and 11, so
+  the app uses the copy already on your PC: nothing is downloaded, copied or shared. If a PC
+  doesn't have it, the app says so instead of trying to download it.
+- **Natural handwriting is clearly visible now.** Letters tilt and change size more, each word
+  sits at its own slight height and angle, lines drift more, ink strength varies more, and the
+  pause between words is longer. Text stays easy to read.
+
 ## Natural handwriting, an experiment (v1.0.1-experimental.13)
 
 A new switch in the Text panel, **Natural handwriting (experiment)**, off by default. It makes

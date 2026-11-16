@@ -449,16 +449,20 @@ def _natural_marks(text,fontfile,lines,ascent):
     rng=random.Random(zlib.crc32((text+'|'+Path(str(fontfile)).name).encode('utf-8')))
     marks=[]
     for line in lines:
-        drift=math.tan(math.radians(rng.uniform(-.7,.7)))      # the line rises or falls a little
+        # exp.14 (the user: hardly any difference): stronger, still readable
+        drift=math.tan(math.radians(rng.uniform(-1.4,1.4)))    # the line rises or falls
+        word_dy=rng.gauss(0,.022*ascent); word_turn=rng.gauss(0,1.3)
         row=[]
-        for _ in line:
+        for char in line:
+            if char.isspace():                                  # each word sits a little differently
+                word_dy=rng.gauss(0,.022*ascent); word_turn=rng.gauss(0,1.3)
             row.append(dict(
-                turn=max(-2.5,min(2.5,rng.gauss(0,1.1))),       # degrees
-                size=max(.95,min(1.05,1+rng.gauss(0,.022))),
-                dx=rng.gauss(0,.012*ascent),
-                dy=rng.gauss(0,.02*ascent),
+                turn=max(-5.,min(5.,word_turn+rng.gauss(0,2.))),   # degrees
+                size=max(.92,min(1.08,1+rng.gauss(0,.04))),
+                dx=rng.gauss(0,.02*ascent),
+                dy=word_dy+rng.gauss(0,.03*ascent),
                 drift=drift,
-                ink=rng.uniform(.80,1.)))
+                ink=rng.uniform(.74,1.)))
         marks.append(row)
     return marks
 
@@ -475,10 +479,10 @@ def _uneven_ink(ink,seed):
     """Ink a little lighter here and there, like a real pen on paper."""
     rng=np.random.default_rng(seed)
     W,H=ink.size
-    small=rng.uniform(.84,1.,(max(2,H//60),max(2,W//60))).astype(np.float32)
+    small=rng.uniform(.76,1.,(max(2,H//60),max(2,W//60))).astype(np.float32)
     field=cv2.resize(small,(W,H),interpolation=cv2.INTER_CUBIC)
     a=np.asarray(ink).copy()
-    a[...,3]=np.clip(a[...,3].astype(np.float32)*np.clip(field,.8,1.),0,255).astype(np.uint8)
+    a[...,3]=np.clip(a[...,3].astype(np.float32)*np.clip(field,.74,1.),0,255).astype(np.uint8)
     return Image.fromarray(a,'RGBA')
 
 
@@ -642,7 +646,7 @@ def _stroke_schedule(drawing):
                 if natural:
                     lift_duration*=2.2               # a real hand takes its time between lines
                 if getattr(drawing,'hand_natural',False) and distance>22.*scale:
-                    lift_duration+=8.*scale          # exp.13: a short breath between words
+                    lift_duration+=16.*scale         # exp.13/14: a breath between words
                 events.append(('lift',None,t,t+lift_duration,previous,first))
                 t+=lift_duration
             elif distance>0:
