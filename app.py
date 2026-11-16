@@ -3295,15 +3295,25 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                             'Preview: Whole video to go back.')
 
     def edit_element(self,k):
-        """The element's own settings window (Set / Cancel)."""
-        if not self.drawing or not 0<=k<len(self.scenes): return
-        if self.builder and self.builder.isRunning(): return
+        """The element's own settings window (Apply / Cancel): Advanced edit (exp.17)."""
+        return self.open_advanced(k,'element')
+
+    def open_advanced(self,k,part='element'):
+        """exp.17 (the user, like Filmora): element k in Advanced edit, with the real preview and
+        panels, on the tab of the part that was double-clicked."""
+        if not self.drawing or not 0<=k<len(self.scenes): return None
+        if self.builder and self.builder.isRunning(): return None
         if k!=self.scene_index:
             self.select_scene(k)
-            if k!=self.scene_index: return
+            if k!=self.scene_index: return None
         self.playing=False
-        from element_dialog import ElementDialog
-        ElementDialog(self,k).exec()
+        from advanced_edit import AdvancedEdit
+        dialog=AdvancedEdit(self,k,part)
+        self._advanced=dialog
+        try:
+            return dialog.exec()
+        finally:
+            self._advanced=None
 
     def element_times(self,k):
         """(seconds on screen, seconds of the camera move after it) of element k, from its settings."""

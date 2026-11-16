@@ -36,8 +36,8 @@ class SourceTimelineTests(WorkflowFixture):
         t.deleteLater()
     def test_double_click_one_edit_click_scrubs_and_locked_blocks(self):
         t=StageTimeline(QSlider());t.resize(900,140);t.update_state(2,3,1,0);t.set_scenes(None,2);t.show()
-        self.assertTrue(hasattr(t,'stage_source_edit'),'Stage source signal missing')
-        spy=QSignalSpy(t.stage_source_edit);edge=QSignalSpy(t.stage_dragged)
+        # exp.17: a double-click on a part opens Advanced edit on that part (part_edit)
+        spy=QSignalSpy(t.part_edit);edge=QSignalSpy(t.stage_dragged)
         p=QPoint(round(t._x(3)),round(t._rows()[1].center().y()))
         QTest.mouseClick(t,Qt.MouseButton.LeftButton,pos=p)
         self.assertEqual(spy.count(),0)
@@ -47,6 +47,19 @@ class SourceTimelineTests(WorkflowFixture):
         self.assertEqual(spy.count(),1)
         QTest.mouseRelease(t,Qt.MouseButton.LeftButton,pos=p)    # leave no button "held" for later tests
         t.close();t.deleteLater()
+    def test_hand_in_and_hand_out_are_their_own_parts(self):
+        # exp.17 (the user: Hand in opened the drawing's window, Hand out none): the hit test
+        # follows the stages as drawn, Hand in first
+        from PySide6.QtCore import QPointF
+        t=StageTimeline(QSlider());t.resize(900,140);t.update_state(2,3,1,0);t.set_scenes(None,2)
+        t.lead=1.
+        y=t._rows()[1].center().y()
+        self.assertEqual(t.source_at(QPointF(t._x(.5),y),any_part=True),('glide',2))
+        self.assertEqual(t.source_at(QPointF(t._x(2),y),any_part=True),('draw',2))
+        self.assertEqual(t.source_at(QPointF(t._x(4.5),y),any_part=True),('paint',2))
+        self.assertEqual(t.source_at(QPointF(t._x(6.5),y),any_part=True),('hold',2))
+        self.assertIsNone(t.source_at(QPointF(t._x(.5),y)))          # Draw / Paint only: not Hand in
+        t.deleteLater()
     def test_keyboard_source_actions_exist_even_without_paint_duration(self):
         t=self.w.stage_timeline
         self.assertTrue(hasattr(t,'stage_source_edit'),'Stage source signal missing')
