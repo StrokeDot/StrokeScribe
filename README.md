@@ -6,6 +6,22 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## A calmer look, without the "AI look" (v1.0.1-experimental.11)
+
+Based on two design videos ("Claude Skills for Designers: Ban AI Slop Forever" and "UI Libraries
+for Claude Code: Ban the AI Look"). Their main advice: avoid purple blocks and gradients, use one
+accent only where it means something, and let the type set the hierarchy.
+
+- **Fewer purple blocks.** The open panel in the side rails is a soft highlight with a purple
+  icon, not a solid purple button. Chosen tabs work the same way.
+- **Muted timeline clips.** Draw, Paint, Hold and Erase bars use calmer tones, so the picture
+  stands out more than the controls around it.
+- **A calmer accent.** The accent is a quieter purple, used for the main action (Export), focus,
+  checked boxes, sliders and the playhead. The logo keeps its purple.
+- **Clearer hierarchy.** Ordinary buttons use regular-weight text. Bold is kept for titles and
+  the main action.
+- **No gradient on the New project tile.** It is a plain tile, and its + turns purple on hover.
+
 ## Smoother playback, nothing running while idle (v1.0.1-experimental.10)
 
 - **Each playback frame takes about half the time.** While playing, the preview re-read every

@@ -231,11 +231,9 @@ def _widgets():
             clip = QPainterPath(); clip.addRoundedRect(thumb, 8, 8)
             p.save(); p.setClipPath(clip)
             if self.new:
-                g = QLinearGradient(thumb.topLeft(), thumb.bottomRight())
-                g.setColorAt(0, c('accent_a')); g.setColorAt(1, c('accent_b'))
-                p.fillRect(thumb, g)
+                p.fillRect(thumb, c('input'))          # exp.11: no purple gradient, a calm tile
                 p.drawPixmap(int(thumb.center().x() - 22), int(thumb.center().y() - 22),
-                             ui_icons.pixmap('plus', '#FFFFFF', 44))
+                             ui_icons.pixmap('plus', c('accent').name() if self.hover else c('muted').name(), 44))
             elif self.preview is not None:
                 p.fillRect(thumb, QColor('#F4F1EA'))
                 img = self.preview.scaled(int(thumb.width() * 2), int(thumb.height() * 2),

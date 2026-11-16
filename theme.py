@@ -1,7 +1,12 @@
 """StrokeScribe Studio colour themes (dark is the default) and stylesheet.
 
-Editor look: neutral graphite panels with a single blue accent in Dark,
-an airy white workspace in Light. Custom-painted widgets (monitor,
+Editor look: neutral graphite panels in Dark, an airy workspace in Light.
+
+exp.11 (the user's design videos, "ban the AI look"): one calm accent, used only where it
+means something (the main action, focus, what is chosen, the playhead); no purple blocks or
+gradients; timeline clips in muted tones so the picture, not the chrome, stands out; bold
+type kept for titles and the main action, so the hierarchy reads at a glance. The logo's
+purple stays as the brand colour. Custom-painted widgets (monitor,
 timeline) read their colours from `colors()` so both themes stay consistent.
 """
 from __future__ import annotations
@@ -15,10 +20,10 @@ PALETTES = {
         window='#101113', panel='#1A1B1E', header='#1A1B1E', raised='#26282C',
         raised_hover='#30333A', pressed='#22242A', input='#222428', border='#33363C',
         border_strong='#4A4E57', text='#E6E7EA', muted='#A4A7AF', dim='#6E727B',
-        accent='#6E4FF2', accent_hover='#8468F6', accent_text='#FFFFFF',
-        accent_a='#7444F0', accent_b='#4C42DE', brand='#9A82FF',
-        selection='#2D2760', monitor='#0C0D0F', monitor_frame='#26282C',
-        draw='#6E4FF2', paint='#22A88F', hold='#D4A044', erase='#E06A86', clip_text='#FFFFFF',
+        accent='#6A5AD8', accent_hover='#7B6CE2', accent_text='#FFFFFF',
+        accent_a='#3A3D45', accent_b='#2C2F36', brand='#9A82FF',
+        selection='#2A2745', monitor='#0C0D0F', monitor_frame='#26282C',
+        draw='#4F4C8E', paint='#2A7D6F', hold='#9C7A3C', erase='#A3566B', clip_text='#F2F2F5',
         ruler='#8A8A8A', track='#26282D', overlay='#0E0E0ECC', tooltip='#2C2C2C',
         wordmark='#F2F2F2', checker_a='#E9ECEF', checker_b='#D3D8DD',
         preview_dark='#242B35', good='#3FB950', bad='#F06A6A',
@@ -27,10 +32,10 @@ PALETTES = {
         window='#D9DEE5', panel='#F2F4F7', header='#F2F4F7', raised='#E6E9EE',   # exp.141: softer, not pure white
         raised_hover='#DCE1E8', pressed='#D2D8E0', input='#E9ECF1', border='#D3D9E1',
         border_strong='#B8C1CD', text='#1C2430', muted='#5B6878', dim='#9AA4B1',
-        accent='#5B3FE6', accent_hover='#7058EC', accent_text='#FFFFFF',
-        accent_a='#7444F0', accent_b='#4C42DE', brand='#5B3FE6',
-        selection='#E0D9FB', monitor='#D2D8E0', monitor_frame='#C2CAD5',
-        draw='#6A4CF0', paint='#1F9F87', hold='#D49B33', erase='#D45C76', clip_text='#FFFFFF',
+        accent='#5647C4', accent_hover='#6658D0', accent_text='#FFFFFF',
+        accent_a='#E6E9EE', accent_b='#D2D8E0', brand='#5B3FE6',
+        selection='#E3E0F5', monitor='#D2D8E0', monitor_frame='#C2CAD5',
+        draw='#6460A8', paint='#2E8A79', hold='#A9843E', erase='#B35E74', clip_text='#FFFFFF',
         ruler='#7A8798', track='#E0E4EA', overlay='#E8ECF1D9', tooltip='#FFFFFF',
         wordmark='#1C2430', checker_a='#F1F4F7', checker_b='#DDE3E9',
         preview_dark='#242B35', good='#1F8F3A', bad='#D03B3B',
@@ -117,12 +122,12 @@ QLabel#bad {{ color: {c['bad']}; font-weight: 700; }}
 QLabel#muted {{ color: {c['muted']}; }}
 QFormLayout QLabel {{ color: {c['muted']}; }}
 QPushButton {{ background: {c['raised']}; color: {c['text']}; border: 1px solid transparent;
-    border-radius: 8px; padding: 7px 13px; font-weight: 600; }}
+    border-radius: 8px; padding: 7px 13px; font-weight: 500; }}
 QPushButton:hover {{ background: {c['raised_hover']}; }}
 QPushButton:pressed {{ background: {c['pressed']}; }}
 QPushButton:disabled {{ color: {c['dim']}; background: {c['raised']}; border-color: transparent; }}
 QPushButton:checked {{ background: {c['selection']}; border-color: {c['accent']}; color: {c['text']}; }}
-QPushButton#primary {{ background: {c['accent']}; color: {c['accent_text']}; border: 0px; padding: 8px 16px; }}
+QPushButton#primary {{ background: {c['accent']}; color: {c['accent_text']}; border: 0px; padding: 8px 16px; font-weight: 600; }}
 QPushButton#primary:hover {{ background: {c['accent_hover']}; }}
 QPushButton#primary:disabled {{ background: {c['raised']}; color: {c['dim']}; }}
 QPushButton#soft {{ background: {c['raised']}; color: {c['text']}; border: 1px solid {c['border_strong']}; padding: 7px 13px; }}
@@ -139,7 +144,7 @@ QPushButton#playButton {{ background: {c['text']}; color: {c['window']}; border:
 QPushButton#playButton:hover {{ background: {c['wordmark']}; }}
 QPushButton#playButton:disabled {{ background: {c['raised']}; color: {c['dim']}; }}
 QToolButton {{ background: {c['raised']}; color: {c['text']}; border: 1px solid transparent;
-    border-radius: 8px; padding: 6px 10px; font-weight: 600; }}
+    border-radius: 8px; padding: 6px 10px; font-weight: 500; }}
 QToolButton:hover {{ background: {c['raised_hover']}; }}
 QFrame#iconRail {{ background: {c['panel']}; border: 0px; border-radius: 12px; }}
 QToolButton#railButton {{ background: transparent; color: {c['muted']}; border: 1px solid transparent;
@@ -153,7 +158,7 @@ QToolButton#helpDot {{ background: transparent; color: {c['muted']}; border: 1px
     border-radius: 8px; min-width: 16px; max-width: 16px; min-height: 16px; max-height: 16px;
     padding: 0px; font-size: 10px; font-weight: 700; }}
 QToolButton#helpDot:hover {{ color: {c['text']}; border-color: {c['accent']}; }}
-QToolButton#railButton:checked {{ background: {c['accent']}; border-color: {c['accent_hover']}; color: {c['accent_text']}; }}
+QToolButton#railButton:checked {{ background: {c['raised']}; border-color: transparent; color: {c['text']}; }}
 QFrame#sectionHeader {{ background: transparent; border: 0px; border-bottom: 1px solid {c['border']}; border-radius: 0px; }}
 QFrame#sectionHeader:hover {{ background: {c['raised']}; }}
 QLabel#sectionHeaderTitle {{ color: {c['text']}; font-size: 12px; font-weight: 700; background: transparent; }}
@@ -205,7 +210,7 @@ QTabWidget::tab-bar {{ left: 4px; }}
 QTabBar::tab {{ background: transparent; color: {c['muted']}; padding: 7px 13px; margin: 4px 2px;
     border: 0px; border-radius: 8px; font-weight: 600; }}
 QTabBar::tab:hover {{ color: {c['text']}; background: {c['raised']}; }}
-QTabBar::tab:selected {{ color: {c['text']}; background: {c['selection']}; }}
+QTabBar::tab:selected {{ color: {c['text']}; background: {c['raised']}; }}
 QScrollBar:vertical {{ width: 10px; background: transparent; margin: 3px; }}
 QScrollBar::handle:vertical {{ background: {c['border_strong']}; border-radius: 4px; min-height: 32px; }}
 QScrollBar::handle:vertical:hover {{ background: {c['muted']}; }}
