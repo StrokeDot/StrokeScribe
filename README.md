@@ -6,6 +6,19 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Fonts shown in their own style, Recent and Favorites, refined notices (v1.0.1-experimental.15)
+
+- **Every font in the list is shown in its own style,** as in Filmora, so you can see it while
+  scrolling, without downloading it first. Google fonts come with a small picture of their name;
+  Ink Free and imported fonts are drawn from their own file.
+- **Recent and Favorites at the top of the list.** Recent holds the last five fonts you wrote
+  with. The star next to the list adds the chosen font to Favorites, or removes it.
+- **Group headings.** The groups (Handwriting, Western, Script, ...) have small headings instead
+  of plain divider lines.
+- **More refined notices,** like "Saved New Book". A notice is only as wide as its words, has a
+  small round mark (a check when something is done, "!" for a warning) instead of a coloured
+  outline, and glides up as it fades in.
+
 ## Ink Free, and stronger Natural handwriting (v1.0.1-experimental.14)
 
 - **Ink Free is in the font list** (bottom, under a divider). It comes with Windows 10 and 11, so

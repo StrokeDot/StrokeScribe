@@ -141,7 +141,10 @@ class FontAndScaleTests(unittest.TestCase):
         from font_library import FONT_GROUPS, STARTER_FONTS
         # Built-in pen + every font + one separator per group.
         from font_library import WINDOWS_FONTS
-        self.assertEqual(w.font_select.count(),1+len(STARTER_FONTS)+len(FONT_GROUPS)+1+len(WINDOWS_FONTS))   # exp.14: + Windows fonts
+        import font_picker                                # exp.15: Recent / Favorites rows aside
+        rows=sum(1 for i in range(w.font_select.count())
+                 if w.font_select.itemData(i,font_picker.ROLE) not in ('quick','quickhead'))
+        self.assertEqual(rows,1+len(STARTER_FONTS)+len(FONT_GROUPS)+1+len(WINDOWS_FONTS))   # exp.14: + Windows fonts
         w.close()
 
 if __name__=='__main__':

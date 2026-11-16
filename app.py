@@ -5108,6 +5108,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                                        int(self.font_size.value()),
                                        natural=self.natural_hand.isChecked())
             drawing.source_kind=getattr(drawing,'source_kind','lettering')
+            if drawing.source_kind=='font':                    # exp.15: Recent fonts in the list
+                import font_picker
+                font_picker.note_recent(label)
+                font_picker.refresh_quick(self.font_select)
             self.apply_letter_style(drawing)
             # A new text source owns its font appearance; retain the preceding
             # element's image only in its saved scene, never as this text's paint.

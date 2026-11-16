@@ -2874,20 +2874,50 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.font_select.setEditable(True)
     w.font_select.addItem('Built-in single-line pen')
     from font_library import FONT_GROUPS
+    import font_picker
     for group,families in FONT_GROUPS.items():
-        w.font_select.insertSeparator(w.font_select.count())
+        font_picker.add_heading(w.font_select,group.upper())     # exp.15: headings, as in Filmora
         for family in families:
             w.font_select.addItem(family)
             w.font_select.setItemData(w.font_select.count()-1,f'{group} • free Google Font (open license, '
                                       'commercial use allowed). Downloaded when you choose it.',Qt.ItemDataRole.ToolTipRole)
     from font_library import WINDOWS_FONTS
-    w.font_select.insertSeparator(w.font_select.count())
+    font_picker.add_heading(w.font_select,'WINDOWS')
     for family in WINDOWS_FONTS:                  # exp.14: Ink Free, from Windows itself
         w.font_select.addItem(family)
         w.font_select.setItemData(w.font_select.count()-1,'Windows font • comes with Windows 10 and 11; the app '
                                   'uses the copy on this PC.',Qt.ItemDataRole.ToolTipRole)
-    w.font_select.setToolTip('Select an open-licensed Google Fonts family. Download before use, or import your own TTF/OTF.')
-    asset_l.addWidget(w.font_select)
+    w.font_select.setToolTip('Choose a font: every name is shown in its own style. Google fonts download '
+                             'when you use them; the star keeps a font in Favorites.')
+    # exp.15: every font in its own style, Recent and Favorites at the top, a star for favourites
+    w.font_select.setItemDelegate(font_picker.PreviewDelegate(w.font_select))
+    w.font_select.view().setMouseTracking(True)
+    w.font_select.setMaxVisibleItems(14)
+    w.font_select.view().setMinimumWidth(300)          # room for long names in their own style
+    font_picker.refresh_quick(w.font_select)
+    w.font_star=QToolButton(); w.font_star.setObjectName('subtle'); w.font_star.setCheckable(True)
+    w.font_star.setText('☆'); w.font_star.setToolTip('Add this font to Favorites (top of the list)')
+
+    def _star_state(*_):
+        name=w.font_select.currentText().strip()
+        on=name in font_picker.favourites()
+        w.font_star.blockSignals(True); w.font_star.setChecked(on); w.font_star.blockSignals(False)
+        w.font_star.setText('★' if on else '☆')
+        w.font_star.setToolTip('Remove from Favorites' if on else 'Add this font to Favorites (top of the list)')
+        w.font_star.setEnabled(bool(name) and name!=font_picker.BUILT_IN)
+
+    def _star_clicked(*_):
+        font_picker.toggle_favourite(w.font_select.currentText())
+        font_picker.refresh_quick(w.font_select)
+        _star_state()
+    w.font_star.clicked.connect(_star_clicked)
+    w.font_select.currentTextChanged.connect(_star_state)
+    w.font_star_state=_star_state
+    _star_state()
+    font_row=QWidget(); font_row.setMinimumWidth(0)
+    font_row_l=QHBoxLayout(font_row); font_row_l.setContentsMargins(0,0,0,0); font_row_l.setSpacing(6)
+    font_row_l.addWidget(w.font_select,1); font_row_l.addWidget(w.font_star)
+    asset_l.addWidget(font_row)
     w.font_size=w.number(24,128,68,4)
     font_size_form=form_layout()
     w.font_size.setToolTip('How finely the letters are traced into pen lines. Higher: smoother letters '

@@ -151,9 +151,7 @@ QToolButton#railButton {{ background: transparent; color: {c['muted']}; border: 
     border-radius: 8px; padding: 5px 0px; font-size: 9px; font-weight: 600; min-width: 44px; max-width: 44px; }}
 QToolButton#railButton:hover {{ background: {c['raised']}; color: {c['text']}; }}
 QFrame#toast {{ background: {c['raised']}; border: 1px solid {c['border_strong']}; border-radius: 12px; }}
-QFrame#toast[kind="warning"] {{ border-color: {c['hold']}; }}
-QFrame#toast[kind="done"] {{ border-color: {c['good']}; }}
-QLabel#toastText {{ background: transparent; color: {c['text']}; font-size: 12px; }}
+QLabel#toastText {{ background: transparent; color: {c['text']}; font-size: 12px; font-weight: 500; }}
 QToolButton#helpDot {{ background: transparent; color: {c['muted']}; border: 1px solid {c['border']};
     border-radius: 8px; min-width: 16px; max-width: 16px; min-height: 16px; max-height: 16px;
     padding: 0px; font-size: 10px; font-weight: 700; }}
