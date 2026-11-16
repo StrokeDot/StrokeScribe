@@ -82,8 +82,19 @@ def svg(name, color='#E8E6F0', width=1.7):
             f'stroke-linejoin="round">{body}</svg>')
 
 
+_PIXMAPS = {}
+
+
 def pixmap(name, color='#E8E6F0', size=24, ratio=2.0):
-    """A crisp (HiDPI) pixmap of an icon in one colour."""
+    """A crisp (HiDPI) pixmap of an icon in one colour (exp.18: made once, then kept; the
+    panels drew the same icons again on every switch)."""
+    key = (name, str(color), size, ratio)
+    if key not in _PIXMAPS:
+        _PIXMAPS[key] = _pixmap(name, color, size, ratio)
+    return _PIXMAPS[key]
+
+
+def _pixmap(name, color='#E8E6F0', size=24, ratio=2.0):
     from PySide6.QtSvg import QSvgRenderer
     px = max(1, round(size * ratio))
     image = QImage(px, px, QImage.Format.Format_ARGB32_Premultiplied)

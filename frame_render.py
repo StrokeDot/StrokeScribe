@@ -5,6 +5,7 @@ size, put the hand on its own layer, crop the camera view, then the optional
 lettering background.
 """
 from __future__ import annotations
+from collections import OrderedDict
 
 
 RENDER_KEYS = {'width', 'height', 'duration', 'fade_duration', 'hold_duration', 'final_image', 'thickness',
@@ -409,7 +410,49 @@ def _lines_part(opts):
     return move_in.part_of(opts) == move_in.PART_LINES
 
 
+# exp.18 (the user: changing Opacity was very slow): the paused preview rendered the element four
+# times per redraw (picture and hand, twice) although Opacity and Blend only mix the finished
+# layers. The window sets a token for what the element looks like WITHOUT those two
+# (Window.layer_token); while it is the same, the layers are kept and only mixed again.
+_LAYERS = {'token': None, 'items': OrderedDict()}
+_LAYER_FREE = ('artwork_opacity', 'blend_mode')
+
+
+def set_layer_token(token):
+    if token != _LAYERS['token']:
+        _LAYERS['items'].clear()
+    _LAYERS['token'] = token
+
+
+def _layer_key(drawing, fraction, options, camera_path):
+    import threading
+    if _LAYERS['token'] is None or threading.current_thread() is not threading.main_thread():
+        return None
+    if options.get('layers', 'all') not in ('art', 'hand') or options.get('overlays'):
+        return None
+    return (_LAYERS['token'], id(drawing), round(float(fraction), 9), options.get('layers'),
+            options.get('width'), options.get('height'), camera_path is None,
+            options.get('background'), float(options.get('ghost', 0) or 0))
+
+
 def _compose_raw_frame(drawing, fraction, options, camera_path=None):
+    """Raw animation frames; does not apply element opacity to the moving hand."""
+    key = _layer_key(drawing, fraction, options, camera_path)
+    if key is not None:
+        kept = _LAYERS['items'].get(key)
+        if kept is not None:
+            _LAYERS['items'].move_to_end(key)
+            _set_spec(kept[1])
+            return kept[0]
+        frame = _compose_raw_frame_now(drawing, fraction, options, camera_path)
+        _LAYERS['items'][key] = (frame, last_hand_spec())
+        while len(_LAYERS['items']) > 6:
+            _LAYERS['items'].popitem(last=False)
+        return frame
+    return _compose_raw_frame_now(drawing, fraction, options, camera_path)
+
+
+def _compose_raw_frame_now(drawing, fraction, options, camera_path=None):
     """Raw animation frames; does not apply element opacity to the moving hand."""
     from engine import apply_lettering_background
     plan = travel_plan(drawing, options) if options.get('hand_travel') else None

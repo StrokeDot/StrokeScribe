@@ -125,6 +125,18 @@ class Section(QWidget):
         self.header.clicked.connect(lambda: self.set_expanded(not self.expanded))
         self.expanded = None
         self.set_expanded(expanded)
+        if switch is not None:
+            self._follow_switch(switch)
+
+    def _follow_switch(self, source):
+        """exp.18 (the user, like Filmora): a section that is switched off has its settings greyed
+        out (they do nothing then); switching it on brings them back."""
+        self._switch_source = source
+        source.toggled.connect(self._switched)
+        self._switched(source.isChecked())
+
+    def _switched(self, on):
+        self.content.setEnabled(bool(on))
 
     def setText(self, text):
         self.title.setText(text)
@@ -139,6 +151,7 @@ class Section(QWidget):
         self.switch = ToggleSwitch(source)
         self.switch.setToolTip(tip or source.toolTip() or 'On / off')
         self.header.layout().insertWidget(0, self.switch)
+        self._follow_switch(source)
         return self.switch
 
     def set_expanded(self, on):

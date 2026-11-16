@@ -4504,6 +4504,10 @@ def side_toggle(box, tip):
     return holder
 
 
+from PySide6.QtCore import QEvent as _QEvent
+_UNDO_KEY_EVENTS = (_QEvent.Type.ShortcutOverride, _QEvent.Type.KeyPress)
+
+
 class UndoKeys(QObject):
     """Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z go to the program's undo even when a number box,
     a slider, a list or a dropdown has the keyboard. Only real text fields (writing a
@@ -4514,10 +4518,11 @@ class UndoKeys(QObject):
         self.main = window
 
     def eventFilter(self, obj, event):
-        from PySide6.QtCore import QEvent
-        from PySide6.QtGui import QKeySequence
-        if event.type() not in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
+        # exp.18: this sees every event of the program (paints, mouse moves...): leave at once
+        # unless it is a key (the imports here ran for each of them)
+        if event.type() not in _UNDO_KEY_EVENTS:
             return False
+        from PySide6.QtGui import QKeySequence
         # QWidget.window(obj), not obj.window(): some widgets keep the main window in an
         # attribute called `window`, which hides the method (a crash on Ctrl+Z there).
         if not isinstance(obj, QWidget) or QWidget.window(obj) is not self.main:

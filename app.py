@@ -4079,6 +4079,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if k<=0 or len(self.scenes)<2 or k>=len(self.scenes): return False
         return board.has_base(self.board_frames(),k,self.board_aspect())
 
+    def layer_token(self):
+        """exp.18: what the element being edited looks like, except Opacity and Blend (they only
+        mix the finished layers): while it stays the same, the paused preview keeps its layers."""
+        settings={k:v for k,v in self.settings_state().items() if k not in ('artwork_opacity','blend_mode')}
+        fp=self.edited_fingerprint()
+        return (fp[2:],hash(repr(sorted((k,repr(v)) for k,v in settings.items()))),self.scene_index,
+                id(self.drawing),id(getattr(self,'final_image',None)),bool(self.playing))
+
     def edited_key(self):
         """Changes whenever the scene being edited would look different when finished."""
         settings=self.settings_state()
@@ -6963,6 +6971,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if getattr(self,'_plan_deferred',False) and look:
                 self.position=self.finished_position(view)
         self._look_preview=False
+        import frame_render as _fr                 # exp.18: layers kept while only Opacity / Blend change
+        _fr.set_layer_token(self.layer_token() if self.drawing and not self.playing else None)
         try:
             if getattr(self,'_plan_waiting',False) and self.canvas.frame is not None and not self.playing:
                 frame=self.canvas.frame         # exp.5: the last picture until the route is planned
