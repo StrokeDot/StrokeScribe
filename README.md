@@ -6,6 +6,19 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Faster Opacity, greyed-out switched-off sections (v1.0.1-experimental.18)
+
+- **Changing Opacity or Blend is much faster.** While paused, the preview rendered the element
+  four times on every change: the picture and the hand, twice. Opacity and Blend only mix the
+  finished picture, so the picture and hand are now kept and only mixed again. Dragging the
+  Opacity slider renders nothing after the first step. Painted pictures gain the most.
+- **Switched-off sections are greyed out,** as in Filmora. When a section's switch is off (Ink on
+  the page, Colour, Light, Outline, Shadow, Glow, Background, the hands, Drawing, Move in), its
+  settings are greyed out. Switching it on brings them back.
+- **Less work on every click and mouse move.** The panel icons are drawn once and kept, and the
+  Ctrl+Z / Ctrl+Y watcher, which sees every event in the program, now ignores non-key events
+  straight away.
+
 ## Advanced edit: every setting of an element in one window (v1.0.1-experimental.17)
 
 - **Double-click any part of an element on the timeline** (Draw, Paint, Hand in, Hand out, Out,
