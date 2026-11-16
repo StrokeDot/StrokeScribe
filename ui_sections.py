@@ -48,9 +48,12 @@ class ToggleSwitch(QAbstractButton):
 
     def paintEvent(self, event):
         c = _colours()
+        on = self.isChecked()
+        follow = getattr(self, 'follow', None)
+        if follow is not None:
+            follow(on)                  # exp.20: the section matches what the switch shows
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        on = self.isChecked()
         track = QColor(c['accent']) if on else QColor(c.get('border', '#3A3744'))
         if not self.isEnabled():
             track.setAlpha(90)
@@ -128,15 +131,25 @@ class Section(QWidget):
         if switch is not None:
             self._follow_switch(switch)
 
+    def sync(self):
+        """exp.20: match the switch again (a project, undo or element switch sets switches
+        quietly, without telling anyone; the section stayed grey while it showed On)."""
+        source = getattr(self, '_switch_source', None)
+        if source is not None:
+            self._switched(source.isChecked())
+
     def _follow_switch(self, source):
         """exp.18 (the user, like Filmora): a section that is switched off has its settings greyed
         out (they do nothing then); switching it on brings them back."""
         self._switch_source = source
         source.toggled.connect(self._switched)
+        if self.switch is not None:
+            self.switch.follow = self._switched
         self._switched(source.isChecked())
 
     def _switched(self, on):
-        self.content.setEnabled(bool(on))
+        if self.content.isEnabled() != bool(on):
+            self.content.setEnabled(bool(on))
 
     def setText(self, text):
         self.title.setText(text)
@@ -163,6 +176,14 @@ class Section(QWidget):
         self.caret.open = on
         self.caret.update()
         self.toggled.emit(on)
+
+
+def sync_all(root):
+    """exp.20: every switched section under `root` matches its switch again."""
+    if root is None:
+        return
+    for section in root.findChildren(Section):
+        section.sync()
 
 
 def reveal(widget):

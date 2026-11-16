@@ -161,7 +161,7 @@ class StudioTests(unittest.TestCase):
         w.inspector_tabs.setCurrentIndex(TABS['export'])
         self.assertTrue(w.webm.isVisible())
         self.assertTrue(w.keep_png.isVisible())
-        self.assertEqual(w.webm_quality.value(),28)
+        self.assertEqual(w.webm_quality.value(),18)      # exp.20: the user's 2K default
         w.webm.setChecked(True)
         w.keep_png.setChecked(False)
         self.assertTrue(w.webm.isChecked())

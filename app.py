@@ -1036,6 +1036,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 widget=getattr(self,name,None)
                 if widget is None or name not in settings: continue
                 widget.blockSignals(True); set_widget_value(widget,settings[name]); widget.blockSignals(False)
+            import ui_sections; ui_sections.sync_all(self)      # exp.20: switched sections follow
             if settings.get('audio_path')!=self.audio_path:
                 self.set_audio(settings.get('audio_path'),refresh=False)
             self.paint_hand_path=settings.get('paint_hand_path')
@@ -3204,6 +3205,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             widget.blockSignals(True)
             set_widget_value(widget,settings[name])
             widget.blockSignals(False)
+        import ui_sections; ui_sections.sync_all(self)          # exp.20: switched sections follow
         if hasattr(self,'camera_mode_changed'): self.camera_mode_changed()
         self.canvas.set_background(self.preview_background.currentIndex())
         import tools_kit
@@ -5673,6 +5675,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         for section in ('section_drawing','section_move_in'):
             sec=getattr(self,section,None)
             if sec is not None and sec.switch is not None: sec.switch.update()
+            if sec is not None: sec.sync()                 # exp.20: greyed out or not, as it shows
 
     def sync_hand_sides(self):
         """The Right | Left switches after a project, undo or element switch, and the

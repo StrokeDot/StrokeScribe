@@ -205,6 +205,14 @@ QCheckBox:disabled {{ color: {c['dim']}; }}
 QSlider::groove:horizontal {{ background: {c['border']}; height: 4px; border-radius: 2px; }}
 QSlider::sub-page:horizontal {{ background: {c['accent']}; border-radius: 2px; }}
 QSlider::handle:horizontal {{ background: {c['accent']}; width: 14px; margin: -5px 0; border-radius: 7px; }}
+/* exp.20 (the user, like Filmora): a switched-off section greys out completely */
+QSlider::sub-page:horizontal:disabled {{ background: {c['border_strong']}; }}
+QSlider::handle:horizontal:disabled {{ background: {c['border_strong']}; }}
+QSlider::groove:horizontal:disabled {{ background: {c['border']}; }}
+QLabel:disabled {{ color: {c['dim']}; }}
+QComboBox:disabled, QDoubleSpinBox:disabled, QSpinBox:disabled, QLineEdit:disabled, QPlainTextEdit:disabled {{
+    color: {c['dim']}; background: transparent; }}
+QToolButton:disabled {{ color: {c['dim']}; }}
 QTabWidget::pane {{ border: 0px; background: {c['panel']}; }}
 QTabBar {{ background: transparent; qproperty-drawBase: 0; }}
 QTabWidget::tab-bar {{ left: 4px; }}

@@ -3716,15 +3716,19 @@ def build_workspace(w, Canvas, BRAND_ICON):
     e=form_layout();output_l.addLayout(e)
     w.res=QComboBox()
     w.res.addItems(['1920 × 1080','2048 × 1080','2560 × 1440'])
+    # exp.20 (the user works in 2K): new projects start at 2560 × 1440, 60 frames a second,
+    # WebM (VP9 + alpha) at quality 18; saved projects keep their own choice
+    w.res.setCurrentText(EXPORT_DEFAULTS['res'])
     e.addRow('Resolution',w.res)
-    w.fps=QSpinBox();w.fps.setRange(1,60);w.fps.setValue(30)
+    w.fps=QSpinBox();w.fps.setRange(1,60);w.fps.setValue(EXPORT_DEFAULTS['fps'])
     e.addRow('Frame rate',w.fps)
     output_l.addWidget(label('FORMATS'))
     w.webm=QCheckBox('Compact WebM (VP9 + alpha)')
+    w.webm.setChecked(EXPORT_DEFAULTS['webm'])
     w.webm.setToolTip('Filmora import of third-party WebM transparency must be tested.')
     output_l.addWidget(w.webm)
     w.webm_quality=QSpinBox()
-    w.webm_quality.setRange(18,42);w.webm_quality.setValue(28)
+    w.webm_quality.setRange(18,42);w.webm_quality.setValue(EXPORT_DEFAULTS['webm_quality'])
     w.webm_quality.setToolTip('Lower means higher quality and generally larger files.')
     w.webm_quality.setMinimumWidth(110)
     e2=form_layout();e2.addRow('WebM quality',w.webm_quality)
@@ -4506,6 +4510,10 @@ def side_toggle(box, tip):
 
 from PySide6.QtCore import QEvent as _QEvent
 _UNDO_KEY_EVENTS = (_QEvent.Type.ShortcutOverride, _QEvent.Type.KeyPress)
+
+
+# exp.20: the export settings a new project starts with (the user's 2K videos)
+EXPORT_DEFAULTS = {'res': '2560 × 1440', 'fps': 60, 'webm': True, 'webm_quality': 18}
 
 
 class UndoKeys(QObject):

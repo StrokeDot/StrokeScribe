@@ -39,6 +39,38 @@ class Switches(unittest.TestCase):
             w.close()
 
 
+class SwitchesFollowQuietChanges(unittest.TestCase):
+    def test_a_quiet_switch_change_is_followed(self):
+        # exp.20: projects, undo and element switches set switches with their signals blocked
+        from ui_sections import Section, sync_all
+        from PySide6.QtWidgets import QWidget, QVBoxLayout
+        root = QWidget(); lay = QVBoxLayout(root)
+        box = QCheckBox(); box.setChecked(False)
+        sec = Section('Ink', switch=box); lay.addWidget(sec)
+        box.blockSignals(True); box.setChecked(True); box.blockSignals(False)
+        sync_all(root)
+        self.assertTrue(sec.content.isEnabled())
+
+    def test_greyed_out_controls_look_grey(self):
+        import theme
+        css = theme.stylesheet('dark', __import__('pathlib').Path('assets'))
+        for rule in ('QLabel:disabled', 'QSlider::handle:horizontal:disabled', 'QSpinBox:disabled'):
+            self.assertIn(rule, css)
+
+
+class ExportDefaults(unittest.TestCase):
+    def test_a_new_project_exports_2k_60fps_webm_18(self):
+        from app import Window
+        w = Window()
+        try:
+            self.assertEqual(w.res.currentText(), '2560 × 1440')
+            self.assertEqual(w.fps.value(), 60)
+            self.assertTrue(w.webm.isChecked())
+            self.assertEqual(w.webm_quality.value(), 18)
+        finally:
+            w.close()
+
+
 class OpacityIsCheap(unittest.TestCase):
     def test_opacity_changes_mix_the_kept_layers(self):
         from app import Window
