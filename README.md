@@ -6,6 +6,19 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Export an element as a picture: PNG or SVG (v1.0.1-experimental.21)
+
+- **Export picture (PNG / SVG)…** in the Export tab saves the element you are editing as a
+  finished still, with no animation, so each part can be moved on its own in Filmora.
+  - **PNG** with a transparent background, at the export size. By default it keeps its place in
+    the video frame, so it lines up when stacked over the video; it can also be cropped to the
+    picture.
+  - **SVG** stays sharp at any size. A text is saved as its letter shapes in its ink colour; a line
+    drawing as its lines. A painted picture's colours are not shapes, so they come as a PNG next
+    to the SVG of its lines. Effects such as shadows are only in the PNG.
+- Exporting one element as a video, with or without the hand, works as before: turn off
+  **Export all elements as one video** and pick Drawing and hand / Drawing only.
+
 ## Fully greyed-out switched-off sections, 2K export by default (v1.0.1-experimental.20)
 
 - **A switched-off section looks fully grey,** as in Filmora: its labels, sliders, number boxes,

@@ -3777,6 +3777,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.export=QPushButton('Export animation…')
     w.export.setObjectName('soft');w.export.clicked.connect(w.save)
     output_l.addWidget(w.export)
+    # exp.21 (the user: in Filmora each part is moved on its own): the element as a still picture
+    w.export_picture_button=QPushButton('Export picture (PNG / SVG)…')
+    w.export_picture_button.setToolTip('The element you are editing, finished, with no animation: a PNG with a '
+                                       'transparent background, or an SVG that stays sharp at any size.')
+    w.export_picture_button.clicked.connect(lambda checked=False: __import__('element_export').export_dialog(w))
+    output_l.addWidget(w.export_picture_button)
     w.batch_button=QPushButton('Batch export…')
     w.batch_button.setToolTip('Export many images, SVGs or projects in one go.')
     w.batch_button.clicked.connect(lambda checked=False: w.open_batch_export())
