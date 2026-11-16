@@ -6,6 +6,21 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Natural handwriting, an experiment (v1.0.1-experimental.13)
+
+A new switch in the Text panel, **Natural handwriting (experiment)**, off by default. It makes
+font lettering look more like a real hand wrote it:
+
+- **Every letter is a little different.** Each one gets a slight tilt, size and height change, so
+  repeated letters are no longer identical copies.
+- **Lines drift slightly** up or down, as they do on unlined paper.
+- **Uneven ink.** Each letter has its own ink strength, and the ink is a little lighter here and
+  there.
+- **A short pause between words** while the hand writes.
+
+The same text and font always give the same result, so the export matches the preview. The
+switch is saved with each text element. It works with fonts, not the built-in pen.
+
 ## Western fonts for the journal (v1.0.1-experimental.12)
 
 - **A new Western group in the font list** with four 1800s-style cursive fonts, chosen for the

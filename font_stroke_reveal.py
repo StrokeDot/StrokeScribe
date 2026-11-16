@@ -8,6 +8,7 @@ legible without using a horizontal wipe.
 from __future__ import annotations
 
 import bisect
+from pathlib import Path
 import math
 
 import cv2
@@ -439,7 +440,49 @@ SHARP_POINT=128          # the ink is always drawn this big (when the text fits)
 MAX_INK_PIXELS=2_600_000
 
 
-def create_font_drawing(text,fontfile,point_size=68):
+def _natural_marks(text,fontfile,lines,ascent):
+    """exp.13 Natural handwriting (experiment): small, steady differences per letter, as a
+    real hand never writes the same letter twice: a slight tilt, size and height change, a line
+    that drifts a little, and ink that is not equally dark everywhere. The same text and font
+    always give the same result (the export matches the preview)."""
+    import random, zlib
+    rng=random.Random(zlib.crc32((text+'|'+Path(str(fontfile)).name).encode('utf-8')))
+    marks=[]
+    for line in lines:
+        drift=math.tan(math.radians(rng.uniform(-.7,.7)))      # the line rises or falls a little
+        row=[]
+        for _ in line:
+            row.append(dict(
+                turn=max(-2.5,min(2.5,rng.gauss(0,1.1))),       # degrees
+                size=max(.95,min(1.05,1+rng.gauss(0,.022))),
+                dx=rng.gauss(0,.012*ascent),
+                dy=rng.gauss(0,.02*ascent),
+                drift=drift,
+                ink=rng.uniform(.80,1.)))
+        marks.append(row)
+    return marks
+
+
+def _place(point,centre,mark,x_offset):
+    """A traced point moved like its letter (turned and sized around the letter's centre)."""
+    (px,py),(cx,cy)=point,centre
+    a=math.radians(mark['turn']); c,s=math.cos(a),math.sin(a)
+    x=(px-cx)*mark['size']; y=(py-cy)*mark['size']
+    return (cx+x*c-y*s+mark['dx'],cy+x*s+y*c+mark['dy']+mark['drift']*x_offset)
+
+
+def _uneven_ink(ink,seed):
+    """Ink a little lighter here and there, like a real pen on paper."""
+    rng=np.random.default_rng(seed)
+    W,H=ink.size
+    small=rng.uniform(.84,1.,(max(2,H//60),max(2,W//60))).astype(np.float32)
+    field=cv2.resize(small,(W,H),interpolation=cv2.INTER_CUBIC)
+    a=np.asarray(ink).copy()
+    a[...,3]=np.clip(a[...,3].astype(np.float32)*np.clip(field,.8,1.),0,255).astype(np.uint8)
+    return Image.fromarray(a,'RGBA')
+
+
+def create_font_drawing(text,fontfile,point_size=68,natural=False):
     """Font lettering: the real glyph ink plus estimated pen paths.
 
     Letter detail (point_size) decides how finely the pen paths are traced. The ink
@@ -452,6 +495,7 @@ def create_font_drawing(text,fontfile,point_size=68):
     font=ImageFont.truetype(str(fontfile),point_size)
     lines=text.split('\n')
     ascent,descent=font.getmetrics()
+    marks=_natural_marks(text,fontfile,lines,ascent) if natural else None
     # Margins follow the letter size, so the text sits the same at any Letter detail.
     pad=point_size/68.
     line_height=ascent+descent+12*pad
@@ -473,7 +517,8 @@ def create_font_drawing(text,fontfile,point_size=68):
     boxes=[]
     for row,line in enumerate(lines):
         y=10*pad+row*line_height
-        painter.text((18*pad*k,y*k),line,font=big,fill=(37,54,74,255))
+        if not natural:
+            painter.text((18*pad*k,y*k),line,font=big,fill=(37,54,74,255))
         for index,char in enumerate(line):
             if char.isspace():continue
             x=18*pad+font.getlength(line[:index])
@@ -494,9 +539,34 @@ def create_font_drawing(text,fontfile,point_size=68):
             if not paths:
                 paths=[[(0,(bottom-top)/2),(right-left,(bottom-top)/2)]]
             piece=len(boxes)
-            boxes.append((left*k,top*k,right*k,bottom*k))
+            mark=marks[row][index] if natural else None
+            if natural:
+                # This letter on its own, turned and sized a little, with its own ink strength.
+                centre=((left+right)/2.,(top+bottom)/2.)
+                m=max(4,round((bottom-top)*.15))
+                glyph=Image.new('RGBA',(math.ceil((right-left+2*m)*k),math.ceil((bottom-top+2*m)*k)),(0,0,0,0))
+                ImageDraw.Draw(glyph).text(((x-left+m)*k,(y-top+m)*k),char,font=big,
+                                           fill=(37,54,74,round(255*mark['ink'])))
+                glyph=glyph.rotate(-mark['turn'],resample=Image.Resampling.BICUBIC,expand=True)
+                gw,gh=glyph.size
+                gw2,gh2=max(1,round(gw*mark['size'])),max(1,round(gh*mark['size']))
+                glyph=glyph.resize((gw2,gh2),Image.Resampling.LANCZOS)
+                nx,ny=_place(centre,centre,mark,centre[0]-18*pad)
+                gx,gy=round(nx*k-gw2/2),round(ny*k-gh2/2)
+                ink.alpha_composite(glyph,(max(0,gx),max(0,gy)),(max(0,-gx),max(0,-gy)))
+                corners=[_place(c,centre,mark,centre[0]-18*pad)
+                         for c in ((left,top),(right,top),(left,bottom),(right,bottom))]
+                bl=max(0.,min(c[0] for c in corners)); bt=max(0.,min(c[1] for c in corners))
+                br=min(float(w),max(c[0] for c in corners)); bb=min(float(h),max(c[1] for c in corners))
+                boxes.append((bl*k,bt*k,br*k,bb*k))
+            else:
+                boxes.append((left*k,top*k,right*k,bottom*k))
             for route in paths[:150]:
-                points=[(float((left+px)*k),float((top+py)*k)) for px,py in route]
+                if natural:
+                    points=[_place((left+px,top+py),centre,mark,centre[0]-18*pad) for px,py in route]
+                    points=[(float(px*k),float(py*k)) for px,py in points]
+                else:
+                    points=[(float((left+px)*k),float((top+py)*k)) for px,py in route]
                 if len(points)<2:continue
                 s=Stroke(f'Pen {char} / {len(strokes)+1}',points,'#25364a',1.)
                 s.font_piece=piece
@@ -508,7 +578,11 @@ def create_font_drawing(text,fontfile,point_size=68):
         'Estimated pen strokes trace real typeface shapes, with complete original glyph ink.',
         'A regular font does not record its human writing order; pen paths are approximations.',
     ])
+    if natural:
+        import zlib
+        ink=_uneven_ink(ink,zlib.crc32(text.encode('utf-8')))
     drawing.source_kind='font'
+    drawing.hand_natural=bool(natural)      # exp.13: Natural handwriting (experiment)
     drawing.font_point=point_size
     drawing.font_scale=k                 # ink pixels per traced pixel
     drawing.font_ink=ink
@@ -523,7 +597,8 @@ def _natural(drawing):
 
 
 def _signature(drawing):
-    return tuple(id(stroke) for stroke in drawing.strokes)+(_natural(drawing),)
+    return tuple(id(stroke) for stroke in drawing.strokes)+(_natural(drawing),
+                                                             bool(getattr(drawing,'hand_natural',False)))
 
 
 _EASE_X=np.linspace(0.,1.,1025)
@@ -566,6 +641,8 @@ def _stroke_schedule(drawing):
                 lift_duration=min(12.*scale,max(2.5*scale,distance*.24))
                 if natural:
                     lift_duration*=2.2               # a real hand takes its time between lines
+                if getattr(drawing,'hand_natural',False) and distance>22.*scale:
+                    lift_duration+=8.*scale          # exp.13: a short breath between words
                 events.append(('lift',None,t,t+lift_duration,previous,first))
                 t+=lift_duration
             elif distance>0:

@@ -2898,12 +2898,23 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.font_size.valueChanged.connect(lambda v: w.letter_timer.start()
                                      if getattr(w.drawing,'source_kind',None)=='font' else None)
     asset_l.addLayout(font_size_form)
+    # exp.13: Natural handwriting (experiment), off by default: small differences per letter
+    # (tilt, size, height), a line that drifts a little, uneven ink, a breath between words.
+    w.natural_hand=QCheckBox('Natural handwriting (experiment)')
+    w.natural_hand.setToolTip('Makes font lettering look hand-written: every letter a little different, '
+                              'lines that drift slightly, uneven ink and a short pause between words. '
+                              'Fonts only (not the built-in pen).')
+    w.natural_hand.toggled.connect(lambda on: w.reletter(force=True))
+    asset_l.addWidget(w.natural_hand)
     # Choosing another font re-writes the text at once (no need to press Animate);
     # Letter detail only means something for real fonts, not the built-in pen.
     w.font_select.activated.connect(lambda i: w.font_choice_changed())
     w.font_size.setEnabled(w.font_select.currentText()!='Built-in single-line pen')
+    w.natural_hand.setEnabled(w.font_size.isEnabled())
     w.font_select.currentIndexChanged.connect(
         lambda i: w.font_size.setEnabled(w.font_select.currentText()!='Built-in single-line pen'))
+    w.font_select.currentIndexChanged.connect(
+        lambda i: w.natural_hand.setEnabled(w.font_select.currentText()!='Built-in single-line pen'))
     style_form=form_layout()
     w.font_color_button=QPushButton('Letter color: #25364A')
     w.font_color_button.setToolTip('Choose the ink color of handwritten text. Applies to current lettering and future lettering.')

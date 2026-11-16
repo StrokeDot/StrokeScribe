@@ -5105,7 +5105,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                     finally:
                         self.clear_busy()
                 drawing=make_font_text(self.text.toPlainText(),font_path,
-                                       int(self.font_size.value()))
+                                       int(self.font_size.value()),
+                                       natural=self.natural_hand.isChecked())
             drawing.source_kind=getattr(drawing,'source_kind','lettering')
             self.apply_letter_style(drawing)
             # A new text source owns its font appearance; retain the preceding
@@ -5120,12 +5121,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.set_drawing(drawing)
         except Exception as e: QMessageBox.warning(self,'Lettering',str(e))
 
-    def reletter(self):
-        """Letter detail changed: trace the same text again (keeps the playhead)."""
+    def reletter(self,force=False):
+        """Letter detail (or Natural handwriting) changed: trace the same text again (keeps the playhead)."""
         if getattr(self.drawing,'source_kind',None)!='font' or (self.builder and self.builder.isRunning()):
             return
-        if getattr(self.drawing,'font_point',None)==int(self.font_size.value()):
-            return                                # already traced at this detail (a project loading)
+        if (not force and getattr(self.drawing,'font_point',None)==int(self.font_size.value())) or (
+                force and bool(getattr(self.drawing,'hand_natural',False))==self.natural_hand.isChecked()):
+            return                                # already traced like this (a project loading)
         position=self.position
         self.letter()
         self.position=position
@@ -5151,14 +5153,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         out={'ink':self.letter_ink_color,'background':self.letter_bg_color}
         if getattr(self.drawing,'source_kind',None) in ('font','lettering') and getattr(self,'_letter_known',False):
             out.update(text=self.text.toPlainText(),font=self.font_select.currentText(),
-                       font_path=self.font_select.currentData(),detail=int(self.font_size.value()))
+                       font_path=self.font_select.currentData(),detail=int(self.font_size.value()),
+                       natural=self.natural_hand.isChecked())
         return out
 
     def restore_letter_words(self,letter):
         """The Text panel shows this element's own words and font (nothing is written again)."""
         self._letter_known=bool(letter) and 'text' in letter
         if not self._letter_known: return
-        widgets=(self.text,self.font_select,self.font_size)
+        widgets=(self.text,self.font_select,self.font_size,self.natural_hand)
         for widget in widgets: widget.blockSignals(True)
         try:
             self.text.setPlainText(letter.get('text') or '')
@@ -5168,7 +5171,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self.font_select.addItem(name,letter.get('font_path')); i=self.font_select.count()-1
             if i>=0: self.font_select.setCurrentIndex(i)
             if letter.get('detail'): self.font_size.setValue(int(letter['detail']))
+            self.natural_hand.setChecked(bool(letter.get('natural',False)))
             self.font_size.setEnabled(self.font_select.currentText()!='Built-in single-line pen')
+            self.natural_hand.setEnabled(self.font_size.isEnabled())
         finally:
             for widget in widgets: widget.blockSignals(False)
 
