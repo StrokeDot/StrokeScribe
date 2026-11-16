@@ -24,7 +24,8 @@ MODES = {'Off': None, 'Zigzag (follows the shapes)': 'zigzag', 'Along the lines'
          # Goes out with an effect instead of an eraser (frame_render.EXITS):
          'Fade out': 'fade', 'Pop out': 'pop', 'Zoom out': 'zoom', 'Spin out': 'spin',
          'Move out to the left': 'out-left', 'Move out to the right': 'out-right',
-         'Move out to the top': 'out-top', 'Move out to the bottom': 'out-bottom'}
+         'Move out to the top': 'out-top', 'Move out to the bottom': 'out-bottom',
+         'Blur out': 'blur', 'Wipe out': 'wipe'}            # exp.16
 DEFAULT_ERASER = Path(__file__).resolve().parent / 'assets' / 'default_eraser.png'
 ERASER_TIP = (.19, .81)            # rubbing edge of the built-in eraser image
 GRID = 256

@@ -635,6 +635,7 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
     done = 0
     index = 0
     ranges = []
+    finished_at = {}                     # exp.16: when each element's drawing finished (seconds)
     work = folder / '_scenes'
     work.mkdir()
 
@@ -668,6 +669,8 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                 progress(base + i, total)
                 return not interrupted()
             part = work / f'scene_{k + 1}'
+            first = index                        # exp.16: its first frame (Loop clocks)
+            looping = any(p['options'].get('loop') for p in prepared[:k + 1])
             export_frames(scene['drawing'], part, callback=tick, **options)
             frames = sorted(part.glob('frame_*.png'))
             done = base + len(frames)
@@ -677,13 +680,14 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                 camera = camera_for(scene['drawing'], options, float(options.get('camera_zoom', 1.)))
                 still = None
                 for i, frame in enumerate(frames):
+                    clock = ((first + i) / fps, finished_at) if looping else None
                     if camera is None:
-                        if still is None:
-                            still = world.view(all_frames[k], width, height, upto=k)
+                        if still is None or clock is not None:
+                            still = world.view(all_frames[k], width, height, upto=k, clock=clock)
                         under = still
                     else:
                         view = board.sub_view(all_frames[k], *camera.at(i / max(1, len(frames) - 1)), aspect)
-                        under = world.view(view, width, height, upto=k)
+                        under = world.view(view, width, height, upto=k, clock=clock)
                     # Export uses the exact same separation as whole-video
                     # preview: artwork gets this scene's blend and opacity,
                     # the moving hand remains opaque and normally colored.
@@ -716,6 +720,7 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                              if camera is not None else all_frames[k])
                 pages.append(k)
             ranges.append((start, index))
+            finished_at[k] = index / fps                 # exp.16: its drawing is done (Loop)
             # The move after this scene: the camera flies over the board to the next frame
             # (or, after the last scene, out to the whole board).
             n = joins[k]
@@ -725,17 +730,18 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
             for j in range(n):
                 t = (j + 1) / n if last else (j + 1) / (n + 1)
                 view = None
+                clock = (index / fps, finished_at) if looping else None
                 if layers == 'hand':
                     image = QImage(width, height, QImage.Format.Format_ARGB32_Premultiplied); image.fill(0)
                 elif kind in board.SCREEN_KINDS and not last:
-                    if screens is None:
-                        screens = (world.view(all_frames[k], width, height, upto=k + 1),
-                                   world.view(all_frames[k + 1], width, height, upto=k + 1))
+                    if screens is None or clock is not None:
+                        screens = (world.view(all_frames[k], width, height, upto=k + 1, clock=clock),
+                                   world.view(all_frames[k + 1], width, height, upto=k + 1, clock=clock))
                     image = transition_frame(screens[0], screens[1], kind, t)
                 else:
                     view = board.join_view(all_frames, k, kind, t, aspect, scene['move_seconds'],
                                            leaving=scene_camera(k), arriving=scene_camera(k + 1))
-                    image = world.view(view, width, height, upto=k + 1)
+                    image = world.view(view, width, height, upto=k + 1, clock=clock)
                 if options.get('hand_travel') and layers != 'art':
                     # exp.143: the hand waits in its corner while the camera moves.
                     from frame_render import paint_rest_hand

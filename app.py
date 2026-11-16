@@ -1022,6 +1022,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             for name,default in (('artwork_opacity',100),('paper_cleanup',False),
                                  ('paper_tolerance',22),('paper_softness',8),('move_hand',False),
                                  ('entrance_part','The whole picture'),('paint_look','Classic'),('pencil_first','Off'),
+                                 ('loop_style','None'),
                                  *__import__('picture_look').DEFAULTS.items()):
                 if name not in settings:
                     widget=getattr(self,name,None)
@@ -1899,6 +1900,68 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.status.setText('Eraser added. Drag it on the timeline to choose when; double-click it to change it.')
         return item
 
+    def text_out_clip(self):
+        """exp.16: this element's Goes out clip (the Text panel's Out), or None."""
+        if not (0<=self.scene_index<len(self.scenes)): return None
+        uid=self.scenes[self.scene_index].get('uid')
+        for item in getattr(self,'overlays',[]) or []:
+            if item.get('kind')=='eraser' and uid and item.get('target')==uid:
+                return item
+        return None
+
+    def sync_text_out(self):
+        """The Text panel's Out shows this element's Goes out clip (one element alone: its own
+        way out, which becomes a clip when a second element comes, exits_to_clips)."""
+        if not hasattr(self,'text_out'): return
+        item=self.text_out_clip()
+        name='None' if item is None else (item.get('effect') or 'Eraser')
+        if item is None and len(self.scenes)<2 and self.erase_mode.currentText()!='Off':
+            mode=self.erase_mode.currentText()
+            import eraser_clips
+            name=mode if mode in eraser_clips.EFFECTS else 'Eraser'
+            item={'duration':self.erase_time.value()}
+        for widget in (self.text_out,self.text_out_time): widget.blockSignals(True)
+        try:
+            i=self.text_out.findText(name)
+            self.text_out.setCurrentIndex(i if i>=0 else 0)
+            if item is not None: self.text_out_time.setValue(float(item.get('duration',.8)))
+        finally:
+            for widget in (self.text_out,self.text_out_time): widget.blockSignals(False)
+
+    def set_text_out(self):
+        """exp.16 (Filmora's Out animations): the Text panel's Out makes, changes or removes this
+        element's Goes out clip, right after it on the timeline (one way out per element)."""
+        import overlays, eraser_clips
+        if not (0<=self.scene_index<len(self.scenes)) or not self.drawing: return
+        choice=self.text_out.currentText(); seconds=round(float(self.text_out_time.value()),2)
+        item=self.text_out_clip()
+        if len(self.scenes)<2 and item is None:
+            # one element alone: its own way out (the timeline makes it a clip when a second
+            # element comes); a Goes out clip is only drawn in the whole video of several
+            mode='Off' if choice=='None' else (choice if choice in eraser_clips.EFFECTS else 'Zigzag (follows the shapes)')
+            self.erase_time.setValue(seconds)
+            self.erase_mode.setCurrentText(mode)
+            self.project_changes.mark_changed(); self.refresh()
+            return
+        if choice=='None':
+            if item is not None:
+                self.overlays.remove(item)
+                self.project_changes.mark_changed(); self.refresh()
+            return
+        effect=choice if choice in eraser_clips.EFFECTS else 'Eraser'
+        if item is None:
+            k=self.scene_index
+            lay=self.timeline_layout()
+            it=lay.items[k] if k<len(lay.items) else None
+            verb='Erase' if effect=='Eraser' else effect
+            item=overlays.new_eraser(self.scenes[k].get('uid'),k,f'{verb} {k+1} · {self.scene_label(k)}'[:40],
+                                     start=round(it.start+it.length,2) if it is not None else 0.,
+                                     duration=seconds,track=it.track if it is not None else 0)
+            item.update(hand=effect=='Eraser')
+            self.overlays.append(item)
+        item.update(effect=effect,duration=seconds)
+        self.project_changes.mark_changed(); self.refresh()
+
     def app_events(self):
         QApplication.processEvents()
 
@@ -2593,7 +2656,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.refresh()
 
     # ------------------------------------------------------------ projects
-    PROJECT_SETTINGS=('eraser_hand_on','eraser_hand','eraser_hand_size','paint_look','pencil_first','duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
+    PROJECT_SETTINGS=('loop_style','eraser_hand_on','eraser_hand','eraser_hand_size','paint_look','pencil_first','duration','speed','thickness','artwork_size','picture_x','picture_y','reveal_mode','blend_mode','artwork_opacity','paper_cleanup','paper_tolerance','paper_softness','color_fade',
                       'image_duration','image_animation','brush_width','stroke_spacing','color_hold',
                       'use_color','preserve_colors','showhand','left_handed','paint_left_handed','entrance','entrance_part','pause_after','show_paint_hand','handsize','ax','ay',
                       'res','fps','webm','webm_quality','mov','mp4','mp4_background','keep_png',
@@ -3119,6 +3182,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                        'move_hand':False,'entrance_part':'The whole picture',
                        'paint_look':'Classic',          # exp.180: Paint look (older projects: Classic)
                        'pencil_first':'Off',            # exp.2: no pencil pass (older projects)
+                       'loop_style':'None',             # exp.16: no Loop (older projects)
                        'eraser_hand':'Built-in eraser','eraser_hand_size':45.,'eraser_hand_on':True,   # exp.192/195
                        # exp.115: the element's own camera (older projects: none).
                        'cam_start_zoom':100.,'cam_start_x':50.,'cam_start_y':50.,'cam_end_zoom':160.,
@@ -4260,6 +4324,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         view=world.frames[k]
         if camera is not None:
             view=board.sub_view(view,*camera.at(fraction),world.aspect)
+        looping=any(it['options'].get('loop') for it in world.items[:k])
+        if looping:                # exp.16: the pictures before it move (Loop): no kept copy
+            lengths,joins=self.scene_timeline(width,height)
+            return world.view(view,width,height,upto=k,clock=board.clock(lengths,joins,'scene',k,fraction))
         key=(k,width,height,view,tuple(it['key'] for it in world.items[:k]))
         cache=self.__dict__.setdefault('_base_cache',OrderedDict())
         if key in cache:
@@ -4888,9 +4956,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             return blank
         kind=self.scenes[k]['transition']
         last=k==len(self.scenes)-1
+        lengths,joins=self.scene_timeline(width,height)
+        clock=board.clock(lengths,joins,'join',k,f)          # exp.16: Loop animations
         if kind in board.SCREEN_KINDS and not last:
-            a=world.view(world.frames[k],width,height,upto=k+1)
-            b=world.view(world.frames[k+1],width,height,upto=k+1)
+            a=world.view(world.frames[k],width,height,upto=k+1,clock=clock)
+            b=world.view(world.frames[k+1],width,height,upto=k+1,clock=clock)
             return transition_frame(a,b,kind,f)
         def cam(j):
             if not 0<=j<len(self.scenes): return None
@@ -4898,7 +4968,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             return self.video_camera(j,camera,seconds)
         view=board.join_view(world.frames,k,kind,f,world.aspect,self.scenes[k]['transition_seconds'],
                              leaving=cam(k),arriving=cam(k+1))
-        return world.view(view,width,height,upto=k+1)
+        return world.view(view,width,height,upto=k+1,clock=clock)
 
     def open_batch_export(self):
         from batch_export import BatchExportDialog
@@ -5104,9 +5174,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                         return
                     finally:
                         self.clear_busy()
+                import text_style_panel
                 drawing=make_font_text(self.text.toPlainText(),font_path,
                                        int(self.font_size.value()),
-                                       natural=self.natural_hand.isChecked())
+                                       natural=self.natural_hand.isChecked(),
+                                       layout=text_style_panel.layout_state(self))
             drawing.source_kind=getattr(drawing,'source_kind','lettering')
             if drawing.source_kind=='font':                    # exp.15: Recent fonts in the list
                 import font_picker
@@ -5129,8 +5201,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """Letter detail (or Natural handwriting) changed: trace the same text again (keeps the playhead)."""
         if getattr(self.drawing,'source_kind',None)!='font' or (self.builder and self.builder.isRunning()):
             return
-        if (not force and getattr(self.drawing,'font_point',None)==int(self.font_size.value())) or (
-                force and bool(getattr(self.drawing,'hand_natural',False))==self.natural_hand.isChecked()):
+        import text_style_panel
+        from font_stroke_reveal import text_layout
+        if (getattr(self.drawing,'font_point',None)==int(self.font_size.value())
+                and bool(getattr(self.drawing,'hand_natural',False))==self.natural_hand.isChecked()
+                and text_layout(getattr(self.drawing,'font_layout',None))==text_style_panel.layout_state(self)):
             return                                # already traced like this (a project loading)
         position=self.position
         self.letter()
@@ -5159,6 +5234,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             out.update(text=self.text.toPlainText(),font=self.font_select.currentText(),
                        font_path=self.font_select.currentData(),detail=int(self.font_size.value()),
                        natural=self.natural_hand.isChecked())
+            import text_style_panel                    # exp.16: its style and effects
+            out.update(layout=text_style_panel.layout_state(self),effects=text_style_panel.effects_state(self))
         return out
 
     def restore_letter_words(self,letter):
@@ -5180,6 +5257,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.natural_hand.setEnabled(self.font_size.isEnabled())
         finally:
             for widget in widgets: widget.blockSignals(False)
+        import text_style_panel                        # exp.16: its own style, effects and Out
+        text_style_panel.set_state(self,letter.get('layout'),letter.get('effects'))
+        self.sync_text_out()
 
     def apply_letter_style(self,drawing=None):
         drawing=drawing or self.drawing
@@ -5188,6 +5268,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         drawing.lettering_background=self.letter_bg_color
         if drawing.source_kind=='font':
             drawing.font_color=self.letter_ink_color
+            if hasattr(self,'text_fx'):                # exp.16: outline, shadow, glow, ...
+                import text_style_panel
+                drawing.text_effects=text_style_panel.effects_state(self)
+                self.__dict__.pop('_memo',None)
         else:
             for stroke in drawing.strokes:
                 stroke.color=self.letter_ink_color
@@ -6096,7 +6180,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # How the colours are painted: the painting order (Line order → Painting)
             # and the AI parts. Without them, playback reused frames painted the old way.
             tuple(getattr(d,'paint_part_order',None) or ()),getattr(d,'ai_parts_digest',None),
-            repr(getattr(d,'paint_circles',None) or ()))
+            repr(getattr(d,'paint_circles',None) or ()),
+            # exp.16: a text's ink colour and effects (they change no stroke)
+            getattr(d,'font_color',None),repr(getattr(d,'text_effects',None)))
         memo['edited_fp']=fp
         return fp
 

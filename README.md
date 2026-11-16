@@ -6,6 +6,35 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Filmora-style text settings (v1.0.1-experimental.16)
+
+The Text panel now has the text settings you chose from Filmora.
+
+- **Style:** Bold, Italic and Underline buttons, alignment (left, centre, right), Letter spacing
+  and Line spacing. The pen paths follow the letters, and the pen underlines each line after
+  writing it.
+- **Effects,** each in its own section with an on/off switch, the way Filmora does it:
+  - **Fill:** opacity and blur;
+  - **Outline:** colour, opacity, blur and thickness;
+  - **Shadow:** colour, opacity, blur and distance;
+  - **Glow:** colour, intensity and range;
+  - **Background:** a box behind the text, with colour, opacity, corner radius and spread.
+
+  The effects appear with the ink as the hand writes, and the box fades in as writing starts.
+  They show the same in the preview and in the export.
+- **Animation:** the hand writing the text is the way in.
+  - **Out:** Fade, Blur, Wipe, Zoom, Pop, Spin, Move out, or the Eraser. With several elements,
+    this is the element's Goes out clip right after it on the timeline (one per element). With
+    a single element, it is the element's own way out.
+  - **Loop:** Float, Pulse, Sway or Breathe. The text moves gently, round and round, while it
+    stays on screen, from when its writing is finished.
+- **Blur out and Wipe out** are new ways out for every element, also in the timeline's Goes
+  out clips.
+- **Advanced:** Letter detail and Natural handwriting moved here.
+- Every text element keeps its own style, effects and Loop.
+- **Fixed:** after changing a text's ink colour, the finished picture sometimes kept the old
+  colour.
+
 ## Fonts shown in their own style, Recent and Favorites, refined notices (v1.0.1-experimental.15)
 
 - **Every font in the list is shown in its own style,** as in Filmora, so you can see it while

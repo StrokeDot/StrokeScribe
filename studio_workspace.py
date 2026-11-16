@@ -2933,7 +2933,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.letter_timer.timeout.connect(lambda: w.reletter())
     w.font_size.valueChanged.connect(lambda v: w.letter_timer.start()
                                      if getattr(w.drawing,'source_kind',None)=='font' else None)
-    asset_l.addLayout(font_size_form)
+    import text_style_panel                      # exp.16: Filmora-style text settings
+    text_style_panel.build_style(w,asset_l)
     # exp.13: Natural handwriting (experiment), off by default: small differences per letter
     # (tilt, size, height), a line that drifts a little, uneven ink, a breath between words.
     w.natural_hand=QCheckBox('Natural handwriting (experiment)')
@@ -2941,7 +2942,6 @@ def build_workspace(w, Canvas, BRAND_ICON):
                               'lines that drift slightly, uneven ink and a short pause between words. '
                               'Fonts only (not the built-in pen).')
     w.natural_hand.toggled.connect(lambda on: w.reletter(force=True))
-    asset_l.addWidget(w.natural_hand)
     # Choosing another font re-writes the text at once (no need to press Animate);
     # Letter detail only means something for real fonts, not the built-in pen.
     w.font_select.activated.connect(lambda i: w.font_choice_changed())
@@ -2974,6 +2974,11 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.generate_text=QPushButton('Animate lettering')
     w.generate_text.clicked.connect(w.letter)
     asset_l.addWidget(w.generate_text)
+    # exp.16: Fill, Outline, Shadow, Glow, Background, Animation; Letter detail and Natural
+    # handwriting under Advanced
+    advanced=text_style_panel.build_effects(w,asset_l)
+    advanced.body.addLayout(font_size_form)
+    advanced.body.addWidget(w.natural_hand)
     w.download_font=QPushButton('Download selected font')
     w.download_font.clicked.connect(w.install_selected_font)
     # Fonts (collapsible): downloads and imports, closed by default.

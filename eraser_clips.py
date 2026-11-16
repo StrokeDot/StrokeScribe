@@ -12,7 +12,8 @@ MODES = {'Zigzag (follows the shapes)': 'zigzag', 'Along the lines': 'lines'}
 # exp.192 (the user: treat them all as one way out): what the clip does: the eraser, or an effect
 EFFECTS = {'Eraser': None, 'Fade out': 'fade', 'Pop out': 'pop', 'Zoom out': 'zoom', 'Spin out': 'spin',
            'Move out to the left': 'out-left', 'Move out to the right': 'out-right',
-           'Move out to the top': 'out-top', 'Move out to the bottom': 'out-bottom'}
+           'Move out to the top': 'out-top', 'Move out to the bottom': 'out-bottom',
+           'Blur out': 'blur', 'Wipe out': 'wipe'}            # exp.16
 
 
 def effect_of(item):

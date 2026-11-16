@@ -199,6 +199,22 @@ def locate(lengths, joins, seconds):
     return 'scene', n - 1, 1.
 
 
+def clock(lengths, joins, where, k, f):
+    """exp.16: (seconds of the video, {element: when its drawing finished}) at element k's own
+    fraction f ('scene') or the move after it ('join'), for the elements' Loop animations."""
+    ends, t = {}, 0.
+    seconds = 0.
+    for j, length in enumerate(lengths):
+        if j == k and where == 'scene':
+            seconds = t + f * length
+        t += length
+        ends[j] = t
+        if j == k and where != 'scene':
+            seconds = t + f * (joins[j] if j < len(joins) else 0.)
+        t += joins[j] if j < len(joins) else 0.
+    return seconds, ends
+
+
 def join_view(all_frames, k, kind, t, aspect=9 / 16, move_seconds=1., leaving=None, arriving=None):
     """Camera view during the join after scene k. After the last scene (Show
     everything) the camera moves out to the whole board, then holds.
@@ -282,8 +298,10 @@ class World:
         left = vx - vw / 2; top = vy - vw * self.aspect / 2
         return ((l - left) * scale, (t - top) * scale, (r - l) * scale, (b - t) * scale)
 
-    def view(self, view, out_w, out_h, upto, skip=()):
-        """The board seen by the camera: finished pictures of scenes 0..upto-1."""
+    def view(self, view, out_w, out_h, upto, skip=(), clock=None):
+        """The board seen by the camera: finished pictures of scenes 0..upto-1.
+        clock (exp.16): (seconds of the video, {element: when its drawing finished}) for the
+        elements' Loop animations; None: they are still."""
         from PySide6.QtCore import QRectF, Qt
         from PySide6.QtGui import QImage, QPainter
         out = QImage(out_w, out_h, QImage.Format.Format_ARGB32_Premultiplied)
@@ -301,7 +319,11 @@ class World:
             from artwork_compositor import bounded_opacity
             p.setOpacity(bounded_opacity(opts.get('artwork_opacity',100)))
             p.setCompositionMode(composition_mode(opts.get('blend_mode','Normal')))
-            p.drawImage(QRectF(x, y, w, h), self.finished(j, w))
+            image = self.finished(j, w)
+            if clock is not None and opts.get('loop') and j in clock[1]:
+                from frame_render import loop_frame          # exp.16: its Loop, since it finished
+                image = loop_frame(image, opts['loop'], float(clock[0]) - float(clock[1][j]))
+            p.drawImage(QRectF(x, y, w, h), image)
             p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
             p.setOpacity(1.0)
         p.end()

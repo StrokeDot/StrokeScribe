@@ -436,7 +436,13 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
             if k not in art_off:
                 # exp.248 (the user: the picture jumped a little when it finished): drawn exactly
                 # as in its last frame (same size and place), not from the board's smaller copy
-                out = world.put(out, _finished_frame(el, w, h), world.frames[k], view,
+                done = _finished_frame(el, w, h)
+                if opts.get('loop') and state.seconds is not None:
+                    # exp.16: its Loop animation, timed from when its drawing finished
+                    from frame_render import loop_frame
+                    ends = {it.k: (0. if it.already else it.end) for it in lay.items}
+                    done = loop_frame(done, opts['loop'], float(state.seconds) - ends.get(k, 0.))
+                out = world.put(out, done, world.frames[k], view,
                                 opts.get('blend_mode', 'Normal'), opts.get('artwork_opacity', 100), fold=bool(opts.get('follow_fold')))
             continue
         fraction = active[k]

@@ -136,6 +136,9 @@ QPushButton#soft:disabled {{ background: {c['raised']}; color: {c['dim']}; borde
 QPushButton#subtle, QToolButton#subtle {{ background: transparent; border: 1px solid transparent;
     border-radius: 8px; padding: 6px 10px; color: {c['muted']}; }}
 QPushButton#subtle:hover, QToolButton#subtle:hover {{ background: {c['raised']}; color: {c['text']}; }}
+QToolButton#textStyle {{ background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px; }}
+QToolButton#textStyle:hover {{ background: {c['raised']}; }}
+QToolButton#textStyle:checked {{ background: {c['selection']}; border-color: {c['accent']}; color: {c['text']}; }}
 QPushButton#transportButton {{ background: transparent; border: 0px; border-radius: 16px;
     min-width: 32px; min-height: 32px; max-height: 32px; padding: 0px; font-size: 15px; color: {c['text']}; }}
 QPushButton#transportButton:hover {{ background: {c['raised']}; }}
