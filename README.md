@@ -6,6 +6,26 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Advanced edit: every setting of an element in one window (v1.0.1-experimental.17)
+
+- **Double-click any part of an element on the timeline** (Draw, Paint, Hand in, Hand out, Out,
+  or the element itself) and it opens in **Advanced edit**, like Filmora's advanced window. The
+  small windows showed only a few settings.
+- **The window holds the real preview and panels,** not copies. You get the play buttons and the
+  Text (for a text), Animation, Hand, Image and Camera tabs, so every setting works exactly as it
+  does outside. They go back to their places when the window closes.
+- **It opens on the tab of the part you clicked:** Draw opens Text (or Image for a picture),
+  Paint opens Animation at Colour & painting, Hand in and Hand out open Hand with the drawing
+  hand shown, and Out opens Animation.
+- **Buttons at the top** open the hand's way in and back and, for pictures, Replace drawing /
+  Replace colours.
+- **Apply keeps the changes; Cancel puts the element back** as it was, including a Goes out clip
+  made in the window.
+- **Fixed:** in the single-element view, double-clicking Hand in opened the drawing's window and
+  Hand out opened nothing. The clicks landed one part to the left, because Hand in was left out.
+- **Fixed:** Edit Drawing Source showed the project's name (for example a text's words) above
+  another element's drawing. It now names the element being edited.
+
 ## Filmora-style text settings (v1.0.1-experimental.16)
 
 The Text panel now has the text settings you chose from Filmora.

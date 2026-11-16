@@ -247,6 +247,7 @@ class StageTimeline(QFrame):
     element_clicked=Signal(int)         # whole video: an element's block was clicked
     element_edit=Signal(int)            # whole video: an element's block was double-clicked
     element_enter=Signal(int)           # exp.187: whole video: go into that element (This element)
+    part_edit=Signal(str,int)           # exp.17: a part of an element double-clicked: Advanced edit
     element_placed=Signal(int,float,int)   # whole video: an element dragged to a new start / track
     element_reset=Signal(int)           # whole video: back to "after the element before it", Track 1
     track_toggled=Signal(int,str)       # whole video: a track's 'mute' or 'hide' button
@@ -1080,9 +1081,11 @@ class StageTimeline(QFrame):
             t+=secs
         return out
 
-    def source_at(self,pos):
-        """Match the actual coloured part rectangles; joins/other tracks are not sources."""
+    def source_at(self,pos,any_part=False):
+        """Match the actual coloured part rectangles; joins/other tracks are not sources.
+        any_part (exp.17): every part (Hand in, Draw, Paint, Hand out, Out), not only Draw / Paint."""
         if self.locked:return None
+        wanted=(lambda key: True) if any_part else (lambda key: key in ('draw','paint'))
         _,clips,_=self._rows()
         if not clips.top()+3<=pos.y()<=clips.bottom()-3:return None
         if self.items:
@@ -1095,7 +1098,7 @@ class StageTimeline(QFrame):
             total=sum(value for _,value in parts); x=rect.left()
             for key,value in parts:
                 right=x+rect.width()*value/total
-                if x<=pos.x()<right:return (key,index) if key in ('draw','paint') else None
+                if x<=pos.x()<right:return (key,index) if wanted(key) else None
                 x=right
             return None
         if self.scene_segments:
@@ -1107,14 +1110,18 @@ class StageTimeline(QFrame):
                 total=sum(value for _,value in parts)
                 for key,value in parts:
                     right=x+width*value/total
-                    if x<=pos.x()<right:return (key,index) if key in ('draw','paint') else None
+                    if x<=pos.x()<right:return (key,index) if wanted(key) else None
                     x=right
         else:
+            # exp.17 (the user: Hand in opened the drawing's window, Hand out none): the stages
+            # start with Hand in, as they are drawn; it was left out, so every click landed one
+            # part to the left
             start=0.
-            for key,value in zip(self.STAGE_KEYS,(self.draw_seconds,self.paint_seconds,self.hold_seconds,self.erase_seconds)):
+            for key,value in zip(('glide',)+self.STAGE_KEYS,(getattr(self,'lead',0.),self.draw_seconds,
+                                                            self.paint_seconds,self.hold_seconds,self.erase_seconds)):
                 if value<=0:continue
                 left=self._x(start)+1.5;right=max(left+1.,self._x(start+value)-1.5)
-                if left<=pos.x()<right:return (key,self.current_scene) if key in ('draw','paint') else None
+                if left<=pos.x()<right:return (key,self.current_scene) if wanted(key) else None
                 start+=value
         return None
 
@@ -2005,18 +2012,14 @@ class StageTimeline(QFrame):
         item,_=self._overlay_at(event.position())
         if item is not None:
             self.overlay_edit.emit(item.get('id'));event.accept();return
-        if self.items or self.scene_segments:
-            # exp.187 (the user): in the whole video, a double-click on an element goes into it
-            # (This element); its Draw / Paint parts are edited from there.
-            k=self._block_at(event.position())
-            if k is not None:
-                self.element_enter.emit(k);event.accept();return
-        source=self.source_at(event.position())
-        if source is not None:
-            self.stage_source_edit.emit(*source);event.accept();return
+        # exp.17 (the user, like Filmora's advanced edit): a double-click on any part of an
+        # element opens it in Advanced edit, on the tab of that part
+        part=self.source_at(event.position(),any_part=True)
+        if part is not None:
+            self.part_edit.emit(*part);event.accept();return
         k=self._block_at(event.position())
         if k is not None:
-            self.element_edit.emit(k);event.accept();return
+            self.part_edit.emit('element',k);event.accept();return
         super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self,event):
@@ -4200,6 +4203,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.camera_add.connect(lambda kind,seconds: w.add_camera_at(kind,seconds))
     w.stage_timeline.text_track_toggled.connect(lambda t: w.toggle_text_track(t))
     w.stage_timeline.element_edit.connect(lambda k: w.edit_element(k))
+    w.stage_timeline.part_edit.connect(lambda part,k: w.open_advanced(k,part))     # exp.17
     w.stage_timeline.element_enter.connect(lambda k: w.enter_element(k))
     w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))
     w.stage_timeline.hand_snapped.connect(lambda k,j: w.snap_hands(k,j))       # exp.211

@@ -58,7 +58,11 @@ class SourceEditor(QDialog):
                 from engine import render
                 image=render(window.drawing,1.,560,300)
                 self.name.setText(getattr(window.drawing,'drawing_source_name',None) or
-                    (Path(window.image_guide).name if window.image_guide else window.project_title)+' • current drawing')
+                    (Path(window.image_guide).name if window.image_guide else
+                     # exp.17: this element's name (the project's title was shown: a text's
+                     # words over a picture's lines)
+                     f'Element {window.scene_index+1}: {window.scene_label(window.scene_index)}'
+                     if 0<=window.scene_index<len(window.scenes) else window.project_title)+' • current drawing')
             else:
                 image=window.image_result.image if window.is_image_artwork() and window.image_result else window.final_image
                 self.name.setText(window.color_note.text())
