@@ -6,6 +6,15 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Western fonts for the journal (v1.0.1-experimental.12)
+
+- **A new Western group in the font list** with four 1800s-style cursive fonts, chosen for the
+  Arthur Morgan journal: **Homemade Apple** (quick ink hand), **Arizonia** (big flourished
+  capitals), **Niconne** (bold, easy to read over video) and **Italianno** (elegant; use a
+  bigger size, it comes out small). Homemade Apple moved here from Handwriting.
+- They are open fonts (OFL or Apache 2.0), downloaded with their licence when you choose them,
+  like the others.
+
 ## A calmer look, without the "AI look" (v1.0.1-experimental.11)
 
 Based on two design videos ("Claude Skills for Designers: Ban AI Slop Forever" and "UI Libraries

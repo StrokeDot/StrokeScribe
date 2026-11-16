@@ -26,10 +26,12 @@ from engine import Drawing, Stroke
 FONT_GROUPS={
     'Handwriting':('Caveat','Kalam','Patrick Hand','Indie Flower','Gochi Hand','Architects Daughter',
                    'Shadows Into Light','Reenie Beanie','Amatic SC','Permanent Marker','Rock Salt',
-                   'Covered By Your Grace','Gloria Hallelujah','Handlee','Nothing You Could Do','Homemade Apple',
+                   'Covered By Your Grace','Gloria Hallelujah','Handlee','Nothing You Could Do',
                    'Just Another Hand','Schoolbell','Coming Soon','Neucha','Over the Rainbow',
                    'Annie Use Your Telescope','La Belle Aurore','Zeyada','Delius','Mali','Sriracha','Caveat Brush',
                    'Pangolin','Delicious Handrawn','Sue Ellen Francisco','Short Stack'),
+    # exp.12 (the user's picks for the Arthur Morgan journal): 1800s-style cursive, readable
+    'Western':('Homemade Apple','Arizonia','Niconne','Italianno'),
     'Script':('Dancing Script','Sacramento','Satisfy','Great Vibes','Pacifico','Courgette','Kaushan Script',
               'Allura'),
     'Clean titles':('Nunito','Poppins','Montserrat','Lato','Quicksand','Comfortaa','Fredoka','Bebas Neue',
