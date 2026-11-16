@@ -215,10 +215,10 @@ def _trace_skeleton(image):
     return paths
 
 
-def make_font_text(text,fontfile,point_size=68):
+def make_font_text(text,fontfile,point_size=68,natural=False):
     """Build authentic font ink with estimated centerline pen trajectories."""
     from font_stroke_reveal import create_font_drawing
-    return create_font_drawing(text,fontfile,point_size)
+    return create_font_drawing(text,fontfile,point_size,natural=natural)
 
 
 def render_font_lettering(drawing,progress,width,height,thickness=1.,
