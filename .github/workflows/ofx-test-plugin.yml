@@ -23,6 +23,23 @@ jobs:
         run: |
           cmake -S ofx -B build -A x64 -DOFX_INCLUDE="$PWD/deps/openfx/include" -DSTB_DIR="$PWD/deps/stb"
           cmake --build build --config Release
+      - name: Sign with a one-off certificate (private key deleted after)
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject "CN=StrokeScribe Local Plugin Signing" `
+            -CertStoreLocation Cert:\CurrentUser\My -KeyExportPolicy NonExportable -NotAfter (Get-Date).AddYears(5)
+          Export-Certificate -Cert $cert -FilePath StrokeScribe-signing.cer | Out-Null
+          $st = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+                Where-Object { $_.FullName -like "*\x64\*" } | Sort-Object FullName | Select-Object -Last 1
+          & $st.FullName sign /fd SHA256 /sha1 $cert.Thumbprint /tr http://timestamp.digicert.com /td SHA256 build/Release/StrokeScribeTest.ofx
+          if ($LASTEXITCODE -ne 0) {
+            & $st.FullName sign /fd SHA256 /sha1 $cert.Thumbprint build/Release/StrokeScribeTest.ofx
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+          Get-AuthenticodeSignature build/Release/StrokeScribeTest.ofx | Format-List SignerCertificate, Status
+          Remove-Item "Cert:\CurrentUser\My\$($cert.Thumbprint)" -DeleteKey
+          if (Test-Path "Cert:\CurrentUser\My\$($cert.Thumbprint)") { exit 1 }
+          Write-Host "Private key deleted."
       - name: Crash test in a small OFX host
         shell: bash
         run: |
@@ -47,6 +64,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="ofx-test-${GITHUB_RUN_NUMBER}"
-          gh release create "$tag" StrokeScribeTest-ofx-win64.zip test-frames.zip --prerelease --target "$GITHUB_SHA" \
+          gh release create "$tag" StrokeScribeTest-ofx-win64.zip test-frames.zip StrokeScribe-signing.cer --prerelease --target "$GITHUB_SHA" \
             --title "Filmora OFX test plugin (build ${GITHUB_RUN_NUMBER})" \
             --notes "Test plugin for Filmora. Unzip and copy StrokeScribeTest.ofx.bundle into C:\\Program Files\\Common Files\\OFX\\Plugins, then restart Filmora."
