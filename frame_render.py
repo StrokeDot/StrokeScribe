@@ -424,19 +424,36 @@ def set_layer_token(token):
     _LAYERS['token'] = token
 
 
+def _simple(v):
+    """A value as a key, by value (pictures by their cache key)."""
+    if hasattr(v, 'cacheKey'):
+        return ('img', v.cacheKey())
+    if isinstance(v, (int, float, str, bool)) or v is None:
+        return v
+    if isinstance(v, (tuple, list)):
+        return tuple(_simple(x) for x in v)
+    if isinstance(v, dict):
+        return tuple(sorted((str(k), _simple(x)) for k, x in v.items()))
+    return ('id', id(v))
+
+
 def _layer_key(drawing, fraction, options, camera_path):
+    """exp.19 (the user: the hand froze on its way back): EVERY option is in the key, the
+    per-frame ones too (the hand's travel moment, the video time); only Opacity and Blend are
+    left out. exp.18 kept a few and reused one frame for the whole way back."""
     import threading
     if _LAYERS['token'] is None or threading.current_thread() is not threading.main_thread():
         return None
-    if options.get('layers', 'all') not in ('art', 'hand') or options.get('overlays'):
+    if options.get('layers', 'all') not in ('art', 'hand'):
         return None
-    return (_LAYERS['token'], id(drawing), round(float(fraction), 9), options.get('layers'),
-            options.get('width'), options.get('height'), camera_path is None,
-            options.get('background'), float(options.get('ghost', 0) or 0))
+    view = camera_path.at(fraction) if camera_path is not None and hasattr(camera_path, 'at') else None
+    return (_LAYERS['token'], id(drawing), round(float(fraction), 9), _simple(view),
+            _simple(getattr(camera_path, 'clips', None)),
+            tuple(sorted((k, _simple(v)) for k, v in options.items() if k not in _LAYER_FREE)))
 
 
-def _compose_raw_frame(drawing, fraction, options, camera_path=None):
-    """Raw animation frames; does not apply element opacity to the moving hand."""
+def layer_frame(drawing, fraction, options, camera_path=None):
+    """One layer (art or hand) of the element, kept while only Opacity / Blend change."""
     key = _layer_key(drawing, fraction, options, camera_path)
     if key is not None:
         kept = _LAYERS['items'].get(key)
@@ -444,15 +461,15 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
             _LAYERS['items'].move_to_end(key)
             _set_spec(kept[1])
             return kept[0]
-        frame = _compose_raw_frame_now(drawing, fraction, options, camera_path)
+        frame = _compose_raw_frame(drawing, fraction, options, camera_path)
         _LAYERS['items'][key] = (frame, last_hand_spec())
         while len(_LAYERS['items']) > 6:
             _LAYERS['items'].popitem(last=False)
         return frame
-    return _compose_raw_frame_now(drawing, fraction, options, camera_path)
+    return _compose_raw_frame(drawing, fraction, options, camera_path)
 
 
-def _compose_raw_frame_now(drawing, fraction, options, camera_path=None):
+def _compose_raw_frame(drawing, fraction, options, camera_path=None):
     """Raw animation frames; does not apply element opacity to the moving hand."""
     from engine import apply_lettering_background
     plan = travel_plan(drawing, options) if options.get('hand_travel') else None
@@ -566,7 +583,7 @@ def compose_frame(drawing, fraction, options, camera_path=None):
         from artwork_compositor import composite_element
         frame = composite_element(None,drawing,fraction,options,camera_path)   # with its hand
     else:
-        frame = _compose_raw_frame(drawing,fraction,options,camera_path)
+        frame = layer_frame(drawing,fraction,options,camera_path)     # exp.18/19: kept layers
         if not options.get('_hand_later'):         # exp.149: the hand on top, its own size
             frame = paint_hand_spec(frame, last_hand_spec(), options)
     if options.get('hand_rest_here') and options.get('hand_travel') and resting(drawing, options, fraction):
