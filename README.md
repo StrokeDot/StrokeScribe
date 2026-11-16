@@ -6,6 +6,15 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Fixed: a longer element really pushes what comes after it (v1.0.1-experimental.23)
+
+- **exp.22 did not work in the app:** it compared lengths remembered from before the change, so it
+  never saw the element get longer (the next element still overlapped). The lengths are now worked
+  out fresh after each change, so making an element longer or shorter moves every later element,
+  Hand motion, camera and text by the same time, on any track. Dragging them afterwards is still
+  free. A test now repeats it in the real window (two tracks and a Hand motion, as in the user's
+  project).
+
 ## A longer element pushes what comes after it (v1.0.1-experimental.22)
 
 - **Fixed: making an element longer made it overlap the next one.** Once elements had their own

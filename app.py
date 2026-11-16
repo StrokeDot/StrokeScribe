@@ -7024,7 +7024,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self._preparing or getattr(self,'_suspend_refresh',False):
             return
         if not playhead and not self._restoring:
-            self.follow_lengths()          # exp.22: a longer / shorter element moves what comes after it
+            # exp.22/23: a longer / shorter element moves what comes after it. The lengths are
+            # worked out fresh here: the remembered ones are from before the change (the view
+            # is rebuilt just below anyway, which forgets them too).
+            self._memo={}
+            self.follow_lengths()
         look=getattr(self,'_look_preview',False)
         # exp.5: the route is planned only when the animation is shown (Play, a scrub)
         self._animating=bool(playhead or self.playing or getattr(self,'_scrub_fast',False))
