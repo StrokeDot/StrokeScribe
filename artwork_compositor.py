@@ -24,7 +24,7 @@ def composite_element(base, drawing, fraction, options, camera_path=None):
     project settings are never mutated.
     """
     from PySide6.QtGui import QImage
-    from frame_render import _compose_raw_frame
+    from frame_render import _compose_raw_frame, layer_frame
     from scenes import stack
 
     from frame_render import _set_spec, last_hand_spec, paint_hand_spec
@@ -33,7 +33,7 @@ def composite_element(base, drawing, fraction, options, camera_path=None):
     if layers == 'hand':
         return paint_hand_spec(_compose_raw_frame(drawing, fraction, options, camera_path), last_hand_spec(), options)
     art_opts = dict(options, layers='art', ghost=0)
-    artwork = _compose_raw_frame(drawing, fraction, art_opts, camera_path)
+    artwork = layer_frame(drawing, fraction, art_opts, camera_path)   # exp.18/19: kept while Opacity changes
     if base is None:
         base = QImage(artwork.size(), QImage.Format.Format_ARGB32_Premultiplied)
         base.fill(0)
@@ -41,7 +41,7 @@ def composite_element(base, drawing, fraction, options, camera_path=None):
                    options.get('artwork_opacity', 100))
     if layers == 'all':
         hand_opts = dict(options, layers='hand', ghost=0, background=False)
-        hand = _compose_raw_frame(drawing, fraction, hand_opts, camera_path)
+        hand = layer_frame(drawing, fraction, hand_opts, camera_path)
         result = stack(result, hand, 'Normal', 100)
         # exp.149: the drawing hand on top, at its own size (whatever the camera's zoom)
         result = paint_hand_spec(result, last_hand_spec(), options)

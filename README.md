@@ -6,6 +6,14 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Fixed: the hand froze on its way back (v1.0.1-experimental.19)
+
+- **The hand goes back to its corner again.** In experimental.18, the Opacity speed-up kept
+  finished layers but didn't compare the hand's travel moment. So on its way back to the corner,
+  the hand reused one frame: it jumped back or froze. Kept layers now compare every setting of
+  the frame, including the hand's travel and the moment in the video, and are used only where
+  the element is drawn. Opacity and Blend are still left out, so dragging Opacity stays fast.
+
 ## Faster Opacity, greyed-out switched-off sections (v1.0.1-experimental.18)
 
 - **Changing Opacity or Blend is much faster.** While paused, the preview rendered the element

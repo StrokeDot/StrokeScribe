@@ -50,8 +50,8 @@ class OpacityIsCheap(unittest.TestCase):
             w.slider.setValue(600); APP.processEvents()
             w.artwork_opacity.setValue(80); w.refresh(); APP.processEvents()
             calls = []
-            real = frame_render._compose_raw_frame_now
-            frame_render._compose_raw_frame_now = lambda *a, **k: calls.append(1) or real(*a, **k)
+            real = frame_render._compose_raw_frame
+            frame_render._compose_raw_frame = lambda *a, **k: calls.append(1) or real(*a, **k)
             try:
                 for v in (70, 60, 50):
                     w.artwork_opacity.setValue(v); w.refresh(); APP.processEvents()
@@ -59,7 +59,37 @@ class OpacityIsCheap(unittest.TestCase):
                 w.thickness.setValue(w.thickness.value() + .5); w.refresh(); APP.processEvents()
                 self.assertGreater(len(calls), 0)                   # a real change renders
             finally:
-                frame_render._compose_raw_frame_now = real
+                frame_render._compose_raw_frame = real
+        finally:
+            w.close()
+
+    def test_the_hand_still_goes_back_to_its_corner(self):
+        # exp.19 (the user: the hand froze on its way back): the kept layers must not reuse one
+        # frame for the whole way back
+        from app import Window
+        from engine import import_svg
+        import frame_render
+        w = Window(); w.resize(1400, 900); w.show(); APP.processEvents()
+        try:
+            w.set_drawing(import_svg('samples/drawing.svg')); APP.processEvents()
+            w.hand_rest.setChecked(True); w.refresh(); APP.processEvents()
+            d, opts, _, cam = w.preview_scene(0, 640, 360)
+
+            def walk(token):
+                frame_render.set_layer_token(token)
+                seen = []
+                for f in (.70, .75, .80, .85, .90, .95):
+                    frame_render._set_spec(None)
+                    frame_render.compose_frame(d, f, dict(opts, layers='hand'), cam)
+                    s = frame_render.last_hand_spec()
+                    seen.append(None if not s else (s.get('phase'), round(s.get('p') or 0, 3),
+                                                    tuple(round(v) for v in s.get('tip', (0, 0)))))
+                return seen
+            plain = walk(None)
+            kept = walk(('token', 1))
+            frame_render.set_layer_token(None)
+            self.assertEqual(kept, plain)
+            self.assertEqual(len({x for x in plain if x}), len([x for x in plain if x]))   # it moves
         finally:
             w.close()
 
