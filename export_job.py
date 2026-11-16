@@ -66,6 +66,8 @@ def options_from_settings(s, drawing, color_image=None, hand=None, image_source=
     from frame_render import ENTRANCES
     options['entrance'] = ENTRANCES.get(s.get('entrance') or '', 'draw')
     options['pause'] = max(0., float(s.get('pause_after', 0) or 0))
+    from frame_render import LOOPS
+    options['loop'] = LOOPS.get(s.get('loop_style') or 'None')      # exp.16: Loop animation
     import move_in
     options['entrance_part'] = move_in.PARTS.get(s.get('entrance_part') or '', move_in.PART_ALL)
     options['move_hand'], options['move_hand_grip'] = move_in.move_hand(s, hand)

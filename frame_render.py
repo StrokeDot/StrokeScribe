@@ -177,6 +177,9 @@ def _erase_key(drawing, opts, erase):
             return tuple(sorted((str(k), simple(x)) for k, x in v.items()))
         return id(v)
     return (id(drawing), tuple(id(s) for s in drawing.strokes),
+            # exp.16: how a text looks (ink colour, effects) without new strokes; the finished
+            # picture kept the old look after a colour or effect change
+            getattr(drawing, 'font_color', None), repr(getattr(drawing, 'text_effects', None)),
             # exp.185 (the user: erasing is so laggy): the moment in the video changes every frame;
             # in the key it made the eraser's route be planned again for every frame (1.4 s each).
             tuple(sorted((k, simple(v)) for k, v in opts.items() if k not in _PER_FRAME)),
@@ -224,7 +227,51 @@ ALREADY_LOOK = 1.0
 def is_already(options):
     return (options or {}).get('entrance') == ALREADY
 EXITS = {'fade': 'Fade', 'pop': 'Pop', 'zoom': 'Zoom', 'spin': 'Spin', 'out-left': 'Slide from left',
-         'out-right': 'Slide from right', 'out-top': 'Slide from top', 'out-bottom': 'Slide from bottom'}
+         'out-right': 'Slide from right', 'out-top': 'Slide from top', 'out-bottom': 'Slide from bottom',
+         'blur': 'Blur', 'wipe': 'Wipe'}          # exp.16: Blur out, Wipe out (Filmora-like)
+# exp.16 (the user, like Filmora's Loop animations): while a finished element is on screen it can
+# move gently, round and round. Its own time starts when its drawing is done.
+LOOPS = {'None': None, 'Float': 'float', 'Pulse': 'pulse', 'Sway': 'sway', 'Breathe': 'breathe'}
+LOOP_EASE_IN = .6          # seconds: the movement grows from nothing, no jump when it starts
+
+
+def loop_state(kind, t):
+    """(opacity, dy as a share of the height, scale, rotation) of a loop, t seconds in."""
+    import math
+    if not kind or t <= 0:
+        return 1., 0., 1., 0.
+    grow = min(1., t / LOOP_EASE_IN)
+    if kind == 'float':
+        return 1., -.012 * grow * math.sin(2 * math.pi * t / 2.6), 1., 0.
+    if kind == 'pulse':
+        return 1., 0., 1. + .025 * grow * math.sin(2 * math.pi * t / 1.6), 0.
+    if kind == 'sway':
+        return 1., 0., 1., 2.2 * grow * math.sin(2 * math.pi * t / 3.)
+    if kind == 'breathe':
+        return 1. - .16 * grow * (.5 - .5 * math.cos(2 * math.pi * t / 2.4)), 0., 1., 0.
+    return 1., 0., 1., 0.
+
+
+def loop_frame(image, kind, t):
+    """`image` (an element's finished frame) moved by its loop at t seconds."""
+    opacity, dy, scale, rotation = loop_state(kind, t)
+    if image is None or (opacity == 1. and dy == 0. and scale == 1. and rotation == 0.):
+        return image
+    from PySide6.QtCore import QPointF, QRectF
+    from PySide6.QtGui import QPainter
+    out = _blank(image)
+    w, h = image.width(), image.height()
+    painter = QPainter(out)
+    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setOpacity(opacity)
+    painter.translate(QPointF(w / 2, h / 2 + dy * h))
+    if rotation:
+        painter.rotate(rotation)
+    painter.scale(scale, scale)
+    painter.drawImage(QRectF(-w / 2, -h / 2, w, h), image)
+    painter.end()
+    return out
 
 _FINISHED = {}
 
@@ -260,6 +307,8 @@ def effect_frame(image, kind, p):
     if kind == 'Ink':                 # exp.178: soaks into the paper like ink (ink_appearance.py)
         import ink_appearance
         return ink_appearance.frame(image, p)
+    if kind in ('Blur', 'Wipe'):      # exp.16: Blur out, Wipe out
+        return _blur_or_wipe(image, kind, p)
     opacity, dx, dy, scale, rotation = overlays._effect(kind, p)
     from PySide6.QtCore import QPointF, QRectF
     from PySide6.QtGui import QPainter
@@ -277,6 +326,39 @@ def effect_frame(image, kind, p):
     painter.drawImage(QRectF(-w / 2, -h / 2, w, h), image)
     painter.end()
     return out
+
+
+def _blur_or_wipe(image, kind, p):
+    """Blur: soft and fading (p=0 gone). Wipe: gone from the left, a soft edge passing right."""
+    import numpy as np
+    import cv2
+    from PySide6.QtGui import QImage
+    p = max(0., min(1., float(p)))
+    if p <= 0:
+        return _blank(image)
+    src = image.convertToFormat(QImage.Format.Format_RGBA8888)
+    w, h = src.width(), src.height()
+    a = np.frombuffer(bytes(src.constBits())[:src.sizeInBytes()], np.uint8).reshape(h, src.bytesPerLine() // 4, 4)[:, :w].copy()
+    if kind == 'Blur':
+        radius = (1 - p) * max(w, h) * .02
+        if radius > .3:
+            pre = a.astype(np.float32)
+            pre[..., :3] *= pre[..., 3:4] / 255.                  # blur premultiplied: no dark fringes
+            pre = cv2.GaussianBlur(pre, (0, 0), radius)
+            alpha = np.maximum(pre[..., 3:4], 1e-6)
+            pre[..., :3] = np.where(alpha > 1e-3, pre[..., :3] * 255. / alpha, 0)
+            a = np.clip(pre, 0, 255).astype(np.uint8)
+        a[..., 3] = (a[..., 3].astype(np.float32) * p).astype(np.uint8)
+    else:
+        cols = np.nonzero(a[..., 3].max(axis=0) > 8)[0]     # across the picture itself, not the frame
+        x0, x1 = (float(cols[0]), float(cols[-1] + 1)) if len(cols) else (0., float(w))
+        soft = max(2., (x1 - x0) * .08)
+        edge = x0 - soft + (1 - p) * (x1 - x0 + soft)  # left of the edge: already wiped away
+        xs = np.arange(w, dtype=np.float32)
+        keep = np.clip((xs - edge) / soft, 0., 1.)
+        a[..., 3] = (a[..., 3].astype(np.float32) * keep[None, :]).astype(np.uint8)
+    out = QImage(a.tobytes(), w, h, w * 4, QImage.Format.Format_RGBA8888).copy()
+    return out.convertToFormat(image.format())
 
 
 def _entering(drawing, fraction, opts, kind, lines_only=False):
@@ -372,9 +454,11 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
         opts['_seconds'] = max(0., min(1., float(fraction))) * timeline_seconds(drawing, options)
     if progress is None:
         pause = float(opts.get('pause', 0) or 0)
+        held = 0.                                  # seconds since it was finished (its pause)
         if pause > 0:                              # the pause after the element: stays finished
             whole = timeline_seconds(drawing, opts)
             plain = whole - pause
+            held = base_fraction * whole - plain
             base_fraction = min(1., base_fraction * whole / plain) if plain > 0 else 1.
         entrance = opts.get('entrance') or 'draw'
         lines_only = entrance not in ('draw', ALREADY) and _lines_part(opts)
@@ -392,6 +476,8 @@ def _compose_raw_frame(drawing, fraction, options, camera_path=None):
                 _set_spec(_crop_spec(last_hand_spec(), frame, *view))
         else:
             frame = _core(drawing, base_fraction, opts, camera_path, fraction)
+        if opts.get('loop') and held > 0 and opts.get('layers', 'all') != 'hand':
+            frame = loop_frame(frame, opts['loop'], held)           # exp.16: its Loop, while it waits
     elif erase.get('mode') in EXITS:
         # Goes out with an effect (fade, pop, zoom, spin, move out) instead of an eraser.
         hold = finished_picture(drawing, opts)

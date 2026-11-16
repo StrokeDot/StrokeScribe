@@ -486,25 +486,50 @@ def _uneven_ink(ink,seed):
     return Image.fromarray(a,'RGBA')
 
 
-def create_font_drawing(text,fontfile,point_size=68,natural=False):
+LAYOUT_DEFAULT={'bold':False,'italic':False,'underline':False,'align':'left','spacing':0.,'line':1.}
+ITALIC_SLANT=math.tan(math.radians(12.))
+
+
+def text_layout(layout=None):
+    """exp.16 Style basics (Filmora-like): bold, italic, underline, alignment, letter spacing
+    (pixels at Letter detail 68) and line spacing (times the normal line)."""
+    out=dict(LAYOUT_DEFAULT)
+    for key,value in (layout or {}).items():
+        if key in out: out[key]=value
+    out['align']=out['align'] if out['align'] in ('left','center','right') else 'left'
+    out['spacing']=max(-20.,min(80.,float(out['spacing'] or 0.)))
+    out['line']=max(.6,min(3.,float(out['line'] or 1.)))
+    out['bold'],out['italic'],out['underline']=bool(out['bold']),bool(out['italic']),bool(out['underline'])
+    return out
+
+
+def create_font_drawing(text,fontfile,point_size=68,natural=False,layout=None):
     """Font lettering: the real glyph ink plus estimated pen paths.
 
     Letter detail (point_size) decides how finely the pen paths are traced. The ink
     itself is drawn at SHARP_POINT (if the text is not too long), so the letters are
-    equally sharp at every Letter detail and the hand follows the same rhythm."""
+    equally sharp at every Letter detail and the hand follows the same rhythm.
+    layout: style basics (text_layout); the pen paths follow the letters."""
     if not text.strip():raise ValueError('Enter some lettering to animate.')
     if len(text)>240:raise ValueError('Font lettering supports at most 240 characters.')
     point_size=int(point_size)
     if not 24<=point_size<=128:raise ValueError('Choose a font detail size from 24 to 128.')
+    style=text_layout(layout)
     font=ImageFont.truetype(str(fontfile),point_size)
     lines=text.split('\n')
     ascent,descent=font.getmetrics()
     marks=_natural_marks(text,fontfile,lines,ascent) if natural else None
     # Margins follow the letter size, so the text sits the same at any Letter detail.
     pad=point_size/68.
-    line_height=ascent+descent+12*pad
-    w=max(20,math.ceil(max(font.getlength(line) for line in lines)+40*pad))
-    h=max(20,math.ceil(len(lines)*line_height+32*pad))
+    gap=style['spacing']*pad                              # extra room between letters
+    slant=ITALIC_SLANT if style['italic'] else 0.
+    line_height=(ascent+descent+12*pad)*style['line']
+    widths=[font.getlength(line)+gap*max(0,len(line)-1) for line in lines]
+    widest=max(widths)
+    share={'left':0.,'center':.5,'right':1.}[style['align']]
+    offsets=[(widest-wl)*share for wl in widths]
+    w=max(20,math.ceil(widest+40*pad+ascent*slant))
+    h=max(20,math.ceil((len(lines)-1)*line_height+ascent+descent+12*pad+32*pad))
     if w*h>MAX_INK_PIXELS:
         raise ValueError('Text is too large for tracing. Shorten it or lower the font size.')
     # How much bigger the ink is drawn than the tracing (1 = the same size).
@@ -515,24 +540,40 @@ def create_font_drawing(text,fontfile,point_size=68,natural=False):
     k=big.size/point_size
     W,H=max(20,math.ceil(w*k)),max(20,math.ceil(h*k))
     ink=Image.new('RGBA',(W,H),(0,0,0,0))
-    painter=ImageDraw.Draw(ink)
     measure=ImageDraw.Draw(Image.new('L',(1,1)))
+    bold=max(1,round(big.size*.014)) if style['bold'] else 0
+    trace_bold=max(1,round(point_size*.014)) if style['bold'] else 0
     strokes=[]
     boxes=[]
     for row,line in enumerate(lines):
         y=10*pad+row*line_height
+        base=y+ascent                                     # this line's baseline (traced pixels)
+        layer=Image.new('RGBA',(W,H),(0,0,0,0)) if slant else ink
+        painter=ImageDraw.Draw(layer)
+        x0=18*pad+offsets[row]
+
+        def lean(px,py,base=base):
+            """A traced point leaned like italic letters (around the line's baseline)."""
+            return (px+(base-py)*slant,py)
         if not natural:
-            painter.text((18*pad*k,y*k),line,font=big,fill=(37,54,74,255))
+            if gap==0:
+                painter.text((x0*k,y*k),line,font=big,fill=(37,54,74,255),
+                             stroke_width=bold,stroke_fill=(37,54,74,255))
+            else:
+                for index,char in enumerate(line):
+                    if char.isspace():continue
+                    painter.text(((x0+font.getlength(line[:index])+gap*index)*k,y*k),char,font=big,
+                                 fill=(37,54,74,255),stroke_width=bold,stroke_fill=(37,54,74,255))
         for index,char in enumerate(line):
             if char.isspace():continue
-            x=18*pad+font.getlength(line[:index])
-            left,top,right,bottom=measure.textbbox((x,y),char,font=font)
+            x=x0+font.getlength(line[:index])+gap*index
+            left,top,right,bottom=measure.textbbox((x,y),char,font=font,stroke_width=trace_bold)
             left=max(0,math.floor(left)-2); top=max(0,math.floor(top)-2)
             right=min(w,math.ceil(right)+2);bottom=min(h,math.ceil(bottom)+2)
             if right-left<2 or bottom-top<2:continue
             # Render the individual original glyph for centerline inference.
             cell=Image.new('L',(right-left,bottom-top))
-            ImageDraw.Draw(cell).text((x-left,y-top),char,font=font,fill=255)
+            ImageDraw.Draw(cell).text((x-left,y-top),char,font=font,fill=255,stroke_width=trace_bold,stroke_fill=255)
             skeleton=_thin(np.asarray(cell)>90)
             try:
                 paths=_pen_plan(skeleton,point_size/68.)            # exp.208
@@ -549,34 +590,53 @@ def create_font_drawing(text,fontfile,point_size=68,natural=False):
                 centre=((left+right)/2.,(top+bottom)/2.)
                 m=max(4,round((bottom-top)*.15))
                 glyph=Image.new('RGBA',(math.ceil((right-left+2*m)*k),math.ceil((bottom-top+2*m)*k)),(0,0,0,0))
-                ImageDraw.Draw(glyph).text(((x-left+m)*k,(y-top+m)*k),char,font=big,
-                                           fill=(37,54,74,round(255*mark['ink'])))
+                fill=(37,54,74,round(255*mark['ink']))
+                ImageDraw.Draw(glyph).text(((x-left+m)*k,(y-top+m)*k),char,font=big,fill=fill,
+                                           stroke_width=bold,stroke_fill=fill)
                 glyph=glyph.rotate(-mark['turn'],resample=Image.Resampling.BICUBIC,expand=True)
                 gw,gh=glyph.size
                 gw2,gh2=max(1,round(gw*mark['size'])),max(1,round(gh*mark['size']))
                 glyph=glyph.resize((gw2,gh2),Image.Resampling.LANCZOS)
                 nx,ny=_place(centre,centre,mark,centre[0]-18*pad)
                 gx,gy=round(nx*k-gw2/2),round(ny*k-gh2/2)
-                ink.alpha_composite(glyph,(max(0,gx),max(0,gy)),(max(0,-gx),max(0,-gy)))
+                layer.alpha_composite(glyph,(max(0,gx),max(0,gy)),(max(0,-gx),max(0,-gy)))
                 corners=[_place(c,centre,mark,centre[0]-18*pad)
                          for c in ((left,top),(right,top),(left,bottom),(right,bottom))]
-                bl=max(0.,min(c[0] for c in corners)); bt=max(0.,min(c[1] for c in corners))
-                br=min(float(w),max(c[0] for c in corners)); bb=min(float(h),max(c[1] for c in corners))
-                boxes.append((bl*k,bt*k,br*k,bb*k))
             else:
-                boxes.append((left*k,top*k,right*k,bottom*k))
+                corners=[(left,top),(right,top),(left,bottom),(right,bottom)]
+            corners=[lean(cx,cy) for cx,cy in corners]
+            bl=max(0.,min(c[0] for c in corners)); bt=max(0.,min(c[1] for c in corners))
+            br=min(float(w),max(c[0] for c in corners)); bb=min(float(h),max(c[1] for c in corners))
+            boxes.append((bl*k,bt*k,br*k,bb*k))
             for route in paths[:150]:
                 if natural:
                     points=[_place((left+px,top+py),centre,mark,centre[0]-18*pad) for px,py in route]
-                    points=[(float(px*k),float(py*k)) for px,py in points]
                 else:
-                    points=[(float((left+px)*k),float((top+py)*k)) for px,py in route]
+                    points=[(left+px,top+py) for px,py in route]
+                points=[(float(px*k),float(py*k)) for px,py in (lean(a,b) for a,b in points)]
                 if len(points)<2:continue
                 s=Stroke(f'Pen {char} / {len(strokes)+1}',points,'#25364a',1.)
                 s.font_piece=piece
                 strokes.append(s)
             if len(strokes)>3000:
                 raise ValueError('Font has too many detail paths. Reduce the text length.')
+        if style['underline'] and line.strip():
+            # The pen underlines the line after writing it.
+            uy=base+max(2.,descent*.35)
+            ux0=x0; ux1=x0+widths[row]
+            thick=max(1.,point_size*.045)
+            painter.line([(ux0*k,uy*k),(ux1*k,uy*k)],fill=(37,54,74,255),width=max(1,round(thick*k)))
+            piece=len(boxes)
+            a,b=lean(ux0,uy),lean(ux1,uy)
+            boxes.append((max(0.,min(a[0],b[0]))*k,(uy-thick)*k,min(float(w),max(a[0],b[0]))*k,(uy+thick)*k))
+            s=Stroke(f'Pen underline / {len(strokes)+1}',[(a[0]*k,a[1]*k),(b[0]*k,b[1]*k)],'#25364a',1.)
+            s.font_piece=piece
+            strokes.append(s)
+        if slant:
+            B=base*k                                      # lean the line's ink around its baseline
+            layer=layer.transform((W,H),Image.Transform.AFFINE,(1,slant,-slant*B,0,1,0),
+                                  resample=Image.Resampling.BICUBIC)
+            ink.alpha_composite(layer)
     if not strokes:raise ValueError('No drawable glyph strokes were found.')
     drawing=Drawing(strokes,(0.,0.,float(W),float(H)),[
         'Estimated pen strokes trace real typeface shapes, with complete original glyph ink.',
@@ -587,6 +647,7 @@ def create_font_drawing(text,fontfile,point_size=68,natural=False):
         ink=_uneven_ink(ink,zlib.crc32(text.encode('utf-8')))
     drawing.source_kind='font'
     drawing.hand_natural=bool(natural)      # exp.13: Natural handwriting (experiment)
+    drawing.font_layout=style               # exp.16: style basics
     drawing.font_point=point_size
     drawing.font_scale=k                 # ink pixels per traced pixel
     drawing.font_ink=ink
@@ -811,6 +872,116 @@ def _written(drawing,fraction):
     return np.clip(cv2.GaussianBlur(done,(0,0),sigma)*1.15,0.,1.)
 
 
+EFFECTS_DEFAULT={
+    'fill':{'opacity':100.,'blur':0.},
+    'outline':{'on':False,'color':'#FFFFFF','opacity':100.,'blur':0.,'thickness':4.},
+    'shadow':{'on':False,'color':'#000000','opacity':70.,'blur':4.,'distance':6.},
+    'glow':{'on':False,'color':'#FFD27A','intensity':50.,'range':50.},
+    'background':{'on':False,'color':'#3A3A3A','opacity':100.,'radius':0.,'spread':12.},
+}
+
+
+def text_effects(effects=None):
+    """exp.16 Effects (Filmora-like), every part with its defaults filled in. Sizes are text
+    pixels at Letter detail 68 (so they follow the letters at any detail)."""
+    out={}
+    for part,default in EFFECTS_DEFAULT.items():
+        got=dict(default)
+        for key,value in ((effects or {}).get(part) or {}).items():
+            if key in got: got[key]=value
+        out[part]=got
+    return out
+
+
+def effects_active(effects):
+    e=text_effects(effects)
+    return (any(e[p]['on'] for p in ('outline','shadow','glow','background'))
+            or float(e['fill']['opacity'])<100 or float(e['fill']['blur'])>0)
+
+
+def _blur(a,radius):
+    return cv2.GaussianBlur(a,(0,0),radius/2.) if radius>.3 else a
+
+
+def _grow(a,radius):
+    r=int(round(radius))
+    if r<1: return a
+    kernel=cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(2*r+1,2*r+1))
+    return cv2.dilate(a,kernel)
+
+
+def _layer(alpha,colour,opacity=1.):
+    from PySide6.QtGui import QColor
+    c=QColor(colour) if QColor(colour).isValid() else QColor('#000000')
+    h,w=alpha.shape
+    out=np.zeros((h,w,4),np.uint8)
+    out[...,0],out[...,1],out[...,2]=c.red(),c.green(),c.blue()
+    out[...,3]=np.clip(alpha*255*opacity,0,255).astype(np.uint8)
+    return out
+
+
+def _styled_ink(drawing,pixels,fraction,shrink=1.):
+    """The written ink with its effects, on a bigger canvas: (RGBA array, margin in its pixels).
+    shrink < 1: worked at the size it is shown (the ink is drawn much bigger than that)."""
+    e=text_effects(getattr(drawing,'text_effects',None))
+    unit=float(getattr(drawing,'font_scale',1.) or 1.)*float(getattr(drawing,'font_point',68) or 68)/68.*shrink
+    o,sh,g,bg=e['outline'],e['shadow'],e['glow'],e['background']
+    room=2.
+    if o['on']: room=max(room,(float(o['thickness'])+float(o['blur'])*1.5)*unit)
+    if sh['on']: room=max(room,(float(sh['distance'])+float(sh['blur'])*1.5+float(o['thickness'] if o['on'] else 0))*unit)
+    if g['on']: room=max(room,float(g['range'])*.4*unit)
+    if bg['on']: room=max(room,float(bg['spread'])*unit+2)
+    m=int(math.ceil(room))+2
+    h,w=pixels.shape[:2]
+    a=np.zeros((h+2*m,w+2*m),np.float32)
+    a[m:m+h,m:m+w]=pixels[...,3].astype(np.float32)/255.
+    layers=[]
+    if bg['on'] and fraction>0:
+        boxes=[tuple(v*shrink for v in b) for b in (getattr(drawing,'font_boxes',()) or ((0,0,w/shrink,h/shrink),))]
+        x0=min(b[0] for b in boxes); y0=min(b[1] for b in boxes)
+        x1=max(b[2] for b in boxes); y1=max(b[3] for b in boxes)
+        spread=float(bg['spread'])*unit
+        box=np.zeros_like(a,np.uint8)
+        r=int(round(float(bg['radius'])*unit))
+        X0,Y0=int(m+x0-spread),int(m+y0-spread); X1,Y1=int(m+x1+spread),int(m+y1+spread)
+        r=max(0,min(r,(X1-X0)//2,(Y1-Y0)//2))
+        cv2.rectangle(box,(X0+r,Y0),(X1-r,Y1),255,-1); cv2.rectangle(box,(X0,Y0+r),(X1,Y1-r),255,-1)
+        if r:
+            for cx,cy in ((X0+r,Y0+r),(X1-r,Y0+r),(X0+r,Y1-r),(X1-r,Y1-r)):
+                cv2.circle(box,(cx,cy),r,255,-1,lineType=cv2.LINE_AA)
+        appear=min(1.,fraction*8.)                    # the box comes as the writing starts
+        layers.append(_layer(box.astype(np.float32)/255.,bg['color'],float(bg['opacity'])/100.*appear))
+    body=a
+    if o['on'] and float(o['thickness'])>0:
+        body=_grow(a,float(o['thickness'])*unit)
+    if g['on']:
+        reach=max(1.,float(g['range'])*.4*unit)
+        glow=_blur(_grow(body,reach*.25),reach)
+        layers.append(_layer(np.clip(glow*float(g['intensity'])/50.,0,1),g['color']))
+    if sh['on']:
+        d=float(sh['distance'])*unit*.7071
+        shift=np.float32([[1,0,d],[0,1,d]])
+        shadow=cv2.warpAffine(body,shift,(body.shape[1],body.shape[0]))
+        layers.append(_layer(_blur(shadow,float(sh['blur'])*unit),sh['color'],float(sh['opacity'])/100.))
+    if o['on'] and float(o['thickness'])>0:
+        layers.append(_layer(_blur(body,float(o['blur'])*unit),o['color'],float(o['opacity'])/100.))
+    fill=np.zeros((h+2*m,w+2*m,4),np.uint8)
+    fill[m:m+h,m:m+w]=pixels
+    fa=_blur(fill[...,3].astype(np.float32)/255.,float(e['fill']['blur'])*unit)
+    fill[...,3]=np.clip(fa*255*float(e['fill']['opacity'])/100.,0,255).astype(np.uint8)
+    layers.append(fill)
+    # "over" compositing, bottom to top (straight alpha)
+    out=np.zeros_like(fill,np.float32)
+    for layer in layers:
+        la=layer[...,3:4].astype(np.float32)/255.
+        oa=out[...,3:4]
+        na=la+oa*(1-la)
+        rgb=np.where(na>0,(layer[...,:3]*la+out[...,:3]*oa*(1-la))/np.maximum(na,1e-6),0)
+        out[...,:3]=rgb; out[...,3:4]=na
+    out[...,3]*=255.
+    return np.clip(out,0,255).astype(np.uint8),m
+
+
 def render_traced_font(drawing,progress,width,height,thickness=1.,
                        hand=None,hand_scale=.18,anchor=(.1,.1)):
     fraction=max(0.,min(1.,float(progress)))
@@ -827,14 +998,26 @@ def render_traced_font(drawing,progress,width,height,thickness=1.,
     if fraction<1.:
         pixels[:,:,3]=(pixels[:,:,3].astype(np.float32)*_written(drawing,fraction)).astype(np.uint8)
     ih,iw=pixels.shape[:2]
-    buffer=pixels.tobytes()
-    glyph_image=QImage(buffer,iw,ih,iw*4,QImage.Format.Format_RGBA8888).copy()
+    margin=0
     scale=min(width*.82/max(1,iw),height*.78/max(1,ih))
     ox=(width-iw*scale)/2
     oy=(height-ih*scale)/2
+    draw_scale=scale
+    if effects_active(getattr(drawing,'text_effects',None)):
+        # exp.16: outline, shadow, glow... worked out at the size the text is shown (fast)
+        shrink=min(1.,scale)
+        if shrink<1.:
+            small=(max(1,round(iw*shrink)),max(1,round(ih*shrink)))
+            pixels=cv2.resize(pixels,small,interpolation=cv2.INTER_AREA)
+            shrink=small[0]/iw
+        pixels,margin=_styled_ink(drawing,pixels,fraction,shrink)
+        draw_scale=scale/shrink
+    ph,pw=pixels.shape[:2]
+    buffer=pixels.tobytes()
+    glyph_image=QImage(buffer,pw,ph,pw*4,QImage.Format.Format_RGBA8888).copy()
     painter=QPainter(output)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    painter.drawImage(QRectF(ox,oy,iw*scale,ih*scale),glyph_image)
+    painter.drawImage(QRectF(ox-margin*draw_scale,oy-margin*draw_scale,pw*draw_scale,ph*draw_scale),glyph_image)
     if hand is not None and not hand.isNull() and fraction<1.:
         tip,pen_down,_=_pen_state(drawing,fraction)
         tx=ox+tip[0]*scale
