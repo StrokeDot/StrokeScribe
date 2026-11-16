@@ -2880,6 +2880,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
             w.font_select.addItem(family)
             w.font_select.setItemData(w.font_select.count()-1,f'{group} • free Google Font (open license, '
                                       'commercial use allowed). Downloaded when you choose it.',Qt.ItemDataRole.ToolTipRole)
+    from font_library import WINDOWS_FONTS
+    w.font_select.insertSeparator(w.font_select.count())
+    for family in WINDOWS_FONTS:                  # exp.14: Ink Free, from Windows itself
+        w.font_select.addItem(family)
+        w.font_select.setItemData(w.font_select.count()-1,'Windows font • comes with Windows 10 and 11; the app '
+                                  'uses the copy on this PC.',Qt.ItemDataRole.ToolTipRole)
     w.font_select.setToolTip('Select an open-licensed Google Fonts family. Download before use, or import your own TTF/OTF.')
     asset_l.addWidget(w.font_select)
     w.font_size=w.number(24,128,68,4)

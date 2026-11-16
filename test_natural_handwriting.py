@@ -83,5 +83,25 @@ class NaturalHandwritingSwitchTests(unittest.TestCase):
             w.close()
 
 
+class WindowsFontTests(unittest.TestCase):
+    """exp.14: Ink Free comes from Windows itself (never downloaded or copied)."""
+
+    def test_ink_free_is_found_in_the_windows_fonts_folder(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        import font_library
+        with tempfile.TemporaryDirectory() as tmp:
+            fonts = Path(tmp) / 'Fonts'; fonts.mkdir()
+            with mock.patch.dict(os.environ, {'WINDIR': tmp, 'LOCALAPPDATA': tmp}):
+                self.assertIsNone(font_library.installed_font('Ink Free'))
+                with self.assertRaises(ValueError):            # a clear message, no Google download
+                    font_library.download_google_font('Ink Free')
+                (fonts / 'Inkfree.ttf').write_bytes(b'x' * 2000)
+                self.assertEqual(font_library.installed_font('Ink Free'), fonts / 'Inkfree.ttf')
+                self.assertEqual(font_library.download_google_font('Ink Free'), fonts / 'Inkfree.ttf')
+        self.assertNotIn('Ink Free', font_library.STARTER_FONTS)
+
+
 if __name__ == '__main__':
     unittest.main()

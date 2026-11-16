@@ -39,6 +39,23 @@ FONT_GROUPS={
     'Serif':('Merriweather','Playfair Display','Lora'),
 }
 STARTER_FONTS=tuple(f for group in FONT_GROUPS.values() for f in group)
+# exp.14: fonts that come with Windows (not downloaded, never copied or shared): the app uses
+# the copy already on the PC. Ink Free is the hand the user used for the Arthur Morgan video.
+WINDOWS_FONTS={'Ink Free':('Inkfree.ttf','inkfree.ttf')}
+
+
+def windows_font(family):
+    """Path of a Windows font on this PC (all users or this user), or None."""
+    names=WINDOWS_FONTS.get(family)
+    if not names: return None
+    folders=[Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts']
+    if os.environ.get('LOCALAPPDATA'):
+        folders.append(Path(os.environ['LOCALAPPDATA'])/'Microsoft'/'Windows'/'Fonts')
+    for folder in folders:
+        for name in names:
+            p=folder/name
+            if p.is_file(): return p
+    return None
 MAX_FONT_BYTES=12_000_000
 API_ROOT='https://api.github.com/repos/google/fonts/contents'
 BINARY_HOST='https://raw.githubusercontent.com/google/fonts/'
@@ -60,6 +77,8 @@ def font_slug(family):
 
 
 def installed_font(family):
+    if family in WINDOWS_FONTS:
+        return windows_font(family)
     dest=font_dir()/font_slug(family)
     if not dest.is_dir(): return None
     for path in sorted(dest.glob('*')):
@@ -88,6 +107,11 @@ def download_google_font(family):
     Does not download a font without its accompanying upstream license.
     """
     from urllib.error import HTTPError, URLError
+    if family in WINDOWS_FONTS:
+        path=windows_font(family)
+        if path is None:
+            raise ValueError(f'{family} is a font that comes with Windows 10 and 11, and it is not on this PC.')
+        return path
     slug=font_slug(family)
     existing=installed_font(family)
     if existing: return existing

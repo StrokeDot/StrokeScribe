@@ -140,7 +140,8 @@ class FontAndScaleTests(unittest.TestCase):
         self.assertEqual(w.options()['artwork_scale'],.65)
         from font_library import FONT_GROUPS, STARTER_FONTS
         # Built-in pen + every font + one separator per group.
-        self.assertEqual(w.font_select.count(),1+len(STARTER_FONTS)+len(FONT_GROUPS))
+        from font_library import WINDOWS_FONTS
+        self.assertEqual(w.font_select.count(),1+len(STARTER_FONTS)+len(FONT_GROUPS)+1+len(WINDOWS_FONTS))   # exp.14: + Windows fonts
         w.close()
 
 if __name__=='__main__':
