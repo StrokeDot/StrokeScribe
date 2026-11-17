@@ -73,6 +73,48 @@ class ExportRange(unittest.TestCase):
         t.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_X, Qt.KeyboardModifier.ShiftModifier))
         self.assertIsNone(t.clip_range)
 
+    def test_the_range_ends_can_be_dragged_and_the_range_moved(self):
+        # exp.26 (the user: the range can be changed, like Filmora)
+        from PySide6.QtCore import QPointF
+        from PySide6.QtGui import QMouseEvent
+        t = self.w.stage_timeline
+        t.resize(1400, t.height()); self.settle()
+        y = t._rows()[0] - 6
+
+        def drag(x0, x1):
+            def ev(kind, x, buttons):
+                return QMouseEvent(kind, QPointF(x, y), QPointF(x, y), Qt.MouseButton.LeftButton, buttons,
+                                   Qt.KeyboardModifier.NoModifier)
+            t.mousePressEvent(ev(QMouseEvent.Type.MouseButtonPress, x0, Qt.MouseButton.LeftButton))
+            t.mouseMoveEvent(ev(QMouseEvent.Type.MouseMove, (x0 + x1) / 2, Qt.MouseButton.LeftButton))
+            t.mouseReleaseEvent(ev(QMouseEvent.Type.MouseButtonRelease, x1, Qt.MouseButton.NoButton))
+        t.set_clip_range((2., 4.))
+        drag(t._x(4.), t._x(5.13))                    # its end, later
+        a, b = t.clip_range
+        self.assertAlmostEqual(a, 2.); self.assertGreater(b, 4.9)
+        drag(t._x(2.), t._x(1.37))                    # its start, earlier
+        self.assertLess(t.clip_range[0], 1.6)
+        before = t.clip_range
+        mid = t._x((before[0] + before[1]) / 2)
+        drag(mid, mid + t._px_per_sec() * .73)        # the bar between them: moved, same length
+        after = t.clip_range
+        self.assertAlmostEqual(after[1] - after[0], before[1] - before[0], places=6)
+        self.assertGreater(after[0], before[0])
+        t.set_clip_range(None)
+
+    def test_i_and_o_set_the_range_at_the_playhead(self):
+        t = self.w.stage_timeline
+        t.set_clip_range(None)
+        total = t.total()
+        t.progress = 1. / total
+        t.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_I, Qt.KeyboardModifier.NoModifier))
+        self.assertAlmostEqual(t.clip_range[0], 1., places=6)
+        t.progress = 3. / total
+        t.keyPressEvent(QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_O, Qt.KeyboardModifier.NoModifier))
+        self.assertAlmostEqual(t.clip_range[0], 1., places=6)
+        self.assertAlmostEqual(t.clip_range[1], 3., places=6)
+        t.set_clip_range(None)
+
     def test_export_selected_range_has_only_that_part(self):
         folder, info = self.run_export(lambda: self.w.export_range(1., 3.))
         self.assertEqual(info['frames'], 12)               # 2 s at 6 fps

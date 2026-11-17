@@ -519,7 +519,12 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
     import applog
     import time as _time
     began = _time.perf_counter()
-    writer = FrameWriter()                       # exp.125: PNGs saved on other threads
+    formats = formats_from_settings(settings)
+    import stream_encode
+    stream = stream_encode.WebmStream.start(folder, fps, width, height, formats['webm_quality']) \
+        if stream_encode.wanted(formats) else None          # exp.26: the WebM made meanwhile
+    pngs = stream is None or formats['keep_png'] or formats['mov'] or formats['mp4']
+    writer = FrameWriter(stream=stream, png=pngs)  # exp.125: PNGs saved on other threads
     try:
         for n in range(total):
             i = first + n                       # the moment of the video (frames are numbered from 0)
@@ -560,10 +565,14 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
             progress(n + 1, total)
             if interrupted():
                 raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
+    except BaseException:
+        if stream is not None:
+            stream.cancel()
+        raise
     finally:
         writer.close()
-    applog.info('Export: %d frames (%d x %d, %d fps) drawn and saved in %.1f s', total, width, height, fps,
-                _time.perf_counter() - began)
+    applog.info('Export: %d frames (%d x %d, %d fps) drawn and saved in %.1f s%s', total, width, height, fps,
+                _time.perf_counter() - began, ' (WebM encoded meanwhile)' if stream is not None else '')
     seconds = total / fps
     begin = first / fps
     (folder / 'sequence.json').write_text(json.dumps(dict(
@@ -572,7 +581,6 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
         scenes=[dict(first_frame=round(it.start * fps) - first, frames=round(it.length * fps), track=it.track,
                      board_frame=dict(zip(('cx', 'cy', 'w'), prepared[it.k]['frame'])))
                 for it in lay.items]), indent=2))
-    formats = formats_from_settings(settings)
     effects = formats['sound_volume']
     audio = None
     if effects is not None or any(p['options'].get('audio') for p in prepared):
@@ -600,7 +608,13 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
                 if audio.name.startswith('_mix_'):
                     audio.unlink()
                 audio = mixed
-    return encode_outputs(folder, fps, audio=audio, progress=progress, interrupted=interrupted, **formats)
+    made = ()
+    if stream is not None:                     # exp.26: only the sound is left to add
+        progress(0, 0)
+        made = (stream.finish(audio),)
+        formats = dict(formats, webm=False)
+    return encode_outputs(folder, fps, audio=audio, progress=progress, interrupted=interrupted, made=made,
+                          **formats)
 
 
 def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False,

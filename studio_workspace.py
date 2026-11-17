@@ -1136,6 +1136,43 @@ class StageTimeline(QFrame):
             span=(min(a,b),max(a,b)) if abs(b-a)>1e-3 else None
         self.clip_range=span; self.update()
 
+    def _range_grab(self, pos):
+        """exp.26 (the user: the range can be changed, like Filmora): on the ruler, near an end of
+        the range: 'a' (its start) / 'b' (its end); on the bar between them: 'move'."""
+        span=self.clip_range if self.items else None
+        if span is None or self.locked: return None
+        ruler_h=self._rows()[0]
+        if not (ruler_h-14<=pos.y()<=ruler_h+4): return None
+        xa,xb=self._x(span[0]),self._x(span[1])
+        if abs(pos.x()-xa)<=7: return 'a'
+        if abs(pos.x()-xb)<=7: return 'b'
+        if xa<pos.x()<xb: return 'move'
+        return None
+
+    def _snap_range(self, sec):
+        """A range end lands on an element's start or end, or the playhead, when near it."""
+        tol=8./max(1e-6,self._px_per_sec())
+        marks=[self.progress*self.total(),0.,self.total()]
+        for i in self.items or ():
+            marks+= [i[2],i[2]+i[3]]
+        near=min(marks,key=lambda m:abs(m-sec))
+        return near if abs(near-sec)<=tol else sec
+
+    def _drag_range(self, x):
+        _,grab,sec0,(a,b)=self._drag
+        sec=self._sec(x); total=self.total()
+        if grab=='move':
+            d=max(-a,min(total-b,sec-sec0))
+            snapped=self._snap_range(a+d)-a
+            if abs(snapped-d)<1e-9: snapped=self._snap_range(b+d)-b     # or by its end
+            d=max(-a,min(total-b,snapped))
+            self.clip_range=(a+d,b+d)
+        elif grab=='a':
+            self.clip_range=(max(0.,min(self._snap_range(sec),b-.1)),b)
+        else:
+            self.clip_range=(a,min(total,max(self._snap_range(sec),a+.1)))
+        self.update()
+
     def _export_actions(self,menu,item):
         """Right-click on an element: Export Selected Clip, Select Clip Range, the range."""
         k=item[0]
@@ -1168,6 +1205,15 @@ class StageTimeline(QFrame):
         p.setPen(QPen(accent,1.2))
         for x in (x0,x1):
             if left<=x<=left+width: p.drawLine(QPointF(x,top-8),QPointF(x,bottom))
+        # exp.26: handles on the ruler (drag them), and the length while it is dragged
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(accent)
+        for x in (x0,x1):
+            if left<=x<=left+width: p.drawRoundedRect(QRectF(x-3,top-12,6,12),2,2)
+        if self._drag and self._drag[0]=='range':
+            small=QFont(self.font()); small.setPointSizeF(8.); p.setFont(small)
+            p.setPen(QColor(theme_colors()['text']))
+            p.drawText(QRectF(x0+6,top+2,max(60.,x1-x0-12),14),Qt.AlignmentFlag.AlignLeft,
+                       f'{span[0]:.2f}–{span[1]:.2f} s  ({span[1]-span[0]:.2f} s)')
         p.restore()
 
     def source_menu(self,index,global_pos):
@@ -1661,6 +1707,11 @@ class StageTimeline(QFrame):
         if self.locked:
             event.accept(); return
         pos=event.position()
+        grab=self._range_grab(pos) if event.button()==Qt.MouseButton.LeftButton else None
+        if grab is not None:              # exp.26: a range edge (or the range bar) on the ruler
+            self._drag=('range',grab,self._sec(pos.x()),self.clip_range)
+            self.setCursor(Qt.CursorShape.SizeHorCursor if grab!='move' else Qt.CursorShape.ClosedHandCursor)
+            event.accept(); return
         if self._bg_shown() and self._bg_row().adjusted(0,-2,0,2).contains(pos) and pos.x()>=self.LEFT:
             # exp.207: the Background row. exp.209 (the user): a click chooses a piece like any
             # clip (then Ctrl+B cuts it, E hides it); the right button opens its menu.
@@ -1852,6 +1903,15 @@ class StageTimeline(QFrame):
         if self.locked:
             event.accept(); return
         pos=event.position()
+        if self._drag and self._drag[0]=='range':
+            self._drag_range(pos.x()); event.accept(); return
+        if not event.buttons() and self.clip_range is not None:
+            grab=self._range_grab(pos)             # exp.26: show that the range can be dragged
+            if grab is not None:
+                self.setCursor(Qt.CursorShape.SizeHorCursor if grab!='move' else Qt.CursorShape.OpenHandCursor)
+                self._range_hover=True; event.accept(); return
+            if getattr(self,'_range_hover',False):
+                self._range_hover=False; self.unsetCursor()
         if self._drag and self._drag[0]=='bgend' and event.buttons() & Qt.MouseButton.LeftButton:
             self.video_end_moved.emit(max(0.,self._sec(pos.x())),False)      # exp.230
             event.accept(); return
@@ -2075,6 +2135,10 @@ class StageTimeline(QFrame):
         super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self,event):
+        if self._drag and self._drag[0]=='range':
+            self._drag_range(event.position().x())
+            self._drag=None; self.unsetCursor(); self.update()
+            event.accept(); return
         if self._drag and self._drag[0]=='bgend':
             seconds=max(0.,self._sec(event.position().x()))      # on the scale it was dragged on
             self._drag=None; self._frozen=None; self.unsetCursor()
@@ -2189,6 +2253,13 @@ class StageTimeline(QFrame):
             self.overlay_action.emit(self.selected_overlay,'delete'); return
         if event.key()==Qt.Key.Key_Delete and self.current_scene>=0 and not self._something_else_chosen():
             self.element_delete.emit(self.current_scene); return
+        if event.key() in (Qt.Key.Key_I,Qt.Key.Key_O) and self.items and not mods & (
+                Qt.KeyboardModifier.ControlModifier|Qt.KeyboardModifier.AltModifier|Qt.KeyboardModifier.ShiftModifier):
+            # exp.26 (like Filmora's Mark In / Mark Out): the range starts / ends at the playhead
+            now=self.progress*self.total()
+            a,b=self.clip_range or (0.,self.total())
+            self.set_clip_range((now,max(b,now+.1)) if event.key()==Qt.Key.Key_I else (min(a,now-.1),now))
+            event.accept(); return
         if event.key()==Qt.Key.Key_X and self.items and not mods & (Qt.KeyboardModifier.ControlModifier|Qt.KeyboardModifier.AltModifier):
             if mods & Qt.KeyboardModifier.ShiftModifier:          # exp.25: Cancel the Selected Range
                 self.set_clip_range(None)
