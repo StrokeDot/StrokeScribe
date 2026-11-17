@@ -6,6 +6,14 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Fixed: dragging an element's end pushes the rest by exactly as much (v1.0.1-experimental.24)
+
+- **Still overlapping, then a gap between the two hands:** a dragged clip end changes the length
+  0.01 s at a time, and changes under 0.02 s were skipped (but remembered), so most of a slow drag
+  pushed nothing, and dragging back and forth lost different amounts each way. Every change now
+  counts: 1.4 s longer moves everything after it 1.4 s, and after any back and forth the space
+  between the elements (and between one hand and the next) is exactly what it was.
+
 ## Fixed: a longer element really pushes what comes after it (v1.0.1-experimental.23)
 
 - **exp.22 did not work in the app:** it compared lengths remembered from before the change, so it

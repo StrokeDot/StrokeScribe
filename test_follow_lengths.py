@@ -41,6 +41,17 @@ class FollowLengths(unittest.TestCase):
         self.assertEqual([s['start'] for s in scenes], [None, 4., 10.])
         self.assertEqual(hand['start'], 5.)
 
+    def test_a_slow_drag_of_its_end_counts_every_small_step(self):
+        # exp.24: 0.01 s at a time (a dragged clip end); back and forth keeps the gap exactly
+        scenes = [dict(start=None), dict(start=10.)]
+        w = stub(scenes, [4., 4.])
+        w.follow()
+        for step in [.01] * 40 + [-.01] * 25 + [.03] * 7:
+            w.lengths = [round(w.lengths[0] + step, 2), 4.]
+            w.follow()
+        self.assertAlmostEqual(w.lengths[0], 4.36, places=6)
+        self.assertAlmostEqual(scenes[1]['start'] - w.lengths[0], 6., places=3)
+
     def test_an_element_that_follows_by_itself_is_not_moved_twice(self):
         scenes = [dict(start=None), dict(start=None), dict(start=9.)]
         w = stub(scenes, [4., 4., 4.], joins=[1., 0., 0.])
