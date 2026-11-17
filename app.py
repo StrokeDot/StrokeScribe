@@ -354,16 +354,16 @@ class PlanWorker(QThread):
 class SceneExporter(QThread):
     """All scenes as one video (scenes.export_scenes), off the UI thread."""
     progress=Signal(int,int); done=Signal(str); failed=Signal(str)
-    def __init__(self,scene_list,folder,settings,hand,titles=None,cameras=None):
+    def __init__(self,scene_list,folder,settings,hand,titles=None,cameras=None,span=None):
         super().__init__()
         self.scene_list=scene_list; self.folder=Path(folder); self.settings=settings; self.hand=hand
-        self.titles=titles; self.cameras=cameras
+        self.titles=titles; self.cameras=cameras; self.span=span
     def run(self):
         try:
             from scenes import export_scenes
             self.done.emit(export_scenes(self.scene_list,self.folder,self.settings,self.hand,
                                          progress=self.progress.emit,interrupted=self.isInterruptionRequested,
-                                         titles=self.titles,cameras=self.cameras))
+                                         titles=self.titles,cameras=self.cameras,span=self.span))
         except Exception as e: self.failed.emit(str(e))
 
 class FontInstaller(QThread):
@@ -7722,9 +7722,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.playing=False; self.sync_workspace()
             self.log_play_stats()
             if self.preview_sound is not None: self.preview_sound.stop()
-    def save(self):
+    def save(self,span=None,only=None):
+        """Export. exp.25 (like Filmora's right-click Export Selected Clips / Export Selected
+        Range): `span` (start, end) exports only that part of the whole video; `only` (an
+        element) shows just that element, as it is in the video (its camera, its Hand motion)."""
         if not self.drawing or (self.builder and self.builder.isRunning()) or (self.worker and self.worker.isRunning()): return
-        parent=QFileDialog.getExistingDirectory(self,'Choose destination; a new sequence folder will be created')
+        title=('Export element: choose where; a new sequence folder will be created' if only is not None else
+               'Export range: choose where; a new sequence folder will be created' if span is not None else
+               'Choose destination; a new sequence folder will be created')
+        parent=QFileDialog.getExistingDirectory(self,title)
         if not parent: return
         import copy
         folder=Path(parent)/datetime.now().strftime('StrokeScribe_%Y%m%d_%H%M%S_%f')
@@ -7733,7 +7739,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if getattr(self,'cameras',None) and len(self.scenes)<2:      # exp.119: the Camera track
             import camera_clips
             options['video_camera']=(0.,camera_clips.signature([c for c in self.cameras if not c.get('off')]),tuple(self.camera_moves()))
-        if len(self.scenes)>1 and self.export_all_scenes.isChecked():
+        if len(self.scenes)>1 and (self.export_all_scenes.isChecked() or span is not None):
             self._leave_scene()
             scene_list=[dict(state=copy.deepcopy(s['state']),transition=s['transition'],
                              transition_seconds=s['transition_seconds'],board=s.get('board'),
@@ -7744,8 +7750,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                              glide=s.get('glide'))
                         for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
-            self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand,copy.deepcopy(self.visible_titles()),
-                                      copy.deepcopy([c for c in getattr(self,'cameras',[]) if not c.get('off')]))
+            titles=copy.deepcopy(self.visible_titles())
+            if only is not None:            # just this element: the others (and the texts) not shown
+                for j,item in enumerate(scene_list):
+                    if j!=only: item['hidden']=True
+                titles=[]
+            self.worker=SceneExporter(scene_list,folder,self.settings_state(),self.hand,titles,
+                                      copy.deepcopy([c for c in getattr(self,'cameras',[]) if not c.get('off')]),
+                                      span=span)
         else:
             self.worker=None
         if self.worker is None: self.worker=Exporter(copy.deepcopy(self.drawing),folder,options,
@@ -7762,6 +7774,19 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.export_clock=QTimer(self); self.export_clock.setInterval(250)
             self.export_clock.timeout.connect(self.update_export_status)
         self.export_clock.start(); self.worker.start()
+    def export_clip(self,k):
+        """exp.25 (Filmora's Export Selected Clips): element k alone, as it is in the video
+        (its own time, its camera and Hand motion), from its start to its end."""
+        item=next((it for it in self.timeline_layout().items if it.k==k),None) if len(self.scenes)>1 else None
+        if item is None:
+            self.save(); return
+        self.save(span=(item.start,item.start+item.length),only=k)
+
+    def export_range(self,start,end):
+        """exp.25 (Filmora's Export Selected Range): the whole video between start and end."""
+        if end-start<=1e-3: return
+        self.save(span=(start,end))
+
     def export_elapsed(self):
         return format_seconds(time.perf_counter()-getattr(self,'export_started',time.perf_counter()))
     def update_export_status(self):

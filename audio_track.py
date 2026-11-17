@@ -41,7 +41,9 @@ def mix(effects, voice, volume, offset, total, output):
     if not ffmpeg:
         raise RuntimeError('FFmpeg is needed to add a voiceover or music track.')
     delay = max(0, int(round(float(offset) * 1000)))
-    voice_chain = f'volume={float(volume):.3f},aresample=44100,aformat=channel_layouts=stereo,' \
+    # exp.25 (Export selected range): a voice that began before the range starts part-way in
+    skip = f'atrim=start={-float(offset):.3f},asetpts=PTS-STARTPTS,' if float(offset) < 0 else ''
+    voice_chain = f'{skip}volume={float(volume):.3f},aresample=44100,aformat=channel_layouts=stereo,' \
                   f'adelay={delay}|{delay},apad'
     cmd = [ffmpeg, '-y', '-hide_banner', '-loglevel', 'error']
     if effects:

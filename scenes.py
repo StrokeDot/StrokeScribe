@@ -450,10 +450,11 @@ def _resting_options(lay, elements, seconds, hidden=()):
 
 
 def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False,
-                    titles=None, cameras=None):
+                    titles=None, cameras=None, span=None):
     """The whole video when elements are on tracks: every frame is one moment of the
     timeline (timeline_render.compose), at the export size. The sounds of each element
-    start with it; voiceovers too."""
+    start with it; voiceovers too. `span` (start, end) in seconds: only that part of the
+    video (exp.25: Export selected clip / range, like Filmora); it starts at its frame 0."""
     import board
     import timeline_render
     from export_job import encode_outputs, formats_from_settings
@@ -505,7 +506,11 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
     hand_handover(lay.items, elements, {k for k, s in enumerate(scenes) if s.get('hidden')})   # exp.212
     flow_hands(lay.items, elements, [p['frame'] for p in prepared],
                {k for k, s in enumerate(scenes) if s.get('hidden')})       # exp.218
-    total = max(1, round(lay.total * fps))
+    first, last = 0, max(1, round(lay.total * fps))
+    if span is not None:
+        first = max(0, min(last - 1, round(float(span[0]) * fps)))
+        last = max(first + 1, min(last, round(float(span[1]) * fps)))
+    total = last - first
     titles = with_holds(titles, [m.start for m in lay.moves], lay.total,
                         page_at=lambda sec: timeline_render.page_of(lay, sec))
     hidden = {k for k, s in enumerate(scenes) if s.get('hidden')}       # their track is hidden
@@ -516,7 +521,8 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
     began = _time.perf_counter()
     writer = FrameWriter()                       # exp.125: PNGs saved on other threads
     try:
-        for i in range(total):
+        for n in range(total):
+            i = first + n                       # the moment of the video (frames are numbered from 0)
             state = state_at(lay, i / fps)
             if hidden:
                 active = [(k, f) for k, f in state.active if k not in hidden]
@@ -550,8 +556,8 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
                     rest = dict(rest, _spot_place=timeline_render.element_place(
                         world, lay, state, elements, rest['_wait_k'], width, height))
                 image = paint_rest_hand(image, rest, i / fps, place)
-            writer.write(image, folder / f'frame_{i:06d}.png')
-            progress(i + 1, total)
+            writer.write(image, folder / f'frame_{n:06d}.png')
+            progress(n + 1, total)
             if interrupted():
                 raise InterruptedError('Export cancelled; partial frames remain in the export folder.')
     finally:
@@ -559,9 +565,11 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
     applog.info('Export: %d frames (%d x %d, %d fps) drawn and saved in %.1f s', total, width, height, fps,
                 _time.perf_counter() - began)
     seconds = total / fps
+    begin = first / fps
     (folder / 'sequence.json').write_text(json.dumps(dict(
         width=width, height=height, fps=fps, frames=total, duration=seconds,
-        scenes=[dict(first_frame=round(it.start * fps), frames=round(it.length * fps), track=it.track,
+        **(dict(from_seconds=round(begin, 3)) if first else {}),
+        scenes=[dict(first_frame=round(it.start * fps) - first, frames=round(it.length * fps), track=it.track,
                      board_frame=dict(zip(('cx', 'cy', 'w'), prepared[it.k]['frame'])))
                 for it in lay.items]), indent=2))
     formats = formats_from_settings(settings)
@@ -577,7 +585,9 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
                 opts = dict(prepared[it.k]['options']); opts.pop('audio', None)
                 path = soundtrack(prepared[it.k]['drawing'], opts, folder / f'_sound_{it.k}.wav', effects)
                 part = _read_wav(path).astype(np.int32); path.unlink()
-                at = round(it.start * RATE)
+                at = round((it.start - begin) * RATE)
+                if at < 0:                             # it began before the exported part
+                    part, at = part[-at:], 0
                 part = part[:max(0, len(track) - at)]
                 track[at:at + len(part)] += part
         audio = write_wav(folder / 'soundtrack.wav', np.clip(track, -32768, 32767).astype(np.int16))
@@ -586,7 +596,7 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
             from audio_track import mix
             for n, (it, voice) in enumerate(voices):
                 target = folder / (f'_mix_{n}.wav' if n < len(voices) - 1 else 'soundtrack_mixed.wav')
-                mixed = mix(audio, voice['path'], voice['volume'], it.start + voice['offset'], seconds, target)
+                mixed = mix(audio, voice['path'], voice['volume'], it.start + voice['offset'] - begin, seconds, target)
                 if audio.name.startswith('_mix_'):
                     audio.unlink()
                 audio = mixed
@@ -594,11 +604,11 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
 
 
 def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: None, interrupted=lambda: False,
-                  titles=None, cameras=None):
+                  titles=None, cameras=None, span=None):
     """Render all scenes into one PNG sequence + videos. `settings`: the editor's settings
     (its output settings are used for every scene). Returns a summary text."""
-    if on_tracks(scenes) or (settings or {}).get('video_end'):      # exp.230: a longer video too
-        return export_timeline(scenes, folder, settings, hand, progress, interrupted, titles, cameras)
+    if span is not None or on_tracks(scenes) or (settings or {}).get('video_end'):   # exp.230: a longer video too
+        return export_timeline(scenes, folder, settings, hand, progress, interrupted, titles, cameras, span)
     from engine import export_frames
     from export_job import encode_outputs, formats_from_settings
     from sound import RATE, soundtrack, write_wav
