@@ -6,6 +6,18 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## The range can be changed; faster WebM export, same quality (v1.0.1-experimental.26)
+
+- **The selected range can be changed, like Filmora:** drag its handles on the ruler to make it
+  start earlier or end later (they snap to element starts and ends and to the playhead), or drag
+  the bar between them to move the whole range. **I** / **O** set its start / end at the playhead.
+- **Faster export:** the WebM is now encoded while the frames are drawn (each frame goes
+  straight to FFmpeg), instead of after all frames were saved as PNGs and read back. Same encoder
+  settings and the same pixels: the video is identical. A test export took 22 s instead of 41 s;
+  computers with more cores gain more. PNGs are only written when Keep PNG frames, MOV or MP4
+  needs them. This applies when elements have their own place on the timeline and to Export
+  Selected Clip / Range; a Background row or a solid video background export as before.
+
 ## Right-click export, like Filmora: a clip or a range (v1.0.1-experimental.25)
 
 In the Whole video timeline, right-click an element:

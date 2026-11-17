@@ -29,7 +29,10 @@ def _encode(rgba, width, height, path):
 
 
 class FrameWriter:
-    def __init__(self, threads=None):
+    def __init__(self, threads=None, stream=None, png=True):
+        # exp.26: `stream` (stream_encode.WebmStream) gets every frame's pixels for the WebM made
+        # meanwhile; png=False: no PNG files (nothing else needs them)
+        self.stream, self.png = stream, png
         self.pool = ThreadPoolExecutor(max_workers=threads or _threads(), thread_name_prefix='frames')
         self.pending = []
         self.limit = 2 * (threads or _threads())
@@ -43,6 +46,10 @@ class FrameWriter:
         data = bytes(rgba.constBits())[:stride * height]
         if stride != width * 4:                  # rows with padding: keep only the pixels
             data = b''.join(data[y * stride:y * stride + width * 4] for y in range(height))
+        if self.stream is not None:
+            self.stream.feed(data)
+        if not self.png:
+            return
         if self.previous is not None and self.previous[0] == data:
             source = self.previous[1]
             future = self.pool.submit(lambda s=source, t=path: shutil.copyfile(s.result(), t) and t)

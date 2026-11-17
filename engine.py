@@ -447,6 +447,12 @@ def encode_webm(folder, fps=30, quality=28, audio=None, background=None):
         raise RuntimeError('WebM encoding failed: '+result.stderr[-2000:])
     if not output.is_file() or output.stat().st_size<=0:
         raise RuntimeError('WebM encoder did not produce a nonempty video.')
+    verify_webm(output)
+    return output
+
+
+def verify_webm(output):
+    """The WebM is VP9 with its alpha tag (else raises; frames are kept)."""
     # Make deletion-safe: require an encoded VP9 stream with an alpha tag.
     # Standard ffprobe decoding may report yuv420p because it uses the native
     # decoder, which does not expose VP9 alpha; alpha_mode=1 is the container
@@ -461,12 +467,13 @@ def encode_webm(folder, fps=30, quality=28, audio=None, background=None):
             raise RuntimeError('WebM created but could not verify its stream; PNG frames retained.')
         try:
             stream=json.loads(info.stdout)['streams'][0]
-            valid=stream.get('codec_name')=='vp9' and str(stream.get('tags',{}).get('alpha_mode'))=='1'
+            # exp.26: after the sound is added (video copied) the tag reads ALPHA_MODE
+            tags={str(k).lower():v for k,v in (stream.get('tags') or {}).items()}
+            valid=stream.get('codec_name')=='vp9' and str(tags.get('alpha_mode'))=='1'
         except (KeyError,IndexError,ValueError,TypeError):
             valid=False
         if not valid:
             raise RuntimeError('WebM was encoded without verified VP9 transparency; PNG frames retained.')
-    return output
 
 
 MP4_BACKGROUNDS={'white':'FFFFFF','dark':'242D3B','black':'000000'}

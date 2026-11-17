@@ -216,11 +216,12 @@ def run_export(drawing, folder, options, mov=False, webm=False, webm_quality=28,
 
 def encode_outputs(folder, fps, mov=False, webm=False, webm_quality=28, keep_png=True, mp4=False,
                    mp4_background='white', sound_volume=None, audio=None, progress=lambda i, n: None,
-                   interrupted=lambda: False, background=None, background_pieces=None):
-    """Encode the PNG frames in `folder` into the chosen videos. Returns a summary."""
+                   interrupted=lambda: False, background=None, background_pieces=None, made=()):
+    """Encode the PNG frames in `folder` into the chosen videos. Returns a summary. `made`:
+    videos already made while the frames were drawn (exp.26: the WebM stream)."""
     from engine import encode_mov, encode_mp4, encode_webm
     folder = Path(folder)
-    videos = []
+    videos = [Path(v) for v in made]
     source = folder
     if background_pieces and (webm or mov or mp4):
         # exp.207: the background changes along the video (Background row): every frame is put
