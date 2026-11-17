@@ -6618,8 +6618,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if len(old)!=len(lay.items): return
         eps=1e-3
         # (element, its old end, how much longer it is now)
+        # exp.24 (the user: still overlapping, then a gap between the two hands): every change
+        # counts, however small. A dragged clip end changes the length 0.01 s at a time; changes
+        # under 0.02 s were skipped but still remembered, so most of a slow drag was lost (and a
+        # drag back and forth lost different amounts each way).
         changes=[(k,o_start+o_len,it.length-o_len) for k,((o_start,o_len),it) in enumerate(zip(old,lay.items))
-                 if abs(it.length-o_len)>=.02]
+                 if abs(it.length-o_len)>1e-6]
         if not changes: return
 
         def shift(t,own=None):
