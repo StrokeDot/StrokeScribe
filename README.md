@@ -6,6 +6,21 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Right-click export, like Filmora: a clip or a range (v1.0.1-experimental.25)
+
+In the Whole video timeline, right-click an element:
+- **Export Selected Clip…**: that element alone, exactly as it is in the video (its own time,
+  its camera and Hand motion), from its start to its end. The other elements and the texts are
+  left out.
+- **Select Clip Range** (key **X**): marks the element's time as a range: a shaded band across
+  the timeline, with a bar on the ruler.
+- **Cancel the Selected Range** (key **Shift+X**).
+- **Export Selected Range…**: the whole video, but only between the range's start and end
+  (everything in it, with its sounds and voiceover cut to match). Also in the right-click menu on
+  an empty part of the timeline while a range is selected.
+
+The export uses the formats and size set in the Export tab.
+
 ## Fixed: dragging an element's end pushes the rest by exactly as much (v1.0.1-experimental.24)
 
 - **Still overlapping, then a gap between the two hands:** a dragged clip end changes the length

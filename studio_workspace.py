@@ -269,6 +269,8 @@ class StageTimeline(QFrame):
     element_flag=Signal(int,str)        # whole video: one element's 'mute' or 'hide' (right-click menu)
     background_menu=Signal(int,float,object)   # exp.207: Background row clicked: piece, seconds, screen point
     hand_snapped=Signal(int,int)               # exp.211: element k let go on element j's hand end (-1: not)
+    clip_export=Signal(int)                    # exp.25 (Filmora): right-click Export Selected Clip
+    range_export=Signal(float,float)           # exp.25: Export Selected Range (start, end seconds)
     element_delete=Signal(int)                 # exp.246: Delete on a chosen element
     background_cut=Signal(int,float,bool)      # exp.207: a cut dragged: piece, its new start, let go
     video_end_moved=Signal(float,bool)         # exp.230: the end of the video dragged (seconds, let go)
@@ -293,6 +295,7 @@ class StageTimeline(QFrame):
         self.locked=False          # True while a drawing is being prepared
         self.scene_segments=None   # whole video: [(label, seconds, 'scene'|'join', parts)]
         self.items=None            # whole video on tracks: [(k, label, start, seconds, track, parts)]
+        self.clip_range=None       # exp.25: Select Clip Range (X): (start, end) seconds of the whole video
         self.moves=None            # whole video: camera moves [(k, label, start, seconds)]
         self._ghost=None           # an element being dragged: (k, start, track)
         self._cam_ghost=None       # exp.140: a camera being dragged: (id, start, row)
@@ -1125,6 +1128,48 @@ class StageTimeline(QFrame):
                 start+=value
         return None
 
+    # ------------------------------------------------------------ exp.25: export a clip / a range
+    def set_clip_range(self,span):
+        """Select Clip Range (X) / Cancel the Selected Range (Shift+X), like Filmora."""
+        if span is not None:
+            a,b=float(span[0]),float(span[1])
+            span=(min(a,b),max(a,b)) if abs(b-a)>1e-3 else None
+        self.clip_range=span; self.update()
+
+    def _export_actions(self,menu,item):
+        """Right-click on an element: Export Selected Clip, Select Clip Range, the range."""
+        k=item[0]
+        menu.addSeparator()
+        menu.addAction('Export Selected Clip…',lambda:self.clip_export.emit(k))
+        menu.addAction('Select Clip Range\tX',lambda:self.set_clip_range((item[2],item[2]+item[3])))
+        self._range_actions(menu)
+
+    def _range_actions(self,menu):
+        span=self.clip_range
+        a=menu.addAction('Cancel the Selected Range\tShift+X',lambda:self.set_clip_range(None))
+        a.setEnabled(span is not None)
+        a=menu.addAction('Export Selected Range…' if span is None else
+                         f'Export Selected Range ({span[0]:.1f}–{span[1]:.1f} s)…',
+                         lambda:span is not None and self.range_export.emit(span[0],span[1]))
+        a.setEnabled(span is not None)
+
+    def _paint_range(self,p,top,bottom,left,width):
+        span=self.clip_range if self.items else None
+        if span is None: return
+        x0=max(left,self._x(span[0])); x1=min(left+width,self._x(span[1]))
+        if x1<=x0: return
+        accent=QColor(theme_colors()['accent'])
+        shade=QColor(accent); shade.setAlpha(34)
+        p.save()
+        p.setPen(Qt.PenStyle.NoPen); p.setBrush(shade)
+        p.drawRect(QRectF(x0,top,x1-x0,bottom-top))
+        band=QColor(accent); band.setAlpha(150); p.setBrush(band)
+        p.drawRect(QRectF(x0,top-8,x1-x0,6))                  # on the ruler, like Filmora's range
+        p.setPen(QPen(accent,1.2))
+        for x in (x0,x1):
+            if left<=x<=left+width: p.drawLine(QPointF(x,top-8),QPointF(x,bottom))
+        p.restore()
+
     def source_menu(self,index,global_pos):
         from PySide6.QtWidgets import QMenu
         if self.locked:return
@@ -1319,6 +1364,7 @@ class StageTimeline(QFrame):
                 p.restore()
         if self.items:
             p.restore()
+        self._paint_range(p,ruler_h,lane.bottom(),left,width)      # exp.25: the selected range
         # Playhead: a line through the track with a marker on the ruler.
         play_x=self._x(self.progress*total)
         if not left-1<=play_x<=left+width+1:
@@ -1683,8 +1729,14 @@ class StageTimeline(QFrame):
                                lambda:self.element_flag.emit(k,'mute'))
                 menu.addSeparator()
                 menu.addAction('Start right after the element before it (Track 1)',lambda:self.element_reset.emit(k))
+                self._export_actions(menu,item)
                 menu.exec(event.globalPosition().toPoint())
             elif source is not None:self.source_menu(source[1],event.globalPosition().toPoint())
+            elif self.clip_range is not None and self.items:   # exp.25: the range, anywhere else
+                from PySide6.QtWidgets import QMenu
+                menu=QMenu(self)
+                self._range_actions(menu)
+                menu.exec(event.globalPosition().toPoint())
             event.accept(); return
         if event.button()!=Qt.MouseButton.LeftButton or self.total()<=0:
             return super().mousePressEvent(event)
@@ -2137,6 +2189,13 @@ class StageTimeline(QFrame):
             self.overlay_action.emit(self.selected_overlay,'delete'); return
         if event.key()==Qt.Key.Key_Delete and self.current_scene>=0 and not self._something_else_chosen():
             self.element_delete.emit(self.current_scene); return
+        if event.key()==Qt.Key.Key_X and self.items and not mods & (Qt.KeyboardModifier.ControlModifier|Qt.KeyboardModifier.AltModifier):
+            if mods & Qt.KeyboardModifier.ShiftModifier:          # exp.25: Cancel the Selected Range
+                self.set_clip_range(None)
+            else:                                                 # Select Clip Range (the chosen element)
+                item=next((i for i in self.items if i[0]==self.current_scene),None)
+                if item is not None: self.set_clip_range((item[2],item[2]+item[3]))
+            event.accept(); return
         if event.key() in (Qt.Key.Key_Left,Qt.Key.Key_Right):
             self.slider.setValue(self.slider.value()+(-10 if event.key()==Qt.Key.Key_Left else 10))
         elif event.key()==Qt.Key.Key_Home:
@@ -4217,6 +4276,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.element_enter.connect(lambda k: w.enter_element(k))
     w.stage_timeline.element_placed.connect(lambda k,start,track: w.place_element(k,start,track))
     w.stage_timeline.hand_snapped.connect(lambda k,j: w.snap_hands(k,j))       # exp.211
+    w.stage_timeline.clip_export.connect(lambda k: w.export_clip(k))           # exp.25
+    w.stage_timeline.range_export.connect(lambda a,b: w.export_range(a,b))
     def _delete_element(k):
         if 0<=k<len(w.scenes) and k!=w.scene_index: w.select_scene(k)
         w.delete_scene(ask=False)
