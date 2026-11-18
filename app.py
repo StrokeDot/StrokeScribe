@@ -6531,8 +6531,81 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if o.get('kind')!='sticker': continue
             span=stickers.busy(o)
             if span is None: continue
-            out.append((span[0],stickers.GLIDE,max(.05,float(o.get('draw_seconds',.8))),stickers.GLIDE,o['id']))
+            lead,tail=stickers.ways(o)
+            out.append((span[0],lead,max(.05,float(o.get('draw_seconds',.8))),tail,o['id']))
         return out
+
+    def edit_sticker_hand(self,oid):
+        """exp.31 (the user: the same logic as an element's hand): a sticker's hand ways: how long
+        it takes to go to the line and back, how it moves (How, Turn) and its own Path."""
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QDoubleSpinBox, QComboBox, QPushButton
+        import stickers
+        from frame_render import GLIDE_STYLES, GLIDE_BENDS
+        item=self.find_overlay(oid)
+        if item is None or item.get('kind')!='sticker': return
+        if not stickers.hand_mode(item):
+            self.status.setText('This sticker draws itself: set Appears to a Hand choice first.'); return
+        dialog=QDialog(self); dialog.setWindowTitle(f'Hand: {item.get("name","sticker")}')
+        form=QFormLayout(dialog)
+        def number(value):
+            box=QDoubleSpinBox(); box.setRange(.1,10.); box.setSingleStep(.1); box.setDecimals(1); box.setSuffix(' s')
+            box.setValue(float(value or stickers.GLIDE)); return box
+        def choice(options,value):
+            box=QComboBox(); box.addItems(list(options)); box.setCurrentText(value if value in options else options[0]); return box
+        lead,tail=stickers.ways(item)
+        go=number(lead); back=number(tail)
+        how_in=choice(GLIDE_STYLES,item.get('hand_in_style') or 'Smooth'); how_out=choice(GLIDE_STYLES,item.get('hand_out_style') or 'Smooth')
+        bend_in=choice(GLIDE_BENDS,item.get('hand_in_bend') or 'Auto'); bend_out=choice(GLIDE_BENDS,item.get('hand_out_bend') or 'Auto')
+        paths={'in':item.get('hand_in_path'),'out':item.get('hand_out_path')}
+        tip=('How the hand moves on its way. Smooth: eases out of its corner and gently into place. '
+             'Steady: the same speed all the way. Quick start / Slow start. Overshoot: goes past and '
+             'comes back. Curve: a gentle arc. Swoop: a big sweep. Circle: half a circle. Turn: which way '
+             'Curve and Circle bend.')
+        def path_button(which):
+            button=QPushButton('Edit path'); button.setObjectName('subtle')
+            def clicked():
+                keys=self.edit_sticker_path(item,which,(how_in if which=='in' else how_out).currentText(),
+                                            (bend_in if which=='in' else bend_out).currentText(),paths[which])
+                if keys is not False: paths[which]=keys
+            button.clicked.connect(clicked)
+            button.setToolTip('Drag keyframes on the video to give this way its own path.')
+            return button
+        form.addRow(help_label('To the drawing','How long the hand takes to go to the start of the line.'),go)
+        form.addRow(help_label('How',tip),how_in); form.addRow(help_label('Turn',tip),bend_in)
+        form.addRow(help_label('Path','Your own path for this way, with keyframes.'),path_button('in'))
+        form.addRow(help_label('Back','How long the hand takes to go back after drawing.'),back)
+        form.addRow(help_label('How ',tip),how_out); form.addRow(help_label('Turn ',tip),bend_out)
+        form.addRow(help_label('Path ','Your own path for the way back, with keyframes.'),path_button('out'))
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec()!=QDialog.DialogCode.Accepted: return
+        self.record_structure('sticker hand')
+        item.update(hand_in=round(go.value(),2),hand_out=round(back.value(),2),
+                    hand_in_style=how_in.currentText(),hand_out_style=how_out.currentText(),
+                    hand_in_bend=bend_in.currentText(),hand_out_bend=bend_out.currentText(),
+                    hand_in_path=paths['in'],hand_out_path=paths['out'])
+        self.place_hand_sticker(item)            # longer ways: it still waits for the drawing hand
+        self.project_changes.mark_changed(); self.refresh(); self.sync_camera_timeline()
+
+    def edit_sticker_path(self,item,which,style,bend,keys):
+        """exp.31: Edit path for a sticker's way in / back, on the preview's picture."""
+        from PySide6.QtWidgets import QDialog
+        from glide_path_dialog import GlidePathDialog
+        import stickers, frame_render
+        frame=self.canvas.frame
+        if frame is None or frame.isNull():
+            self.status.setText('Edit path: there is no picture in the preview.'); return False
+        W,H=frame.width(),frame.height()
+        home,first,last=stickers.way_ends(item,W,H)
+        a,b=(home,first) if which=='in' else (last,home)
+        preset=frame_render.preset_keyframes(a,b,style,(W/2.,H/2.),bend)
+        dialog=GlidePathDialog(self,frame,a,b,keys,preset,style,
+                               f'Hand path: {item.get("name","sticker")}, '+('to the drawing' if which=='in' else 'back'))
+        h=stickers._HAND
+        if h: dialog.canvas.hand=(h['image'],h['anchor'],W*h['scale'])
+        if dialog.exec()!=QDialog.DialogCode.Accepted: return False
+        return dialog.keyframes()
 
     def hand_marks(self):
         """exp.147: for the Hand row: each element's (start, glide in, drawing, glide back)."""

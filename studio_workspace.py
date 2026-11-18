@@ -269,6 +269,7 @@ class StageTimeline(QFrame):
     element_flag=Signal(int,str)        # whole video: one element's 'mute' or 'hide' (right-click menu)
     background_menu=Signal(int,float,object)   # exp.207: Background row clicked: piece, seconds, screen point
     hand_snapped=Signal(int,int)               # exp.211: element k let go on element j's hand end (-1: not)
+    sticker_hand_edit=Signal(str)              # exp.31: a sticker's bar on the Hand row: its hand ways
     clip_export=Signal(int)                    # exp.25 (Filmora): right-click Export Selected Clip
     range_export=Signal(float,float)           # exp.25: Export Selected Range (start, end seconds)
     element_delete=Signal(int)                 # exp.246: Delete on a chosen element
@@ -2124,6 +2125,10 @@ class StageTimeline(QFrame):
             if self._moving_row().contains(pos):
                 self.camera_add.emit('',seconds);event.accept();return
             if self._hand_row().contains(pos):
+                oid=next((m[4] for m in getattr(self,'sticker_hand_marks',()) or ()
+                          if self._x(m[0])-2<=pos.x()<=self._x(m[0]+m[1]+m[2]+m[3])+2),None)
+                if oid is not None:
+                    self.sticker_hand_edit.emit(oid);event.accept();return     # exp.31
                 k=self._hand_mark_at(pos)
                 if k is not None:
                     self.hand_glide_edit.emit(k);event.accept();return      # exp.163: its way there and back
@@ -4404,6 +4409,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.stage_timeline.camera_changed.connect(lambda cid,start,length: w.move_camera_clip(cid,start,length))
     w.stage_timeline.camera_lane.connect(lambda cid,lane: w.move_camera_lane(cid,lane))
     w.stage_timeline.hand_glide_edit.connect(lambda k: w.edit_hand_glide(k))
+    w.stage_timeline.sticker_hand_edit.connect(lambda oid: w.edit_sticker_hand(oid))   # exp.31
     w.stage_timeline.hand_place.connect(lambda under: w.hand_under.setChecked(bool(under)))
     w.stage_timeline.camera_done.connect(lambda cid: w.camera_clip_done(cid))
     w.stage_timeline.camera_edit.connect(lambda cid: w.edit_camera_clip(cid))

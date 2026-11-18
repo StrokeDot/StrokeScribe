@@ -6,6 +6,14 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Sticker hand ways, like an element's (v1.0.1-experimental.31)
+
+- A sticker drawn by the hand has its own **Hand** settings, like an element's: **To the drawing**
+  and **Back** (how long each way takes), **How** (Smooth, Steady, Quick start, Slow start,
+  Overshoot, Curve, Swoop, Circle), **Turn** and its own **Path** (keyframes on the video).
+  Double-click its bar on the Hand row, or **Hand ways…** in the Stickers panel. Longer ways make
+  its bar on the Hand row longer, and it still waits for the drawing hand.
+
 ## Sticker hand: normal size, and on the Hand row (v1.0.1-experimental.30)
 
 - **The hand drawing a sticker was far too big:** it was drawn on the page with the sticker, so

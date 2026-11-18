@@ -39,6 +39,8 @@ def new(shape='Arrow', start=0., duration=3., color='#E0463C'):
                 thickness=.012, x=.5, y=.5, size=.3, aspect=ASPECT[shape], rotation=0., flip=False,
                 draw_seconds=.8, start=float(start), duration=float(duration),
                 drawing='Animated', hand_way='Rests in its corner',
+                hand_in=GLIDE, hand_out=GLIDE, hand_in_style='Smooth', hand_out_style='Smooth',
+                hand_in_bend='Auto', hand_out_bend='Auto', hand_in_path=None, hand_out_path=None,
                 effect_in='None', in_seconds=.4, effect_out='Fade', out_seconds=.4, track=0)
 
 
@@ -112,12 +114,18 @@ def hand_mode(item):
     return {'Hand: outline': 'outline', 'Hand: everything': 'all'}.get(item.get('drawing'))
 
 
+def ways(item):
+    """exp.31: (way in, way back) seconds of the sticker's hand (its Hand dialog, like an element's)."""
+    return (max(.05, float(item.get('hand_in', GLIDE) or GLIDE)), max(.05, float(item.get('hand_out', GLIDE) or GLIDE)))
+
+
 def busy(item):
     """(from, to) seconds the hand is busy with this sticker (coming, drawing, going), or None."""
     if not hand_mode(item):
         return None
     start = float(item.get('start', 0))
-    return start - GLIDE, start + max(.05, float(item.get('draw_seconds', .8))) + GLIDE
+    lead, tail = ways(item)
+    return start - lead, start + max(.05, float(item.get('draw_seconds', .8))) + tail
 
 
 def phases(item, t):
@@ -245,13 +253,37 @@ def hand_tip(item, t, W, H):
     pts, heads, _ = _geometry(item, w, h, H)
     first = on_frame(pts[0])
     last = on_frame(heads[-1][1] if heads and hand_mode(item) == 'all' else pts[-1])
-    if t < start:
-        k = _ease((t - span[0]) / GLIDE)
-        return (home[0] + (first[0] - home[0]) * k, home[1] + (first[1] - home[1]) * k)
+    from frame_render import glide_point
+    lead, tail = ways(item)
+    if t < start:                         # exp.31: its way in, as the element hands go (How, Turn, Path)
+        return glide_point(home, first, max(0., min(1., (t - span[0]) / lead)), item.get('hand_in_style') or 'Smooth',
+                           (W / 2., H / 2.), item.get('hand_in_bend') or 'Auto', item.get('hand_in_path') or None)
     if t > start + seconds:
-        k = _ease((t - start - seconds) / GLIDE)
-        return (last[0] + (home[0] - last[0]) * k, last[1] + (home[1] - last[1]) * k)
+        return glide_point(last, home, max(0., min(1., (t - start - seconds) / tail)),
+                           item.get('hand_out_style') or 'Smooth', (W / 2., H / 2.), item.get('hand_out_bend') or 'Auto',
+                           item.get('hand_out_path') or None)
     return on_frame(pen_point(item, w, h, H, t))
+
+
+def way_ends(item, W, H):
+    """exp.31: (home, first point, last point) of the hand's ways on a W × H frame (Edit path)."""
+    import overlays
+    bx, by, bw, bh = overlays.box(item, W, H)
+    w = float(item.get('size', .3)) * W
+    h = w * float(item.get('aspect', .4))
+    a = math.radians(float(item.get('rotation', 0) or 0))
+
+    def on_frame(pt):
+        x, y = pt
+        return (bx + bw / 2 + x * math.cos(a) - y * math.sin(a), by + bh / 2 + x * math.sin(a) + y * math.cos(a))
+    if item.get('hand_way') == 'Comes in and leaves':
+        home = (W * .86, H * 1.12)
+    else:
+        from frame_render import REST_CORNERS
+        fx, fy = REST_CORNERS.get(_HAND.get('corner', 'Bottom right'), REST_CORNERS['Bottom right'])
+        home = (fx * W, fy * H)
+    pts, heads, _ = _geometry(item, w, h, H)
+    return home, on_frame(pts[0]), on_frame(heads[-1][1] if heads and hand_mode(item) == 'all' else pts[-1])
 
 
 def paint_hand(painter, item, t, W, H, screen_w=None, to_screen=None):
