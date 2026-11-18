@@ -6803,19 +6803,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if flow.currentData()=='free' and self._free_end_pending is not None:
             self.scenes[k]['hand_end']=list(self._free_end_pending)      # exp.38: where the hand ends
         moved,self._start_pending=getattr(self,'_start_pending',None),None
-        if moved is not None:
-            # exp.39: the green dot was dragged: move the spot the hand is at then
-            kind,ref,spot=moved
-            if kind=='end' and 0<=ref<len(self.scenes):
-                self.scenes[ref]['hand_end']=list(spot)
-            elif kind=='own' and 0<=ref<len(self.scenes):
-                self.scenes[ref]['hand_start']=list(spot)      # exp.40: from outside the picture
-            elif kind=='motion':
-                import camera_clips
-                clip=self.find_camera(ref)
-                if clip is not None:
-                    path=[list(q) for q in (clip.get('path') or camera_clips.MOVE_PATH)]
-                    path[-1]=list(spot); clip['path']=path
+        self.apply_start_move(moved)                 # exp.39-41: the green dot was dragged
         self.scenes[k]['glide']=(round(go.value(),2),round(back.value(),2),how_in.currentText(),how_out.currentText(),
                                  bend_in.currentText(),bend_out.currentText())
         if paths: self.scenes[k]['glide_path']=paths
@@ -6907,6 +6895,49 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             import applog; applog.error('Where the hand comes from',exc)
         return 'corner',None
 
+    def green_dot(self,k,snap):
+        """exp.39-41: element k's green dot (where its hand comes from): (kind, ref, movable, note).
+        kind: 'motion' (ref: the Hand motion that left the hand there), 'end' (ref: the element
+        whose Free ending it is), 'own' (outside the picture: this element's own start), 'link',
+        'corner'. Dragging moves that spot, so the hand never jumps."""
+        kind,ref=self.way_in_source(k,snap['times'][0])
+        if snap.get('outside'):
+            kind,ref='own',k                    # exp.40: it comes from outside the picture
+        n=(ref if isinstance(ref,int) else 0)+1
+        note={'motion':'The green dot is where a Hand motion left the hand. Drag it to move that spot '
+                       '(the Hand motion\'s last point changes too).',
+              'end':f'The green dot is where element {n}\'s hand ended (Free ending). Drag it to move that '
+                    f'spot (element {n}\'s way back ends there too).',
+              'link':f'The hand comes from where element {n} finished drawing.',
+              'corner':'The hand comes from its corner. To start somewhere else, give the element before a '
+                       'Free ending, or add a Hand motion that stays where it ends.',
+              'own':'The hand is outside the picture here. Drag the green dot to choose where it comes from.'}[kind]
+        return kind,ref,kind in ('motion','end','own'),note
+
+    def start_move(self,snap,kind,ref,a):
+        """exp.39-41: the green dot of a way in dragged to `a` (screen of the snapshot): what to
+        change, (kind, ref, spot), for apply_start_move."""
+        W,H=snap['size']; px,py,pw,ph=snap.get('place') or (0.,0.,float(W),float(H))
+        if kind=='own':
+            return 'own',ref,(round(a[0]/max(1.,W),4),round(a[1]/max(1.,H),4))     # shares of the screen
+        spot=(round((a[0]-px)/max(1.,pw),4),round((a[1]-py)/max(1.,ph),4))       # shares of the page
+        return kind,(ref['id'] if kind=='motion' else ref),spot
+
+    def apply_start_move(self,moved):
+        """exp.39-41: move the spot a hand comes from (see start_move)."""
+        if moved is None: return
+        kind,ref,spot=moved
+        if kind=='end' and 0<=ref<len(self.scenes):
+            self.scenes[ref]['hand_end']=list(spot)
+        elif kind=='own' and 0<=ref<len(self.scenes):
+            self.scenes[ref]['hand_start']=list(spot)
+        elif kind=='motion':
+            import camera_clips
+            clip=self.find_camera(ref)
+            if clip is not None:
+                path=[list(q) for q in (clip.get('path') or camera_clips.MOVE_PATH)]
+                path[-1]=list(spot); clip['path']=path
+
     def edit_glide_path(self,k,which,style,bend,keys):
         """exp.217: the Edit path window for element k's way in / back. Returns the keyframes
         (None: the preset's path) or False (cancelled / no frame to show)."""
@@ -6920,78 +6951,131 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         dialog.canvas.hand=snap['hand']            # exp.219: Play shows the hand itself
         free=which=='out' and getattr(self,'_free_ending_chosen',False)
         dialog.canvas.movable_end=free             # exp.38: Free ending: drag the red dot
-        source=self.way_in_source(k,snap['times'][0]) if which=='in' else None
+        source=self.green_dot(k,snap) if which=='in' else None
         if source is not None:
-            # exp.39: the green dot is where the hand is then; dragging it moves that spot (the
-            # Free ending or the Hand motion that left the hand there: no jump anywhere)
-            kind,ref=source
-            if snap.get('outside'):
-                kind,ref='own',k                # exp.40: it comes from outside the picture
-            dialog.canvas.movable_start=kind in ('motion','end','own')
-            note={'motion':'The green dot is where a Hand motion left the hand. Drag it to move that spot '
-                           '(the Hand motion\'s last point changes too).',
-                  'end':f'The green dot is where element {(ref or 0)+1}\'s hand ended (Free ending). Drag it to '
-                        'move that spot (element '+f'{(ref or 0)+1}\'s way back ends there too).',
-                  'link':f'The hand comes from where element {(ref or 0)+1} finished drawing.',
-                  'corner':'The hand comes from its corner. To start somewhere else, give the element before a '
-                           'Free ending, or add a Hand motion that stays where it ends.',
-                  'own':'The hand is outside the picture here, so it comes in from below the middle. Drag the '
-                        'green dot to choose where it comes from.'}[kind]
-            label=QLabel(note); label.setWordWrap(True); label.setObjectName('muted')
+            # exp.39/41: the green dot is where the hand is then; dragging it moves that spot
+            dialog.canvas.movable_start=source[2]
+            label=QLabel(source[3]); label.setWordWrap(True); label.setObjectName('muted')
             dialog.layout().insertWidget(1,label)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return False
-        if source is not None and dialog.canvas.movable_start and tuple(dialog.canvas.a)!=tuple(snap['a']):
-            W,H=snap['size']; px,py,pw,ph=snap.get('place') or (0.,0.,float(W),float(H))
-            ax,ay=dialog.canvas.a
-            spot=(round((ax-px)/max(1.,pw),4),round((ay-py)/max(1.,ph),4))
-            if kind=='own':
-                spot=(round(ax/max(1.,W),4),round(ay/max(1.,H),4))     # exp.40: shares of the screen
-                self._start_pending=('own',k,spot)
-            else:
-                self._start_pending=(source[0],source[1]['id'] if source[0]=='motion' else source[1],spot)
+        if source is not None and source[2] and tuple(dialog.canvas.a)!=tuple(snap['a']):
+            self._start_pending=self.start_move(snap,source[0],source[1],dialog.canvas.a)
         if free:
             W,H=snap['size']; px,py,pw,ph=snap.get('place') or (0.,0.,float(W),float(H))
             bx,by=dialog.canvas.b
             self._free_end_pending=(round((bx-px)/max(1.,pw),4),round((by-py)/max(1.,ph),4))
         return dialog.keyframes()
 
+    def hand_path_rows(self):
+        """exp.41 (the user: every hand path in one place, in time order, every hand): the ways of
+        the drawing hand (each element's way in and back), of the sticker hands and of the Hand
+        motions, as Hand paths shows them (see glide_snapshot), sorted by when they start."""
+        import camera_clips, stickers, frame_render
+        rows=[]
+        for m in sorted(self.hand_marks(),key=lambda m: m[0]):
+            if len(m)<5: continue
+            k=m[4]
+            for which in ('in','out'):
+                snap=self.glide_snapshot(k,which)
+                if not isinstance(snap,dict): continue
+                snap.update(kind='element',who='Writing hand',own=('element',k))
+                if which=='in':
+                    dot=self.green_dot(k,snap)
+                    snap.update(source=dot,movable_start=dot[2],note=dot[3])
+                elif self.scenes[k].get('hand_flow')=='free' and not self.scenes[k].get('hand_link'):
+                    snap.update(movable_end=True,note='Free ending: drag the red dot to where the hand ends.')
+                rows.append(snap)
+        W=960; H=round(W*self.board_aspect())
+        for span0,lead,draw,tail,oid in self.sticker_hand_marks():
+            item=self.find_overlay(oid)
+            if item is None: continue
+            for which,length in (('in',lead),('out',tail)):
+                if length<=0: continue
+                at=span0+lead if which=='in' else span0+lead+draw
+                try:
+                    image,to_screen=self.sticker_view_at(item,at,W,H)
+                    if image is None: continue
+                    home,first,last=(to_screen(*q) for q in stickers.way_ends(item,W,H))
+                except Exception as exc:
+                    import applog; applog.error('Hand paths: a sticker',exc); continue
+                a,b=(home,first) if which=='in' else (last,home)
+                style=item.get(f'hand_{which}_style') or 'Smooth'
+                bend=item.get(f'hand_{which}_bend') or 'Auto'
+                keys=item.get(f'hand_{which}_path')
+                h=stickers._HAND
+                rows.append(dict(kind='sticker',who='Writing hand',oid=oid,which=which,name=item.get('name',''),
+                                 own=('sticker',oid),image=image,a=a,b=b,size=(W,H),style=style,bend=bend,
+                                 hand=(h['image'],h['anchor'],W*h['scale']) if h else None,
+                                 keys=[tuple(x) for x in keys] if keys else None,
+                                 preset=frame_render.preset_keyframes(a,b,style,(W/2.,H/2.),bend),
+                                 times=(at-lead,at) if which=='in' else (at,at+tail),
+                                 note='A sticker\'s hand: it comes from its corner and goes back there.'))
+        for clip in self.cameras:
+            if clip.get('kind')!=camera_clips.MOVE or clip.get('off'): continue
+            view=self.hand_motion_view(clip)
+            if isinstance(view,str): continue
+            pts=[view['to_frame'](q) for q in clip.get('path') or camera_clips.MOVE_PATH]
+            a=view['begin'] or view['home']
+            back=clip.get('back',True) is not False
+            b=view['home'] if back else pts[-1]
+            keys=[frame_render.to_keyframe(a,b,q) for q in (pts if back else pts[:-1])]
+            start=float(clip['start'])
+            rows.append(dict(kind='motion',who='Writing hand',cid=clip['id'],own=('motion',clip['id']),locked=True,
+                             image=view['image'],a=a,b=b,size=view['size'],style=clip.get('how') or 'Smooth',
+                             hand=(view['options']['hand'],view['anchor'],view['rect'].width()),
+                             keys=keys,preset=keys,times=(start,start+float(clip['duration'])),
+                             note='A Hand motion: shape it in its own window (Edit this one…).'))
+        picture=next((r['hand'] for r in rows if r['kind']=='element' and r.get('hand')),None)
+        for r in rows:
+            if r.get('hand') is None: r['hand']=picture       # the same hand, so Play shows it
+        rows.sort(key=lambda r: (r['times'][0],r['times'][1]))
+        return rows
+
     def open_hand_paths(self):
-        """exp.220 (the user): Hand paths: every way of every hand in the video together, to
-        see how they follow each other and to shape any of them with keyframes."""
+        """exp.220/41 (the user): Hand paths: every way of every hand in the video together, in
+        time order, to see how they follow each other and to shape any of them."""
         from PySide6.QtWidgets import QDialog
         from glide_path_dialog import HandPathsDialog
-        if len(self.scenes)<2 or not getattr(self,'hand_rest',None) or not self.hand_rest.isChecked():
-            self.status.setText('Hand paths: the hand ways are there when the hand waits in its corner '
-                                '(Hand panel) in a video of more than one element.'); return
+        if not getattr(self,'hand_rest',None) or not self.hand_rest.isChecked():
+            self.status.setText('Hand paths: the hand ways are there when the hand waits in its corner (Hand panel).'); return
         self.store_scene(thumbnail=False)
-        moves=[]
         self.show_busy_now('Hand paths','Finding every way of the hands…')
         try:
-            for m in sorted(self.hand_marks(),key=lambda m: m[0]):
-                if len(m)<5: continue
-                for which in ('in','out'):
-                    snap=self.glide_snapshot(m[4],which)
-                    if isinstance(snap,dict): moves.append(snap)
+            rows=self.hand_path_rows()
         finally:
             self.clear_busy()
-        if not moves:
+        if not rows:
             self.status.setText('Hand paths: no hand ways in this video.'); return
-        moves.sort(key=lambda mv: mv['times'][0])
-        dialog=HandPathsDialog(self,moves)
+        dialog=HandPathsDialog(self,rows)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return
-        changed=dialog.changed()
-        if not changed: return
-        self.record_structure('hand paths')
-        for (k,which),keys in changed.items():
-            paths=dict(self.scenes[k].get('glide_path') or {})
-            if keys: paths[which]=keys
-            else: paths.pop(which,None)
-            if paths: self.scenes[k]['glide_path']=paths
-            else: self.scenes[k].pop('glide_path',None)
-        self.project_changes.mark_changed()
-        self._scene_cache={}; self.__dict__.pop('_memo',None)
-        self.refresh()
-        self.status.setText(f'Hand paths: {len(changed)} way(s) changed.')
+        changed=dialog.changed(); sticker=dialog.sticker_changes(); dots=dialog.dots_moved()
+        if changed or sticker or dots:
+            self.record_structure('hand paths')
+            for (k,which),keys in changed.items():
+                paths=dict(self.scenes[k].get('glide_path') or {})
+                if keys: paths[which]=keys
+                else: paths.pop(which,None)
+                if paths: self.scenes[k]['glide_path']=paths
+                else: self.scenes[k].pop('glide_path',None)
+            for (oid,which),keys in sticker.items():
+                item=self.find_overlay(oid)
+                if item is not None: item[f'hand_{which}_path']=keys
+            for mv,a,b in dots:                       # exp.41: the green / red dots moved
+                if a is not None and mv.get('source'):
+                    self.apply_start_move(self.start_move(mv,mv['source'][0],mv['source'][1],a))
+                if b is not None and mv.get('kind')=='element':
+                    W,H=mv['size']; px,py,pw,ph=mv.get('place') or (0.,0.,float(W),float(H))
+                    self.scenes[mv['k']]['hand_end']=[round((b[0]-px)/max(1.,pw),4),round((b[1]-py)/max(1.,ph),4)]
+            self.project_changes.mark_changed()
+            self._scene_cache={}; self.__dict__.pop('_memo',None)
+            self.clear_frames(); self.sync_camera_timeline(); self.refresh()
+            self.status.setText(f'Hand paths: {len(changed)+len(sticker)+len(dots)} change(s) kept.')
+        after=dialog.open_after
+        if after:
+            kind,ref=after
+            if kind=='motion': self.edit_hand_motion(ref)
+            elif kind=='element': self.edit_hand_glide(ref)
+            elif kind=='sticker': self.edit_sticker_hand(ref)
 
     def shift_camera_move(self,k,shift):
         """exp.167 (the user): a move between pages dragged along the timeline: the element it
@@ -7123,26 +7207,24 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         want, no picture needed."""
         return self.add_camera_clip('Hand motion')
 
-    def edit_hand_motion(self,cid):
-        """exp.224: double-click a Hand motion: when, how long, how, and where it goes."""
-        from PySide6.QtWidgets import QDialog
+    def hand_motion_view(self,clip):
+        """exp.41: what a Hand motion's window shows (also Hand paths): dict(image (that moment
+        without any element's hand), home, begin (where it starts), place, options, rect, anchor,
+        size, to_frame, to_page), or the reason there is none (text)."""
         import camera_clips, frame_render
-        from glide_path_dialog import HandMotionDialog
         from timeline_model import state_at
-        clip=self.find_camera(cid)
-        if clip is None: return
         start,length=float(clip['start']),float(clip['duration'])
         t=start+length/2.
         W=960; H=round(W*self.board_aspect())
         info=self.rest_hand_info(W,H,t,busy_too=True)
         if info is None:
-            self.status.setText('Hand motion: it moves the hand waiting in its corner. Turn on "The hand waits in a '
-                                'corner" (Hand panel) and add a drawing with a hand first.'); return
+            return ('it moves the hand waiting in its corner. Turn on "The hand waits in a '
+                    'corner" (Hand panel) and add a drawing with a hand first.')
         options,place=info
         quiet=dict((k,v) for k,v in options.items() if k not in ('hand_away','_rest_out','_hand_moves'))
         rect=frame_render.rest_rect(W,H,quiet,None,place)
         if rect is None:
-            self.status.setText('Hand motion: this video has no hand picture.'); return
+            return 'this video has no hand picture.'
         ax,ay=quiet.get('anchor',(.1,.1))
         home=(rect.x()+float(ax)*rect.width(),rect.y()+float(ay)*rect.height())
         px,py,pw,ph=place if place is not None else (0.,0.,float(W),float(H))
@@ -7160,10 +7242,26 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 else: self.scenes[j].pop('hand_off',None)
             self._scene_cache={}; self.__dict__.pop('_memo',None)
         if image is None:
-            self.status.setText('Hand motion: that moment of the video could not be shown.'); return
+            return 'that moment of the video could not be shown.'
         # exp.231: it starts where the hand is then (an earlier Hand motion may have left it elsewhere)
         earlier=tuple(m for m in camera_clips.hand_moves(self.cameras,self.hand_starts()) if m['start']<start-1e-6)
         begin=frame_render.hand_motion_at(dict(_hand_moves=earlier),start-1e-4,home,place,(W,H)) if earlier else None
+        return dict(image=image,home=home,begin=begin,place=place,options=options,rect=rect,
+                    anchor=(float(ax),float(ay)),size=(W,H),to_frame=to_frame,to_page=to_page)
+
+    def edit_hand_motion(self,cid):
+        """exp.224: double-click a Hand motion: when, how long, how, and where it goes."""
+        from PySide6.QtWidgets import QDialog
+        import camera_clips
+        from glide_path_dialog import HandMotionDialog
+        clip=self.find_camera(cid)
+        if clip is None: return
+        start,length=float(clip['start']),float(clip['duration'])
+        view=self.hand_motion_view(clip)
+        if isinstance(view,str):
+            self.status.setText('Hand motion: '+view); return
+        image,home,begin,options,rect=view['image'],view['home'],view['begin'],view['options'],view['rect']
+        ax,ay=view['anchor']; to_frame,to_page=view['to_frame'],view['to_page']
         dialog=HandMotionDialog(self,image,home,[to_frame(q) for q in clip.get('path') or camera_clips.MOVE_PATH],
                                 (options['hand'],(float(ax),float(ay)),rect.width()),start,length,
                                 clip.get('how') or 'Smooth',('Smooth','Steady','Quick start','Slow start','Overshoot'),
