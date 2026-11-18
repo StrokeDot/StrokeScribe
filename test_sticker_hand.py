@@ -131,6 +131,34 @@ class Ways(unittest.TestCase):
         self.assertGreater(off_line(pathed), 30)                    # it goes the way of its keyframe
 
 
+class OneMovement(unittest.TestCase):
+    """exp.35 (the user: the hand stopped at the start of the line; one hand movement): with How
+    Smooth the hand reaches the line at the drawing's speed and leaves it at that speed."""
+    def setUp(self):
+        import stickers
+        stickers.set_hand(hand_picture(), .2, (.05, .1), 'Bottom right')
+
+    def tearDown(self):
+        import stickers
+        stickers.set_hand(None, .2, (0, 0), None)
+
+    def speed(self, item, t, dt=.004):
+        import math, stickers
+        a, b = stickers.hand_tip(item, t - dt, 640, 360), stickers.hand_tip(item, t + dt, 640, 360)
+        return math.dist(a, b) / (2 * dt)
+
+    def test_it_does_not_stop_where_the_line_starts_or_ends(self):
+        import stickers
+        for shape, mode in (('Circle', 'Hand: outline'), ('Line', 'Hand: outline'), ('Curved arrow', 'Hand: everything')):
+            item = stickers.new(shape); item.update(start=2., draw_seconds=1., drawing=mode, hand_in=1., hand_out=1.)
+            pen = stickers._pen_speed(item, item['size'] * 640, item['size'] * 640 * item['aspect'], 360, 'start')
+            before, after = self.speed(item, 1.99), self.speed(item, 2.01)
+            self.assertGreater(before, pen * .6, shape)              # arrives moving, not stopped
+            self.assertGreater(after, pen * .6, shape)               # draws on at once
+            end = self.speed(item, 3.01)
+            self.assertGreater(end, pen * .2, shape)                 # leaves moving
+
+
 class HandSize(unittest.TestCase):
     """exp.30 (the user: the hand was huge): the camera zooms the page with the sticker, not the hand."""
     def setUp(self):

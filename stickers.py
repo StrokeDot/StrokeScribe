@@ -134,12 +134,14 @@ def phases(item, t):
     start = float(item.get('start', 0))
     e = _ease((t - start) / seconds)
     mode = hand_mode(item)
+    u = max(0., min(1., (t - start) / seconds))
     if mode == 'outline':                   # the hand's line over the whole time; the head pops in
+        # exp.35 (the user: one movement, the hand stopped at the start of the line): a hand draws
+        # at a steady pace; its way in arrives at that speed and its way back leaves at it
         pop = max(0., min(1., (t - start - seconds) / HEAD_POP))
-        return e, [pop, pop]
+        return u, [pop, pop]
     if mode == 'all':                       # the line, then each stroke of the head, by the hand
-        u = max(0., min(1., (t - start) / seconds))
-        line = _ease(min(1., u / .76))
+        line = min(1., u / .76)
         # the first stroke of the head, the pen back to the tip (no ink), the second stroke
         return line, [max(0., min(1., (u - .76) / .1)), max(0., min(1., (u - .9) / .1))]
     line = min(1., e / (1 - HEAD_SHARE))
@@ -255,14 +257,49 @@ def hand_tip(item, t, W, H):
     last = on_frame(heads[-1][1] if heads and hand_mode(item) == 'all' else pts[-1])
     from frame_render import glide_point
     lead, tail = ways(item)
+    centre = (W / 2., H / 2.)
     if t < start:                         # exp.31: its way in, as the element hands go (How, Turn, Path)
-        return glide_point(home, first, max(0., min(1., (t - span[0]) / lead)), item.get('hand_in_style') or 'Smooth',
-                           (W / 2., H / 2.), item.get('hand_in_bend') or 'Auto', item.get('hand_in_path') or None)
+        style = item.get('hand_in_style') or 'Smooth'
+        bend, keys = item.get('hand_in_bend') or 'Auto', item.get('hand_in_path') or None
+        p = max(0., min(1., (t - span[0]) / lead))
+        if style == 'Smooth':             # exp.35: one movement: it reaches the line at the drawing's speed
+            return _flowing(home, first, p, bend, keys, centre, _pen_speed(item, w, h, H, 'start') * lead, True)
+        return glide_point(home, first, p, style, centre, bend, keys)
     if t > start + seconds:
-        return glide_point(last, home, max(0., min(1., (t - start - seconds) / tail)),
-                           item.get('hand_out_style') or 'Smooth', (W / 2., H / 2.), item.get('hand_out_bend') or 'Auto',
-                           item.get('hand_out_path') or None)
+        style = item.get('hand_out_style') or 'Smooth'
+        bend, keys = item.get('hand_out_bend') or 'Auto', item.get('hand_out_path') or None
+        p = max(0., min(1., (t - start - seconds) / tail))
+        if style == 'Smooth':             # exp.35: it leaves the line at the drawing's speed
+            return _flowing(last, home, p, bend, keys, centre, _pen_speed(item, w, h, H, 'end') * tail, False)
+        return glide_point(last, home, p, style, centre, bend, keys)
     return on_frame(pen_point(item, w, h, H, t))
+
+
+def _pen_speed(item, w, h, frame_h, where):
+    """exp.35: how fast (pixels a second) the pen moves on the line at its start / end."""
+    pts, heads, _ = _geometry(item, w, h, frame_h)
+    seconds = max(.05, float(item.get('draw_seconds', .8)))
+    length = sum(math.dist(a, b) for a, b in zip(pts, pts[1:]))
+    if hand_mode(item) == 'all' and heads:
+        if where == 'end':
+            return math.dist(*heads[-1]) / (.1 * seconds)
+        return length / (.76 * seconds)
+    return length / seconds
+
+
+def _flowing(a, b, p, bend, keys, centre, reach, arriving):
+    """exp.35: the Smooth way from a to b at p (0..1) without stopping at the line: arriving, it
+    starts from rest and reaches b at the pen's speed; leaving, it starts at that speed and comes to
+    rest at b. reach: the pen's speed × the way's seconds (pixels)."""
+    from frame_render import glide_point, _inverse_ease
+    line = [glide_point(a, b, _inverse_ease(i / 24., 'Smooth'), 'Smooth', centre, bend, keys) for i in range(25)]
+    way = sum(math.dist(x, y) for x, y in zip(line, line[1:])) or 1.
+    v = max(0., min(3., reach / way))        # its speed at the line, in ways a second × seconds
+
+    def h(x):                                # from rest to speed v (a smooth cubic)
+        return (v - 2) * x ** 3 + (3 - v) * x ** 2
+    q = h(p) if arriving else 1 - h(1 - p)
+    return glide_point(a, b, _inverse_ease(max(0., min(1., q)), 'Smooth'), 'Smooth', centre, bend, keys)
 
 
 def way_ends(item, W, H):
