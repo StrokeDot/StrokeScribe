@@ -157,6 +157,11 @@ class OneMovement(unittest.TestCase):
             self.assertGreater(after, pen * .6, shape)               # draws on at once
             end = self.speed(item, 3.01)
             self.assertGreater(end, pen * .2, shape)                 # leaves moving
+        # exp.36: a short, quick way (the pen much faster than the way): still no slowing down
+        item = stickers.new('Circle'); item.update(start=2., draw_seconds=.4, drawing='Hand: outline', hand_in=1.5,
+                                                  size=.6)
+        pen = stickers._pen_speed(item, item['size'] * 640, item['size'] * 640 * item['aspect'], 360, 'start')
+        self.assertGreater(self.speed(item, 1.995, .002), pen * .8)
 
 
 class HandSize(unittest.TestCase):
@@ -192,6 +197,31 @@ class HandSize(unittest.TestCase):
         plain, zoomed = self.green_width(frame(1.)), self.green_width(frame(2.))
         self.assertGreater(plain, 50)
         self.assertAlmostEqual(zoomed, plain, delta=4)               # not twice as big
+
+
+class UndoKeepsThePlayhead(unittest.TestCase):
+    """exp.36 (the user: the playhead jumped back): an undo leaves the playhead where it is."""
+    def test_undo_does_not_move_the_playhead(self):
+        from app import Window
+        from engine import import_svg
+        w = Window(); w.show()
+        try:
+            w.set_drawing(import_svg('samples/drawing.svg'))
+            w.add_scene(); w.set_drawing(import_svg('samples/drawing.svg'))
+            for _ in range(30): APP.processEvents()
+            w.preview_scope.setCurrentIndex(1)
+            item = w.add_sticker('Circle')
+            for _ in range(30): APP.processEvents()
+            t = w.stage_timeline
+            t.slider.setValue(800)
+            for _ in range(10): APP.processEvents()
+            before = w.video_seconds()
+            t.overlay_changed.emit(item['id'], 1., 3., 0); t.overlay_done.emit(item['id'])
+            w.undo()
+            for _ in range(10): APP.processEvents()
+            self.assertAlmostEqual(w.video_seconds(), before, delta=.05)
+        finally:
+            w.close()
 
 
 class Waiting(unittest.TestCase):

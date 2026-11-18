@@ -294,10 +294,12 @@ def _flowing(a, b, p, bend, keys, centre, reach, arriving):
     from frame_render import glide_point, _inverse_ease
     line = [glide_point(a, b, _inverse_ease(i / 24., 'Smooth'), 'Smooth', centre, bend, keys) for i in range(25)]
     way = sum(math.dist(x, y) for x, y in zip(line, line[1:])) or 1.
-    v = max(0., min(3., reach / way))        # its speed at the line, in ways a second × seconds
+    v = max(0., reach / way)                 # its speed at the line, in ways a second × seconds
 
-    def h(x):                                # from rest to speed v (a smooth cubic)
-        return (v - 2) * x ** 3 + (3 - v) * x ** 2
+    def h(x):                                # from rest to speed v
+        if v <= 3:
+            return (v - 2) * x ** 3 + (3 - v) * x ** 2      # a smooth cubic
+        return x ** v        # exp.36: faster than a cubic can reach (it slowed down at the line before)
     q = h(p) if arriving else 1 - h(1 - p)
     return glide_point(a, b, _inverse_ease(max(0., min(1., q)), 'Smooth'), 'Smooth', centre, bend, keys)
 
