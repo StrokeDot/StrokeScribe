@@ -6,6 +6,13 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## The sticker hand: one movement (v1.0.1-experimental.35)
+
+- The hand stopped where the line began (and where it ended): its way in slowed down to rest on
+  the line's start, and the drawing started from rest too. Now, with How: Smooth, the hand leaves
+  its corner, reaches the line at the speed it draws, draws at a steady pace and leaves at that
+  speed, slowing only as it gets back: one movement. Other How choices keep their own timing.
+
 ## Fixed: a sticker drawn by the hand would not move (v1.0.1-experimental.34)
 
 - A sticker drawn by the hand waits for the drawing hand: it was put 0.5 s after that hand,
