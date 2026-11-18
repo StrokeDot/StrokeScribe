@@ -917,6 +917,9 @@ class StageTimeline(QFrame):
                 r=QRectF(self._x(a),row.center().y()-5,max(4.,self._x(b)-self._x(a)),10)
                 fill=QColor(theme_colors()['hold']); fill.setAlpha(150)
                 p.setPen(QPen(QColor('#ffffff'),1.5,Qt.PenStyle.DashLine)); p.setBrush(fill); p.drawRoundedRect(r,4,4)
+        csnap=getattr(self,'_clip_snap',None)
+        if csnap is not None and self._drag and self._drag[0]=='overlay':
+            x=self._x(csnap); p.setPen(QPen(QColor('#2ecc71'),2)); p.drawLine(QPointF(x,22),QPointF(x,self.height()-4))
         snap=getattr(self,'_snap_line',None)
         if self._ghost is not None and snap is not None:
             # exp.211 (the user, like Filmora): a green line where the dragged element snaps
@@ -928,6 +931,66 @@ class StageTimeline(QFrame):
                 box=QRectF(x+4,24,w_,18); p.setBrush(green); p.setPen(Qt.PenStyle.NoPen); p.drawRoundedRect(box,5,5)
                 p.setPen(QColor('#0b2e17')); p.drawText(box,Qt.AlignmentFlag.AlignCenter,text)
 
+    def _clip_list(self, skip=None):
+        """exp.33: every clip of the whole video: [(name, start, end, kind, key)] (kind 'element' /
+        'overlay' / 'camera'); skip: ('element', k) or ('overlay', id)."""
+        out=[]
+        for i in self.items or ():
+            if skip!=('element',i[0]):
+                out.append((f'{i[0]+1} · {i[1]}',float(i[2]),float(i[2])+float(i[3]),'element',i[0]))
+        for o in getattr(self,'overlays',()) or ():
+            if skip!=('overlay',o.get('id')):
+                a=float(o.get('start',0)); out.append((o.get('name') or o.get('kind','Text'),a,a+float(o.get('duration',3)),'overlay',o.get('id')))
+        for c in getattr(self,'cam_clips',()) or ():
+            a=float(c.get('start',0)); out.append((c.get('kind') or 'Camera',a,a+float(c.get('duration',1)),'camera',c.get('id')))
+        return out
+
+    def _snap_clip(self, oid, part, start, length, px_per_sec):
+        """exp.33: a dragged text / sticker clip snaps (its start or end, or the edge being dragged)
+        to 0, the playhead and the other clips' starts and ends. self._clip_snap: the line."""
+        points=[0.,self.progress*self.total()]
+        for _,a,b,_,_ in self._clip_list(('overlay',oid)):
+            points+=[a,b]
+        limit=8./max(1e-6,px_per_sec); best=None
+        edges=[('start',start),('end',start+length)] if part=='move' else \
+              [('end',start+length)] if part=='end' else [('start',start)]
+        for name,edge in edges:
+            for p in points:
+                d=abs(edge-p)
+                if d<limit:
+                    limit=d; best=(name,p)
+        self._clip_snap=None
+        if best is None: return start,length
+        name,p=best
+        self._clip_snap=p
+        if part=='move':
+            return (max(0.,p) if name=='start' else max(0.,p-length)),length
+        if part=='end':
+            return start,max(.2,p-start)
+        end=start+length
+        return min(p,end-.2),end-min(p,end-.2)
+
+    def _line_up_menu(self, menu, mine, move):
+        """exp.33 (the user: "match with the element above"): Line up with ▸ each other clip (the
+        nearest first): start together with it, or right when it ends; and the playhead.
+        mine: (start, end); move(new_start)."""
+        if not self.items: return
+        from PySide6.QtWidgets import QMenu
+        start,end=mine
+        # sub-menus are made with their parent menu as owner: made by title alone, PySide deletes
+        # them as soon as Python lets go (the menu came up empty)
+        sub=QMenu('Line up with',menu); menu.addMenu(sub)
+        sub.addAction(f'The playhead ({self.progress*self.total():.1f} s)',lambda: move(self.progress*self.total()))
+        sub.addSeparator()
+        others=self._clip_list(getattr(self,'_line_up_skip',None))
+        others.sort(key=lambda c: min(abs(c[1]-start),abs(c[2]-start)))
+        for name,a,b,kind,_ in others[:14]:
+            label={'element':'','overlay':'','camera':'📷 '}.get(kind,'')+name
+            m=QMenu(label,sub); sub.addMenu(m)
+            m.addAction(f'Start together ({a:.1f} s)',lambda a=a: move(a))
+            m.addAction(f'Start when it ends ({b:.1f} s)',lambda b=b: move(b))
+            m.addAction(f'End together ({b:.1f} s)',lambda b=b: move(b-(end-start)))
+
     def _snap(self, k, start, px_per_sec):
         """Start times snap to 0, the playhead and the other elements' starts and ends, and
         (exp.211, the user, like Filmora) to where another element's hand finishes drawing:
@@ -937,6 +1000,8 @@ class StageTimeline(QFrame):
         points=[(0.,'edge',None),(self.progress*self.total(),'edge',None)]
         for i in self.items:
             if i[0]!=k: points+=[(i[2],'edge',i[0]),(i[2]+i[3],'edge',i[0])]
+        for _,a,b,kind,_ in self._clip_list(('element',k)):      # exp.33: texts, stickers, cameras too
+            if kind!='element': points+=[(a,'edge',None),(b,'edge',None)]
         for mark in getattr(self,'hand_marks',None) or ():
             if len(mark)>4 and mark[4]!=k:
                 points.append((mark[0]+mark[1]+mark[2],'hand',mark[4]))   # its last stroke
@@ -1772,6 +1837,11 @@ class StageTimeline(QFrame):
                 menu=QMenu(self)
                 menu.addAction('Settings…',lambda: self.overlay_action.emit(oid,'edit'))
                 menu.addAction('Duplicate',lambda: self.overlay_action.emit(oid,'duplicate'))
+                a0=float(item.get('start',0)); length=float(item.get('duration',3)); track=int(item.get('track',0))
+                def move_overlay(new,oid=oid,length=length,track=track):
+                    self.overlay_changed.emit(oid,round(max(0.,new),2),length,track); self.overlay_done.emit(oid)
+                self._line_up_skip=('overlay',oid)
+                self._line_up_menu(menu,(a0,a0+length),move_overlay)          # exp.33
                 menu.addSeparator()
                 menu.addAction('Delete',lambda: self.overlay_action.emit(oid,'delete'))
                 menu.exec(event.globalPosition().toPoint())
@@ -1797,6 +1867,10 @@ class StageTimeline(QFrame):
                                lambda:self.element_flag.emit(k,'hide'))
                 menu.addAction('Sounds on for this element' if flags.get('muted') else 'Mute this element',
                                lambda:self.element_flag.emit(k,'mute'))
+                menu.addSeparator()
+                self._line_up_skip=('element',k)
+                self._line_up_menu(menu,(float(item[2]),float(item[2])+float(item[3])),
+                                   lambda new,k=k,track=item[4]: self.element_placed.emit(k,round(max(0.,new),3),int(track)))   # exp.33
                 menu.addSeparator()
                 menu.addAction('Start right after the element before it (Track 1)',lambda:self.element_reset.emit(k))
                 self._export_actions(menu,item)
@@ -2000,6 +2074,10 @@ class StageTimeline(QFrame):
                     length=max(.2,min(total-start0,length0+shift))
                 else:
                     start=max(0.,min(start0+length0-.2,start0+shift)); length=start0+length0-start
+                if self.items:
+                    # exp.33 (the user, like Filmora): it snaps to the playhead and to the starts and
+                    # ends of the other clips (elements, texts, stickers, cameras); a green line shows it
+                    start,length=self._snap_clip(item.get('id'),part,start,length,px_per_sec)
                 if part=='move' and self.items:
                     # exp.140: like an element: a dashed copy until the mouse is let go.
                     if abs(pos.x()-x0)<4 and abs(pos.y()-y0)<4 and self._text_ghost is None:
@@ -2216,7 +2294,7 @@ class StageTimeline(QFrame):
             self.update(); self.setCursor(Qt.CursorShape.PointingHandCursor)
             event.accept(); return
         if self._drag and self._drag[0]=='overlay':
-            self._frozen=None
+            self._frozen=None; self._clip_snap=None
             ghost,self._text_ghost=self._text_ghost,None
             if ghost is not None:
                 self.overlay_changed.emit(*ghost)
