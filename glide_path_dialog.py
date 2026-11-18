@@ -28,6 +28,7 @@ class PathCanvas(QWidget):
         self.style = 'Smooth'
         self.hand = None                       # exp.219: (picture, grip, width in frame pixels)
         self.movable_end = False               # exp.38: Free ending: the red dot can be dragged
+        self.movable_start = False             # exp.39: the green dot (where the hand is) can be dragged
         self.setMinimumSize(760, 520)
         self.setMouseTracking(True)
 
@@ -113,9 +114,17 @@ class PathCanvas(QWidget):
         c = self.to_widget(self.b)
         return math.hypot(c.x() - pos.x(), c.y() - pos.y()) <= 12
 
+    def _start_at(self, pos):
+        if not self.movable_start:
+            return False
+        c = self.to_widget(self.a)
+        return math.hypot(c.x() - pos.x(), c.y() - pos.y()) <= 12
+
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self._end_at(event.position()):
             self.drag = 'end'; return              # exp.38: where the hand ends (Free ending)
+        if event.button() == Qt.MouseButton.LeftButton and self._start_at(event.position()):
+            self.drag = 'start'; return            # exp.39: where the hand is before it comes in
         i = self._key_at(event.position())
         if event.button() == Qt.MouseButton.RightButton:
             if i is not None:
@@ -131,12 +140,18 @@ class PathCanvas(QWidget):
             self.b = self.to_frame(event.position())
             self.keys = [self.key_of(q) for q in spots]
             self.update()
+        elif self.drag == 'start':
+            spots = self.points()[1:-1]           # exp.39: the same for the start
+            self.a = self.to_frame(event.position())
+            self.keys = [self.key_of(q) for q in spots]
+            self.update()
         elif self.drag is not None:
             self.keys[self.drag] = self.key_of(self.to_frame(event.position()))
             self.update()
         else:
             self.setCursor(Qt.CursorShape.OpenHandCursor if (self._key_at(event.position()) is not None
-                                                             or self._end_at(event.position()))
+                                                             or self._end_at(event.position())
+                                                             or self._start_at(event.position()))
                            else Qt.CursorShape.ArrowCursor)
 
     def mouseReleaseEvent(self, event):

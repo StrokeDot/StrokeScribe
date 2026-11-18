@@ -6785,6 +6785,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                         'of the way back: drag the red dot); the hand stays there and the next hand starts there.')
         # exp.38: Edit path needs to know (before OK) whether its red dot may be dragged
         self._free_ending_chosen=flow.currentData()=='free'; self._free_end_pending=None
+        self._start_pending=None                     # exp.39: the green dot moved (Edit path)
         flow.currentIndexChanged.connect(lambda *_: setattr(self,'_free_ending_chosen',flow.currentData()=='free'))
         def linked(on):
             back.setEnabled(not on); how_out.setEnabled(not on); bend_out.setEnabled(not on); out_path.setEnabled(not on)
@@ -6801,6 +6802,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.record_structure('hand glide')
         if flow.currentData()=='free' and self._free_end_pending is not None:
             self.scenes[k]['hand_end']=list(self._free_end_pending)      # exp.38: where the hand ends
+        moved,self._start_pending=getattr(self,'_start_pending',None),None
+        if moved is not None:
+            # exp.39: the green dot was dragged: move the spot the hand is at then
+            kind,ref,spot=moved
+            if kind=='end' and 0<=ref<len(self.scenes):
+                self.scenes[ref]['hand_end']=list(spot)
+            elif kind=='motion':
+                import camera_clips
+                clip=self.find_camera(ref)
+                if clip is not None:
+                    path=[list(q) for q in (clip.get('path') or camera_clips.MOVE_PATH)]
+                    path[-1]=list(spot); clip['path']=path
         self.scenes[k]['glide']=(round(go.value(),2),round(back.value(),2),how_in.currentText(),how_out.currentText(),
                                  bend_in.currentText(),bend_out.currentText())
         if paths: self.scenes[k]['glide_path']=paths
@@ -6865,6 +6878,33 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                     bend=bend,keys=[tuple(x) for x in keys] if keys else None,times=(t0,t1),
                     preset=frame_render.preset_keyframes(info['a'],info['b'],style,(W/2.,H/2.),bend))
 
+    def way_in_source(self,k,t0):
+        """exp.39 (the user: the green dot is where the hand really is, and I can move it): what
+        put the hand where element k's hand comes from at t0 (the start of its way in):
+        ('motion',clip) a Hand motion that left it there, ('end',j) element j's Free ending,
+        ('link',j) where element j finished drawing, ('corner',None) its corner."""
+        import camera_clips
+        parked=None
+        hands=self.hand_starts()
+        for c in sorted((c for c in self.cameras if c.get('kind')==camera_clips.MOVE and not c.get('off')),
+                        key=lambda c: float(c['start'])):
+            if float(c['start'])+float(c['duration'])>t0+1e-3: break
+            if c.get('back',True) is not False:
+                parked=None; continue                    # it went back where it was
+            until=camera_clips.parked_until(c,hands)
+            parked=c if until is not None and until>t0+1e-3 else None
+        if parked is not None: return 'motion',parked
+        try:
+            import scenes as _scenes
+            H=round(960*self.board_aspect())
+            els=self.timeline_elements(960,H)
+            j=_scenes.hand_links(self.timeline_layout().items,els,self.board_frames(),self.hidden_elements()).get(k)
+            if j is not None:
+                return ('end' if els[j]['options'].get('_free_end') is not None else 'link'),j
+        except Exception as exc:
+            import applog; applog.error('Where the hand comes from',exc)
+        return 'corner',None
+
     def edit_glide_path(self,k,which,style,bend,keys):
         """exp.217: the Edit path window for element k's way in / back. Returns the keyframes
         (None: the preset's path) or False (cancelled / no frame to show)."""
@@ -6878,7 +6918,27 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         dialog.canvas.hand=snap['hand']            # exp.219: Play shows the hand itself
         free=which=='out' and getattr(self,'_free_ending_chosen',False)
         dialog.canvas.movable_end=free             # exp.38: Free ending: drag the red dot
+        source=self.way_in_source(k,snap['times'][0]) if which=='in' else None
+        if source is not None:
+            # exp.39: the green dot is where the hand is then; dragging it moves that spot (the
+            # Free ending or the Hand motion that left the hand there: no jump anywhere)
+            kind,ref=source
+            dialog.canvas.movable_start=kind in ('motion','end')
+            note={'motion':'The green dot is where a Hand motion left the hand. Drag it to move that spot '
+                           '(the Hand motion\'s last point changes too).',
+                  'end':f'The green dot is where element {(ref or 0)+1}\'s hand ended (Free ending). Drag it to '
+                        'move that spot (element '+f'{(ref or 0)+1}\'s way back ends there too).',
+                  'link':f'The hand comes from where element {(ref or 0)+1} finished drawing.',
+                  'corner':'The hand comes from its corner. To start somewhere else, give the element before a '
+                           'Free ending, or add a Hand motion that stays where it ends.'}[kind]
+            label=QLabel(note); label.setWordWrap(True); label.setObjectName('muted')
+            dialog.layout().insertWidget(1,label)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return False
+        if source is not None and dialog.canvas.movable_start and tuple(dialog.canvas.a)!=tuple(snap['a']):
+            W,H=snap['size']; px,py,pw,ph=snap.get('place') or (0.,0.,float(W),float(H))
+            ax,ay=dialog.canvas.a
+            spot=(round((ax-px)/max(1.,pw),4),round((ay-py)/max(1.,ph),4))
+            self._start_pending=(source[0],source[1]['id'] if source[0]=='motion' else source[1],spot)
         if free:
             W,H=snap['size']; px,py,pw,ph=snap.get('place') or (0.,0.,float(W),float(H))
             bx,by=dialog.canvas.b
