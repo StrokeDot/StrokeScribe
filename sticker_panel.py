@@ -55,6 +55,12 @@ def build(w, Section, form_layout, linked_slider):
     w.sticker_hand_way.setToolTip('Where the hand comes from and goes back to: its resting corner, or in from '
                                   'the bottom and out again.')
     form.addRow('Hand', w.sticker_hand_way)
+    w.sticker_hand_ways = QPushButton('Hand ways…')
+    w.sticker_hand_ways.setToolTip('How the hand goes to the line and back: time, How, Turn, Path (like an '
+                                   'element\'s hand; or double-click its bar on the Hand row).')
+    w.sticker_hand_ways.clicked.connect(lambda checked=False: chosen_item() is not None and
+                                        w.edit_sticker_hand(chosen_item()['id']))
+    form.addRow('', w.sticker_hand_ways)
     w.sticker_color = QPushButton(); w.sticker_color.setObjectName('colorButton')
     w.sticker_color.setToolTip('The colour of the lines')
     form.addRow('Colour', w.sticker_color)
@@ -99,7 +105,7 @@ def build(w, Section, form_layout, linked_slider):
     lay.addWidget(chosen)
     lay.addStretch(1)
 
-    fields = [w.sticker_shape, w.sticker_drawing, w.sticker_hand_way, w.sticker_thickness, w.sticker_size, w.sticker_aspect, w.sticker_rotation,
+    fields = [w.sticker_shape, w.sticker_drawing, w.sticker_hand_way, w.sticker_hand_ways, w.sticker_thickness, w.sticker_size, w.sticker_aspect, w.sticker_rotation,
               w.sticker_flip, w.sticker_draw, w.sticker_length, w.sticker_out, w.sticker_color, w.sticker_delete]
     state = dict(filling=False, last=(None, 0.))
 
@@ -126,6 +132,7 @@ def build(w, Section, form_layout, linked_slider):
             w.sticker_drawing.setCurrentText(item.get('drawing', 'Animated'))
             w.sticker_hand_way.setCurrentText(item.get('hand_way', 'Rests in its corner'))
             w.sticker_hand_way.setEnabled(stickers.hand_mode(item) is not None)
+            w.sticker_hand_ways.setEnabled(stickers.hand_mode(item) is not None)
             paint_color(item.get('color', '#E0463C'))
             w.sticker_thickness.setValue(float(item.get('thickness', .012)) * 1000)
             w.sticker_size.setValue(float(item.get('size', .3)) * 100)

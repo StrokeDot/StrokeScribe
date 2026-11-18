@@ -92,6 +92,45 @@ class Logic(unittest.TestCase):
         self.assertNotEqual(f, g)
 
 
+class Ways(unittest.TestCase):
+    """exp.31 (the user: the same Hand settings as an element's): way in / back, How, Turn, Path."""
+    def setUp(self):
+        import stickers
+        stickers.set_hand(hand_picture(), .2, (.05, .1), 'Bottom right')
+
+    def tearDown(self):
+        import stickers
+        stickers.set_hand(None, .2, (0, 0), None)
+
+    def item(self, **kw):
+        import stickers
+        item = stickers.new('Line'); item.update(start=2., draw_seconds=1., drawing='Hand: outline', x=.3, y=.3, size=.3)
+        item.update(kw)
+        return item
+
+    def test_the_ways_set_how_long_the_hand_is_busy(self):
+        import stickers
+        item = self.item(hand_in=1.2, hand_out=.7)
+        self.assertEqual(stickers.busy(item), (.8, 3.7))
+
+    def test_curve_bends_the_way_and_a_path_is_followed(self):
+        import math, stickers
+        W, H = 640, 360
+        home, first, _ = stickers.way_ends(self.item(), W, H)
+        straight = stickers.hand_tip(self.item(), 1.75, W, H)
+        curved = stickers.hand_tip(self.item(hand_in_style='Curve', hand_in_bend='Clockwise'), 1.75, W, H)
+
+        def off_line(p):
+            (x1, y1), (x2, y2) = home, first
+            return abs((y2 - y1) * p[0] - (x2 - x1) * p[1] + x2 * y1 - y2 * x1) / math.dist(home, first)
+        self.assertLess(off_line(straight), 2)
+        self.assertGreater(off_line(curved), 10)
+        from frame_render import to_keyframe
+        far = to_keyframe(home, first, (W * .1, H * .1))           # a keyframe far off to the top left
+        pathed = stickers.hand_tip(self.item(hand_in_path=[far]), 1.75, W, H)
+        self.assertGreater(off_line(pathed), 30)                    # it goes the way of its keyframe
+
+
 class HandSize(unittest.TestCase):
     """exp.30 (the user: the hand was huge): the camera zooms the page with the sticker, not the hand."""
     def setUp(self):
