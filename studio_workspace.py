@@ -3863,6 +3863,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.hand_motion_add.setToolTip('Move the hand at the playhead. Double-click it on the Hand row to shape it.')   # exp.38: shorter
     w.hand_motion_add.clicked.connect(lambda checked=False: w.add_hand_motion())
     h.addRow('',w.hand_motion_add)
+    w.hand_paths_open=QPushButton('Hand paths…')               # exp.41: every hand way, in time order
+    w.hand_paths_open.setToolTip('Every hand way of the video in time order: see them, play them, shape them.')
+    w.hand_paths_open.clicked.connect(lambda checked=False: w.open_hand_paths())
+    h.addRow('',w.hand_paths_open)
     def _rest_rows(on):
         h.setRowVisible(w.hand_rest_corner,bool(on)); h.setRowVisible(w.hand_rest_travel,bool(on))
         h.setRowVisible(w.hand_leave_add,bool(on))

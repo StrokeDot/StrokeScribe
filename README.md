@@ -6,6 +6,13 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Hand paths: every hand way in one place (v1.0.1-experimental.41)
+
+- **Hand paths** (the hand button at the top of the timeline, or **Hand paths…** in the Hand panel) now lists every hand way of the video in time order: each element's way to the drawing and back, the sticker hands, and the Hand motions.
+- A strip at the top shows them all on one line per hand. Purple is a drawing, orange a sticker, teal a Hand motion. Click a bar to choose that way; there will be a separate line for the left hand when it comes.
+- On the chosen way, drag the purple keyframes. You can also drag the green dot (where the hand comes from) and the red dot (Free ending), with the same rules as Edit path, so nothing jumps. A line above says where the dot comes from.
+- **Edit this one…** keeps your changes and opens that way's own window (for a Hand motion, its Hand motion window).
+
 ## A hand from outside the picture comes in from below the middle (v1.0.1-experimental.40)
 
 - **Edit path** always zooms out far enough to show every dot: the green start, the red end, and every keyframe, even far outside the video.
