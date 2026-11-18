@@ -190,6 +190,15 @@ class Waiting(unittest.TestCase):
         marks = w.sticker_hand_marks()                                    # exp.30: on the Hand row
         self.assertEqual([m[4] for m in marks], [item['id']])
         self.assertAlmostEqual(marks[0][0], stickers.busy(item)[0])
+        # exp.34: with a long way in it lands after the other hand (not back on it), and a later
+        # place is kept as it is
+        item.update(hand_in=1.5, start=.2)
+        w.place_hand_sticker(item)
+        self.assertGreaterEqual(stickers.busy(item)[0], busy_end - 1e-6)
+        later = round(item['start'] + .3, 2)
+        item['start'] = later
+        self.assertFalse(w.place_hand_sticker(item))
+        self.assertEqual(item['start'], later)
         item['drawing'] = 'Animated'; item['start'] = .2
         self.assertFalse(w.place_hand_sticker(item))                      # no hand: anywhere
         self.assertEqual(item['start'], .2)
