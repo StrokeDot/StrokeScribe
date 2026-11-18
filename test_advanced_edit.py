@@ -45,12 +45,13 @@ class AdvancedEditTests(unittest.TestCase):
         return seen
 
     def test_each_part_opens_its_tab_with_the_real_panels(self):
-        expected = {'draw': 'Text', 'paint': 'Animation', 'glide': 'Hand', 'hold': 'Hand', 'erase': 'Animation'}
+        # exp.27: Animation became Drawing; the way out is on Effects
+        expected = {'draw': 'Text', 'paint': 'Drawing', 'glide': 'Hand', 'hold': 'Hand', 'erase': 'Effects'}
         for part, tab in expected.items():
             seen = self.open(part, lambda d, s: d.reject())
             self.assertEqual(seen['tab'], tab, part)
             self.assertTrue(seen['monitor_inside'] and seen['tabs_inside'])
-            self.assertEqual(seen['tabs'], ['Text', 'Animation', 'Hand', 'Image', 'Camera'])
+            self.assertEqual(seen['tabs'], ['Text', 'Drawing', 'Hand', 'Image', 'Effects', 'Camera'])
 
     def test_panels_go_back_after(self):
         w = self.w

@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QDialog, QHBoxLayout, QLabel, QPushButton, QSplit
 
 # which tab a double-clicked part opens on
 PART_TAB = {'draw': 'draw', 'paint': 'animation', 'glide': 'hand', 'hold': 'hand', 'back': 'hand',
-            'hand': 'hand', 'erase': 'animation', 'out': 'animation', 'move': 'animation',
+            'hand': 'hand', 'erase': 'effects', 'out': 'effects', 'move': 'effects',   # exp.27
             'element': 'draw'}
 
 
@@ -123,7 +123,7 @@ class AdvancedEdit(QDialog):
         # not about one element: hidden while the window is open
         from studio_workspace import TABS
         self.hidden_tabs = []
-        for key in ('export', 'ai'):
+        for key in ('export', 'ai', 'stickers'):     # exp.27: stickers are not part of one element
             page = self.page_of(key)
             i = tabs.indexOf(page)
             if i >= 0 and tabs.isTabVisible(i):

@@ -6,6 +6,20 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Drawing, Effects and Stickers panels; animated stickers (v1.0.1-experimental.27)
+
+The right rail now has three panels where Animation was:
+- **Drawing** (was Animation): Drawing, Colour & painting and Line order.
+- **Effects**: Move in (how the element comes in when it is not drawn), **Goes out** (every way
+  out: Fade, Blur, Wipe, Zoom, Pop, Spin, Move out to a side, Eraser; a Goes out clip right after
+  the element) and **Loop**. Goes out and Loop are the same settings as in the Text panel.
+- **Stickers**: arrows, circles and lines that draw themselves, like Filmora's animated stickers:
+  Arrow, Curved arrow, Circle, Hand-drawn circle, Line and Wavy line. Click one to put it in the
+  video at the playhead; drag it in the preview to place it. Its settings: shape, colour,
+  thickness, size, height, rotation, mirrored, draw time, length and how it goes out. A sticker is
+  a clip on the timeline (➚) like a text, drawn as lines at the size it is shown: sharp in a
+  2560 × 1440 export, and its drawing follows the clock, so it is smooth at 60 fps.
+
 ## The range can be changed; faster WebM export, same quality (v1.0.1-experimental.26)
 
 - **The selected range can be changed, like Filmora:** drag its handles on the ruler to make it

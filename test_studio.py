@@ -33,15 +33,15 @@ class StudioTests(unittest.TestCase):
         self.assertIn(DISPLAY_NAME,w.windowTitle())        # 1.0.0: 'StrokeScribe v1.0.0' (no 'Prototype')
         # Source joined the right panel as the last page (the rail shows it first),
         # so the long-standing indexes of the other pages are unchanged.
-        self.assertEqual(w.inspector_tabs.count(),5)
-        self.assertEqual([w.inspector_tabs.tabText(i) for i in range(5)],
-                         ['Animation','Hand','Export','Image','AI'])
+        self.assertEqual(w.inspector_tabs.count(),7)      # exp.27: + Effects, Stickers
+        self.assertEqual([w.inspector_tabs.tabText(i) for i in range(7)],
+                         ['Drawing','Hand','Export','Image','AI','Effects','Stickers'])
         self.assertEqual([w.left_tabs.tabText(i) for i in range(w.left_tabs.count())],
                          ['Text','Sound','Music','Camera'])
         self.assertEqual(list(w.left_rail_buttons),['text','sound','music','camera'])
         self.assertFalse(w.create_image_button.isVisible())     # the AI panel replaces it
         self.assertFalse(w.inspector_tabs.tabBar().isVisible())
-        self.assertEqual(list(w.rail_buttons),['source','ai','animation','hand','export'])
+        self.assertEqual(list(w.rail_buttons),['source','ai','animation','effects','stickers','hand','export'])
         self.assertTrue(w.left_rail.isVisible() and w.right_rail.isVisible())
         # No project selector or resolution/FPS in the top bar any more.
         self.assertFalse(w.project_menu.isVisible())
