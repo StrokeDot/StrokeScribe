@@ -1763,13 +1763,20 @@ def paint_hand_spec(frame, spec, options, place=None):
         ax, ay = (before or {}).get('anchor', own)
         home = (corner.x() + float(ax) * corner.width(), corner.y() + float(ay) * corner.height())
         target = spec.get('screen_target') or (tip if tip is not None else home)
+        free = options.get('_free_end') if phase == 'out' else None
+        if free is not None:
+            # exp.38 (the user: Free ending): the way back ends where it was put (shares of the
+            # element's picture), and the hand stays there
+            px, py, pw, ph = place if place is not None else (0., 0., float(W), float(H))
+            home = (px + float(free[0]) * pw, py + float(free[1]) * ph)
         p = max(0., min(1., float(spec.get('p') or 0.)))
         style = options.get('hand_glide_style_in' if phase == 'in' else 'hand_glide_style_out') or 'Smooth'
         bend = options.get('hand_glide_bend_in' if phase == 'in' else 'hand_glide_bend_out') or 'Auto'
         a, b = (home, target) if phase == 'in' else (target, home)
         keys = options.get('hand_glide_path_in' if phase == 'in' else 'hand_glide_path_out') or None
         tip = glide_point(a, b, p, style, (W / 2., H / 2.), bend, keys)
-        _HAND.glide = dict(a=a, b=b, size=(W, H), style=style, bend=bend, phase=phase, keys=keys)   # exp.217
+        _HAND.glide = dict(a=a, b=b, size=(W, H), style=style, bend=bend, phase=phase, keys=keys,   # exp.217
+                           place=place)                 # exp.38: the element's picture on the screen
         image, anchor, ratio = hand, (float(own[0]), float(own[1])), 1.
         tilt = glide_tilt(a, b, p, style, W * float(options.get('hand_scale', .18)), (W / 2., H / 2.), bend, keys)
         if before:
@@ -1780,6 +1787,8 @@ def paint_hand_spec(frame, spec, options, place=None):
             ratio = (theirs / max(1e-6, mine)) * (1. - near) + near
             anchor = (float(ax) + (own[0] - float(ax)) * near, float(ay) + (own[1] - float(ay)) * near)
         flow = options.get('_flow_next') if phase == 'out' else options.get('_flow_prev')
+        if free is not None:
+            flow = None                             # exp.38: it does not go by its corner
         if flow and place is not None and flow.get('a') is not None and flow.get('b') is not None:
             # exp.218: the way back and the next way in are one movement by the corner
             px, py, pw, ph = place

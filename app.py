@@ -1462,9 +1462,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import camera_clips
         if not self.drawing: return None
         if len(self.scenes)>1 and not self.all_scenes(): self.preview_scope.setCurrentIndex(1)
-        start=float(at) if at is not None else (self.video_seconds() if self.position<.999 else 0.)
+        # exp.38 (the user: it went to 0 with the playhead at the end): at the playhead; where
+        # there is no room left it ends at the end of the video
+        start=float(at) if at is not None else self.video_seconds()
         total=max(.5,self.video_length())
-        clip=camera_clips.new_clip(kind,min(start,max(0.,total-.5)))
+        clip=camera_clips.new_clip(kind,0.)
+        clip['start']=round(max(0.,min(start,total-float(clip.get('duration') or .5))),2)
         if kind in camera_clips.HAND_KINDS:              # exp.147/148: on the Hand row
             clip['side']='Right'
             if kind in (camera_clips.HAND,camera_clips.MOVE) and hasattr(self,'hand_rest') and not self.hand_rest.isChecked():
@@ -1477,8 +1480,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.select_camera(clip['id'])
         if hasattr(self,'show_left_panel'): self.show_left_panel('camera')
         if kind==camera_clips.MOVE:
-            self.status.setText(f'Hand motion at {clip["start"]:.1f} s: the waiting hand leaves its corner, moves and comes '
-                                'back. Double-click it on the Hand row to choose where it goes and how.')
+            self.status.setText(f'Hand motion at {clip["start"]:.1f} s. Double-click it to shape it.')   # exp.38: shorter
         elif kind==camera_clips.FIXED:
             self.status.setText(f'Reframe at {clip["start"]:.1f} s: the camera goes there and stays. Drag the frame on '
                                 'the preview to choose where; double-click it on the timeline for its settings.')
@@ -4272,7 +4274,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             return memo[key]
         state=self.scenes[k]['state']
         rest=self.hand_rest_settings()             # exp.143: the same for every element
-        key=(id(state),width,height,over,tuple(sorted(rest.items())),tuple(self.scenes[k].get('glide') or ()),repr(self.scenes[k].get('glide_path')))
+        key=(id(state),width,height,over,tuple(sorted(rest.items())),tuple(self.scenes[k].get('glide') or ()),repr(self.scenes[k].get('glide_path')),
+             self.scenes[k].get('hand_flow'),repr(self.scenes[k].get('hand_end')))      # exp.38
         cached=self._scene_cache.get(id(state))
         if cached is None or cached[0]!=key:
             drawing,options,_=job_from_state(state,self.hand,overrides=rest)
@@ -5085,7 +5088,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         try:
             sig=(width,height,tuple((id(m[0]),id(m[1]),id(m[3]),m[2]) for m in made),
                  repr(self.hand_video(None)),repr([dict(c) for c in self.live_clips()]),
-                 tuple((s.get('art_off'),s.get('hand_off'),s.get('hand_link'),s.get('hand_flow'),
+                 tuple((s.get('art_off'),s.get('hand_off'),s.get('hand_link'),s.get('hand_flow'),repr(s.get('hand_end')),
                         s.get('transition'),s.get('transition_seconds'),s.get('uid')) for s in self.scenes),
                  repr(self.eraser_tool()),repr(self.board_frames()),tuple(sorted(self.hidden_elements())),
                  tuple((it.k,it.start,it.length) for it in self.timeline_layout().items),self.timeline_layout().total,
@@ -5121,7 +5124,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         try:
             import scenes as _scenes
             items=self.timeline_layout().items
-            if any(s.get('hand_link') for s in self.scenes):
+            if any(s.get('hand_link') or (s.get('hand_flow')=='free' and s.get('hand_end')) for s in self.scenes):
                 # exp.210: a hand linked from the element before comes from where that one finished
                 _scenes.link_hands(items,elements,self.board_frames(),self.hidden_elements())
             _scenes.hand_handover(items,elements,self.hidden_elements())   # exp.212: no jump in size
@@ -6507,7 +6510,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 repr(self.scenes[k].get('glide')) if 0<=k<len(self.scenes) else None,
                 repr(self.scenes[k].get('glide_path')) if 0<=k<len(self.scenes) else None,   # exp.217
                 tuple(bool(s.get('hand_link')) for s in self.scenes),          # exp.210: linked hands
-                tuple(s.get('hand_flow') for s in self.scenes),                # exp.218
+                tuple((s.get('hand_flow'),repr(s.get('hand_end'))) for s in self.scenes),   # exp.218/38
                 (bool(self.scenes[k].get('art_off')),bool(self.scenes[k].get('hand_off'))) if 0<=k<len(self.scenes) else None)
 
     def hand_rest_settings(self):
@@ -6774,11 +6777,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         flow.addItem('Stop and wait',None)
         flow.addItem('Through the corner, without stopping','exact')
         flow.addItem('Near the corner, without stopping','near')
+        flow.addItem('Free ending: where you put it (Edit path: drag the red dot)','free')     # exp.38
         flow.setCurrentIndex(max(0,flow.findData(self.scenes[k].get('hand_flow'))))
-        flow.setToolTip('When the next element\'s hand starts the moment this one is back in its corner '
-                        '(the green line "one hand after the other"), the way back and the next way in become '
-                        'one movement: through the corner, or swinging near it, without stopping. With a gap '
-                        'between them the hand goes back and waits, as always.')
+        flow.setToolTip('Stop and wait: back in its corner, it stops. Through / Near the corner: only when the '
+                        'next hand starts the moment this one is back (one hand right after the other), the two '
+                        'ways become one movement. Free ending: the way back ends where you put it (Edit path '
+                        'of the way back: drag the red dot); the hand stays there and the next hand starts there.')
+        # exp.38: Edit path needs to know (before OK) whether its red dot may be dragged
+        self._free_ending_chosen=flow.currentData()=='free'; self._free_end_pending=None
+        flow.currentIndexChanged.connect(lambda *_: setattr(self,'_free_ending_chosen',flow.currentData()=='free'))
         def linked(on):
             back.setEnabled(not on); how_out.setEnabled(not on); bend_out.setEnabled(not on); out_path.setEnabled(not on)
             flow.setEnabled(not on)
@@ -6788,8 +6795,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
-        if dialog.exec()!=QDialog.DialogCode.Accepted: return
+        accepted=dialog.exec()==QDialog.DialogCode.Accepted
+        self._free_ending_chosen=False
+        if not accepted: return
         self.record_structure('hand glide')
+        if flow.currentData()=='free' and self._free_end_pending is not None:
+            self.scenes[k]['hand_end']=list(self._free_end_pending)      # exp.38: where the hand ends
         self.scenes[k]['glide']=(round(go.value(),2),round(back.value(),2),how_in.currentText(),how_out.currentText(),
                                  bend_in.currentText(),bend_out.currentText())
         if paths: self.scenes[k]['glide_path']=paths
@@ -6850,6 +6861,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             import applog; applog.error('Hand path: the hand',exc)
         keys=(self.scenes[k].get('glide_path') or {}).get(which)
         return dict(k=k,which=which,image=image,a=info['a'],b=info['b'],size=(W,H),hand=hand,style=style,
+                    place=info.get('place'),
                     bend=bend,keys=[tuple(x) for x in keys] if keys else None,times=(t0,t1),
                     preset=frame_render.preset_keyframes(info['a'],info['b'],style,(W/2.,H/2.),bend))
 
@@ -6864,7 +6876,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         dialog=GlidePathDialog(self,snap['image'],snap['a'],snap['b'],keys,snap['preset'],snap['style'],
                                f'Hand path: element {k+1}, '+('to the drawing' if which=='in' else 'back'))
         dialog.canvas.hand=snap['hand']            # exp.219: Play shows the hand itself
+        free=which=='out' and getattr(self,'_free_ending_chosen',False)
+        dialog.canvas.movable_end=free             # exp.38: Free ending: drag the red dot
         if dialog.exec()!=QDialog.DialogCode.Accepted: return False
+        if free:
+            W,H=snap['size']; px,py,pw,ph=snap.get('place') or (0.,0.,float(W),float(H))
+            bx,by=dialog.canvas.b
+            self._free_end_pending=(round((bx-px)/max(1.,pw),4),round((by-py)/max(1.,ph),4))
         return dialog.keyframes()
 
     def open_hand_paths(self):
@@ -7178,9 +7196,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # a hand finished counts only once it has finished (it took the spot of a hand to come)
             if finished and self.scenes[source_k].get('hand_flow') and not options.get('hand_link_out'):
                 options=self._flow_rest(options,source_k,width,height,seconds)      # exp.225
-            if finished and options.get('hand_link_out') and source is not None:
+            if finished and (options.get('hand_link_out') or options.get('_free_end')) and source is not None:
                 from frame_render import last_tip
-                tip=last_tip(source,options)                              # exp.210: waits where it finished
+                tip=(tuple(options['_free_end']) if options.get('_free_end') is not None    # exp.38: where it was put
+                     else last_tip(source,options))                       # exp.210: waits where it finished
                 if tip is not None:
                     options=dict(options,_wait_tip=tip)
                     try:                                                    # exp.216: on its page
@@ -8117,6 +8136,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                              hidden=bool(self.track_flag(s,'hidden')),muted=bool(self.track_flag(s,'muted')),
                              art_off=bool(s.get('art_off')),hand_off=bool(s.get('hand_off')),
                              hand_link=bool(s.get('hand_link')),glide_path=s.get('glide_path'),hand_flow=s.get('hand_flow'),
+                             hand_end=s.get('hand_end'),                                        # exp.38
                              glide=s.get('glide'))
                         for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here

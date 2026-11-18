@@ -210,6 +210,10 @@ def apply_glide(options, scene):
         options['hand_flow'] = scene['hand_flow']     # exp.218: back by the corner without stopping
     if scene and scene.get('hand_link') and options.get('hand_travel'):
         options['hand_link_out'] = True             # exp.210: on to the next hand, no way back
+    elif scene and scene.get('hand_flow') == 'free' and scene.get('hand_end') and options.get('hand_travel'):
+        # exp.38 (the user): Free ending: the way back ends where it was put; it waits there and
+        # the next hand starts there
+        options['_free_end'] = (float(scene['hand_end'][0]), float(scene['hand_end'][1]))
     return options
 
 
@@ -223,7 +227,8 @@ def hand_links(items, elements, frames, hidden=()):
               and hand_window(elements[it.k]['drawing'], elements[it.k]['options']) is not None]
     out = {}
     for i, it in enumerate(moving):
-        if not elements[it.k]['options'].get('hand_link_out'):
+        o = elements[it.k]['options']
+        if not (o.get('hand_link_out') or o.get('_free_end')):     # exp.38: a free ending too
             continue
         nxt = next((o for o in moving[i + 1:] if o.start >= it.start), None)
         if nxt is not None and tuple(frames[nxt.k]) == tuple(frames[it.k]):
@@ -275,7 +280,8 @@ def flow_hands(items, elements, frames, hidden=()):
     for it, nxt in zip(moving, moving[1:]):
         o = elements[it.k]['options']
         mode = o.get('hand_flow')
-        if mode not in ('exact', 'near') or o.get('hand_link_out') or tuple(frames[nxt.k]) != tuple(frames[it.k]):
+        if mode not in ('exact', 'near') or o.get('hand_link_out') or o.get('_free_end') \
+                or tuple(frames[nxt.k]) != tuple(frames[it.k]):
             continue
         back = hand_window(elements[it.k]['drawing'], o)[0]
         if abs(nxt.start - (it.start + back)) > .05:
@@ -303,7 +309,8 @@ def link_hands(items, elements, frames, hidden=()):
     """Put on each linked element's options where its hand comes from (_from_tip)."""
     from frame_render import last_tip
     for j, k in hand_links(items, elements, frames, hidden).items():
-        tip = last_tip(elements[k]['drawing'], elements[k]['options'])
+        free = elements[k]['options'].get('_free_end')               # exp.38: where it was put
+        tip = tuple(free) if free is not None else last_tip(elements[k]['drawing'], elements[k]['options'])
         if tip is not None:
             elements[j]['options']['_from_tip'] = tip
 
@@ -441,9 +448,10 @@ def _resting_options(lay, elements, seconds, hidden=()):
             chosen = {k: v for k, v in chosen.items() if k not in ('_flow_next',)}
         elif chosen.get('_flow_next'):
             chosen = dict(chosen, _rest_k=chosen_k)             # exp.225: whose page its way is on
-        if finished and chosen.get('hand_link_out') and chosen_drawing is not None:
+        if finished and (chosen.get('hand_link_out') or chosen.get('_free_end')) and chosen_drawing is not None:
             from frame_render import last_tip
-            tip = last_tip(chosen_drawing, chosen)              # exp.210: waits where it finished
+            tip = (tuple(chosen['_free_end']) if chosen.get('_free_end') is not None     # exp.38: where it was put
+                   else last_tip(chosen_drawing, chosen))       # exp.210: waits where it finished
             if tip is not None:
                 chosen = dict(chosen, _wait_tip=tip, _wait_k=chosen_k)
     return chosen
@@ -881,6 +889,7 @@ def scenes_from_project(data):
                         hidden=bool(item.get('hidden')), muted=bool(item.get('muted')),
                         art_off=bool(item.get('art_off')), hand_off=bool(item.get('hand_off')),
                         hand_link=bool(item.get('hand_link')), hand_flow=item.get('hand_flow'),
+                        hand_end=item.get('hand_end'),                 # exp.38
                         thumb_png=item.get('thumb_png'),
                         glide=tuple(item['glide']) if item.get('glide') else None,
                         glide_path=item.get('glide_path') or None))
@@ -898,6 +907,7 @@ def scenes_to_project(main_state, scene_list, index):
                                hidden=bool(s.get('hidden')), muted=bool(s.get('muted')),
                                art_off=bool(s.get('art_off')), hand_off=bool(s.get('hand_off')),
                                hand_link=bool(s.get('hand_link')), hand_flow=s.get('hand_flow'),
+                               hand_end=s.get('hand_end'),                 # exp.38
                                glide=list(s['glide']) if s.get('glide') else None,
                                glide_path=s.get('glide_path') or None)
                           for k, s in enumerate(scene_list)]
