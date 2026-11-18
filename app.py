@@ -967,10 +967,30 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self._restoring or not getattr(self,'drawing',None): return
         scenes,index=self.structure_copy()
         import copy
+        self._share_unchanged(scenes,index)          # exp.42: no second copy of an unchanged element
         self.project_undo.append((self.next_seq(),scenes,index,label,self._extras_copy()))
         del self.project_undo[:-30]
         self.project_redo.clear(); self.history.redo_stack.clear()
         self.update_history_controls()
+
+    def _share_unchanged(self,scenes,index):
+        """exp.42 (the user: a lot of memory): each undo step kept a whole new copy of the element
+        being edited (a traced drawing: about 9 MB of numbers), even when the change was a text or
+        a camera clip. The parts of it that are the same as in the step before are shared."""
+        if not self.project_undo or not 0<=index<len(scenes): return
+        new=scenes[index].get('state')
+        prev=self.project_undo[-1][1]
+        if not isinstance(new,dict): return
+        for old_scene in prev:
+            old=old_scene.get('state') if isinstance(old_scene,dict) else None
+            if not isinstance(old,dict) or old is new: continue
+            for key,value in new.items():
+                if key in old and old[key] is not value and isinstance(value,(dict,list)):
+                    try:
+                        if old[key]==value: new[key]=old[key]
+                    except Exception:
+                        pass
+            if prev.index(old_scene)==self.project_undo[-1][2]: break
 
     def _extras_copy(self):
         """The video's own clips (texts, camera clips) kept with a project undo step."""

@@ -111,7 +111,7 @@ class PrerenderWindowTests(unittest.TestCase):
     def test_render_bar_red_then_green(self):
         w = self.w
         w.segment_cache.clear_disk()
-        w.segment_cache._memory.clear() if hasattr(w.segment_cache, '_memory') else None
+        w.segment_cache.forget_memory()      # exp.42: the packed and the hot frames
         runs, count = w.render_runs()
         self.assertGreater(count, 0)
         self.run_prerender()

@@ -6,6 +6,13 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Less memory (v1.0.1-experimental.42)
+
+- Ready preview frames are now kept compressed in memory: about 66 KB each instead of 2 MB. They use the same JPEG quality the disk copies already use, and lossless compression for frames with transparency. The last few frames used stay uncompressed, so scrubbing is still instant, and playing from compressed frames takes about 4 ms per frame.
+- The memory limit for frames is now a sixteenth of the computer's memory, 256 MB to 1 GB. It used to be a sixth, up to 4 GB. Compressed, 1 GB still holds about 8 minutes of frames.
+- Undo no longer keeps a new copy of the element being edited when it hasn't changed. With a traced drawing, 30 undo steps went from about 260 MB to about 18 MB.
+- Measured with a 4-element project after pre-rendering: 1.5 GB before, 0.5 GB now.
+
 ## Hand paths: every hand way in one place (v1.0.1-experimental.41)
 
 - **Hand paths** (the hand button at the top of the timeline, or **Hand paths…** in the Hand panel) now lists every hand way of the video in time order: each element's way to the drawing and back, the sticker hands, and the Hand motions.

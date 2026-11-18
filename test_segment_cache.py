@@ -47,7 +47,8 @@ class CacheTests(unittest.TestCase):
     def test_raw_frames_come_back_exactly_and_quickly(self):
         import time
         from preview_cache import SegmentCache, memory_budget
-        self.assertGreaterEqual(memory_budget(), 600 * 1024 * 1024)
+        self.assertGreaterEqual(memory_budget(), 256 * 1024 * 1024)        # exp.42: frames are packed
+        self.assertLessEqual(memory_budget(), 1024 ** 3)
         with tempfile.TemporaryDirectory() as tmp:
             cache = SegmentCache(tmp, memory_budget=1, disk_budget=10 ** 9)
             frame = QImage(960, 540, QImage.Format.Format_ARGB32_Premultiplied)
