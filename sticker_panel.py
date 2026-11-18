@@ -46,6 +46,15 @@ def build(w, Section, form_layout, linked_slider):
     w.sticker_form = form
     w.sticker_shape = QComboBox(); w.sticker_shape.addItems(stickers.SHAPES)
     form.addRow('Shape', w.sticker_shape)
+    # exp.29 (the user): it draws itself, or the hand draws it (only its outline, or everything)
+    w.sticker_drawing = QComboBox(); w.sticker_drawing.addItems(stickers.DRAWING)
+    w.sticker_drawing.setToolTip('Animated: it draws itself. Hand: outline: the hand draws its main shape '
+                                 '(an arrow\'s line; the head pops in). Hand: everything: the hand draws every stroke.')
+    form.addRow('Appears', w.sticker_drawing)
+    w.sticker_hand_way = QComboBox(); w.sticker_hand_way.addItems(stickers.HAND_WAYS)
+    w.sticker_hand_way.setToolTip('Where the hand comes from and goes back to: its resting corner, or in from '
+                                  'the bottom and out again.')
+    form.addRow('Hand', w.sticker_hand_way)
     w.sticker_color = QPushButton(); w.sticker_color.setObjectName('colorButton')
     w.sticker_color.setToolTip('The colour of the lines')
     form.addRow('Colour', w.sticker_color)
@@ -90,7 +99,7 @@ def build(w, Section, form_layout, linked_slider):
     lay.addWidget(chosen)
     lay.addStretch(1)
 
-    fields = [w.sticker_shape, w.sticker_thickness, w.sticker_size, w.sticker_aspect, w.sticker_rotation,
+    fields = [w.sticker_shape, w.sticker_drawing, w.sticker_hand_way, w.sticker_thickness, w.sticker_size, w.sticker_aspect, w.sticker_rotation,
               w.sticker_flip, w.sticker_draw, w.sticker_length, w.sticker_out, w.sticker_color, w.sticker_delete]
     state = dict(filling=False, last=(None, 0.))
 
@@ -114,6 +123,9 @@ def build(w, Section, form_layout, linked_slider):
             if not chosen.expanded:
                 chosen.set_expanded(True)      # a sticker chosen: its settings open
             w.sticker_shape.setCurrentText(item.get('shape', 'Arrow'))
+            w.sticker_drawing.setCurrentText(item.get('drawing', 'Animated'))
+            w.sticker_hand_way.setCurrentText(item.get('hand_way', 'Rests in its corner'))
+            w.sticker_hand_way.setEnabled(stickers.hand_mode(item) is not None)
             paint_color(item.get('color', '#E0463C'))
             w.sticker_thickness.setValue(float(item.get('thickness', .012)) * 1000)
             w.sticker_size.setValue(float(item.get('size', .3)) * 100)
@@ -138,8 +150,10 @@ def build(w, Section, form_layout, linked_slider):
         if 'shape' in values and values['shape'] != item.get('shape'):
             values.update(name=values['shape'], aspect=stickers.ASPECT[values['shape']])
         item.update(values)
+        if stickers.hand_mode(item) and ({'drawing', 'draw_seconds', 'hand_way'} & set(values)):
+            w.place_hand_sticker(item)          # exp.29: a hand draws one thing at a time
         w.project_changes.mark_changed()
-        if 'aspect' in values:
+        if {'aspect', 'drawing'} & set(values):
             sync()
         w.refresh()
 
@@ -153,6 +167,8 @@ def build(w, Section, form_layout, linked_slider):
             paint_color(colour.name())
 
     w.sticker_shape.currentTextChanged.connect(lambda s: change(shape=s))
+    w.sticker_drawing.currentTextChanged.connect(lambda s: change(drawing=s))
+    w.sticker_hand_way.currentTextChanged.connect(lambda s: change(hand_way=s))
     w.sticker_thickness.valueChanged.connect(lambda v: change(thickness=round(v / 1000, 4)))
     w.sticker_size.valueChanged.connect(lambda v: change(size=round(v / 100, 4)))
     w.sticker_aspect.valueChanged.connect(lambda v: change(aspect=round(v / 100, 4)))

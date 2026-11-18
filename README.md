@@ -6,6 +6,21 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Stickers drawn by the hand (v1.0.1-experimental.29)
+
+In the Stickers panel, a chosen sticker has two new settings:
+- **Appears:** **Animated** (it draws itself; the default), **Hand: outline** (the hand draws its
+  main shape: a circle, a line, an arrow's line; an arrowhead pops in after) or **Hand:
+  everything** (the hand draws every stroke, the arrowhead's two strokes too). The pen tip follows
+  the line exactly; the hand is the drawing hand of the Hand panel, at its size.
+- **Hand:** **Rests in its corner** (it comes from the resting corner and goes back; the waiting
+  hand is not in the corner meanwhile, it is this hand) or **Comes in and leaves** (in from the
+  bottom, then out of the picture).
+
+A hand draws one thing at a time: a sticker drawn by the hand waits until an element's hand has
+finished (its clip moves after it). A sticker that draws itself goes anywhere. Drawing only
+exports leave the hand out.
+
 ## Ctrl+T: resize on the preview (v1.0.1-experimental.28)
 
 - **Ctrl+T** (like Photoshop's Free Transform) puts a box with corner handles on the chosen text

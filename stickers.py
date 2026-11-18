@@ -20,6 +20,14 @@ import math
 import uuid
 
 SHAPES = ('Arrow', 'Curved arrow', 'Circle', 'Hand-drawn circle', 'Line', 'Wavy line')
+# exp.29 (the user): how it appears: by itself, or drawn by the hand, only its main shape
+# (the outline: an arrow's line, its head pops in) or every stroke (the head too)
+DRAWING = ('Animated', 'Hand: outline', 'Hand: everything')
+# where the hand comes from and goes back to: its resting corner (taking over from the waiting
+# hand), or in from the bottom and out again, gone
+HAND_WAYS = ('Rests in its corner', 'Comes in and leaves')
+GLIDE = .5            # seconds the hand takes to come to the line and to go back
+HEAD_POP = .2         # Hand: outline: the arrowhead pops in after the hand's line
 ASPECT = {'Arrow': .32, 'Curved arrow': .55, 'Circle': .62, 'Hand-drawn circle': .62, 'Line': .08,
           'Wavy line': .16}
 HEAD_SHARE = .18          # arrows: the last part of the drawing time draws the head
@@ -30,6 +38,7 @@ def new(shape='Arrow', start=0., duration=3., color='#E0463C'):
     return dict(id=uuid.uuid4().hex[:10], kind='sticker', name=shape, shape=shape, color=color,
                 thickness=.012, x=.5, y=.5, size=.3, aspect=ASPECT[shape], rotation=0., flip=False,
                 draw_seconds=.8, start=float(start), duration=float(duration),
+                drawing='Animated', hand_way='Rests in its corner',
                 effect_in='None', in_seconds=.4, effect_out='Fade', out_seconds=.4, track=0)
 
 
@@ -98,34 +107,179 @@ def _partial(points, share):
     return out
 
 
-def draw(painter, item, w, h, frame_h, amount=1.):
-    """Draw the sticker centred on the painter's origin, in a w × h box, `amount` (0..1) of it."""
-    from PySide6.QtCore import QPointF, Qt
-    from PySide6.QtGui import QColor, QPainterPath, QPen
-    if amount <= 0:
-        return
+def hand_mode(item):
+    """None (it draws itself), 'outline' or 'all' (the hand draws it)."""
+    return {'Hand: outline': 'outline', 'Hand: everything': 'all'}.get(item.get('drawing'))
+
+
+def busy(item):
+    """(from, to) seconds the hand is busy with this sticker (coming, drawing, going), or None."""
+    if not hand_mode(item):
+        return None
+    start = float(item.get('start', 0))
+    return start - GLIDE, start + max(.05, float(item.get('draw_seconds', .8))) + GLIDE
+
+
+def phases(item, t):
+    """(line 0..1, head strokes [0..1, 0..1]) drawn at t."""
+    seconds = max(.05, float(item.get('draw_seconds', .8)))
+    start = float(item.get('start', 0))
+    e = _ease((t - start) / seconds)
+    mode = hand_mode(item)
+    if mode == 'outline':                   # the hand's line over the whole time; the head pops in
+        pop = max(0., min(1., (t - start - seconds) / HEAD_POP))
+        return e, [pop, pop]
+    if mode == 'all':                       # the line, then each stroke of the head, by the hand
+        u = max(0., min(1., (t - start) / seconds))
+        line = _ease(min(1., u / .76))
+        # the first stroke of the head, the pen back to the tip (no ink), the second stroke
+        return line, [max(0., min(1., (u - .76) / .1)), max(0., min(1., (u - .9) / .1))]
+    line = min(1., e / (1 - HEAD_SHARE))
+    grow = max(0., (e - (1 - HEAD_SHARE)) / HEAD_SHARE)
+    return line, [grow, grow]
+
+
+def _geometry(item, w, h, frame_h):
+    """(points of the line, the two head strokes [(from, to), ...] or [], pen width) in a w × h box
+    centred on 0, 0."""
     points, head = stroke(item.get('shape', 'Arrow'))
     pts = _scaled(points, w, h, bool(item.get('flip')))
     width = max(1., float(item.get('thickness', .012)) * frame_h)
-    pen = QPen(QColor(item.get('color', '#E0463C')), width)
-    pen.setCapStyle(Qt.PenCapStyle.RoundCap); pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
-    painter.setPen(pen); painter.setBrush(Qt.BrushStyle.NoBrush)
-    shaft = amount / (1 - HEAD_SHARE) if head else amount
-    line = _partial(pts, min(1., shaft))
-    if len(line) >= 2:
-        path = QPainterPath(QPointF(*line[0]))
-        for x, y in line[1:]:
-            path.lineTo(x, y)
-        painter.drawPath(path)
-    if head and amount > 1 - HEAD_SHARE:
-        grow = (amount - (1 - HEAD_SHARE)) / HEAD_SHARE
+    strokes = []
+    if head:
         tip = pts[-1]
         back = next((p for p in reversed(pts[:-1]) if math.dist(p, tip) > width * .5), pts[0])
         angle = math.atan2(tip[1] - back[1], tip[0] - back[0])
-        size = max(width * 3.2, min(math.hypot(w, h) * .16, width * 7)) * grow
+        size = max(width * 3.2, min(math.hypot(w, h) * .16, width * 7))
         for side in (-1, 1):
             a = angle + math.pi - side * math.radians(32)
-            painter.drawLine(QPointF(*tip), QPointF(tip[0] + size * math.cos(a), tip[1] + size * math.sin(a)))
+            strokes.append((tip, (tip[0] + size * math.cos(a), tip[1] + size * math.sin(a))))
+    return pts, strokes, width
+
+
+def pen_point(item, w, h, frame_h, t):
+    """Where the pen is on the sticker (box coordinates) at t while the hand draws it, or None."""
+    mode = hand_mode(item)
+    if not mode:
+        return None
+    pts, heads, _ = _geometry(item, w, h, frame_h)
+    line, head = phases(item, t)
+    if mode == 'all' and heads and line >= 1:
+        for (a, b), share in zip(heads, head):
+            if 0 < share < 1:
+                return (a[0] + (b[0] - a[0]) * share, a[1] + (b[1] - a[1]) * share)
+        if head[0] >= 1 and head[1] <= 0:       # lifted, back to the tip for the second stroke
+            u = (t - float(item.get('start', 0))) / max(.05, float(item.get('draw_seconds', .8)))
+            k = _ease((u - .86) / .04)
+            end, tip = heads[0][1], heads[1][0]
+            return (end[0] + (tip[0] - end[0]) * k, end[1] + (tip[1] - end[1]) * k)
+        return heads[-1][1] if head[1] >= 1 else heads[0][0]
+    part = _partial(pts, line)
+    return part[-1]
+
+
+def draw(painter, item, w, h, frame_h, amount=1., t=None):
+    """Draw the sticker centred on the painter's origin, in a w × h box: `amount` (0..1) of it,
+    or, with t, as much as is drawn at t (exp.29: by the hand, stroke by stroke)."""
+    from PySide6.QtCore import QPointF, Qt
+    from PySide6.QtGui import QColor, QPainterPath, QPen
+    pts, heads, width = _geometry(item, w, h, frame_h)
+    if t is not None:
+        line, head = phases(item, t)
+    else:
+        if amount <= 0:
+            return
+        line = min(1., amount / (1 - HEAD_SHARE)) if heads else amount
+        grow = max(0., (amount - (1 - HEAD_SHARE)) / HEAD_SHARE)
+        head = [grow, grow]
+    if line <= 0:
+        return
+    pen = QPen(QColor(item.get('color', '#E0463C')), width)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap); pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    painter.setPen(pen); painter.setBrush(Qt.BrushStyle.NoBrush)
+    part = _partial(pts, min(1., line))
+    if len(part) >= 2:
+        path = QPainterPath(QPointF(*part[0]))
+        for x, y in part[1:]:
+            path.lineTo(x, y)
+        painter.drawPath(path)
+    for (a, b), share in zip(heads, head):
+        if share > 0:
+            painter.drawLine(QPointF(*a), QPointF(a[0] + (b[0] - a[0]) * share, a[1] + (b[1] - a[1]) * share))
+
+
+# ------------------------------------------------------------ exp.29: the hand that draws stickers
+_HAND = {}
+
+
+def set_hand(image, scale, anchor, corner):
+    """The window's drawing hand (picture as written, size as a share of the video width, its
+    pen tip as a share of the picture, its resting corner): stickers drawn by the hand use it."""
+    _HAND.clear()
+    if image is not None and not image.isNull():
+        _HAND.update(image=image, scale=float(scale), anchor=(float(anchor[0]), float(anchor[1])),
+                     corner=corner or 'Bottom right')
+
+
+def hand_tip(item, t, W, H):
+    """Where the hand's pen tip is on a W × H frame at t (seconds), or None (not there)."""
+    span = busy(item)
+    if span is None or not _HAND or not span[0] <= t <= span[1]:
+        return None
+    import overlays
+    bx, by, bw, bh = overlays.box(item, W, H)
+    w = float(item.get('size', .3)) * W
+    h = w * float(item.get('aspect', .4))
+
+    def on_frame(pt):
+        a = math.radians(float(item.get('rotation', 0) or 0))
+        x, y = pt
+        return (bx + bw / 2 + x * math.cos(a) - y * math.sin(a), by + bh / 2 + x * math.sin(a) + y * math.cos(a))
+    start = float(item.get('start', 0)); seconds = max(.05, float(item.get('draw_seconds', .8)))
+    if item.get('hand_way') == 'Comes in and leaves':
+        home = (W * .86, H * 1.12)          # below the bottom edge, on the hand's side
+    else:
+        from frame_render import REST_CORNERS
+        fx, fy = REST_CORNERS.get(_HAND['corner'], REST_CORNERS['Bottom right'])
+        home = (fx * W, fy * H)
+    pts, heads, _ = _geometry(item, w, h, H)
+    first = on_frame(pts[0])
+    last = on_frame(heads[-1][1] if heads and hand_mode(item) == 'all' else pts[-1])
+    if t < start:
+        k = _ease((t - span[0]) / GLIDE)
+        return (home[0] + (first[0] - home[0]) * k, home[1] + (first[1] - home[1]) * k)
+    if t > start + seconds:
+        k = _ease((t - start - seconds) / GLIDE)
+        return (last[0] + (home[0] - last[0]) * k, last[1] + (home[1] - last[1]) * k)
+    return on_frame(pen_point(item, w, h, H, t))
+
+
+def paint_hand(painter, item, t, W, H):
+    """The hand drawing this sticker at t, on a W × H frame (its pen tip on the line)."""
+    tip = hand_tip(item, t, W, H)
+    if tip is None:
+        return False
+    from PySide6.QtCore import QRectF
+    from frame_render import draw_hand_picture
+    image = _HAND['image']
+    hw = W * _HAND['scale']; hh = hw * image.height() / max(1, image.width())
+    ax, ay = _HAND['anchor']
+    painter.save(); painter.setOpacity(1.)
+    draw_hand_picture(painter, QRectF(tip[0] - ax * hw, tip[1] - ay * hh, hw, hh), image)
+    painter.restore()
+    return True
+
+
+def busy_spans(items):
+    """[(from, to)] while stickers drawn by the hand from its corner use it (the waiting hand is
+    not in its corner then)."""
+    out = []
+    for item in items or ():
+        if item.get('kind') == 'sticker' and not item.get('off') and item.get('hand_way') != 'Comes in and leaves':
+            span = busy(item)
+            if span is not None:
+                out.append(span)
+    return out
 
 
 def preview(shape, size=64, color='#E0463C', background=None):

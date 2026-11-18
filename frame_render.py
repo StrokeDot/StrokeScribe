@@ -1373,6 +1373,14 @@ def paint_rest_hand(frame, options, seconds=None, place=None):
     the screen, exp.161)."""
     if frame is None or options.get('layers', 'all') == 'art':
         return frame
+    if seconds is not None:
+        # exp.29: a sticker drawn by the hand from its corner: the hand left the corner to draw it
+        spans = options.get('_sticker_busy')
+        if spans is None and options.get('overlays'):
+            import stickers
+            spans = stickers.busy_spans(options['overlays'])
+        if spans and any(a <= float(seconds) <= b for a, b in spans):
+            return frame
     rect = rest_rect(frame.width(), frame.height(), options, seconds, place)
     shown = 1. - _hidden(options, seconds)
     if rect is None or shown <= 0:
