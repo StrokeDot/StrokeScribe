@@ -6,6 +6,13 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## One Hand window for elements and stickers; chosen sticker hand bar (v1.0.1-experimental.32)
+
+- A sticker's Hand window is now the same window as an element's (built by the same code, the
+  same size and rows); the element's window adds its At the corner and When it finishes.
+- Clicking a sticker's bar on the Hand row chooses it with a white edge, like an element's bar
+  (and chooses that sticker, so its settings show in the Stickers panel).
+
 ## Sticker hand ways, like an element's (v1.0.1-experimental.31)
 
 - A sticker drawn by the hand has its own **Hand** settings, like an element's: **To the drawing**

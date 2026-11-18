@@ -437,6 +437,13 @@ class StageTimeline(QFrame):
             return QRectF(cam.left(),cam.top()+1,cam.width(),self.CAM_ROW-2)
         return QRectF(cam.left(),cam.top()+self.CAM_ROW*(1+self._cam_lane_count())+1,cam.width(),self.CAM_ROW-2)
 
+    def _sticker_hand_at(self, pos):
+        """exp.32: the sticker whose hand bar on the Hand row is under `pos`, or None."""
+        if not self._hand_row().contains(pos): return None
+        for start,lead,busy,tail,oid in getattr(self,'sticker_hand_marks',()) or ():
+            if self._x(start)-2<=pos.x()<=self._x(start+lead+busy+tail)+2: return oid
+        return None
+
     def _hand_mark_at(self, pos):
         """exp.163: the element whose bar on the Hand row is under `pos`, or None."""
         if not self._hand_row().contains(pos): return None
@@ -519,7 +526,7 @@ class StageTimeline(QFrame):
 
     def _choose_only(self, kind):
         """exp.209 (the user: one click chooses one thing; Shift for more): the others let go."""
-        if kind!='hand': self.selected_hand=None
+        if kind!='hand': self.selected_hand=None; self.selected_sticker_hand=None
         if kind!='bg': self.selected_bg=None
         if kind!='camera' and self.selected_camera:
             self.selected_camera=None; self.camera_selected.emit('')
@@ -1520,6 +1527,10 @@ class StageTimeline(QFrame):
                     p.drawRect(QRectF(self._x(a),row.top()+row.height()*.35,max(1.,self._x(b)-self._x(a)),row.height()*.3))
             # exp.30: a sticker drawn by the hand: its hand comes, draws and goes back, the same way
             for start,lead,busy,tail,oid in getattr(self,'sticker_hand_marks',()) or ():
+                if oid==getattr(self,'selected_sticker_hand',None):      # exp.32: the chosen one, a white edge
+                    p.setPen(QPen(QColor('white'),1.5)); p.setBrush(Qt.BrushStyle.NoBrush)
+                    p.drawRoundedRect(QRectF(self._x(start)-1,row.top()+row.height()*.2,
+                                             self._x(start+lead+busy+tail)-self._x(start)+2,row.height()*.6),3,3)
                 for a,b,alpha in ((start,start+lead,120),(start+lead,start+lead+busy,210),
                                   (start+lead+busy,start+lead+busy+tail,120)):
                     col=QColor(c['hold']); col.setAlpha(alpha)
@@ -1803,8 +1814,16 @@ class StageTimeline(QFrame):
         # elements and the cameras; double-click opens its window.
         # exp.190 (the user: a "Hide the hand" clip could not be clicked once on the timeline):
         # a clip on the Hand row comes before the elements' hand bars under it.
+        # exp.32 (the user: the white edge on a sticker's hand bar too): chosen, and its sticker
+        oid=self._sticker_hand_at(pos) if self.items and self._clip_at(pos)[0] is None else None
+        if oid is not None:
+            self._choose_only('hand')
+            self.selected_hand=None; self.selected_sticker_hand=oid
+            self.overlay_selected.emit(oid)
+            self.update(); event.accept(); return
         hand_k=self._hand_mark_at(pos) if self.items and self._clip_at(pos)[0] is None else None
         if hand_k is not None:
+            self.selected_sticker_hand=None
             self._choose_only('hand')
             self.selected_hand=hand_k
             # exp.212 (the user): a Hand bar can be dragged too: it moves its element with it
@@ -1812,8 +1831,9 @@ class StageTimeline(QFrame):
             if item is not None and event.button()==Qt.MouseButton.LeftButton:
                 self._drag=('handbar',hand_k,pos.x(),pos.y(),item[2],item[4],self._px_per_sec(),False)
             self.update(); event.accept(); return
-        if getattr(self,'selected_hand',None) is not None or getattr(self,'selected_bg',None) is not None:
-            self.selected_hand=None; self.selected_bg=None; self.update()
+        if getattr(self,'selected_hand',None) is not None or getattr(self,'selected_bg',None) is not None \
+                or getattr(self,'selected_sticker_hand',None) is not None:
+            self.selected_hand=None; self.selected_bg=None; self.selected_sticker_hand=None; self.update()
         other=self._other_at(pos) if not self._overlay_at(pos)[0] else None
         if other is not None:
             self.other_overlay_clicked.emit(other[0],str(other[1].get('id')))
@@ -2125,8 +2145,7 @@ class StageTimeline(QFrame):
             if self._moving_row().contains(pos):
                 self.camera_add.emit('',seconds);event.accept();return
             if self._hand_row().contains(pos):
-                oid=next((m[4] for m in getattr(self,'sticker_hand_marks',()) or ()
-                          if self._x(m[0])-2<=pos.x()<=self._x(m[0]+m[1]+m[2]+m[3])+2),None)
+                oid=self._sticker_hand_at(pos)
                 if oid is not None:
                     self.sticker_hand_edit.emit(oid);event.accept();return     # exp.31
                 k=self._hand_mark_at(pos)

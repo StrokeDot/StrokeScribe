@@ -195,5 +195,39 @@ class Waiting(unittest.TestCase):
         self.assertEqual(item['start'], .2)
 
 
+class SameWindow(unittest.TestCase):
+    """exp.32 (the user: the same design): an element's and a sticker's Hand windows are one design."""
+    @classmethod
+    def setUpClass(cls):
+        from app import Window
+        from engine import import_svg
+        cls.w = w = Window(); w.show()
+        w.set_drawing(import_svg('samples/drawing.svg'))
+        for _ in range(40): APP.processEvents()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.w.close()
+
+    def test_both_windows_share_their_ways_and_size_and_still_save(self):
+        from unittest import mock
+        from PySide6.QtWidgets import QComboBox, QDialog, QDoubleSpinBox
+        w = self.w
+        item = w.add_sticker('Circle'); item['drawing'] = 'Hand: outline'
+        seen = {}
+
+        def accept(dialog):
+            spins, boxes = dialog.findChildren(QDoubleSpinBox), dialog.findChildren(QComboBox)
+            seen[dialog.windowTitle()] = (dialog.minimumWidth(), [b.count() for b in boxes[:4]])
+            spins[0].setValue(2.3); boxes[0].setCurrentText('Swoop')
+            return QDialog.DialogCode.Accepted
+        with mock.patch.object(QDialog, 'exec', accept):
+            w.edit_sticker_hand(item['id'])
+            w.edit_hand_glide(0)
+        self.assertEqual(len(set(map(repr, seen.values()))), 1)          # the same rows, the same width
+        self.assertEqual((item['hand_in'], item['hand_in_style']), (2.3, 'Swoop'))
+        self.assertEqual(tuple(w.scenes[0]['glide'][:3:2]), (2.3, 'Swoop'))
+
+
 if __name__ == '__main__':
     unittest.main()

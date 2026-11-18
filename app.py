@@ -6536,55 +6536,30 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         return out
 
     def edit_sticker_hand(self,oid):
-        """exp.31 (the user: the same logic as an element's hand): a sticker's hand ways: how long
-        it takes to go to the line and back, how it moves (How, Turn) and its own Path."""
-        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QDoubleSpinBox, QComboBox, QPushButton
+        """exp.31/32 (the user: the same logic and the same window as an element's hand): a
+        sticker's hand ways, in the shared Hand window."""
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox
         import stickers
-        from frame_render import GLIDE_STYLES, GLIDE_BENDS
         item=self.find_overlay(oid)
         if item is None or item.get('kind')!='sticker': return
         if not stickers.hand_mode(item):
             self.status.setText('This sticker draws itself: set Appears to a Hand choice first.'); return
-        dialog=QDialog(self); dialog.setWindowTitle(f'Hand: {item.get("name","sticker")}')
-        form=QFormLayout(dialog)
-        def number(value):
-            box=QDoubleSpinBox(); box.setRange(.1,10.); box.setSingleStep(.1); box.setDecimals(1); box.setSuffix(' s')
-            box.setValue(float(value or stickers.GLIDE)); return box
-        def choice(options,value):
-            box=QComboBox(); box.addItems(list(options)); box.setCurrentText(value if value in options else options[0]); return box
         lead,tail=stickers.ways(item)
-        go=number(lead); back=number(tail)
-        how_in=choice(GLIDE_STYLES,item.get('hand_in_style') or 'Smooth'); how_out=choice(GLIDE_STYLES,item.get('hand_out_style') or 'Smooth')
-        bend_in=choice(GLIDE_BENDS,item.get('hand_in_bend') or 'Auto'); bend_out=choice(GLIDE_BENDS,item.get('hand_out_bend') or 'Auto')
-        paths={'in':item.get('hand_in_path'),'out':item.get('hand_out_path')}
-        tip=('How the hand moves on its way. Smooth: eases out of its corner and gently into place. '
-             'Steady: the same speed all the way. Quick start / Slow start. Overshoot: goes past and '
-             'comes back. Curve: a gentle arc. Swoop: a big sweep. Circle: half a circle. Turn: which way '
-             'Curve and Circle bend.')
-        def path_button(which):
-            button=QPushButton('Edit path'); button.setObjectName('subtle')
-            def clicked():
-                keys=self.edit_sticker_path(item,which,(how_in if which=='in' else how_out).currentText(),
-                                            (bend_in if which=='in' else bend_out).currentText(),paths[which])
-                if keys is not False: paths[which]=keys
-            button.clicked.connect(clicked)
-            button.setToolTip('Drag keyframes on the video to give this way its own path.')
-            return button
-        form.addRow(help_label('To the drawing','How long the hand takes to go to the start of the line.'),go)
-        form.addRow(help_label('How',tip),how_in); form.addRow(help_label('Turn',tip),bend_in)
-        form.addRow(help_label('Path','Your own path for this way, with keyframes.'),path_button('in'))
-        form.addRow(help_label('Back','How long the hand takes to go back after drawing.'),back)
-        form.addRow(help_label('How ',tip),how_out); form.addRow(help_label('Turn ',tip),bend_out)
-        form.addRow(help_label('Path ','Your own path for the way back, with keyframes.'),path_button('out'))
+        ui=self.hand_ways_dialog(f'Hand: {item.get("name","sticker")}',
+                                 dict(go=lead,back=tail,how_in=item.get('hand_in_style'),how_out=item.get('hand_out_style'),
+                                      bend_in=item.get('hand_in_bend'),bend_out=item.get('hand_out_bend'),
+                                      paths={w:k for w,k in (('in',item.get('hand_in_path')),('out',item.get('hand_out_path'))) if k}),
+                                 lambda which,style,bend,keys: self.edit_sticker_path(item,which,style,bend,keys))
+        dialog,form=ui['dialog'],ui['form']
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return
         self.record_structure('sticker hand')
-        item.update(hand_in=round(go.value(),2),hand_out=round(back.value(),2),
-                    hand_in_style=how_in.currentText(),hand_out_style=how_out.currentText(),
-                    hand_in_bend=bend_in.currentText(),hand_out_bend=bend_out.currentText(),
-                    hand_in_path=paths['in'],hand_out_path=paths['out'])
+        item.update(hand_in=round(ui['go'].value(),2),hand_out=round(ui['back'].value(),2),
+                    hand_in_style=ui['how_in'].currentText(),hand_out_style=ui['how_out'].currentText(),
+                    hand_in_bend=ui['bend_in'].currentText(),hand_out_bend=ui['bend_out'].currentText(),
+                    hand_in_path=ui['paths'].get('in'),hand_out_path=ui['paths'].get('out'))
         self.place_hand_sticker(item)            # longer ways: it still waits for the drawing hand
         self.project_changes.mark_changed(); self.refresh(); self.sync_camera_timeline()
 
@@ -6625,6 +6600,64 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             return []
         return marks
 
+    def hand_ways_dialog(self,title,values,edit_path):
+        """exp.32 (the user: one design for the same thing): the Hand window's ways, shared by an
+        element's hand and a sticker's: To the drawing / Back, How, Turn, Path. values: go, back,
+        how_in, how_out, bend_in, bend_out, paths ({'in': keys, 'out': keys}); edit_path(which,
+        style, bend, keys) -> keys / None / False. Returns the dialog, its form and the fields
+        (the caller adds its own rows and the OK / Cancel buttons)."""
+        from PySide6.QtWidgets import QDialog, QFormLayout, QDoubleSpinBox, QComboBox, QPushButton
+        from frame_render import GLIDE_STYLES, GLIDE_BENDS
+        dialog=QDialog(self); dialog.setWindowTitle(title)
+        dialog.setMinimumWidth(760)              # the same size, whichever hand it is
+        form=QFormLayout(dialog)
+        def number(value):
+            box=QDoubleSpinBox(); box.setRange(.1,10.); box.setSingleStep(.1); box.setDecimals(1); box.setSuffix(' s')
+            box.setValue(float(value)); return box
+        def style(value):
+            box=QComboBox(); box.addItems(list(GLIDE_STYLES))
+            box.setCurrentText(value if value in GLIDE_STYLES else 'Smooth'); return box
+        # exp.214 (the user: "make the hand go round in a circle to the next one"): which way it bends
+        def bending(value):
+            box=QComboBox(); box.addItems(list(GLIDE_BENDS))
+            box.setCurrentText(value if value in GLIDE_BENDS else 'Auto')
+            box.setToolTip('Which way a Curve, Swoop or Circle bends: Auto chooses for you; Clockwise or '
+                           'Anticlockwise always turns that way, whatever the direction of the way.')
+            return box
+        go=number(values['go']); back=number(values['back'])
+        how_in=style(values.get('how_in')); how_out=style(values.get('how_out'))
+        bend_in=bending(values.get('bend_in')); bend_out=bending(values.get('bend_out'))
+        paths=dict(values.get('paths') or {})
+        tip=('How the hand moves on its way. Smooth: eases out of its corner and gently into place. '
+             'Steady: the same speed all the way, like a machine. Quick start: darts off, then arrives '
+             'slowly. Slow start: leaves slowly, then hurries. Overshoot: goes past the spot and comes '
+             'back to it. Curve: a gentle arc. Swoop: a big sweep through the picture. Circle: round '
+             'in half a circle. Turn: which way Curve, Swoop and Circle bend.')
+        form.addRow(help_label('To the drawing','How long the hand takes to go from its corner to the first line.'),go)
+        form.addRow(help_label('How',tip),how_in)
+        form.addRow(help_label('Turn',tip),bend_in)
+        # exp.217 (the user: keyframes in the trajectory): shape the way by hand
+        def path_button(which):
+            button=QPushButton('Edit path'); button.setObjectName('subtle')      # exp.219: just its name
+            def clicked():
+                keys=edit_path(which,how_in.currentText() if which=='in' else how_out.currentText(),
+                               bend_in.currentText() if which=='in' else bend_out.currentText(),paths.get(which))
+                if keys is not False:
+                    if keys: paths[which]=keys
+                    else: paths.pop(which,None)
+            button.clicked.connect(clicked)
+            button.setToolTip('Drag keyframes on the video to give this way its own path (the chosen way '
+                              'gives the first keyframes and its speed).')
+            return button
+        form.addRow(help_label('Path','Your own path for this way, with keyframes.'),path_button('in'))
+        form.addRow(help_label('Back','How long the hand takes to go back to its corner after drawing.'),back)
+        form.addRow(help_label('How ',tip),how_out)
+        form.addRow(help_label('Turn ',tip),bend_out)
+        out_path=path_button('out')
+        form.addRow(help_label('Path ','Your own path for the way back, with keyframes.'),out_path)
+        return dict(dialog=dialog,form=form,go=go,back=back,how_in=how_in,how_out=how_out,
+                    bend_in=bend_in,bend_out=bend_out,paths=paths,out_path=out_path)
+
     def edit_hand_glide(self,k):
         """exp.163 (the user): click an element's bar on the Hand row: how long the hand takes to
         go from its corner to the drawing, and to go back."""
@@ -6638,55 +6671,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             box=QComboBox(); box.addItems(list(GLIDE_STYLES))
             box.setCurrentText(value if value in GLIDE_STYLES else 'Smooth'); return box
         default=float(self.hand_rest_travel.value())
-        dialog=QDialog(self); dialog.setWindowTitle(f'Hand: element {k+1}')
-        form=QFormLayout(dialog)
-        def number(value):
-            box=QDoubleSpinBox(); box.setRange(.1,10.); box.setSingleStep(.1); box.setDecimals(1); box.setSuffix(' s')
-            box.setValue(float(value or 0) or default); return box
-        go=number(settings.get('hand_glide_in')); back=number(settings.get('hand_glide_out'))
-        how_in=style(glide[2]); how_out=style(glide[3])
-        # exp.214 (the user: "make the hand go round in a circle to the next one"): which way it bends
-        from frame_render import GLIDE_BENDS
         stored=tuple(self.scenes[k].get('glide') or ())
-        def bending(value):
-            box=QComboBox(); box.addItems(list(GLIDE_BENDS))
-            box.setCurrentText(value if value in GLIDE_BENDS else 'Auto')
-            box.setToolTip('Which way a Curve, Swoop or Circle bends: Auto chooses for you; Clockwise or '
-                           'Anticlockwise always turns that way, whatever the direction of the way.')
-            return box
-        bend_in=bending(stored[4] if len(stored)>4 else 'Auto'); bend_out=bending(stored[5] if len(stored)>5 else 'Auto')
-        tip=('How the hand moves on its way. Smooth: eases out of its corner and gently into place. '
-             'Steady: the same speed all the way, like a machine. Quick start: darts off, then arrives '
-             'slowly. Slow start: leaves slowly, then hurries. Overshoot: goes past the spot and comes '
-             'back to it. Curve: a gentle arc. Swoop: a big sweep through the picture. Circle: round '
-             'in half a circle. Turn: which way Curve, Swoop and Circle bend.')
-        form.addRow(help_label('To the drawing','How long the hand takes to go from its corner to the first line.'),go)
-        form.addRow(help_label('How',tip),how_in)
-        form.addRow(help_label('Turn',tip),bend_in)
-        # exp.217 (the user: keyframes in the trajectory): shape the way by hand
-        from PySide6.QtWidgets import QPushButton
         paths=dict(self.scenes[k].get('glide_path') or {})
-        def path_button(which):
-            button=QPushButton(); button.setObjectName('subtle')
-            def label():
-                button.setText('Edit path')        # exp.219 (the user): just its name
-            def clicked():
-                keys=self.edit_glide_path(k,which,how_in.currentText() if which=='in' else how_out.currentText(),
-                                          bend_in.currentText() if which=='in' else bend_out.currentText(),paths.get(which))
-                if keys is not False:
-                    if keys: paths[which]=keys
-                    else: paths.pop(which,None)
-                    label()
-            button.clicked.connect(clicked); label()
-            button.setToolTip('Drag keyframes on the video to give this way its own path (the chosen way '
-                              'gives the first keyframes and its speed).')
-            return button
-        form.addRow(help_label('Path','Your own path for this way, with keyframes.'),path_button('in'))
-        form.addRow(help_label('Back','How long the hand takes to go back to its corner after drawing.'),back)
-        form.addRow(help_label('How ',tip),how_out)
-        form.addRow(help_label('Turn ',tip),bend_out)
-        out_path=path_button('out')
-        form.addRow(help_label('Path ','Your own path for the way back, with keyframes.'),out_path)
+        ui=self.hand_ways_dialog(f'Hand: element {k+1}',
+                                 dict(go=float(settings.get('hand_glide_in') or 0) or default,
+                                      back=float(settings.get('hand_glide_out') or 0) or default,
+                                      how_in=glide[2],how_out=glide[3],
+                                      bend_in=stored[4] if len(stored)>4 else 'Auto',
+                                      bend_out=stored[5] if len(stored)>5 else 'Auto',paths=paths),
+                                 lambda which,style,bend,keys: self.edit_glide_path(k,which,style,bend,keys))
+        dialog,form=ui['dialog'],ui['form']
+        go,back,how_in,how_out,bend_in,bend_out=(ui[x] for x in ('go','back','how_in','how_out','bend_in','bend_out'))
+        paths,out_path=ui['paths'],ui['out_path']
         # exp.210 (the user): link this hand to the next one: no way back to the corner, the
         # next element's hand starts from where this one finished, in one movement.
         from PySide6.QtWidgets import QCheckBox
