@@ -13,7 +13,9 @@ _PATHS = {
     'source': '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="15.5" cy="8.5" r="1.8"/>'
               '<path d="M3 17l5.5-5.5 4.5 4.5 2.5-2.5L21 19"/>',
     # Play in a circle: Animation.
-    'animation': '<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l5.5-3.5z"/>',
+    'animation': '<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/><path d="M4 21.5c3-1.6 6-1.6 9 0s5 1.4 7-.3"/>',
+    'effects': '<circle cx="12" cy="12" r="9"/><path d="M10 8.5v7l5.5-3.5z"/>',
+    'stickers': '<path d="M4 17c2.5-8 9-12 15-11"/><path d="M15 3.5l4.5 2.5-2.5 4.5"/><circle cx="7" cy="19" r="1.2"/>',
     # An open hand: Hand.
     'hand': '<path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V11"/><path d="M11 10.5V4a1.5 1.5 0 0 1 3 0v6.5"/>'
             '<path d="M14 10.5V5.5a1.5 1.5 0 0 1 3 0V12"/>'

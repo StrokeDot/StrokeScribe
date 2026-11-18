@@ -1352,7 +1352,7 @@ class StageTimeline(QFrame):
                 p.drawRoundedRect(r,6,6)
                 if r.width()>30:
                     p.setPen(QColor(c['text'])); p.setFont(small)
-                    icon={'text':'T ','eraser':'⌫ '}.get(item.get('kind'),'▣ ')
+                    icon={'text':'T ','eraser':'⌫ ','sticker':'➚ '}.get(item.get('kind'),'▣ ')
                     p.drawText(r.adjusted(7,0,-6,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
                                f'{icon}{str(item.get("name") or "")[:30]}  ({k+1})')
             p.restore()
@@ -1372,7 +1372,7 @@ class StageTimeline(QFrame):
                 p.drawRoundedRect(r,6,6)
                 if r.width()>30:
                     p.setPen(QColor('white')); p.setFont(small)
-                    icon={'text':'T ','eraser':'⌫ '}.get(item.get('kind'),'▣ ')
+                    icon={'text':'T ','eraser':'⌫ ','sticker':'➚ '}.get(item.get('kind'),'▣ ')
                     p.drawText(r.adjusted(7,0,-6,0),Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeft,
                                icon+str(item.get('name') or '')[:40]+(' (off)' if item.get('off') else ''))
             p.restore()
@@ -2641,14 +2641,16 @@ class LineList(QListWidget):
 
 
 # Inspector tabs, in order.
-TABS = {'animation': 0, 'hand': 1, 'export': 2, 'source': 3, 'ai': 4}
+# exp.27: 'animation' is the Drawing page (Drawing, Colour & painting, Line order); Effects (Move
+# in, Exit) and Stickers come after, so the older indexes stay the same.
+TABS = {'animation': 0, 'hand': 1, 'export': 2, 'source': 3, 'ai': 4, 'effects': 5, 'stickers': 6}
 # Left panel pages (Text = handwriting).
 LEFT = {'text': 0, 'sound': 1, 'music': 2, 'camera': 3}
 LEFT_RAIL = (('text', 'Text'), ('sound', 'Sound'), ('music', 'Music'), ('camera', 'Camera'))
 # The right rail shows Source first; the tab widget keeps it last so the
 # long-standing indexes of the other panels never change.
-RAIL = (('source', 'Image'), ('ai', 'AI'), ('animation', 'Animation'), ('hand', 'Hand'),
-        ('export', 'Export'))
+RAIL = (('source', 'Image'), ('ai', 'AI'), ('animation', 'Drawing'), ('effects', 'Effects'),
+        ('stickers', 'Stickers'), ('hand', 'Hand'), ('export', 'Export'))
 
 
 class WheelGuard(QObject):
@@ -2664,6 +2666,50 @@ class WheelGuard(QObject):
                 QApplication.sendEvent(area.verticalScrollBar(),event)
             return True
         return False
+
+
+def _build_effect_out(w):
+    """exp.27: the Effects page's Goes out (every way out: Fade, Blur, Wipe, Zoom, Pop, Spin, Move
+    out to a side, Eraser; a Goes out clip right after the element) and Loop. They are the same
+    settings as the Text panel's Out / Out time / Loop (kept in step both ways)."""
+    from ui_sections import Section
+    from text_style_panel import OUT_CHOICES
+    from frame_render import LOOPS
+    from PySide6.QtWidgets import QDoubleSpinBox
+    out=Section('Goes out',tip='How the element goes away: a "Goes out" clip right after it on the timeline '
+                               '(drag it there to choose when).')
+    form=form_layout(); out.body.addLayout(form)
+    w.effect_out=QComboBox(); w.effect_out.addItems(list(OUT_CHOICES))
+    w.effect_out_time=QDoubleSpinBox(); w.effect_out_time.setRange(.3,10.); w.effect_out_time.setSingleStep(.1)
+    w.effect_out_time.setDecimals(1); w.effect_out_time.setValue(.8); w.effect_out_time.setSuffix(' s')
+    form.addRow('Out',w.effect_out); form.addRow('Out time',w.effect_out_time)
+    loop=Section('Loop',tip='A gentle movement, round and round, while the element stays on screen.')
+    form2=form_layout(); loop.body.addLayout(form2)
+    w.effect_loop=QComboBox(); w.effect_loop.addItems(list(LOOPS))
+    form2.addRow('Loop',w.effect_loop)
+    w.section_effect_out,w.section_effect_loop=out,loop
+    w.effects_layout.insertWidget(w.effects_layout.count()-1,out)
+    w.effects_layout.insertWidget(w.effects_layout.count()-1,loop)
+    pairs=((w.effect_out,w.text_out),(w.effect_out_time,w.text_out_time),(w.effect_loop,w.loop_style))
+
+    def copy(src,dst):
+        dst.blockSignals(True)
+        try:
+            if isinstance(dst,QComboBox): dst.setCurrentText(src.currentText())
+            else: dst.setValue(src.value())
+        finally:
+            dst.blockSignals(False)
+
+    def sync():
+        for mine,main in pairs: copy(main,mine)
+    for mine,main in pairs:
+        sig=(lambda x: x.currentIndexChanged) if isinstance(mine,QComboBox) else (lambda x: x.valueChanged)
+        # mine -> main (the main control does the work), main -> mine (shown here)
+        sig(mine).connect(lambda *_,a=mine,b=main: (b.setCurrentText(a.currentText()) if isinstance(b,QComboBox)
+                                                    else b.setValue(a.value())))
+        sig(main).connect(lambda *_,a=main,b=mine: copy(a,b))
+    w.sync_effects_page=sync
+    sync()
 
 
 def calm_wheel(root):
@@ -3602,10 +3648,17 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # then Move in, and Exit (at the end) last.
     for widget in (w.section_drawing,w.section_painting,w.lines_box,w.section_move_in,w.section_out):
         animation_l.removeWidget(widget)
-    for widget in (w.section_drawing,w.section_painting,w.lines_box,w.section_move_in,w.section_out):
+    for widget in (w.section_drawing,w.section_painting,w.lines_box):
         animation_l.addWidget(widget)
     animation_l.addStretch(1)
-    tabs.addTab(scroll_view(animation),'Animation')
+    tabs.addTab(scroll_view(animation),'Drawing')
+    # exp.27 (the user): Effects is its own page: how the element comes in when it is not
+    # drawn (Move in), and how it goes out at the end (Exit, with its Loop).
+    w.effects_page=QWidget();effects_l=QVBoxLayout(w.effects_page)
+    effects_l.setContentsMargins(9,12,9,8);effects_l.setSpacing(12)
+    effects_l.addWidget(w.section_move_in); effects_l.addWidget(w.section_out)
+    effects_l.addStretch(1)
+    w.effects_layout=effects_l
 
     hand=QWidget();hand_l=QVBoxLayout(hand)
     hand_l.setContentsMargins(9,12,9,8);hand_l.setSpacing(12)
@@ -4110,6 +4163,12 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.ai_buttons['lineart'].setObjectName('soft')
     ai_l.addStretch(1)
     tabs.insertTab(TABS['ai'],scroll_view(ai_page),'AI')
+    _build_effect_out(w)                                                       # exp.27
+    tabs.insertTab(TABS['effects'],scroll_view(w.effects_page),'Effects')
+    import sticker_panel
+    from ui_sections import Section as _Section
+    w.stickers_page=sticker_panel.build(w,_Section,form_layout,linked_slider)
+    tabs.insertTab(TABS['stickers'],scroll_view(w.stickers_page),'Stickers')
     # The rail replaces the tab strip; the panel title names the open page.
     tabs.tabBar().hide()
     inspector.title_label.setText(tabs.tabText(tabs.currentIndex()))
@@ -4485,12 +4544,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
             policy=button.sizePolicy();policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
             button.setSizePolicy(policy);button.setMinimumWidth(0)
     align_forms(sound,64)
+    align_forms(w.stickers_page,80)      # exp.27: the sticker settings line up like the other pages
     # QFormLayout.WrapLongRows can change the geometry of ALL animation
     # controls when image-specific rows are shown/hidden. In particular it
     # may grow the scroll content beyond its viewport and clip the right-hand
     # spinbox buttons. A bounded label column gives each field stable space
     # at the minimum 270px Inspector width, regardless of the selected element.
-    for form in animation.findChildren(QFormLayout):
+    for form in animation.findChildren(QFormLayout)+w.effects_page.findChildren(QFormLayout):   # exp.27: + Effects
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
         for index in range(form.rowCount()):
             item=form.itemAt(index,QFormLayout.ItemRole.LabelRole)

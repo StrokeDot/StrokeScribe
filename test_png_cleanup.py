@@ -102,7 +102,7 @@ class WindowTests(unittest.TestCase):
             self.assertIn('cleaned', w.color_note.text())
             self.assertLess(w.final_image.width(), W - 50)
         names = [w.inspector_tabs.tabText(i) for i in range(w.inspector_tabs.count())]
-        self.assertEqual(names, ['Animation', 'Hand', 'Export', 'Image', 'AI'])
+        self.assertEqual(names, ['Drawing', 'Hand', 'Export', 'Image', 'AI', 'Effects', 'Stickers'])
         from studio_workspace import LEFT, TABS
         sound_page = w.left_tabs.widget(LEFT['sound'])        # Sound is on the left now
         self.assertTrue(sound_page.isAncestorOf(w.sound_on))

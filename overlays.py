@@ -6,7 +6,7 @@ An overlay belongs to a scene (it is drawn inside that scene's frame, so on the
 board it flies with the camera). It is a dict:
 
     id        unique text
-    kind      'image' or 'text'
+    kind      'image', 'text', 'eraser' or 'sticker' (exp.27: stickers.py)
     name      shown in the lists
     data      image: PNG/JPG as base64, or SVG text (format 'svg'), kept in the project
     format    'png' / 'svg'
@@ -198,6 +198,8 @@ def natural_aspect(item):
     if item.get('kind') == 'text':
         img = picture(item, 400)
         return img.height() / max(1, img.width())
+    if item.get('kind') == 'sticker':
+        return float(item.get('aspect', .4))
     key = _key(item, 'aspect')
     if key in _SOURCES:
         return _SOURCES[key]
@@ -282,6 +284,9 @@ def box(item, width, height):
         line = float(item.get('size', .09)) * height
         img = text_picture(item, line)
         w, h = img.width(), img.height()
+    elif item.get('kind') == 'sticker':          # exp.27: its own shape (stickers.py)
+        w = float(item.get('size', .3)) * width
+        h = max(w * float(item.get('aspect', .4)), float(item.get('thickness', .012)) * height * 3)
     else:
         w = float(item.get('size', .35)) * width
         h = w * natural_aspect(item)
@@ -312,6 +317,17 @@ def paint(frame, items, t):
         if p is None:
             p = QPainter(frame)
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if item.get('kind') == 'sticker':         # exp.27: drawn as lines, as much as is drawn by now
+            import stickers
+            p.save()
+            p.setOpacity(opacity)
+            p.translate(QPointF(x + w / 2 + dx * W, y + h / 2 + dy * H))
+            if rotation or item.get('rotation'):
+                p.rotate(rotation + float(item.get('rotation', 0) or 0))
+            p.scale(scale, scale)
+            stickers.draw(p, item, w, w * float(item.get('aspect', .4)), H, stickers.progress(item, t))
+            p.restore()
+            continue
         img = text_picture(item, float(item.get('size', .09)) * H) if item.get('kind') == 'text' \
             else picture(item, w * max(1., scale))
         p.save()

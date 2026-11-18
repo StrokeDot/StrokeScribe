@@ -269,11 +269,12 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(w.scenes[k]['transition'], 'Camera move')
 
     def test_animation_sections_in_working_order(self):
+        # exp.27: the Drawing page has Drawing, Colour & painting, Line order; Move in is on Effects
         w = self.w
         layout = w.section_drawing.parentWidget().layout()
-        order = [layout.indexOf(x) for x in (w.section_drawing, w.section_painting, w.lines_box,
-                                              w.section_move_in, w.section_out)]
+        order = [layout.indexOf(x) for x in (w.section_drawing, w.section_painting, w.lines_box)]
         self.assertEqual(order, sorted(order))
+        self.assertTrue(w.effects_page.isAncestorOf(w.section_move_in))
 
     def test_number_boxes_beside_sliders_are_small(self):
         w = self.w

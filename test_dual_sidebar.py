@@ -188,7 +188,7 @@ class DualSidebarTests(unittest.TestCase):
         APP.processEvents()
         self.assertFalse(split.widget(2).isHidden())
         self.assertEqual(w.inspector_tabs.currentIndex(), TABS['animation'])
-        self.assertEqual(split.widget(2).title_label.text(), 'Animation')
+        self.assertEqual(split.widget(2).title_label.text(), 'Drawing')      # exp.27: was Animation
         w.handwriting_close.click()
         APP.processEvents()
         self.assertTrue(split.widget(0).isHidden())

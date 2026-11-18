@@ -1223,7 +1223,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         except Exception:
             lowest=1
         item['track']=next(t for t in range(lowest,lowest+40) if t not in busy)
-        self.record_structure('add '+('text' if item.get('kind')=='text' else 'picture on top'))
+        self.record_structure('add '+{'text':'text','sticker':'sticker'}.get(item.get('kind'),'picture on top'))
         self.overlays.append(item)
         self.project_changes.mark_changed()
         self.selected_overlay=item['id']; self.selected_overlays={item['id']}
@@ -1966,6 +1966,17 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def app_events(self):
         QApplication.processEvents()
 
+    def add_sticker(self,shape='Arrow'):
+        """exp.27: an arrow / circle / line at the playhead, drawing itself; chosen, with its
+        settings in the Stickers panel."""
+        import stickers
+        if not self.drawing: return None
+        item=self.add_overlay(stickers.new(shape))
+        if hasattr(self,'show_right_panel'): self.show_right_panel('stickers')
+        self.select_overlay(item['id'])
+        self.status.setText(f'{shape} added at the playhead: drag it in the video to place it.')
+        return item
+
     def add_overlay_text(self):
         import overlays
         if not self.drawing: return None
@@ -2039,6 +2050,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         tl.selected_overlay=self.selected_overlay
         tl.selected_overlays=set(getattr(self,'selected_overlays',set()))
         tl.update()
+        if hasattr(self,'sync_sticker_panel'): self.sync_sticker_panel()     # exp.27
 
     def toggle_text_track(self,t):
         """A text track's hide button: its texts are not in the video (exp.117)."""
@@ -2156,6 +2168,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import copy
         item=self.find_overlay(oid)
         if item is None: return
+        if item.get('kind')=='sticker':                 # exp.27: its settings are in the Stickers panel
+            if hasattr(self,'show_right_panel'): self.show_right_panel('stickers')
+            self.select_overlay(oid); return
         if item.get('kind')=='eraser':                  # exp.186
             choice=self.eraser_dialog(item)
             if choice is None: return
@@ -7033,6 +7048,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # is rebuilt just below anyway, which forgets them too).
             self._memo={}
             self.follow_lengths()
+            if hasattr(self,'sync_sticker_panel'): self.sync_sticker_panel()   # exp.27: after an undo / delete
+            if hasattr(self,'sync_effects_page'): self.sync_effects_page()      # exp.27: set without signals
         look=getattr(self,'_look_preview',False)
         # exp.5: the route is planned only when the animation is shown (Play, a scrub)
         self._animating=bool(playhead or self.playing or getattr(self,'_scrub_fast',False))

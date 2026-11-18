@@ -117,7 +117,7 @@ class WorkspaceLayoutTests(unittest.TestCase):
         source = [w.text_scroll]                     # left panel: Text page
         inspector = w.inspector_tabs.findChildren(QScrollArea)
         self.assertEqual(len(source), 1)
-        self.assertEqual(len(inspector), 5)          # Animation, Hand, Export, Image, AI
+        self.assertEqual(len(inspector), 7)          # Drawing, Hand, Export, Image, AI, Effects, Stickers
         self.assertTrue(all(area.horizontalScrollBarPolicy() ==
                             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
                             for area in source + inspector))
@@ -152,8 +152,8 @@ class WorkspaceLayoutTests(unittest.TestCase):
             self.assertGreater(area.viewport().width(), 185)
             for form in area.widget().findChildren(QFormLayout):
                 from studio_workspace import TABS
-                # Animation, Hand and Image share one label column (DontWrapRows).
-                aligned=(TABS['animation'],TABS['hand'],TABS['source'])
+                # Drawing (was Animation), Effects, Hand and Image share one label column (DontWrapRows).
+                aligned=(TABS['animation'],TABS['hand'],TABS['source'],TABS['effects'],TABS['stickers'])
                 expected=(QFormLayout.RowWrapPolicy.DontWrapRows if index in aligned
                           else QFormLayout.RowWrapPolicy.WrapLongRows)
                 holder=form.parentWidget()
