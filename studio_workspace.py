@@ -3860,8 +3860,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.hand_hide_add.clicked.connect(lambda checked=False: w.add_camera_clip('Hand hidden'))
     h.addRow('',w.hand_hide_add)
     w.hand_motion_add=QPushButton('+ Hand motion')          # exp.224
-    w.hand_motion_add.setToolTip('At the playhead: the waiting hand leaves its corner, goes wherever you choose '
-                                 '(no picture needed) and comes back. Double-click it on the Hand row to shape it.')
+    w.hand_motion_add.setToolTip('Move the hand at the playhead. Double-click it on the Hand row to shape it.')   # exp.38: shorter
     w.hand_motion_add.clicked.connect(lambda checked=False: w.add_hand_motion())
     h.addRow('',w.hand_motion_add)
     def _rest_rows(on):
@@ -4357,9 +4356,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.add_hand_motion_button=QPushButton(); w.add_hand_motion_button.setObjectName('subtle')
     w.add_hand_motion_button.setIcon(plus_icon('handwriting')); w.add_hand_motion_button.setIconSize(_QS(22,22))
     w.add_hand_motion_button.setFixedSize(38,32)
-    w.add_hand_motion_button.setToolTip('Add a hand motion: at the playhead the waiting hand leaves its corner, goes '
-                                        'through points you choose (anywhere, also outside the picture) and comes back. '
-                                        'No picture needed. Double-click its clip on the Hand row to shape it.')
+    w.add_hand_motion_button.setToolTip('Hand motion at the playhead (double-click it to shape it)')   # exp.38: shorter
     w.add_hand_motion_button.clicked.connect(lambda checked=False: w.add_hand_motion())
     timeline_head.addWidget(w.add_hand_motion_button)
 

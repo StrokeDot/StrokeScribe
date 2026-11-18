@@ -6,6 +6,12 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Free ending: the hand lands where you put it (v1.0.1-experimental.38)
+
+- Hand window, **At the corner**: new choice **Free ending: where you put it**. Click **Edit path** for the way back and drag the red dot to where the hand should end; the keyframes in between stay where you put them.
+- The hand lands there and stays there (it doesn't go back to the corner). The next element's hand starts from that spot, and a Hand motion added later starts from it too.
+- **Hand motion** goes at the playhead. With the playhead at the very end it now ends at the end of the video (it used to jump to 0). Its button text and message are shorter.
+
 ## Hand ways: shape and speed combine (v1.0.1-experimental.37)
 
 - **How** is now two choices side by side, for each way of a hand (elements and stickers):

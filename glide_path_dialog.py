@@ -27,6 +27,7 @@ class PathCanvas(QWidget):
         self.try_at = None                     # 0..1: the hand shown along the path (Try)
         self.style = 'Smooth'
         self.hand = None                       # exp.219: (picture, grip, width in frame pixels)
+        self.movable_end = False               # exp.38: Free ending: the red dot can be dragged
         self.setMinimumSize(760, 520)
         self.setMouseTracking(True)
 
@@ -106,7 +107,15 @@ class PathCanvas(QWidget):
                 return i
         return None
 
+    def _end_at(self, pos):
+        if not self.movable_end:
+            return False
+        c = self.to_widget(self.b)
+        return math.hypot(c.x() - pos.x(), c.y() - pos.y()) <= 12
+
     def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._end_at(event.position()):
+            self.drag = 'end'; return              # exp.38: where the hand ends (Free ending)
         i = self._key_at(event.position())
         if event.button() == Qt.MouseButton.RightButton:
             if i is not None:
@@ -116,11 +125,18 @@ class PathCanvas(QWidget):
             self.drag = i
 
     def mouseMoveEvent(self, event):
-        if self.drag is not None:
+        if self.drag == 'end':
+            # the keyframes keep their place on the screen while the end moves
+            spots = self.points()[1:-1]
+            self.b = self.to_frame(event.position())
+            self.keys = [self.key_of(q) for q in spots]
+            self.update()
+        elif self.drag is not None:
             self.keys[self.drag] = self.key_of(self.to_frame(event.position()))
             self.update()
         else:
-            self.setCursor(Qt.CursorShape.OpenHandCursor if self._key_at(event.position()) is not None
+            self.setCursor(Qt.CursorShape.OpenHandCursor if (self._key_at(event.position()) is not None
+                                                             or self._end_at(event.position()))
                            else Qt.CursorShape.ArrowCursor)
 
     def mouseReleaseEvent(self, event):
