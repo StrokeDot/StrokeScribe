@@ -6,6 +6,12 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## A hand from outside the picture comes in from below the middle (v1.0.1-experimental.40)
+
+- **Edit path** always zooms out far enough to show every dot: the green start, the red end, and every keyframe, even far outside the video.
+- General rule: when the hand's spot is outside the picture (for example, a Hand motion left it there), the hand comes in from just below the middle of the bottom edge and goes back there. It no longer flies in from far away, which made it look too fast.
+- In that case you can drag the green dot to choose where the hand comes from. That spot is kept for this element.
+
 ## The green dot is where the hand really is, and you can move it (v1.0.1-experimental.39)
 
 - In **Edit path** for the way in (**To the drawing**), the green dot is where the hand actually is when it starts: its corner, where the element before ended (Free ending), or where a Hand motion left it.
