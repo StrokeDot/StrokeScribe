@@ -6,6 +6,13 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## The green dot is where the hand really is, and you can move it (v1.0.1-experimental.39)
+
+- In **Edit path** for the way in (**To the drawing**), the green dot is where the hand actually is when it starts: its corner, where the element before ended (Free ending), or where a Hand motion left it.
+- A line above the picture tells you which one it is.
+- When the hand was left there by a **Free ending** or by a **Hand motion that stays**, drag the green dot to move that spot. The earlier way back (or the Hand motion's last point) changes with it, so the hand never jumps. Your keyframes stay where you put them.
+- When it comes from its corner, or from where a drawing finished, the dot can't be moved. The note tells you how to start somewhere else.
+
 ## Free ending: the hand lands where you put it (v1.0.1-experimental.38)
 
 - Hand window, **At the corner**: new choice **Free ending: where you put it**. Click **Edit path** for the way back and drag the red dot to where the hand should end; the keyframes in between stay where you put them.
