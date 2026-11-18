@@ -1764,6 +1764,18 @@ def paint_hand_spec(frame, spec, options, place=None):
         home = (corner.x() + float(ax) * corner.width(), corner.y() + float(ay) * corner.height())
         target = spec.get('screen_target') or (tip if tip is not None else home)
         free = options.get('_free_end') if phase == 'out' else None
+        outside = not (0. <= home[0] <= W and 0. <= home[1] <= H)
+        start = options.get('_free_start') if phase == 'in' and outside else None
+        if start is not None:
+            # exp.40 (the user): a hand coming from outside the picture starts where it was put
+            home = (float(start[0]) * W, float(start[1]) * H)
+        elif outside and free is None:
+            # exp.40 (the user: it came from too far away, too fast): a hand whose spot is outside
+            # the picture (a corner the camera's zoom left behind, a Hand motion that left the
+            # picture) comes in from just below the middle of the bottom edge, and goes back there
+            hw = W * float(options.get('hand_scale', .18)) * float(options.get('artwork_scale', 1.) or 1.)
+            hh = hw * hand.height() / max(1, hand.width())
+            home = (W / 2., H + float(own[1]) * hh + 2.)
         if free is not None:
             # exp.38 (the user: Free ending): the way back ends where it was put (shares of the
             # element's picture), and the hand stays there
@@ -1776,7 +1788,8 @@ def paint_hand_spec(frame, spec, options, place=None):
         keys = options.get('hand_glide_path_in' if phase == 'in' else 'hand_glide_path_out') or None
         tip = glide_point(a, b, p, style, (W / 2., H / 2.), bend, keys)
         _HAND.glide = dict(a=a, b=b, size=(W, H), style=style, bend=bend, phase=phase, keys=keys,   # exp.217
-                           place=place)                 # exp.38: the element's picture on the screen
+                           place=place,                 # exp.38: the element's picture on the screen
+                           outside=outside)             # exp.40: its own spot is outside the picture
         image, anchor, ratio = hand, (float(own[0]), float(own[1])), 1.
         tilt = glide_tilt(a, b, p, style, W * float(options.get('hand_scale', .18)), (W / 2., H / 2.), bend, keys)
         if before:

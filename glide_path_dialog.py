@@ -35,10 +35,24 @@ class PathCanvas(QWidget):
     # frame pixels <-> widget pixels
     def _box(self):
         fw, fh = self.frame.width(), self.frame.height()
-        total_w, total_h = fw * (1 + 2 * ROOM), fh * (1 + 2 * ROOM)
-        k = min(self.width() / total_w, self.height() / total_h)
-        ox = (self.width() - total_w * k) / 2 + fw * ROOM * k
-        oy = (self.height() - total_h * k) / 2 + fh * ROOM * k
+        # exp.40 (the user: I could not see where the green dot was): the view takes in every
+        # dot of the path, however far outside the video (and the room around the video). It is
+        # fixed while a dot is dragged, so the dot stays under the mouse.
+        if self.drag is not None and getattr(self, '_held', None) is not None:
+            return self._held
+        xs = [-fw * ROOM, fw * (1 + ROOM)]; ys = [-fh * ROOM, fh * (1 + ROOM)]
+        try:
+            for x, y in [self.a, self.b] + list(self.points()):
+                xs.append(x); ys.append(y)
+        except Exception:
+            pass
+        pad = .04 * max(fw, fh)
+        left, right, top, bottom = min(xs) - pad, max(xs) + pad, min(ys) - pad, max(ys) + pad
+        total_w, total_h = right - left, bottom - top
+        k = min(self.width() / max(1., total_w), self.height() / max(1., total_h))
+        ox = (self.width() - total_w * k) / 2 - left * k
+        oy = (self.height() - total_h * k) / 2 - top * k
+        self._held = (ox, oy, k)
         return ox, oy, k
 
     def to_widget(self, p):

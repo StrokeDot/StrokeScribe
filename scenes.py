@@ -214,6 +214,9 @@ def apply_glide(options, scene):
         # exp.38 (the user): Free ending: the way back ends where it was put; it waits there and
         # the next hand starts there
         options['_free_end'] = (float(scene['hand_end'][0]), float(scene['hand_end'][1]))
+    if scene and scene.get('hand_start') and options.get('hand_travel'):
+        # exp.40 (the user): where a hand coming from outside the picture starts (shares of the screen)
+        options['_free_start'] = (float(scene['hand_start'][0]), float(scene['hand_start'][1]))
     return options
 
 
@@ -889,7 +892,7 @@ def scenes_from_project(data):
                         hidden=bool(item.get('hidden')), muted=bool(item.get('muted')),
                         art_off=bool(item.get('art_off')), hand_off=bool(item.get('hand_off')),
                         hand_link=bool(item.get('hand_link')), hand_flow=item.get('hand_flow'),
-                        hand_end=item.get('hand_end'),                 # exp.38
+                        hand_end=item.get('hand_end'), hand_start=item.get('hand_start'),   # exp.38/40
                         thumb_png=item.get('thumb_png'),
                         glide=tuple(item['glide']) if item.get('glide') else None,
                         glide_path=item.get('glide_path') or None))
@@ -907,7 +910,7 @@ def scenes_to_project(main_state, scene_list, index):
                                hidden=bool(s.get('hidden')), muted=bool(s.get('muted')),
                                art_off=bool(s.get('art_off')), hand_off=bool(s.get('hand_off')),
                                hand_link=bool(s.get('hand_link')), hand_flow=s.get('hand_flow'),
-                               hand_end=s.get('hand_end'),                 # exp.38
+                               hand_end=s.get('hand_end'), hand_start=s.get('hand_start'),   # exp.38/40
                                glide=list(s['glide']) if s.get('glide') else None,
                                glide_path=s.get('glide_path') or None)
                           for k, s in enumerate(scene_list)]

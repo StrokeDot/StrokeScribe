@@ -4275,7 +4275,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         state=self.scenes[k]['state']
         rest=self.hand_rest_settings()             # exp.143: the same for every element
         key=(id(state),width,height,over,tuple(sorted(rest.items())),tuple(self.scenes[k].get('glide') or ()),repr(self.scenes[k].get('glide_path')),
-             self.scenes[k].get('hand_flow'),repr(self.scenes[k].get('hand_end')))      # exp.38
+             self.scenes[k].get('hand_flow'),repr(self.scenes[k].get('hand_end')),repr(self.scenes[k].get('hand_start')))      # exp.38/40
         cached=self._scene_cache.get(id(state))
         if cached is None or cached[0]!=key:
             drawing,options,_=job_from_state(state,self.hand,overrides=rest)
@@ -5088,7 +5088,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         try:
             sig=(width,height,tuple((id(m[0]),id(m[1]),id(m[3]),m[2]) for m in made),
                  repr(self.hand_video(None)),repr([dict(c) for c in self.live_clips()]),
-                 tuple((s.get('art_off'),s.get('hand_off'),s.get('hand_link'),s.get('hand_flow'),repr(s.get('hand_end')),
+                 tuple((s.get('art_off'),s.get('hand_off'),s.get('hand_link'),s.get('hand_flow'),repr(s.get('hand_end')),repr(s.get('hand_start')),
                         s.get('transition'),s.get('transition_seconds'),s.get('uid')) for s in self.scenes),
                  repr(self.eraser_tool()),repr(self.board_frames()),tuple(sorted(self.hidden_elements())),
                  tuple((it.k,it.start,it.length) for it in self.timeline_layout().items),self.timeline_layout().total,
@@ -6510,7 +6510,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 repr(self.scenes[k].get('glide')) if 0<=k<len(self.scenes) else None,
                 repr(self.scenes[k].get('glide_path')) if 0<=k<len(self.scenes) else None,   # exp.217
                 tuple(bool(s.get('hand_link')) for s in self.scenes),          # exp.210: linked hands
-                tuple((s.get('hand_flow'),repr(s.get('hand_end'))) for s in self.scenes),   # exp.218/38
+                tuple((s.get('hand_flow'),repr(s.get('hand_end')),repr(s.get('hand_start'))) for s in self.scenes),   # exp.218/38/40
                 (bool(self.scenes[k].get('art_off')),bool(self.scenes[k].get('hand_off'))) if 0<=k<len(self.scenes) else None)
 
     def hand_rest_settings(self):
@@ -6808,6 +6808,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             kind,ref,spot=moved
             if kind=='end' and 0<=ref<len(self.scenes):
                 self.scenes[ref]['hand_end']=list(spot)
+            elif kind=='own' and 0<=ref<len(self.scenes):
+                self.scenes[ref]['hand_start']=list(spot)      # exp.40: from outside the picture
             elif kind=='motion':
                 import camera_clips
                 clip=self.find_camera(ref)
@@ -6874,7 +6876,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             import applog; applog.error('Hand path: the hand',exc)
         keys=(self.scenes[k].get('glide_path') or {}).get(which)
         return dict(k=k,which=which,image=image,a=info['a'],b=info['b'],size=(W,H),hand=hand,style=style,
-                    place=info.get('place'),
+                    place=info.get('place'),outside=bool(info.get('outside')),     # exp.40
                     bend=bend,keys=[tuple(x) for x in keys] if keys else None,times=(t0,t1),
                     preset=frame_render.preset_keyframes(info['a'],info['b'],style,(W/2.,H/2.),bend))
 
@@ -6923,14 +6925,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # exp.39: the green dot is where the hand is then; dragging it moves that spot (the
             # Free ending or the Hand motion that left the hand there: no jump anywhere)
             kind,ref=source
-            dialog.canvas.movable_start=kind in ('motion','end')
+            if snap.get('outside'):
+                kind,ref='own',k                # exp.40: it comes from outside the picture
+            dialog.canvas.movable_start=kind in ('motion','end','own')
             note={'motion':'The green dot is where a Hand motion left the hand. Drag it to move that spot '
                            '(the Hand motion\'s last point changes too).',
                   'end':f'The green dot is where element {(ref or 0)+1}\'s hand ended (Free ending). Drag it to '
                         'move that spot (element '+f'{(ref or 0)+1}\'s way back ends there too).',
                   'link':f'The hand comes from where element {(ref or 0)+1} finished drawing.',
                   'corner':'The hand comes from its corner. To start somewhere else, give the element before a '
-                           'Free ending, or add a Hand motion that stays where it ends.'}[kind]
+                           'Free ending, or add a Hand motion that stays where it ends.',
+                  'own':'The hand is outside the picture here, so it comes in from below the middle. Drag the '
+                        'green dot to choose where it comes from.'}[kind]
             label=QLabel(note); label.setWordWrap(True); label.setObjectName('muted')
             dialog.layout().insertWidget(1,label)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return False
@@ -6938,7 +6944,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             W,H=snap['size']; px,py,pw,ph=snap.get('place') or (0.,0.,float(W),float(H))
             ax,ay=dialog.canvas.a
             spot=(round((ax-px)/max(1.,pw),4),round((ay-py)/max(1.,ph),4))
-            self._start_pending=(source[0],source[1]['id'] if source[0]=='motion' else source[1],spot)
+            if kind=='own':
+                spot=(round(ax/max(1.,W),4),round(ay/max(1.,H),4))     # exp.40: shares of the screen
+                self._start_pending=('own',k,spot)
+            else:
+                self._start_pending=(source[0],source[1]['id'] if source[0]=='motion' else source[1],spot)
         if free:
             W,H=snap['size']; px,py,pw,ph=snap.get('place') or (0.,0.,float(W),float(H))
             bx,by=dialog.canvas.b
@@ -8196,7 +8206,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                              hidden=bool(self.track_flag(s,'hidden')),muted=bool(self.track_flag(s,'muted')),
                              art_off=bool(s.get('art_off')),hand_off=bool(s.get('hand_off')),
                              hand_link=bool(s.get('hand_link')),glide_path=s.get('glide_path'),hand_flow=s.get('hand_flow'),
-                             hand_end=s.get('hand_end'),                                        # exp.38
+                             hand_end=s.get('hand_end'),hand_start=s.get('hand_start'),         # exp.38/40
                              glide=s.get('glide'))
                         for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
