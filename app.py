@@ -2,7 +2,7 @@ import os, sys, time
 from collections import OrderedDict
 from pathlib import Path
 from datetime import datetime
-from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl, QItemSelectionModel, QEventLoop, QObject
+from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl, QItemSelectionModel, QEventLoop, QObject, QRectF
 from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap, QDesktopServices
 from PySide6.QtWidgets import (QListWidgetItem,QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea,QColorDialog)
 from toast import notify
@@ -48,6 +48,9 @@ def timecode(seconds):
     return f'{int(minutes):02d}:{rest:05.2f}'
 
 
+import math
+
+
 class Canvas(QWidget):
     """Program monitor: the frame on its preview background, plus a loading card."""
     def __init__(self):
@@ -62,6 +65,9 @@ class Canvas(QWidget):
         self.on_wheel=None          # on_wheel(steps, x, y) → False when not used
         self.on_double=None         # on_double(x, y)
         self.box_provider=None      # () → (x, y, w, h) in frame pixels of a box to outline, or None
+        # exp.28 (the user: Ctrl+T, like Photoshop's Free Transform): a box with corner handles;
+        # dragging a corner reports ('start' | 'move' | 'done', factor) to on_transform
+        self.transform_provider=None; self.on_transform=None; self._resize=None
         self.titles_frame=None      # exp.116: texts / pictures on top, over everything (screen)
         self.rest_frame=None        # exp.143: the hand waiting in its corner (screen)
         self._press=None
@@ -83,13 +89,45 @@ class Canvas(QWidget):
         r=self.picture_rect()
         return ((pos.x()-r.x())*self.frame.width()/max(1e-6,r.width()),
                 (pos.y()-r.y())*self.frame.height()/max(1e-6,r.height()))
+    def _transform_rect(self):
+        """The Ctrl+T box in widget pixels, or None."""
+        box=self.transform_provider() if self.transform_provider is not None and self.frame is not None else None
+        if not box: return None
+        rect=self.picture_rect(); k=rect.width()/max(1,self.frame.width())
+        bx,by,bw,bh=box
+        return QRectF(rect.x()+bx*k,rect.y()+by*k,max(1.,bw*k),max(1.,bh*k))
+    def _corner_at(self,pos):
+        r=self._transform_rect()
+        if r is None: return None
+        for corner in (r.topLeft(),r.topRight(),r.bottomLeft(),r.bottomRight()):
+            if abs(pos.x()-corner.x())<=10 and abs(pos.y()-corner.y())<=10: return r,corner
+        return None
     def mousePressEvent(self,event):
         self._press=None
         if self.frame is None or self.busy_text is not None or event.button()!=Qt.MouseButton.LeftButton:
             return super().mousePressEvent(event)
+        hit=self._corner_at(event.position())
+        if hit is not None and self.on_transform is not None:     # exp.28: a corner of the Ctrl+T box
+            r,corner=hit
+            centre=r.center(); d0=max(4.,math.hypot(corner.x()-centre.x(),corner.y()-centre.y()))
+            self._resize=(centre,d0)
+            self.on_transform('start',1.); self.setFocus(); event.accept(); return
         self._press=(event.position(),False)
         self.setFocus()
     def mouseMoveEvent(self,event):
+        if self._resize is not None:
+            centre,d0=self._resize; pos=event.position()
+            self.on_transform('move',max(.05,math.hypot(pos.x()-centre.x(),pos.y()-centre.y())/d0))
+            return
+        if not event.buttons() and self.transform_provider is not None:
+            hit=self._corner_at(event.position())
+            if hit is not None:
+                r,c=hit
+                diag=(c==r.topLeft() or c==r.bottomRight())
+                self.setCursor(Qt.CursorShape.SizeFDiagCursor if diag else Qt.CursorShape.SizeBDiagCursor)
+                self._corner_cursor=True
+            elif getattr(self,'_corner_cursor',False):
+                self._corner_cursor=False; self.unsetCursor()
         press=getattr(self,'_press',None)
         if press is None or self.on_drag is None or not event.buttons()&Qt.MouseButton.LeftButton:
             return super().mouseMoveEvent(event)
@@ -105,6 +143,10 @@ class Canvas(QWidget):
         r=self.picture_rect()
         self.on_drag('move',d.x()/max(1.,r.width()),d.y()/max(1.,r.height()))
     def mouseReleaseEvent(self,event):
+        if self._resize is not None:
+            self._resize=None
+            if self.on_transform is not None: self.on_transform('done',1.)
+            return
         press=getattr(self,'_press',None); self._press=None
         if press is None: return super().mouseReleaseEvent(event)
         start,dragging=press
@@ -211,6 +253,13 @@ class Canvas(QWidget):
                 p.setBrush(Qt.BrushStyle.NoBrush)
                 p.setPen(QPen(QColor(255,255,255,200),3)); p.drawRoundedRect(QRectF(ox+bx*k-3,oy+by*k-3,bw*k+6,bh*k+6),6,6)
                 p.setPen(QPen(QColor(c['accent']),2,Qt.PenStyle.DashLine)); p.drawRoundedRect(QRectF(ox+bx*k-3,oy+by*k-3,bw*k+6,bh*k+6),6,6)
+            tr=self._transform_rect()
+            if tr is not None:                       # exp.28: Ctrl+T box with its corner handles
+                from PySide6.QtGui import QPen
+                p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(QColor(c['accent']),1.6)); p.drawRect(tr)
+                p.setBrush(QColor('white')); p.setPen(QPen(QColor(c['accent']),1.6))
+                for corner in (tr.topLeft(),tr.topRight(),tr.bottomLeft(),tr.bottomRight()):
+                    p.drawRect(QRectF(corner.x()-5,corner.y()-5,10,10))
             if self.highlight:
                 from PySide6.QtGui import QPainterPath, QPen
                 from PySide6.QtCore import QPointF
@@ -573,6 +622,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.canvas.on_click=self.click_preview
         self.canvas.on_drag=self.drag_picture
         self.canvas.box_provider=self.overlay_box
+        self.canvas.transform_provider=self.transform_box; self.canvas.on_transform=self.transform_drag   # exp.28
         self.canvas.on_wheel=self.preview_wheel
         self.canvas.on_double=self.preview_double
         from menus import build_menus
@@ -2445,6 +2495,86 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self.background_color=colour.name()
                 self.preview_background.setItemText(index,'Custom colour…')
             self.show_background(); self.note_change()
+
+    # ------------------------------------------------------------ exp.28: Ctrl+T, resize on the preview
+    def toggle_transform(self,on=None):
+        """Ctrl+T (the user, like Photoshop's Free Transform): handles on the chosen text or
+        sticker (else the element's picture, in This element) to make it bigger or smaller by
+        dragging a corner. Ctrl+T again, Enter or Esc: done."""
+        on=not getattr(self,'transforming',False) if on is None else bool(on)
+        if on and self.transform_target() is None:
+            self.status.setText('Ctrl+T: choose a text or sticker in the preview, or open "This element" '
+                                'to resize the picture.')
+            on=False
+        self.transforming=on
+        if on: self.playing=False
+        self.canvas.setMouseTracking(on)
+        if hasattr(self,'transform_done_key'):
+            # one shortcut per key (two on Esc cancel each other): full screen's Esc waits meanwhile
+            was=getattr(self,'transforming_prev',None)
+            if on and not was and hasattr(self,'exit_fullscreen_key'):
+                self._fullscreen_esc=self.exit_fullscreen_key.isEnabled(); self.exit_fullscreen_key.setEnabled(False)
+            elif not on and was and hasattr(self,'exit_fullscreen_key'):
+                self.exit_fullscreen_key.setEnabled(getattr(self,'_fullscreen_esc',False))
+            self.transforming_prev=on
+            self.transform_done_key.setEnabled(on); self.transform_esc_key.setEnabled(on)
+        self.status.setText('Resize: drag a corner (drag inside to move). Ctrl+T, Enter or Esc when done.' if on
+                            else self.status.text() if not self.status.text().startswith('Resize:') else 'Resize done.')
+        self.canvas.update()
+
+    def transform_target(self):
+        """('overlay', item) / ('element', None) / None: what Ctrl+T resizes now."""
+        item=self.find_overlay(getattr(self,'selected_overlay',None)) if self.selected_overlay else None
+        if item is not None and item.get('kind')!='eraser':
+            return ('overlay',item)
+        if self.drawing and not self.all_scenes() and not self.board_mode():
+            return ('element',None)
+        return None
+
+    def transform_box(self):
+        """The Ctrl+T box in frame pixels, or None (cheap: asked while the preview is painted)."""
+        if not getattr(self,'transforming',False): return None
+        target=self.transform_target()
+        if target is None: return None
+        if target[0]=='overlay':
+            return self.overlay_box()
+        lines=self.preview_lines()
+        pts=[pt for line in lines for pt in line]
+        if not pts: return None
+        xs=[x for x,_ in pts]; ys=[y for _,y in pts]
+        return (min(xs),min(ys),max(xs)-min(xs),max(ys)-min(ys))
+
+    def transform_drag(self,kind,factor):
+        target=self.transform_target()
+        if target is None: return
+        what,item=target
+        if kind=='start':
+            self.playing=False
+            if what=='overlay':
+                self.record_structure('resize on the screen')
+                self._transform_from=float(item.get('size',.3))
+            else:
+                self._transform_from=self.artwork_size.value()
+            return
+        base=getattr(self,'_transform_from',None)
+        if base is None: return
+        if kind=='move':
+            if what=='overlay':
+                item['size']=round(max(.01,min(3.,base*factor)),4)
+                self._box_cache=None; self.refresh()
+            else:
+                self.artwork_size.setValue(round(max(self.artwork_size.minimum(),
+                                                     min(self.artwork_size.maximum(),base*factor)),1))
+        else:
+            self._transform_from=None
+            if what=='overlay':
+                self.project_changes.mark_changed()
+                if hasattr(self,'sync_sticker_panel'): self.sync_sticker_panel()
+                self.status.setText(f'"{item.get("name","")}" resized.')
+            else:
+                self.commit_history()
+                self.status.setText(f'Picture size {self.artwork_size.value():.0f}%.')
+            self.refresh()
 
     def drag_picture(self,kind,dx,dy):
         """Drag on the preview: move the picture on the page (Position X / Y), or a frame on the Board."""
