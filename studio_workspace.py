@@ -2595,13 +2595,15 @@ def build_fullscreen(w):
         w.canvas_fullscreen = True
         w.fullscreen_button.setIcon(icon('exit-fullscreen', RAIL_ICON))
         w.fullscreen_button.setToolTip('Leave fullscreen (Esc or F11)')
-        w.exit_fullscreen_key.setEnabled(True)
+        w._fullscreen_esc=True
+        w.exit_fullscreen_key.setEnabled(not getattr(w,'transforming',False))   # exp.28: Ctrl+T has Esc meanwhile
         w.showFullScreen()
 
     def leave():
         if not w.canvas_fullscreen:
             return
         w.canvas_fullscreen = False
+        w._fullscreen_esc=False
         w.exit_fullscreen_key.setEnabled(False)
         w.setWindowState(saved.get('window', Qt.WindowState.WindowNoState))
         for part in chrome():
@@ -4616,6 +4618,13 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.space_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
     w.space_shortcut.activated.connect(
         lambda: None if isinstance(QApplication.focusWidget(),(QPlainTextEdit,QComboBox)) else w.toggle())
+    # exp.28 (the user, like Photoshop): Ctrl+T resize handles on the preview; Enter / Esc: done
+    w.transforming=False
+    w.transform_key=QShortcut(QKeySequence('Ctrl+T'),w); w.transform_key.activated.connect(lambda: w.toggle_transform())
+    w.transform_done_key=QShortcut(QKeySequence(Qt.Key.Key_Return),w)
+    w.transform_done_key.activated.connect(lambda: w.toggle_transform(False)); w.transform_done_key.setEnabled(False)
+    w.transform_esc_key=QShortcut(QKeySequence('Esc'),w)
+    w.transform_esc_key.activated.connect(lambda: w.toggle_transform(False)); w.transform_esc_key.setEnabled(False)
     # exp.208 (the user, like Filmora): Ctrl+B cuts the chosen clip, E switches it off / on
     w.cut_shortcut=QShortcut(QKeySequence('Ctrl+B'),w); w.cut_shortcut.activated.connect(lambda: w.cut_at_playhead())
     w.switch_shortcut=QShortcut(QKeySequence(Qt.Key.Key_E),w); w.switch_shortcut.activated.connect(lambda: w.switch_selected())

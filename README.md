@@ -6,6 +6,13 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Ctrl+T: resize on the preview (v1.0.1-experimental.28)
+
+- **Ctrl+T** (like Photoshop's Free Transform) puts a box with corner handles on the chosen text
+  or sticker, or, when none is chosen, on the element's picture (in the This element preview).
+  Drag a corner to make it bigger or smaller (it keeps its proportions); drag inside to move it.
+  Ctrl+T again, Enter or Esc when done. Undo works as usual.
+
 ## Drawing, Effects and Stickers panels; animated stickers (v1.0.1-experimental.27)
 
 The right rail now has three panels where Animation was:
