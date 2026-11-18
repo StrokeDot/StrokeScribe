@@ -367,19 +367,33 @@ def paint(frame, items, t, hands=True):
         p.scale(scale, scale)
         p.drawImage(QRectF(-w / 2, -h / 2, w, h), img)
         p.restore()
-    if hands:                                     # exp.29: the hand drawing a sticker, on top
-        drawn = [i for i in items if i.get('kind') == 'sticker' and i.get('drawing', 'Animated') != 'Animated'
-                 and not i.get('off')]
-        if drawn:
-            import stickers
-            for item in drawn:
-                if stickers.hand_tip(item, t, W, H) is None:
-                    continue
-                if p is None:
-                    p = QPainter(frame)
-                    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-                    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-                stickers.paint_hand(p, item, t, W, H)
     if p is not None:
         p.end()
+    if hands:                                     # exp.29: the hand drawing a sticker, on top
+        paint_hands(frame, items, t)
     return frame
+
+
+def hand_items(items, t, W, H):
+    """exp.30: the stickers whose hand is on screen at t."""
+    import stickers
+    return [i for i in items or () if i.get('kind') == 'sticker' and i.get('drawing', 'Animated') != 'Animated'
+            and not i.get('off') and stickers.hand_tip(i, t, W, H) is not None]
+
+
+def paint_hands(out, items, t, size=None, to_screen=None):
+    """exp.30: the hands drawing stickers, painted on `out` (the screen). size: (W, H) of the frame
+    the stickers are on (a page the camera zooms; default: out), to_screen maps its points onto
+    `out`. The hand has the screen's size, like the elements' hands."""
+    W, H = size if size is not None else (out.width(), out.height())
+    drawn = hand_items(items, t, W, H)
+    if not drawn:
+        return out
+    import stickers
+    from PySide6.QtGui import QPainter
+    p = QPainter(out)
+    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    for item in drawn:
+        stickers.paint_hand(p, item, t, W, H, out.width(), to_screen)
+    p.end()
+    return out

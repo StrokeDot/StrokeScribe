@@ -254,15 +254,20 @@ def hand_tip(item, t, W, H):
     return on_frame(pen_point(item, w, h, H, t))
 
 
-def paint_hand(painter, item, t, W, H):
-    """The hand drawing this sticker at t, on a W × H frame (its pen tip on the line)."""
+def paint_hand(painter, item, t, W, H, screen_w=None, to_screen=None):
+    """The hand drawing this sticker at t (its pen tip on the line). W × H: the frame the sticker
+    is drawn on; exp.30 (the user: the hand was huge): when that frame is a page the camera
+    zooms, to_screen maps its points to the screen and the hand has the screen's size
+    (screen_w wide), like the elements' hands, which the camera never zooms."""
     tip = hand_tip(item, t, W, H)
     if tip is None:
         return False
+    if to_screen is not None:
+        tip = to_screen(*tip)
     from PySide6.QtCore import QRectF
     from frame_render import draw_hand_picture
     image = _HAND['image']
-    hw = W * _HAND['scale']; hh = hw * image.height() / max(1, image.width())
+    hw = float(screen_w or W) * _HAND['scale']; hh = hw * image.height() / max(1, image.width())
     ax, ay = _HAND['anchor']
     painter.save(); painter.setOpacity(1.)
     draw_hand_picture(painter, QRectF(tip[0] - ax * hw, tip[1] - ay * hh, hw, hh), image)

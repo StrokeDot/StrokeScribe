@@ -6,6 +6,14 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Sticker hand: normal size, and on the Hand row (v1.0.1-experimental.30)
+
+- **The hand drawing a sticker was far too big:** it was drawn on the page with the sticker, so
+  the camera zoomed it too. Now the sticker is on its page (the camera zooms it) and its hand is on
+  the screen at the elements' hand size, its pen tip on the line.
+- **The Hand row** shows each sticker drawn by the hand like an element's: its way in (faint),
+  the drawing, and its way back (faint).
+
 ## Stickers drawn by the hand (v1.0.1-experimental.29)
 
 In the Stickers panel, a chosen sticker has two new settings:

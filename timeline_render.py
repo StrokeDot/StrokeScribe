@@ -221,14 +221,18 @@ def paint_texts(out, items, seconds, frames=None, place=None, view=None):
         groups.setdefault(min(max(0, int(o.get('_page', 0) or 0)), len(frames) - 1), []).append(o)
     painter = QPainter(out)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    hands = []
     for k, group in groups.items():
         x, y, rw, rh = place(frames[k], view, w, h)
         if rw < 2 or x > w or y > h or x + rw < 0 or y + rh < 0:
             continue
         layer = QImage(w, h, QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
-        overlays.paint(layer, group, seconds)
+        overlays.paint(layer, group, seconds, hands=False)      # exp.30: the hand on the screen, below
         painter.drawImage(QRectF(x, y, rw, rh), layer)
+        hands.append((group, (lambda px, py, x=x, y=y, rw=rw, rh=rh: (x + px * rw / w, y + py * rh / h))))
     painter.end()
+    for group, to_screen in hands:          # exp.30: the camera zooms the page, not the hand
+        overlays.paint_hands(out, group, seconds, (w, h), to_screen)
     return out
 
 
