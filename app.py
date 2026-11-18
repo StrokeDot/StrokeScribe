@@ -960,6 +960,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     def restore_structure(self,scenes,index,titles=None):
         from history import History
         self.playing=False
+        # exp.36 (the user: the playhead jumped back on Ctrl+Z): an undo / redo leaves the playhead
+        # where it is, like Filmora (entering the element put it at the element's start)
+        try:
+            keep=(self.all_scenes(),self.video_seconds(),self.scene_index,self.position)
+        except Exception:
+            keep=None
         if titles is not None:
             import copy
             extras=titles if isinstance(titles,dict) else {'titles':titles}
@@ -974,7 +980,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.scene_index=-1
         self.history=History()
         self._enter_scene(index)
-        self.fill_scenes(); self.refresh()
+        self.fill_scenes()
+        if keep is not None:
+            whole,seconds,old_index,fraction=keep
+            try:
+                self.__dict__.pop('_memo',None)
+                if whole and self.all_scenes():
+                    self.position=max(0.,min(1.,seconds/max(1e-6,self.video_length())))
+                elif old_index==index:
+                    self.position=max(0.,min(1.,fraction))
+            except Exception:
+                pass
+        self.refresh()
 
     def _project_step(self,from_stack,to_stack,verb):
         seq,scenes,index,label,*rest=from_stack.pop()
@@ -6565,19 +6582,56 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.place_hand_sticker(item)            # longer ways: it still waits for the drawing hand
         self.project_changes.mark_changed(); self.refresh(); self.sync_camera_timeline()
 
+    def sticker_view_at(self,item,t,W,H):
+        """exp.36: (picture of the video at t without any sticker hand, to_screen) for a sticker's
+        Edit path: its page as the camera shows it then, so the dots are where its line is."""
+        import timeline_render
+        from timeline_model import state_at
+        to_screen=lambda x,y:(x,y)
+        image=None
+        if self.all_scenes() and len(self.scenes)>1:
+            try:
+                image=self.timeline_frame(state_at(self.timeline_layout(),t),W,H,t)
+                placed=self.text_view(t,W,H)
+                shown=[]
+                for o in self.titles_split(t)[0]:
+                    o=dict(o,drawing='Animated')          # no hand in the picture (the window shows its own)
+                    if o.get('id')==item.get('id'):        # this sticker whole, so its line shows
+                        d=max(.05,float(o.get('draw_seconds',.8)))
+                        o.update(start=t-d-.01,duration=max(float(o.get('duration',3)),d+.5),effect_in='None')
+                    shown.append(o)
+                if placed is not None:
+                    frames,place,view=placed
+                    image=timeline_render.paint_texts(image,shown,t,frames,place,view)
+                    mine=next((o for o in self.titles_split(t)[0] if o.get('id')==item.get('id')),None)
+                    k=min(max(0,int((mine or {}).get('_page',0) or 0)),len(frames)-1)
+                    x,y,rw,rh=place(frames[k],view,W,H)
+                    to_screen=lambda px,py,x=x,y=y,rw=rw,rh=rh:(x+px*rw/W,y+py*rh/H)
+                else:
+                    image=timeline_render.paint_texts(image,shown,t)
+            except Exception as exc:
+                import applog; applog.error('Sticker path picture',exc); image=None
+        if image is None:
+            frame=self.canvas.frame
+            if frame is None or frame.isNull(): return None,to_screen
+            image=frame.scaled(W,H)
+        return image,to_screen
+
     def edit_sticker_path(self,item,which,style,bend,keys):
-        """exp.31: Edit path for a sticker's way in / back, on the preview's picture."""
+        """exp.31/36: Edit path for a sticker's way in / back, on the video at the moment its line
+        starts / ends (the dots where its line really is, through the camera)."""
         from PySide6.QtWidgets import QDialog
         from glide_path_dialog import GlidePathDialog
         import stickers, frame_render
-        frame=self.canvas.frame
-        if frame is None or frame.isNull():
+        W=960; H=round(W*self.board_aspect())
+        start=float(item.get('start',0)); draw=max(.05,float(item.get('draw_seconds',.8)))
+        image,to_screen=self.sticker_view_at(item,start if which=='in' else start+draw,W,H)
+        if image is None:
             self.status.setText('Edit path: there is no picture in the preview.'); return False
-        W,H=frame.width(),frame.height()
-        home,first,last=stickers.way_ends(item,W,H)
+        home,first,last=(to_screen(*p) for p in stickers.way_ends(item,W,H))
         a,b=(home,first) if which=='in' else (last,home)
         preset=frame_render.preset_keyframes(a,b,style,(W/2.,H/2.),bend)
-        dialog=GlidePathDialog(self,frame,a,b,keys,preset,style,
+        dialog=GlidePathDialog(self,image,a,b,keys,preset,style,
                                f'Hand path: {item.get("name","sticker")}, '+('to the drawing' if which=='in' else 'back'))
         h=stickers._HAND
         if h: dialog.canvas.hand=(h['image'],h['anchor'],W*h['scale'])

@@ -6,6 +6,16 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Undo keeps the playhead; sticker path dots in the right place (v1.0.1-experimental.36)
+
+- **Undo / redo no longer move the playhead** back (to the element's start): it stays where it
+  was, like Filmora.
+- **A sticker's Edit path** shows the video at the moment its line starts (or ends, for the way
+  back), the sticker whole and no hand on it, and its dots go through the camera there: the red dot
+  is where the hand really starts drawing (before, they were worked out without the camera).
+- **No slowing down at the line**, even when the drawing is much faster than the hand's way (the
+  way's speed was capped).
+
 ## The sticker hand: one movement (v1.0.1-experimental.35)
 
 - The hand stopped where the line began (and where it ended): its way in slowed down to rest on
