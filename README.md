@@ -6,6 +6,15 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Clips snap and line up, like Filmora (v1.0.1-experimental.33)
+
+- **Snapping:** a text or sticker dragged on the Whole video timeline (moved, or its start / end
+  dragged) snaps to the playhead and to the starts and ends of the other clips: elements, texts,
+  stickers and camera clips. A green line shows where. Elements now snap to texts, stickers and
+  camera clips too.
+- **Right-click → Line up with:** on an element, text or sticker: the playhead, or any other clip
+  (the nearest first), to **Start together**, **Start when it ends** or **End together**.
+
 ## One Hand window for elements and stickers; chosen sticker hand bar (v1.0.1-experimental.32)
 
 - A sticker's Hand window is now the same window as an element's (built by the same code, the
