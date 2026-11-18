@@ -1490,12 +1490,42 @@ def _paint_move_hand(frame, spec, tip, shown, options):
 # exp.164 (the user): different ways for the hand to go to the drawing and back.
 GLIDE_STYLES = ('Smooth', 'Steady', 'Quick start', 'Slow start', 'Overshoot', 'Curve', 'Swoop', 'Circle')
 GLIDE_BENDS = ('Auto', 'Clockwise', 'Anticlockwise')   # exp.214
+# exp.37 (the user: "a quick start with a curved way"): a way has a shape and a speed, which
+# combine; stored as one text: 'Quick start' (straight), 'Curve' (its own speed) or
+# 'Curve + Quick start'. The older single choices mean the same as before.
+GLIDE_SHAPES = ('Straight', 'Curve', 'Swoop', 'Circle')
+GLIDE_SPEEDS = ('Smooth', 'Steady', 'Quick start', 'Slow start', 'Overshoot')
+
+
+def split_style(style):
+    """(shape, speed) of a way's style; speed None: the shape's own speed."""
+    style = style or 'Smooth'
+    if ' + ' in style:
+        shape, speed = style.split(' + ', 1)
+        return (shape if shape in GLIDE_SHAPES else 'Straight'), (speed if speed in GLIDE_SPEEDS else 'Smooth')
+    if style in GLIDE_SHAPES[1:]:
+        return style, None
+    return 'Straight', (style if style in GLIDE_SPEEDS else 'Smooth')
+
+
+def join_style(shape, speed):
+    """The one text for a shape and a speed (Smooth with a shape: the shape's own speed)."""
+    shape = shape if shape in GLIDE_SHAPES else 'Straight'
+    speed = speed if speed in GLIDE_SPEEDS else 'Smooth'
+    if shape == 'Straight':
+        return speed
+    return shape if speed == 'Smooth' else f'{shape} + {speed}'
 
 
 def _glide_ease(p, style):
     """exp.205 (the user: "I don't see any difference between all of them"): each way of
     moving is now clearly its own (they were close cousins, and over a short way looked alike)."""
     p = max(0., min(1., float(p)))
+    shape, speed = split_style(style)                     # exp.37: the speed part
+    if speed is None:
+        style = 'Swoop' if shape in ('Swoop', 'Circle') else 'Smooth'
+    else:
+        style = speed
     if style == 'Steady':                    # the same speed all the way, stops at once
         return p
     if style == 'Quick start':               # darts off, then a long gentle arrival
@@ -1583,7 +1613,7 @@ def _along_polyline(line, e):
 
 def preset_keyframes(a, b, style, centre, bend='Auto', count=None):
     """exp.217: keyframes that make the preset's path (the starting point of Edit path)."""
-    count = count or (3 if style in ('Swoop', 'Circle') else 2)
+    count = count or (3 if split_style(style)[0] in ('Swoop', 'Circle') else 2)
     keys = []
     for i in range(1, count + 1):
         q = i / (count + 1.)
@@ -1611,6 +1641,7 @@ def glide_point(a, b, p, style='Smooth', centre=None, bend='Auto', waypoints=Non
     """Where the hand is at p (0..1) of its way from a to b, in this style. Curve goes along
     an arc bulging up; Swoop dips down under the straight way, like a bird swooping."""
     e = _glide_ease(p, style)
+    style = split_style(style)[0]           # exp.37: from here on, its shape
     if waypoints:
         # exp.217 (the user: keyframes on the path): the hand's own path, at the preset's speed
         return _along_polyline(path_polyline(a, b, waypoints), e)
@@ -1674,14 +1705,15 @@ def glide_point(a, b, p, style='Smooth', centre=None, bend='Auto', waypoints=Non
 def glide_tilt(a, b, p, style='Smooth', hand_width=100., centre=None, bend='Auto', waypoints=None):
     """exp.205: degrees the hand leans while it travels (a wrist leading the move), from its
     sideways speed; nothing when it is still, so it is upright on the drawing."""
-    if style == 'Steady':
+    if style == 'Steady':                   # (a straight Steady way: no lean, as before)
         return 0.
     d = .02
     x0, _ = glide_point(a, b, max(0., p - d), style, centre, bend, waypoints)
     x1, _ = glide_point(a, b, min(1., p + d), style, centre, bend, waypoints)
     speed = (x1 - x0) / (2 * d) / max(1., 4 * hand_width)      # hand widths per glide
     import math
-    lean = 14. if style in ('Swoop', 'Quick start', 'Overshoot') else 9.
+    shape, pace = split_style(style)           # exp.37: a combination leans like its parts
+    lean = 14. if shape == 'Swoop' or pace in ('Quick start', 'Overshoot') else 9.
     # exp.212: the lean comes and goes gently (it snapped on at the start of a fast glide)
     return max(-lean, min(lean, -speed * lean)) * math.sin(math.pi * max(0., min(1., p)))
 
