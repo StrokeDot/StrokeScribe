@@ -255,22 +255,22 @@ def hand_tip(item, t, W, H):
     pts, heads, _ = _geometry(item, w, h, H)
     first = on_frame(pts[0])
     last = on_frame(heads[-1][1] if heads and hand_mode(item) == 'all' else pts[-1])
-    from frame_render import glide_point
+    from frame_render import glide_point, split_style
     lead, tail = ways(item)
     centre = (W / 2., H / 2.)
     if t < start:                         # exp.31: its way in, as the element hands go (How, Turn, Path)
         style = item.get('hand_in_style') or 'Smooth'
         bend, keys = item.get('hand_in_bend') or 'Auto', item.get('hand_in_path') or None
         p = max(0., min(1., (t - span[0]) / lead))
-        if style == 'Smooth':             # exp.35: one movement: it reaches the line at the drawing's speed
-            return _flowing(home, first, p, bend, keys, centre, _pen_speed(item, w, h, H, 'start') * lead, True)
+        if (split_style(style)[1] or 'Smooth') == 'Smooth':   # exp.35/37: one movement, any shape
+            return _flowing(home, first, p, bend, keys, centre, _pen_speed(item, w, h, H, 'start') * lead, True, style)
         return glide_point(home, first, p, style, centre, bend, keys)
     if t > start + seconds:
         style = item.get('hand_out_style') or 'Smooth'
         bend, keys = item.get('hand_out_bend') or 'Auto', item.get('hand_out_path') or None
         p = max(0., min(1., (t - start - seconds) / tail))
-        if style == 'Smooth':             # exp.35: it leaves the line at the drawing's speed
-            return _flowing(last, home, p, bend, keys, centre, _pen_speed(item, w, h, H, 'end') * tail, False)
+        if (split_style(style)[1] or 'Smooth') == 'Smooth':   # exp.35/37: it leaves at the drawing's speed
+            return _flowing(last, home, p, bend, keys, centre, _pen_speed(item, w, h, H, 'end') * tail, False, style)
         return glide_point(last, home, p, style, centre, bend, keys)
     return on_frame(pen_point(item, w, h, H, t))
 
@@ -287,12 +287,12 @@ def _pen_speed(item, w, h, frame_h, where):
     return length / seconds
 
 
-def _flowing(a, b, p, bend, keys, centre, reach, arriving):
+def _flowing(a, b, p, bend, keys, centre, reach, arriving, style='Smooth'):
     """exp.35: the Smooth way from a to b at p (0..1) without stopping at the line: arriving, it
     starts from rest and reaches b at the pen's speed; leaving, it starts at that speed and comes to
     rest at b. reach: the pen's speed × the way's seconds (pixels)."""
     from frame_render import glide_point, _inverse_ease
-    line = [glide_point(a, b, _inverse_ease(i / 24., 'Smooth'), 'Smooth', centre, bend, keys) for i in range(25)]
+    line = [glide_point(a, b, _inverse_ease(i / 24., style), style, centre, bend, keys) for i in range(25)]
     way = sum(math.dist(x, y) for x, y in zip(line, line[1:])) or 1.
     v = max(0., reach / way)                 # its speed at the line, in ways a second × seconds
 
@@ -301,7 +301,7 @@ def _flowing(a, b, p, bend, keys, centre, reach, arriving):
             return (v - 2) * x ** 3 + (3 - v) * x ** 2      # a smooth cubic
         return x ** v        # exp.36: faster than a cubic can reach (it slowed down at the line before)
     q = h(p) if arriving else 1 - h(1 - p)
-    return glide_point(a, b, _inverse_ease(max(0., min(1., q)), 'Smooth'), 'Smooth', centre, bend, keys)
+    return glide_point(a, b, _inverse_ease(max(0., min(1., q)), style), style, centre, bend, keys)
 
 
 def way_ends(item, W, H):

@@ -503,6 +503,28 @@ class ReadyFrames:
             self.window.segment_cache.has(*self._key(index))
 
 
+class WayStyleBox(QWidget):
+    """exp.37: a hand way's How: its Shape and its Speed side by side (they combine). Reads and
+    writes the one text frame_render keeps ('Quick start', 'Curve', 'Curve + Quick start')."""
+    def __init__(self, value=None):
+        super().__init__()
+        from frame_render import GLIDE_SHAPES, GLIDE_SPEEDS
+        lay = QHBoxLayout(self); lay.setContentsMargins(0, 0, 0, 0); lay.setSpacing(8)
+        self.shape = QComboBox(); self.shape.addItems(list(GLIDE_SHAPES)); self.shape.setToolTip('Its shape')
+        self.speed = QComboBox(); self.speed.addItems(list(GLIDE_SPEEDS)); self.speed.setToolTip('Its speed')
+        lay.addWidget(self.shape, 1); lay.addWidget(self.speed, 1)
+        self.setCurrentText(value or 'Smooth')
+
+    def currentText(self):
+        from frame_render import join_style
+        return join_style(self.shape.currentText(), self.speed.currentText())
+
+    def setCurrentText(self, value):
+        from frame_render import split_style
+        shape, speed = split_style(value)
+        self.shape.setCurrentText(shape); self.speed.setCurrentText(speed or 'Smooth')
+
+
 def help_label(text, tip):
     """A row name; its explanation shows when the mouse rests on it (exp.137: no ? buttons,
     the user did not want them)."""
@@ -6671,8 +6693,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             box=QDoubleSpinBox(); box.setRange(.1,10.); box.setSingleStep(.1); box.setDecimals(1); box.setSuffix(' s')
             box.setValue(float(value)); return box
         def style(value):
-            box=QComboBox(); box.addItems(list(GLIDE_STYLES))
-            box.setCurrentText(value if value in GLIDE_STYLES else 'Smooth'); return box
+            # exp.37 (the user: "a quick start with a curved way"): its shape and its speed, combined
+            return WayStyleBox(value)
         # exp.214 (the user: "make the hand go round in a circle to the next one"): which way it bends
         def bending(value):
             box=QComboBox(); box.addItems(list(GLIDE_BENDS))
@@ -6684,11 +6706,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         how_in=style(values.get('how_in')); how_out=style(values.get('how_out'))
         bend_in=bending(values.get('bend_in')); bend_out=bending(values.get('bend_out'))
         paths=dict(values.get('paths') or {})
-        tip=('How the hand moves on its way. Smooth: eases out of its corner and gently into place. '
-             'Steady: the same speed all the way, like a machine. Quick start: darts off, then arrives '
-             'slowly. Slow start: leaves slowly, then hurries. Overshoot: goes past the spot and comes '
-             'back to it. Curve: a gentle arc. Swoop: a big sweep through the picture. Circle: round '
-             'in half a circle. Turn: which way Curve, Swoop and Circle bend.')
+        tip=('How the hand moves on its way: its shape and its speed, in any combination. Shape: '
+             'Straight; Curve: a gentle arc; Swoop: a big sweep through the picture; Circle: round in half '
+             'a circle. Speed: Smooth eases out and gently into place; Steady: the same speed all the way; '
+             'Quick start: darts off, then arrives slowly; Slow start: leaves slowly, then hurries; '
+             'Overshoot: goes past the spot and comes back. Turn: which way Curve, Swoop and Circle bend.')
         form.addRow(help_label('To the drawing','How long the hand takes to go from its corner to the first line.'),go)
         form.addRow(help_label('How',tip),how_in)
         form.addRow(help_label('Turn',tip),bend_in)
@@ -6724,8 +6746,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from frame_render import GLIDE_STYLES
         from PySide6.QtWidgets import QComboBox
         def style(value):
-            box=QComboBox(); box.addItems(list(GLIDE_STYLES))
-            box.setCurrentText(value if value in GLIDE_STYLES else 'Smooth'); return box
+            # exp.37 (the user: "a quick start with a curved way"): its shape and its speed, combined
+            return WayStyleBox(value)
         default=float(self.hand_rest_travel.value())
         stored=tuple(self.scenes[k].get('glide') or ())
         paths=dict(self.scenes[k].get('glide_path') or {})

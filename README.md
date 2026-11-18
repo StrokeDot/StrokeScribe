@@ -6,6 +6,13 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Hand ways: shape and speed combine (v1.0.1-experimental.37)
+
+- **How** is now two choices side by side, for each way of a hand (elements and stickers):
+  **Shape** (Straight, Curve, Swoop, Circle) and **Speed** (Smooth, Steady, Quick start, Slow
+  start, Overshoot), in any combination, e.g. a Curve with a Quick start. Saved projects keep their
+  ways exactly as they were.
+
 ## Undo keeps the playhead; sticker path dots in the right place (v1.0.1-experimental.36)
 
 - **Undo / redo no longer move the playhead** back (to the element's start): it stays where it
