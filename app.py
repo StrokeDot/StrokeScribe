@@ -1779,7 +1779,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if not self.all_scenes() and len(self.scenes)>1: return None     # exp.189: the element alone
         t=self.video_seconds() if seconds is None else float(seconds)
         shown=self.visible_titles() if self.zoomed_out() else self.titles_split(t)[0]
-        if not shown or not any(overlays.state_at(o,t) is not None for o in shown): return None
+        if not shown or not any(overlays.on_screen(o,t) for o in shown): return None     # exp.29
         layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
         placed=self.text_view(t,width,height)          # exp.123: on their pages
         import timeline_render
@@ -2027,6 +2027,65 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.status.setText(f'{shape} added at the playhead: drag it in the video to place it.')
         return item
 
+    def sync_sticker_hand(self):
+        """exp.29: stickers drawn by the hand use the drawing hand as the elements have it (left-
+        handed: mirrored), its size, pen tip and resting corner."""
+        import stickers
+        if not any(o.get('kind')=='sticker' and o.get('drawing','Animated')!='Animated' for o in self.overlays):
+            return
+        try:
+            s=self.settings_state()
+            hand=self.hand if s.get('showhand',True) else None
+            ax=float(s.get('ax',.08))
+            if hand is not None and s.get('left_handed'):
+                from tools_kit import mirrored
+                hand=mirrored(hand); ax=1-ax
+            stickers.set_hand(hand,float(s.get('handsize',.75)),(ax,float(s.get('ay',.13))),
+                              s.get('hand_rest_corner') or 'Bottom right')
+        except Exception as exc:
+            import applog; applog.error('Sticker hand',exc)
+
+    def hand_busy_spans(self):
+        """exp.29: [(from, to)] whole-video seconds while an element's hand draws (comes in, draws,
+        goes back to its corner)."""
+        from frame_render import hand_window
+        out=[]
+        try:
+            items=self.timeline_layout().items if len(self.scenes)>1 else None
+        except Exception:
+            items=None
+        if items is None:
+            if not self.drawing: return out
+            d,o=self.drawing,self.options()
+            w=hand_window(d,o)
+            out.append((0.,float(w[0]) if w else float(self.scene_seconds())))
+            return out
+        hidden=self.hidden_elements()
+        for it in items:
+            if it.k in hidden or self.scenes[it.k].get('hand_off') or self.scenes[it.k].get('art_off'): continue
+            d,o,_,_=self.preview_scene(it.k,960,540)
+            w=hand_window(d,o)
+            busy=float(w[0]) if w else min(float(it.length),float(o.get('duration',it.length) or it.length))
+            out.append((float(it.start),float(it.start)+busy))
+        return out
+
+    def place_hand_sticker(self,item):
+        """exp.29 (the user): a sticker drawn by the hand waits for the other hand: if its hand
+        would work while an element's hand draws, it starts after that hand is done."""
+        import stickers
+        if item is None or item.get('kind')!='sticker' or not stickers.hand_mode(item): return False
+        spans=sorted(self.hand_busy_spans())
+        moved=False
+        for _ in range(len(spans)+1):
+            mine=stickers.busy(item)
+            clash=next(((a,b) for a,b in spans if mine[0]<b-1e-6 and mine[1]>a+1e-6),None)
+            if clash is None: break
+            item['start']=round(clash[1]+stickers.GLIDE,2); moved=True
+        if moved:
+            self.status.setText(f'"{item.get("name","")}" waits for the drawing hand: it starts at '
+                                f'{item["start"]:.1f} s (a hand draws one thing at a time).')
+        return moved
+
     def add_overlay_text(self):
         import overlays
         if not self.drawing: return None
@@ -2201,6 +2260,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if item.get('kind')=='eraser':
             start=max(float(start),self.paint_end_of(item))    # exp.194: not before the painting ends
         item.update(start=start,duration=duration,track=track)
+        if item.get('kind')=='sticker': self.place_hand_sticker(item)    # exp.29: waits for the drawing hand
         if moved:                          # the other chosen texts move with it (exp.117)
             starts=getattr(self,'_clip_from',{})
             shift=float(start)-starts.get(oid,float(start))
@@ -6925,8 +6985,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         info=self.rest_hand_info(width,height,seconds)
         if info is None: return None
         from frame_render import paint_rest_hand
+        import stickers
         layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
-        return paint_rest_hand(layer,info[0],seconds,info[1])
+        options=dict(info[0],_sticker_busy=stickers.busy_spans(self.visible_titles()))     # exp.29
+        return paint_rest_hand(layer,options,seconds,info[1])
 
     def rest_hand_info(self,width,height,seconds,busy_too=False):
         """(options, place) of the waiting hand at `seconds`, ready for paint_rest_hand, or
@@ -7135,7 +7197,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             involved=sorted({k for k,_ in state.active}|set(state.finished)|{state.current})
             import overlays as _ov
             low=self.titles_split((a+b)/2)[1]
-            under=repr([_ov.light(o) for o in low if (float(o.get('start',0))<b or (o.get('kind')=='eraser' and float(o.get('start',0))-.8<b))
+            under=repr([_ov.light(o) for o in low if (_ov.from_time(o)<b or (o.get('kind')=='eraser' and float(o.get('start',0))-.8<b))
                         and (_ov.shown_until(o)>a or o.get('kind')=='eraser')])   # exp.186/197: an eraser stays done; its hand comes in before
             if 'eraser' in under: under+=repr(self.eraser_tool())          # exp.196: its hand
             fp=('tl',describe(lay,state,a),tuple(self.element_fingerprint(i) for i in involved),under,
@@ -7180,6 +7242,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.follow_lengths()
             if hasattr(self,'sync_sticker_panel'): self.sync_sticker_panel()   # exp.27: after an undo / delete
             if hasattr(self,'sync_effects_page'): self.sync_effects_page()      # exp.27: set without signals
+            self.sync_sticker_hand()                                           # exp.29
         look=getattr(self,'_look_preview',False)
         # exp.5: the route is planned only when the animation is shown (Play, a scrub)
         self._animating=bool(playhead or self.playing or getattr(self,'_scrub_fast',False))

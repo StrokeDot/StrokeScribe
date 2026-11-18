@@ -125,13 +125,41 @@ def state_at(item, t):
     return 1., 0., 0., 1., 0.
 
 
+def on_screen(item, t):
+    """exp.29: shown at t, or its hand is on its way to draw it / back (a sticker drawn by the hand)."""
+    if state_at(item, t) is not None:
+        return True
+    if item.get('kind') == 'sticker' and item.get('drawing', 'Animated') != 'Animated':
+        import stickers
+        span = stickers.busy(item)
+        return span is not None and span[0] <= t <= span[1]
+    return False
+
+
+def from_time(item):
+    """exp.29: when it starts to matter on screen (a sticker's hand comes in before it)."""
+    start = float(item.get('start', 0))
+    if item.get('kind') == 'sticker' and item.get('drawing', 'Animated') != 'Animated':
+        import stickers
+        span = stickers.busy(item)
+        if span is not None:
+            return min(start, span[0])
+    return start
+
+
 def end_of(item):
     return float(item.get('start', 0)) + float(item.get('duration', 3))
 
 
 def shown_until(item):
-    """The clip's end, or later when it stays on screen (no way out: exp.121)."""
+    """The clip's end, or later when it stays on screen (no way out: exp.121); exp.29: or until a
+    sticker's hand has gone."""
     end = end_of(item)
+    if item.get('kind') == 'sticker' and item.get('drawing', 'Animated') != 'Animated':
+        import stickers
+        span = stickers.busy(item)
+        if span is not None:
+            end = max(end, span[1])
     if item.get('effect_out', 'None') == 'None' and not item.get('cut_end'):
         end = max(end, float(item.get('_until', end)))
     return end
@@ -294,8 +322,9 @@ def box(item, width, height):
     return cx - w / 2, cy - h / 2, w, h
 
 
-def paint(frame, items, t):
-    """Draw the overlays visible at t (seconds) onto `frame` (in place) and return it."""
+def paint(frame, items, t, hands=True):
+    """Draw the overlays visible at t (seconds) onto `frame` (in place) and return it.
+    exp.29: hands=False: no hand drawing a sticker (the Drawing only export)."""
     if not items:
         return frame
     from PySide6.QtCore import QPointF, QRectF
@@ -325,7 +354,7 @@ def paint(frame, items, t):
             if rotation or item.get('rotation'):
                 p.rotate(rotation + float(item.get('rotation', 0) or 0))
             p.scale(scale, scale)
-            stickers.draw(p, item, w, w * float(item.get('aspect', .4)), H, stickers.progress(item, t))
+            stickers.draw(p, item, w, w * float(item.get('aspect', .4)), H, t=t)
             p.restore()
             continue
         img = text_picture(item, float(item.get('size', .09)) * H) if item.get('kind') == 'text' \
@@ -338,6 +367,19 @@ def paint(frame, items, t):
         p.scale(scale, scale)
         p.drawImage(QRectF(-w / 2, -h / 2, w, h), img)
         p.restore()
+    if hands:                                     # exp.29: the hand drawing a sticker, on top
+        drawn = [i for i in items if i.get('kind') == 'sticker' and i.get('drawing', 'Animated') != 'Animated'
+                 and not i.get('off')]
+        if drawn:
+            import stickers
+            for item in drawn:
+                if stickers.hand_tip(item, t, W, H) is None:
+                    continue
+                if p is None:
+                    p = QPainter(frame)
+                    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+                    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+                stickers.paint_hand(p, item, t, W, H)
     if p is not None:
         p.end()
     return frame

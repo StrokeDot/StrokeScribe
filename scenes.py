@@ -394,7 +394,7 @@ def _paint_titles(folder, fps, titles, world, views, writer):
     for path in sorted(Path(folder).glob('frame_*.png')):
         i = int(path.stem.split('_')[-1])
         t = i / float(fps)
-        if not any(overlays.state_at(o, t) is not None for o in titles):
+        if not any(overlays.on_screen(o, t) for o in titles):          # exp.29: a sticker's hand too
             continue
         image = QImage(str(path)).convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
         view = views[i] if views is not None and i < len(views) else None
@@ -560,6 +560,8 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
                 if rest.get('_wait_k') is not None:      # exp.216: a linked hand waits on its page
                     rest = dict(rest, _spot_place=timeline_render.element_place(
                         world, lay, state, elements, rest['_wait_k'], width, height))
+                import stickers
+                rest = dict(rest, _sticker_busy=stickers.busy_spans(titles))          # exp.29
                 image = paint_rest_hand(image, rest, i / fps, place)
             writer.write(image, folder / f'frame_{n:06d}.png')
             progress(n + 1, total)

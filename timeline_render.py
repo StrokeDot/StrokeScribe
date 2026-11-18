@@ -207,7 +207,7 @@ def paint_texts(out, items, seconds, frames=None, place=None, view=None):
     import overlays
     if not items or seconds is None:
         return out
-    shown = [o for o in items if overlays.state_at(o, seconds) is not None]
+    shown = [o for o in items if overlays.on_screen(o, seconds)]     # exp.29: a sticker's hand too
     if not shown:
         return out
     out = out.copy()                     # never draw into a picture kept by the board
