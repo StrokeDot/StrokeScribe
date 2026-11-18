@@ -92,6 +92,41 @@ class Logic(unittest.TestCase):
         self.assertNotEqual(f, g)
 
 
+class HandSize(unittest.TestCase):
+    """exp.30 (the user: the hand was huge): the camera zooms the page with the sticker, not the hand."""
+    def setUp(self):
+        import stickers
+        img = QImage(100, 60, QImage.Format.Format_ARGB32); img.fill(QColor(0, 200, 0))
+        stickers.set_hand(img, .2, (0., 0.), 'Bottom right')
+
+    def tearDown(self):
+        import stickers
+        stickers.set_hand(None, .2, (0, 0), None)
+
+    def green_width(self, image):
+        cols = set()
+        for y in range(0, image.height(), 2):
+            for x in range(image.width()):
+                c = image.pixelColor(x, y)
+                if c.green() > 150 and c.red() < 80 and c.blue() < 80:
+                    cols.add(x)
+        return (max(cols) - min(cols) + 1) if cols else 0
+
+    def test_the_same_size_with_a_zooming_camera(self):
+        import stickers, timeline_render
+        item = stickers.new('Line', color='#2050E0')
+        item.update(start=1., draw_seconds=1., drawing='Hand: outline', x=.3, y=.3, size=.2)
+        W, H = 640, 360
+
+        def frame(zoom):
+            out = QImage(W, H, QImage.Format.Format_ARGB32_Premultiplied); out.fill(QColor('white'))
+            place = lambda f, view, w, h: (0., 0., w * zoom, h * zoom)   # the page, zoomed by the camera
+            return timeline_render.paint_texts(out, [item], 1.4, [None], place, object())
+        plain, zoomed = self.green_width(frame(1.)), self.green_width(frame(2.))
+        self.assertGreater(plain, 50)
+        self.assertAlmostEqual(zoomed, plain, delta=4)               # not twice as big
+
+
 class Waiting(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -113,6 +148,9 @@ class Waiting(unittest.TestCase):
         busy_end = max(b for a, b in w.hand_busy_spans())
         import stickers
         self.assertGreaterEqual(stickers.busy(item)[0], busy_end - 1e-6)
+        marks = w.sticker_hand_marks()                                    # exp.30: on the Hand row
+        self.assertEqual([m[4] for m in marks], [item['id']])
+        self.assertAlmostEqual(marks[0][0], stickers.busy(item)[0])
         item['drawing'] = 'Animated'; item['start'] = .2
         self.assertFalse(w.place_hand_sticker(item))                      # no hand: anywhere
         self.assertEqual(item['start'], .2)

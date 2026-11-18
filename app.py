@@ -1412,6 +1412,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         tl.selected_camera=getattr(self,'selected_camera',None)
         tl.hand_under=self.hand_under.isChecked() if hasattr(self,'hand_under') else False     # exp.155
         tl.hand_marks=self.hand_marks()                 # exp.147
+        tl.sticker_hand_marks=self.sticker_hand_marks()  # exp.30: the hand drawing a sticker, on the same row
         lanes=tl._cam_lane_count()
         if lanes!=getattr(tl,'_cam_lanes_seen',None):     # exp.136: more Moving camera rows
             tl._cam_lanes_seen=lanes; tl._fit_height()
@@ -6521,6 +6522,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         except Exception:
             return []
 
+    def sticker_hand_marks(self):
+        """exp.30 (the user: the same yellow line as the elements): each sticker drawn by the hand:
+        (start of its way in, way in, drawing, way back, its id), whole-video seconds."""
+        import stickers
+        out=[]
+        for o in self.visible_titles():
+            if o.get('kind')!='sticker': continue
+            span=stickers.busy(o)
+            if span is None: continue
+            out.append((span[0],stickers.GLIDE,max(.05,float(o.get('draw_seconds',.8))),stickers.GLIDE,o['id']))
+        return out
+
     def hand_marks(self):
         """exp.147: for the Hand row: each element's (start, glide in, drawing, glide back)."""
         if not self.all_scenes() or not getattr(self,'hand_rest',None) or not self.hand_rest.isChecked():
@@ -7371,7 +7384,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # project shows an empty timeline (no elements, cameras, texts or hand bars).
             tl=self.stage_timeline
             tl.set_scenes(None,current=0)
-            tl.set_overlays([],None); tl.cam_clips=[]; tl.cam_holds={}; tl.cam_marks=[]; tl.hand_marks=[]
+            tl.set_overlays([],None); tl.cam_clips=[]; tl.cam_holds={}; tl.cam_marks=[]; tl.hand_marks=[]; tl.sticker_hand_marks=[]
             tl.set_audio(self.timeline_audio()); tl.lead=0.
             self.stage_timeline.update_state(0,0,0,0)
             self.clock.setText(timecode(0)); self.clock_total.setText(timecode(0))

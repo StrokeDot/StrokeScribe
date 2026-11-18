@@ -1517,6 +1517,13 @@ class StageTimeline(QFrame):
                     col=QColor(c['border_strong'] if gone else c['hold']); col.setAlpha(alpha//2 if gone else alpha)
                     p.setPen(Qt.PenStyle.NoPen); p.setBrush(col)
                     p.drawRect(QRectF(self._x(a),row.top()+row.height()*.35,max(1.,self._x(b)-self._x(a)),row.height()*.3))
+            # exp.30: a sticker drawn by the hand: its hand comes, draws and goes back, the same way
+            for start,lead,busy,tail,oid in getattr(self,'sticker_hand_marks',()) or ():
+                for a,b,alpha in ((start,start+lead,120),(start+lead,start+lead+busy,210),
+                                  (start+lead+busy,start+lead+busy+tail,120)):
+                    col=QColor(c['hold']); col.setAlpha(alpha)
+                    p.setPen(Qt.PenStyle.NoPen); p.setBrush(col)
+                    p.drawRect(QRectF(self._x(a),row.top()+row.height()*.35,max(1.,self._x(b)-self._x(a)),row.height()*.3))
             p.restore()
         p.save(); p.setClipRect(area)
         for t in range(self.lanes()):

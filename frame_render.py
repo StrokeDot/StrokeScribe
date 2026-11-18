@@ -131,13 +131,22 @@ def _core_body(drawing, fraction, opts, camera_path=None, camera_fraction=None, 
         frame = shift(scale_animation_frame(frame, scale, None), dx, dy)
         if frame is not None:
             frame = frame.copy()
-        overlays.paint(frame, items, seconds)
+        overlays.paint(frame, items, seconds, hands=False)     # exp.30: a sticker's hand after the crop
         if layers != 'art' and hands:
             f = float(scale) or 1.
             moved = [(QRectF(r.x() + dx * big_w / f, r.y() + dy * big_h / f, r.width(), r.height()), h)
                      for r, h in hands]
             frame = draw_captured(frame, moved, scale)
-        return crop(frame, width, height, zoom, cx, cy)
+        big = (frame.width(), frame.height())
+        out = crop(frame, width, height, zoom, cx, cy)
+        if layers != 'art' and overlays.hand_items(items, seconds, *big):
+            # the camera zoomed the picture (rendered bigger, then cut): the hand keeps its size
+            left = max(0, min(big[0] - width, int(round(cx * big[0] - width / 2)))) if zoom > 1.0001 else 0
+            top = max(0, min(big[1] - height, int(round(cy * big[1] - height / 2)))) if zoom > 1.0001 else 0
+            if out is frame:
+                out = out.copy()
+            overlays.paint_hands(out, items, seconds, big, lambda px, py: (px - left, py - top))
+        return out
     elif layers == 'art':
         frame = shift(scale_animation_frame(frame, scale, None), dx, dy)
     else:

@@ -156,6 +156,8 @@ def build(w, Section, form_layout, linked_slider):
         if {'aspect', 'drawing'} & set(values):
             sync()
         w.refresh()
+        if {'drawing', 'draw_seconds', 'duration'} & set(values) and hasattr(w, 'sync_camera_timeline'):
+            w.sync_camera_timeline()            # exp.30: the hand's bar on the Hand row
 
     def pick_color():
         item = chosen_item()
