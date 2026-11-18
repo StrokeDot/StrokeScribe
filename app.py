@@ -2081,7 +2081,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             mine=stickers.busy(item)
             clash=next(((a,b) for a,b in spans if mine[0]<b-1e-6 and mine[1]>a+1e-6),None)
             if clash is None: break
-            item['start']=round(clash[1]+stickers.GLIDE,2); moved=True
+            # exp.34 (the user: the sticker would not move): its own way in, not a fixed 0.5 s (a
+            # longer way in landed it on the other hand again, so every drag came back to one spot)
+            item['start']=round(clash[1]+stickers.ways(item)[0]+.005,2); moved=True
         if moved:
             self.status.setText(f'"{item.get("name","")}" waits for the drawing hand: it starts at '
                                 f'{item["start"]:.1f} s (a hand draws one thing at a time).')

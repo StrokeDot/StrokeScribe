@@ -6,6 +6,13 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Fixed: a sticker drawn by the hand would not move (v1.0.1-experimental.34)
+
+- A sticker drawn by the hand waits for the drawing hand: it was put 0.5 s after that hand,
+  whatever its own way in. With a longer way in (e.g. 1.5 s) its hand still overlapped, so every
+  small drag came back to the same spot. It now waits by its own way-in time, and any place after
+  the other hand is kept as you put it.
+
 ## Clips snap and line up, like Filmora (v1.0.1-experimental.33)
 
 - **Snapping:** a text or sticker dragged on the Whole video timeline (moved, or its start / end
