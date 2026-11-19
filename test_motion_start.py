@@ -56,7 +56,19 @@ class Window(unittest.TestCase):
                 d.starts.setCurrentIndex(1)                                   # Free beginning
                 seen['free_movable'] = d.canvas.movable_start
                 W, H = 960, round(960 * w.board_aspect())
-                d.canvas.a = (.7 * W, .2 * H)                                 # the green dot dragged
+                # exp.50 (the user: the green dot did not drag): dragged with the mouse
+                from PySide6.QtCore import Qt
+                from PySide6.QtGui import QMouseEvent
+                c = d.canvas; c.resize(800, 500)
+                keys_before = list(c.keys)
+
+                def ev(kind, p, b):
+                    return QMouseEvent(kind, p, p, Qt.MouseButton.LeftButton, b, Qt.KeyboardModifier.NoModifier)
+                c.mousePressEvent(ev(QMouseEvent.Type.MouseButtonPress, c.to_widget(c.a), Qt.MouseButton.LeftButton))
+                target = c.to_widget((.7 * W, .2 * H))
+                c.mouseMoveEvent(ev(QMouseEvent.Type.MouseMove, target, Qt.MouseButton.LeftButton))
+                c.mouseReleaseEvent(ev(QMouseEvent.Type.MouseButtonRelease, target, Qt.MouseButton.NoButton))
+                seen['keys_kept'] = list(c.keys) == keys_before
                 return QDialog.DialogCode.Accepted
             QDialog.exec = fake
             try:
@@ -66,6 +78,7 @@ class Window(unittest.TestCase):
             self.assertIn('Hand motion left the hand', seen['note'])
             self.assertIn('Goes back to where it started', seen['ends'])
             self.assertTrue(seen['free_movable'])
+            self.assertTrue(seen['keys_kept'])                                # its points stay put
             self.assertAlmostEqual(first['path'][-1][0], .7, delta=.01)       # the spot it came from moved
             self.assertAlmostEqual(first['path'][-1][1], .2, delta=.01)
             self.assertEqual(second.get('hand_begin'), 'free')
