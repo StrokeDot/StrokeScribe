@@ -6,6 +6,17 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Five new stickers, an Ending that undoes them, 60 fps tiles (v1.0.1-experimental.52)
+
+- New stickers (our own drawings), each built in stages:
+  - **Marker ellipse**: a marker loop that overshoots.
+  - **Magnifier**: a dot, then the handle, then the glass grows.
+  - **Clock**: pops into a disc, then rings, numerals and hands; the hands keep turning.
+  - **Double arrow**: grows out from the middle, then its heads.
+  - **Hook arrow**: a tapered curve from the tail, then its head.
+- New **Ending** setting for every sticker: *Reverse of how it appeared* (at the end of its clip it undoes itself, the same build backwards, over its draw time) or *None*. The new stickers start with Reverse; the older ones keep their behaviour unless you change it.
+- The Stickers panel's tiles play their animation (build, hold, ending) at 60 frames a second while the panel is open. Exports use your export frame rate (60 fps).
+
 ## After a sticker, the hand stays where it ended (v1.0.1-experimental.51)
 
 - When a sticker's hand finishes (the end of its yellow bar on the Hand row), the waiting hand now stays exactly where that hand ended: the point its hand is painted at, through the sticker's own page. The next Hand motion starts there (its green dot). Before, the waiting hand could jump back to an earlier spot (for example, where a Hand motion had left it) when the sticker's hand came from its corner, or when the sticker's page wasn't the element's page.

@@ -37,6 +37,24 @@ def build(w, Section, form_layout, linked_slider):
     grid.setColumnStretch(0, 1); grid.setColumnStretch(1, 1)
     lay.addLayout(grid)
 
+    # exp.52 (the user: see how they animate, at 60 fps): the tiles play their animation (they
+    # build, hold, undo and rest) at 60 frames a second while the panel is shown
+    from PySide6.QtCore import QElapsedTimer, QTimer
+    clock = QElapsedTimer(); clock.start()
+    w.sticker_tile_timer = QTimer(page); w.sticker_tile_timer.setInterval(16)
+    w.sticker_tile_frames = 0
+
+    def play_tiles():
+        if not page.isVisible():
+            return
+        seconds = clock.elapsed() / 1000.
+        a = stickers.loop_amount(seconds)
+        for shape, b in w.sticker_buttons.items():
+            b.setIcon(stickers.preview(shape, 56, amount=a, t=seconds))
+        w.sticker_tile_frames += 1
+    w.sticker_tile_timer.timeout.connect(play_tiles)
+    w.sticker_tile_timer.start()
+
     chosen = Section('Sticker settings')
     w.sticker_section = chosen
     w.sticker_hint = QLabel('Choose a sticker in the video or on the timeline to change it.')
@@ -97,6 +115,10 @@ def build(w, Section, form_layout, linked_slider):
     w.sticker_length = number(.3, 600, .5, 1, ' s')
     w.sticker_length.setToolTip('How long it is in the video (its clip on the timeline)')
     form.addRow('Length', w.sticker_length)
+    w.sticker_ending = QComboBox(); w.sticker_ending.addItems(stickers.ENDINGS)   # exp.52
+    w.sticker_ending.setToolTip('Reverse of how it appeared: at the end of its clip it undoes itself, the same '
+                                'way it was built, backwards (over its draw time). None: no ending.')
+    form.addRow('Ending', w.sticker_ending)
     w.sticker_out = QComboBox(); w.sticker_out.addItems(overlays.EFFECTS)
     w.sticker_out.setToolTip('How it leaves at the end of its clip (None: it stays, like a drawing)')
     form.addRow('Goes out', w.sticker_out)
@@ -106,7 +128,8 @@ def build(w, Section, form_layout, linked_slider):
     lay.addStretch(1)
 
     fields = [w.sticker_shape, w.sticker_drawing, w.sticker_hand_way, w.sticker_hand_ways, w.sticker_thickness, w.sticker_size, w.sticker_aspect, w.sticker_rotation,
-              w.sticker_flip, w.sticker_draw, w.sticker_length, w.sticker_out, w.sticker_color, w.sticker_delete]
+              w.sticker_flip, w.sticker_draw, w.sticker_length, w.sticker_ending, w.sticker_out, w.sticker_color,
+              w.sticker_delete]
     state = dict(filling=False, last=(None, 0.))
 
     def chosen_item():
@@ -141,6 +164,7 @@ def build(w, Section, form_layout, linked_slider):
             w.sticker_flip.setChecked(bool(item.get('flip')))
             w.sticker_draw.setValue(float(item.get('draw_seconds', .8)))
             w.sticker_length.setValue(float(item.get('duration', 3)))
+            w.sticker_ending.setCurrentText(item.get('ending', 'None'))
             w.sticker_out.setCurrentText(item.get('effect_out', 'Fade'))
         finally:
             state['filling'] = False
@@ -156,11 +180,15 @@ def build(w, Section, form_layout, linked_slider):
         state['last'] = (item['id'], time.monotonic())
         if 'shape' in values and values['shape'] != item.get('shape'):
             values.update(name=values['shape'], aspect=stickers.ASPECT[values['shape']])
+            import sticker_art
+            if values['shape'] in sticker_art.RICH:      # exp.52: its own colour and line
+                values.update(color=sticker_art.COLOR[values['shape']],
+                              thickness=sticker_art.THICKNESS[values['shape']])
         item.update(values)
         if stickers.hand_mode(item) and ({'drawing', 'draw_seconds', 'hand_way'} & set(values)):
             w.place_hand_sticker(item)          # exp.29: a hand draws one thing at a time
         w.project_changes.mark_changed()
-        if {'aspect', 'drawing'} & set(values):
+        if {'aspect', 'drawing', 'shape'} & set(values):
             sync()
         w.refresh()
         if {'drawing', 'draw_seconds', 'duration'} & set(values) and hasattr(w, 'sync_camera_timeline'):
@@ -186,6 +214,7 @@ def build(w, Section, form_layout, linked_slider):
     w.sticker_draw.valueChanged.connect(lambda v: change(draw_seconds=round(v, 2)))
     w.sticker_length.valueChanged.connect(lambda v: change(duration=round(v, 2)))
     w.sticker_out.currentTextChanged.connect(lambda s: change(effect_out=s))
+    w.sticker_ending.currentTextChanged.connect(lambda s: change(ending=s))
     w.sticker_color.clicked.connect(lambda checked=False: pick_color())
     w.sticker_delete.clicked.connect(lambda checked=False: chosen_item() is not None and
                                      w.overlay_action(chosen_item()['id'], 'delete'))
