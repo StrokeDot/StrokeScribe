@@ -1488,6 +1488,25 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         total=max(.5,self.video_length())
         clip=camera_clips.new_clip(kind,0.)
         clip['start']=round(max(0.,min(start,total-float(clip.get('duration') or .5))),2)
+        if kind==camera_clips.MOVE:
+            # exp.43 (one hand does one thing at a time): when the hand is busy at the playhead it
+            # starts as soon as the hand is free, and in a short gap it is made shorter to fit
+            # (not pushed far away by the order of the hand's ways)
+            try:
+                import stickers
+                busy=sorted(self.hand_busy_spans()+[(float(c['start']),float(c['start'])+float(c['duration']))
+                                                      for c in self.cameras if c.get('kind')==camera_clips.MOVE]
+                            +[tuple(stickers.busy(o)) for o in self.overlays
+                              if o.get('kind')=='sticker' and stickers.hand_mode(o) and stickers.busy(o)])
+                begin=start
+                for a,b in busy:
+                    if a-1e-4<=begin<b: begin=b+.01
+                gap=min([a for a,b in busy if a>begin-1e-4]+[float('inf')])-begin
+                if gap>=.4:
+                    clip['start']=round(begin,2)
+                    clip['duration']=round(min(float(clip.get('duration') or 3.),gap-.02),2)
+            except Exception as exc:
+                import applog; applog.error('Hand motion: free time',exc)
         if kind in camera_clips.HAND_KINDS:              # exp.147/148: on the Hand row
             clip['side']='Right'
             if kind in (camera_clips.HAND,camera_clips.MOVE) and hasattr(self,'hand_rest') and not self.hand_rest.isChecked():
@@ -2106,6 +2125,88 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                               s.get('hand_rest_corner') or 'Bottom right')
         except Exception as exc:
             import applog; applog.error('Sticker hand',exc)
+
+    def settle_hands(self):
+        """exp.43 (the user: the order makes no sense): the writing hand is one hand. Hand motions
+        and stickers drawn by the hand wait until it is free (they never overlap an element's
+        hand, or each other), and a sticker's hand starts from where the hand really is."""
+        if getattr(self,'_settling',False) or not getattr(self,'drawing',None): return
+        self._settling=True
+        try:
+            if self.hand_order(): self._memo={}
+            self.sticker_homes()
+        except Exception as exc:
+            import applog; applog.error('Hand order',exc)
+        finally:
+            self._settling=False
+
+    def hand_order(self):
+        """exp.43: move Hand motions and hand-drawn stickers that overlap another way of the hand
+        to just after it (the elements' hands stay where they are). Returns what moved."""
+        import math, stickers, camera_clips
+        placed=sorted(self.hand_busy_spans())
+        movable=[]
+        for c in getattr(self,'cameras',[]) or []:
+            if c.get('kind')==camera_clips.MOVE and not c.get('off'):
+                movable.append(('motion',c,float(c['start']),float(c['start'])+float(c['duration'])))
+        for o in self.overlays:
+            if o.get('kind')=='sticker' and not o.get('off') and stickers.hand_mode(o):
+                span=stickers.busy(o)
+                if span: movable.append(('sticker',o,float(span[0]),float(span[1])))
+        movable.sort(key=lambda m: (m[2],m[3]))
+        moved=[]
+        for kind,obj,s0,e0 in movable:
+            s,e=s0,e0
+            for _ in range(len(placed)+2):
+                clash=next(((a,b) for a,b in sorted(placed) if s<b-1e-4 and e>a+1e-4),None)
+                if clash is None: break
+                shift=math.ceil((clash[1]+.005-s)*100)/100.            # whole hundredths, never short
+                s+=shift; e+=shift
+            if s>s0+1e-6:
+                if kind=='motion': obj['start']=round(float(obj['start'])+(s-s0),2)
+                else: obj['start']=round(float(obj['start'])+(s-s0),2)
+                moved.append((kind,obj,s))
+            placed.append((s,e))
+        if moved:
+            kind,obj,s=moved[0]
+            what='A Hand motion' if kind=='motion' else f'"{obj.get("name","Sticker")}"'
+            self.status.setText(f'{what} now starts at {s:.1f} s: the hand finishes what it was doing first '
+                                '(one hand does one thing at a time).')
+            if hasattr(self,'sync_camera_timeline'):
+                QTimer.singleShot(0,self.sync_camera_timeline)
+        return moved
+
+    def hand_spot_at(self,W,H,t):
+        """exp.43: where the hand is (its pen tip on a W × H screen) while it waits at t, with the
+        hand's height, or None (no waiting hand)."""
+        import frame_render
+        info=self.rest_hand_info(W,H,t,busy_too=True)
+        if info is None: return None
+        options,place=info
+        rect=frame_render.rest_rect(W,H,options,t,place)
+        if rect is None: return None
+        ax,ay=options.get('anchor',(.1,.1))
+        return (rect.x()+float(ax)*rect.width(),rect.y()+float(ay)*rect.height()),rect.height()*float(ay)
+
+    def sticker_homes(self):
+        """exp.43: each sticker's hand comes from (and goes back to) where the waiting hand is
+        when it starts (its corner, a Free ending, where a Hand motion left it). Outside the
+        picture: from just below the middle, or from where it was put (Edit path: green dot).
+        Kept on the sticker as shares of the screen (_home_screen)."""
+        import stickers
+        W=960; H=round(W*self.board_aspect())
+        for o in self.overlays:
+            if o.get('kind')!='sticker': continue
+            span=stickers.busy(o) if stickers.hand_mode(o) and o.get('hand_way')!='Comes in and leaves' else None
+            found=self.hand_spot_at(W,H,span[0]-1e-3) if span else None
+            if found is None:
+                o.pop('_home_screen',None); o.pop('_home_outside',None); continue
+            (x,y),below=found
+            outside=not (0.<=x<=W and 0.<=y<=H)
+            if outside:
+                own=o.get('hand_start')
+                x,y=(float(own[0])*W,float(own[1])*H) if own else (W/2.,H+below+2.)
+            o['_home_screen']=[round(x/W,4),round(y/H,4)]; o['_home_outside']=outside
 
     def hand_busy_spans(self):
         """exp.29: [(from, to)] whole-video seconds while an element's hand draws (comes in, draws,
@@ -6674,14 +6775,38 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if image is None:
             self.status.setText('Edit path: there is no picture in the preview.'); return False
         home,first,last=(to_screen(*p) for p in stickers.way_ends(item,W,H))
+        if item.get('_home_screen'):                       # exp.43: where the hand really is
+            home=(float(item['_home_screen'][0])*W,float(item['_home_screen'][1])*H)
         a,b=(home,first) if which=='in' else (last,home)
         preset=frame_render.preset_keyframes(a,b,style,(W/2.,H/2.),bend)
         dialog=GlidePathDialog(self,image,a,b,keys,preset,style,
                                f'Hand path: {item.get("name","sticker")}, '+('to the drawing' if which=='in' else 'back'))
         h=stickers._HAND
         if h: dialog.canvas.hand=(h['image'],h['anchor'],W*h['scale'])
+        movable=which=='in' and bool(item.get('_home_outside'))
+        dialog.canvas.movable_start=movable                # exp.43: outside the picture: put it
+        note=self.sticker_note(item)
+        if note:
+            label=QLabel(note); label.setWordWrap(True); label.setObjectName('muted')
+            dialog.layout().insertWidget(1,label)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return False
+        if movable and tuple(dialog.canvas.a)!=tuple(a):
+            self.record_structure('sticker hand start')
+            item['hand_start']=[round(dialog.canvas.a[0]/W,4),round(dialog.canvas.a[1]/H,4)]
+            self.sticker_homes()
         return dialog.keyframes()
+
+    @staticmethod
+    def sticker_note(item):
+        """exp.43: what the green dot of a sticker's hand is."""
+        if item.get('hand_way')=='Comes in and leaves':
+            return 'This sticker\'s hand comes in from below and leaves the same way.'
+        if item.get('_home_outside'):
+            return ('The hand is outside the picture here, so it comes in from below the middle. Drag the green '
+                    'dot to choose where it comes from (it goes back there too).')
+        if item.get('_home_screen'):
+            return 'The green dot is where the hand is when this sticker starts. It goes back there when done.'
+        return ''
 
     def hand_marks(self):
         """exp.147: for the Hand row: each element's (start, glide in, drawing, glide back)."""
@@ -7016,6 +7141,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                     image,to_screen=self.sticker_view_at(item,at,W,H)
                     if image is None: continue
                     home,first,last=(to_screen(*q) for q in stickers.way_ends(item,W,H))
+                    if item.get('_home_screen'):          # exp.43: where the hand really is
+                        home=(float(item['_home_screen'][0])*W,float(item['_home_screen'][1])*H)
                 except Exception as exc:
                     import applog; applog.error('Hand paths: a sticker',exc); continue
                 a,b=(home,first) if which=='in' else (last,home)
@@ -7029,7 +7156,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                                  keys=[tuple(x) for x in keys] if keys else None,
                                  preset=frame_render.preset_keyframes(a,b,style,(W/2.,H/2.),bend),
                                  times=(at-lead,at) if which=='in' else (at,at+tail),
-                                 note='A sticker\'s hand: it comes from its corner and goes back there.'))
+                                 movable_start=which=='in' and bool(item.get('_home_outside')),
+                                 note=self.sticker_note(item)))
         for clip in self.cameras:
             if clip.get('kind')!=camera_clips.MOVE or clip.get('off'): continue
             view=self.hand_motion_view(clip)
@@ -7083,6 +7211,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             for mv,a,b in dots:                       # exp.41: the green / red dots moved
                 if a is not None and mv.get('source'):
                     self.apply_start_move(self.start_move(mv,mv['source'][0],mv['source'][1],a))
+                elif a is not None and mv.get('kind')=='sticker':           # exp.43
+                    item=self.find_overlay(mv['oid'])
+                    if item is not None:
+                        W,H=mv['size']; item['hand_start']=[round(a[0]/W,4),round(a[1]/H,4)]
                 if b is not None and mv.get('kind')=='element':
                     W,H=mv['size']; px,py,pw,ph=mv.get('place') or (0.,0.,float(W),float(H))
                     self.scenes[mv['k']]['hand_end']=[round((b[0]-px)/max(1.,pw),4),round((b[1]-py)/max(1.,ph),4)]
@@ -7607,6 +7739,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # is rebuilt just below anyway, which forgets them too).
             self._memo={}
             self.follow_lengths()
+            self.sync_sticker_hand()                                           # exp.43: before the homes
+            self.settle_hands()                                                # exp.43: one hand, one thing at a time
             if hasattr(self,'sync_sticker_panel'): self.sync_sticker_panel()   # exp.27: after an undo / delete
             if hasattr(self,'sync_effects_page'): self.sync_effects_page()      # exp.27: set without signals
             self.sync_sticker_hand()                                           # exp.29

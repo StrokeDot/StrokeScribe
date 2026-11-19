@@ -231,8 +231,10 @@ def set_hand(image, scale, anchor, corner):
                      corner=corner or 'Bottom right')
 
 
-def hand_tip(item, t, W, H):
-    """Where the hand's pen tip is on a W × H frame at t (seconds), or None (not there)."""
+def hand_tip(item, t, W, H, home=None):
+    """Where the hand's pen tip is on a W × H frame at t (seconds), or None (not there).
+    exp.43: home, where its ways start and end (the waiting hand's real spot), in the frame's
+    points; default: its corner."""
     span = busy(item)
     if span is None or not _HAND or not span[0] <= t <= span[1]:
         return None
@@ -246,7 +248,9 @@ def hand_tip(item, t, W, H):
         x, y = pt
         return (bx + bw / 2 + x * math.cos(a) - y * math.sin(a), by + bh / 2 + x * math.sin(a) + y * math.cos(a))
     start = float(item.get('start', 0)); seconds = max(.05, float(item.get('draw_seconds', .8)))
-    if item.get('hand_way') == 'Comes in and leaves':
+    if home is not None and item.get('hand_way') != 'Comes in and leaves':
+        pass
+    elif item.get('hand_way') == 'Comes in and leaves':
         home = (W * .86, H * 1.12)          # below the bottom edge, on the hand's side
     else:
         from frame_render import REST_CORNERS
@@ -325,12 +329,32 @@ def way_ends(item, W, H):
     return home, on_frame(pts[0]), on_frame(heads[-1][1] if heads and hand_mode(item) == 'all' else pts[-1])
 
 
+def home_on_frame(item, W, H, screen_w=None, painter=None, to_screen=None):
+    """exp.43: the sticker's home (_home_screen: shares of the screen, set by the window from
+    where the waiting hand is) in the points of its W × H frame, or None (its corner)."""
+    spot = item.get('_home_screen')
+    if not spot:
+        return None
+    if to_screen is None:
+        return (float(spot[0]) * W, float(spot[1]) * H)
+    sw = float(screen_w or W)
+    try:
+        sh = float(painter.device().height()) if painter is not None else sw * H / max(1., W)
+    except Exception:
+        sh = sw * H / max(1., W)
+    x, y = float(spot[0]) * sw, float(spot[1]) * sh
+    x0, y0 = to_screen(0., 0.)
+    x1, y1 = to_screen(float(W), float(H))
+    kx, ky = (x1 - x0) / max(1e-9, W), (y1 - y0) / max(1e-9, H)
+    return ((x - x0) / kx, (y - y0) / ky)
+
+
 def paint_hand(painter, item, t, W, H, screen_w=None, to_screen=None):
     """The hand drawing this sticker at t (its pen tip on the line). W × H: the frame the sticker
     is drawn on; exp.30 (the user: the hand was huge): when that frame is a page the camera
     zooms, to_screen maps its points to the screen and the hand has the screen's size
     (screen_w wide), like the elements' hands, which the camera never zooms."""
-    tip = hand_tip(item, t, W, H)
+    tip = hand_tip(item, t, W, H, home_on_frame(item, W, H, screen_w, painter, to_screen))
     if tip is None:
         return False
     if to_screen is not None:

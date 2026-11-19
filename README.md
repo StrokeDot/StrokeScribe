@@ -6,6 +6,13 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## One hand, one thing at a time (v1.0.1-experimental.43)
+
+- The writing hand is one hand. Hand motions and stickers drawn by the hand now wait until it's free, so they never overlap an element's hand (way in, drawing, way back) or each other. The elements stay where they are; anything overlapping moves to just after, and the status bar says what moved.
+- Adding a Hand motion: at the playhead if the hand is free there, otherwise as soon as it's free. In a short gap it's made shorter to fit, instead of being pushed far away.
+- A sticker's hand now starts from where the hand really is (its corner, a Free ending, or where a Hand motion left it), and goes back there when done. It no longer jumps from a fixed corner.
+- When that spot is outside the picture, the sticker's hand comes in from just below the middle, and you can drag its green dot (in its Edit path and in Hand paths) to choose where it comes from.
+
 ## Less memory (v1.0.1-experimental.42)
 
 - Ready preview frames are now kept compressed in memory: about 66 KB each instead of 2 MB. They use the same JPEG quality the disk copies already use, and lossless compression for frames with transparency. The last few frames used stay uncompressed, so scrubbing is still instant, and playing from compressed frames takes about 4 ms per frame.

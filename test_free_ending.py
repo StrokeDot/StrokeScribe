@@ -60,13 +60,26 @@ class InTheWindow(unittest.TestCase):
         w = self.w
         w.board_frames = type(w).board_frames.__get__(w)
         total = w.video_length()
-        w.position = 1.; w.refresh(); APP.processEvents()            # at the very end: it ends there
+        w.position = 1.; w.refresh(); APP.processEvents()            # at the very end
         clip = w.add_camera_clip('Hand motion')
-        self.assertAlmostEqual(clip['start'] + clip['duration'], total, delta=.02)
-        self.assertGreater(clip['start'], 0.)
-        w.position = .25; w.refresh(); APP.processEvents()           # in the middle: right there
+        w.refresh(); APP.processEvents()
+        # exp.43: the end is the last element's way back: one hand does one thing at a time, so
+        # the Hand motion starts when the hand is free (not at 0, not over the way back)
+        last = max(b for a, b in w.hand_busy_spans())
+        self.assertGreaterEqual(clip['start'], last - 1e-3)
+        self.assertLess(clip['start'], last + .1)
+        w.cameras.remove(clip)
+        spans = sorted(w.hand_busy_spans())                         # in a gap between two elements
+        gap = (spans[0][1], spans[1][0])
+        w.position = (gap[0] + .1) / w.video_length(); w.refresh(); APP.processEvents()
         clip = w.add_camera_clip('Hand motion')
-        self.assertAlmostEqual(clip['start'], w.video_seconds(), delta=.02)
+        self.assertAlmostEqual(clip['start'], w.video_seconds(), delta=.02)          # right there
+        self.assertLessEqual(clip['start'] + clip['duration'], gap[1] + 1e-3)       # made to fit
+        w.cameras.remove(clip)
+        w.position = .1; w.refresh(); APP.processEvents()           # while the hand draws
+        clip = w.add_camera_clip('Hand motion')
+        self.assertAlmostEqual(clip['start'], spans[0][1] + .01, delta=.02)         # when it is free
+        w.cameras.remove(clip)
         self.assertLess(len(w.add_hand_motion_button.toolTip()), 70)    # short
 
 class EditPath(unittest.TestCase):
