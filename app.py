@@ -2122,11 +2122,17 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self._settling=False
 
     def hand_order(self):
-        """exp.43-47: exp.47 (the user: the Hand motion could be put over the hands' lines before,
-        and that was right): nothing is pushed any more; a Hand motion or a sticker's hand stays
-        where it is put. Where one starts during a drawing's way back, it takes the hand over
-        from where the drawing finished (motion_cuts)."""
-        self.motion_cuts()
+        """exp.43-48: nothing is pushed (exp.47), and exp.48 (the user: the old way was right): a
+        Hand motion put over a way back does not stop it; the way back follows its own path and,
+        the moment the Hand motion starts, the hand goes on from where it is into the motion's
+        path (the way back aims at the waiting hand, which the Hand motion moves). The take-over
+        of exp.46 (_motion_cut: the hand stood still, then jumped) is removed."""
+        changed=False
+        for scene in self.scenes:
+            if scene.pop('_motion_cut',None) is not None: changed=True
+            scene.pop('_motion_cut_at',None)
+        if changed:
+            self._scene_cache={}; self._memo={}
         return []
 
     def motion_cuts(self):
@@ -2223,10 +2229,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         would work while an element's hand draws, it starts after that hand is done."""
         import stickers
         if item is None or item.get('kind')!='sticker' or not stickers.hand_mode(item): return False
-        # exp.47: only while a hand comes in and draws; over a way back it takes the hand over
-        marks=[m for m in self.hand_marks() if len(m)>4]
-        spans=sorted([(float(m[0]),float(m[0])+float(m[1])+float(m[2])) for m in marks] if marks
-                     else self.hand_busy_spans())
+        spans=sorted(self.hand_busy_spans())     # exp.48: as before exp.46 (a sticker waits for the whole hand)
         moved=False
         for _ in range(len(spans)+1):
             mine=stickers.busy(item)

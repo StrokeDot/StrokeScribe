@@ -6,6 +6,12 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## A Hand motion over a way back works as before (v1.0.1-experimental.48)
+
+- Back to the way it worked before experimental.46. The way back follows its own path until the Hand motion starts. From then on the hand heads for where the Hand motion is, following the new path, and when the way back is over the waiting hand carries on along the Hand motion from the same spot. Experimental.46 made the hand stand still at the end of the drawing and then jump; that's removed.
+- A sticker drawn by the hand waits for the drawing hand as it did before experimental.46. Its Hand row bar can still be dragged.
+- A new test keeps this handover from changing again.
+
 ## Hand motions and stickers stay where you put them (v1.0.1-experimental.47)
 
 - Nothing is pushed any more (that came in experimental.43). A Hand motion stays where you put it, also over the hands' lines as before, and moving it never moves anything else. Stickers aren't pushed by Hand motions either.
