@@ -6,6 +6,13 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Better-looking stickers (v1.0.1-experimental.53)
+
+- **Hook arrow** redrawn: one solid crescent, needle-sharp at the tail and full-bodied near the head, with a thick round-ended chevron for its head.
+- **Marker ellipse**: a real marker or chalk texture. Grainy (light and dark specks), lumpy edges, a lighter top edge, a darker underside and a soft shadow. Each pass of the marker is its own strand, so the second loop crosses the first. It's drawn at the size it's shown, so it stays sharp in the export.
+- **Clock**: big thin Roman numerals, a "railway track" ring, an ornate hour hand, a minute hand with a teardrop, a thin ticking second hand, and a rim.
+- **Double arrow**: thick bars with square ends and crisp heads. **Magnifier**: a heavier ring than its handle.
+
 ## Five new stickers, an Ending that undoes them, 60 fps tiles (v1.0.1-experimental.52)
 
 - New stickers (our own drawings), each built in stages:
