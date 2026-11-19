@@ -6,6 +6,11 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## After a sticker, the hand stays where it ended (v1.0.1-experimental.51)
+
+- When a sticker's hand finishes (the end of its yellow bar on the Hand row), the waiting hand now stays exactly where that hand ended: the point its hand is painted at, through the sticker's own page. The next Hand motion starts there (its green dot). Before, the waiting hand could jump back to an earlier spot (for example, where a Hand motion had left it) when the sticker's hand came from its corner, or when the sticker's page wasn't the element's page.
+- This holds for every sticker drawn by the hand, with any ending ("Comes in and leaves" excepted, which leaves the picture).
+
 ## The Hand motion's green dot drags (v1.0.1-experimental.50)
 
 - In the Hand motion window, the green dot can now be dragged with the mouse (Free beginning, or when a Free ending or a Hand motion put the hand there). The window used to grab only the purple points. Its points stay where they are when the green dot moves.

@@ -335,13 +335,17 @@ def park_clips(items):
     next hand and the next Hand motion start there, in the preview and in the export alike."""
     out = []
     for o in items or ():
-        if o.get('kind') != 'sticker' or o.get('off') or not hand_mode(o) or free_end(o, 1., 1.) is None:
+        if o.get('kind') != 'sticker' or o.get('off') or not hand_mode(o):
             continue
+        if not o.get('_end_screen') and free_end(o, 1., 1.) is None:
+            continue                            # exp.51: every sticker hand leaves the hand where it ended
         span = busy(o)
         if not span:
             continue
+        spot = o.get('_end_screen')            # exp.51: on the screen (set by the window from its page)
         out.append(dict(id=f"park-{o.get('id')}", kind='Hand motion', start=round(float(span[1]) - .2, 4),
-                        duration=.2, how='Steady', path=[list(o['hand_end'])], back=False, sticker=o.get('id')))
+                        duration=.2, how='Steady', path=[list(spot or o['hand_end'])], back=False,
+                        sticker=o.get('id'), screen=bool(spot)))
     return out
 
 

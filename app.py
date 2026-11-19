@@ -2177,28 +2177,61 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         ax,ay=options.get('anchor',(.1,.1))
         return (rect.x()+float(ax)*rect.width(),rect.y()+float(ay)*rect.height()),rect.height()*float(ay)
 
+    def sticker_screen_map(self,item,t,W,H):
+        """exp.51: (to_screen, from_screen) between a sticker's W × H frame and the screen at t (its
+        own page as the camera shows it; not the element's page)."""
+        same=lambda x,y:(x,y)
+        try:
+            placed=self.text_view(t,W,H) if self.all_scenes() and len(self.scenes)>1 else None
+        except Exception:
+            placed=None
+        if not placed: return same,same
+        frames,place,view=placed
+        mine=next((o for o in self.titles_split(t)[0] if o.get('id')==item.get('id')),None)
+        k=min(max(0,int((mine or item).get('_page',0) or 0)),len(frames)-1)
+        x,y,rw,rh=place(frames[k],view,W,H)
+        to=lambda px,py:(x+px*rw/W,y+py*rh/H)
+        back=lambda sx,sy:((sx-x)*W/max(1e-9,rw),(sy-y)*H/max(1e-9,rh))
+        return to,back
+
     def sticker_homes(self):
-        """exp.43: each sticker's hand comes from (and goes back to) where the waiting hand is
-        when it starts (its corner, a Free ending, where a Hand motion left it). Outside the
-        picture: from just below the middle, or from where it was put (Edit path: green dot).
-        Kept on the sticker as shares of the screen (_home_screen)."""
+        """exp.43/51: for each sticker drawn by the hand, in time order: where its hand comes from
+        (_home_screen: where the waiting hand is when it starts; outside the picture: below the
+        middle, or its own start) and where its hand really ends (_end_screen: the point its hand
+        is painted at, on the screen; the waiting hand stays there and the next hand / Hand motion
+        starts there). Shares of the screen."""
         import stickers
         W=960; H=round(W*self.board_aspect())
-        for o in self.overlays:
-            if o.get('kind')!='sticker': continue
-            span=stickers.busy(o) if stickers.hand_mode(o) and o.get('hand_way')!='Comes in and leaves' else None
-            found=self.hand_spot_at(W,H,span[0]+1e-4) if span else None      # exp.46: at its start
+        items=[o for o in self.overlays if o.get('kind')=='sticker']
+        for o in items:
+            if not stickers.hand_mode(o) or o.get('off'):
+                o.pop('_home_screen',None); o.pop('_home_outside',None); o.pop('_end_screen',None)
+        for o in sorted((o for o in items if stickers.hand_mode(o) and not o.get('off') and stickers.busy(o)),
+                        key=lambda o: stickers.busy(o)[0]):
+            span=stickers.busy(o)
+            # where it comes from (earlier stickers' ends are already known: they park the hand)
+            found=None if o.get('hand_way')=='Comes in and leaves' else self.hand_spot_at(W,H,span[0]+1e-4)
             if found is None:
-                o.pop('_home_screen',None); o.pop('_home_outside',None); continue
-            (x,y),below=found
-            outside=not (0.<=x<=W and 0.<=y<=H)
-            own=o.get('hand_start')
-            if own and (outside or o.get('hand_begin')=='free'):
-                if outside or self.hand_source_at(span[0]-1e-3)==('corner',None):   # exp.44: its own start
-                    x,y=float(own[0])*W,float(own[1])*H
-            elif outside:
-                x,y=W/2.,H+below+2.
-            o['_home_screen']=[round(x/W,4),round(y/H,4)]; o['_home_outside']=outside
+                o.pop('_home_screen',None); o.pop('_home_outside',None)
+            else:
+                (x,y),below=found
+                outside=not (0.<=x<=W and 0.<=y<=H)
+                own=o.get('hand_start')
+                if own and (outside or o.get('hand_begin')=='free'):
+                    if outside or self.hand_source_at(span[0]-1e-3)==('corner',None):   # exp.44: its own start
+                        x,y=float(own[0])*W,float(own[1])*H
+                elif outside:
+                    x,y=W/2.,H+below+2.
+                o['_home_screen']=[round(x/W,4),round(y/H,4)]; o['_home_outside']=outside
+            # where its hand really ends
+            if o.get('hand_way')=='Comes in and leaves':
+                o.pop('_end_screen',None); continue
+            t=float(span[1])-1e-3
+            to,_=self.sticker_screen_map(o,t,W,H)
+            tip=stickers.hand_tip(o,t,W,H,stickers.home_on_frame(o,W,H,W,None,to))
+            if tip is None:
+                o.pop('_end_screen',None); continue
+            ex,ey=to(*tip); o['_end_screen']=[round(ex/W,4),round(ey/H,4)]
 
     def hand_busy_spans(self):
         """exp.29: [(from, to)] whole-video seconds while an element's hand draws (comes in, draws,
@@ -7161,8 +7194,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """exp.39-41: the green dot of a way in dragged to `a` (screen of the snapshot): what to
         change, (kind, ref, spot), for apply_start_move."""
         W,H=snap['size']; px,py,pw,ph=snap.get('place') or (0.,0.,float(W),float(H))
-        if kind in ('own','sticker_own'):
-            return kind,ref,(round(a[0]/max(1.,W),4),round(a[1]/max(1.,H),4))     # shares of the screen
+        if kind in ('own','sticker_own','sticker'):       # exp.51: a sticker's spot too (see apply_start_move)
+            return kind,(ref['id'] if kind=='sticker' else ref),(round(a[0]/max(1.,W),4),round(a[1]/max(1.,H),4))
         spot=(round((a[0]-px)/max(1.,pw),4),round((a[1]-py)/max(1.,ph),4))       # shares of the page
         return kind,(ref['id'] if kind in ('motion','sticker') else ref),spot
 
@@ -7179,7 +7212,13 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         elif kind in ('sticker','sticker_own'):
             item=self.find_overlay(ref)
             if item is not None:
-                if kind=='sticker': item.update(hand_flow='free',hand_end=list(spot))
+                if kind=='sticker':                     # exp.51: the screen spot, on its own page
+                    import stickers
+                    W=960; H=round(W*self.board_aspect())
+                    span=stickers.busy(item)
+                    _,back=self.sticker_screen_map(item,float(span[1])-.01 if span else 0.,W,H)
+                    fx,fy=back(spot[0]*W,spot[1]*H)
+                    item.update(hand_flow='free',hand_end=[round(fx/W,4),round(fy/H,4)])
                 else: item['hand_start']=list(spot)
         elif kind=='motion':
             import camera_clips

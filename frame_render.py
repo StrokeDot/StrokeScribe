@@ -1348,7 +1348,8 @@ def _moves_of(options):
         if len(r) > 8 and r[6] == camera_clips.MOVE and not (len(r) > 10 and r[10]):
             found.append(dict(start=float(r[1]), duration=float(r[2]), how=r[7] or 'Smooth', path=tuple(r[8]),
                               back=bool(r[9]) if len(r) > 9 else True, until=r[11] if len(r) > 11 else None,
-                              line=r[12] if len(r) > 12 else None))                     # exp.46
+                              line=r[12] if len(r) > 12 else None,                      # exp.46
+                              screen=r[13] if len(r) > 13 else None))                   # exp.51
     return tuple(found)
 
 
@@ -1371,7 +1372,12 @@ def hand_motion_at(options, seconds, home, place, size):
             pos = until = None                   # the next drawing's hand took it back to its corner
         if t < start:
             break
-        pts = [(px + float(x) * pw, py + float(y) * ph) for x, y in m['path']]
+        if m.get('screen'):
+            # exp.51: a sticker's Free ending is kept in shares of the screen (its own page is not
+            # the element's page; the user: the hand jumped to the middle after the sticker)
+            pts = [(float(x) * float(size[0]), float(y) * float(size[1])) for x, y in m['path']]
+        else:
+            pts = [(px + float(x) * pw, py + float(y) * ph) for x, y in m['path']]
         back = m.get('back', True) is not False
         origin = pos if pos is not None else home
         if t < start + length:
