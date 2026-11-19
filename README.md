@@ -6,6 +6,10 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## The hand draws a circle to the end (v1.0.1-experimental.45)
+
+- With **Hand: everything**, a sticker without an arrowhead (circle, hand-drawn circle, line, wavy line) used only 76% of its drawing time for its line, keeping the rest for an arrowhead that isn't there. The hand stopped before the end of the circle and stood still. Now the line takes the whole time. Arrows are unchanged: line first, then the two strokes of the head.
+
 ## Starts and Ends: the same choices for every hand (v1.0.1-experimental.44)
 
 - The Hand window (for a drawing's hand and for a sticker's hand) has two new rows:

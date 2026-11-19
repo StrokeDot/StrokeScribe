@@ -128,6 +128,11 @@ def busy(item):
     return start - lead, start + max(.05, float(item.get('draw_seconds', .8))) + tail
 
 
+def has_head(item):
+    """exp.45: does this sticker's shape have a head (an arrow's two strokes)?"""
+    return bool(stroke(item.get('shape', 'Arrow'))[1])
+
+
 def phases(item, t):
     """(line 0..1, head strokes [0..1, 0..1]) drawn at t."""
     seconds = max(.05, float(item.get('draw_seconds', .8)))
@@ -140,6 +145,11 @@ def phases(item, t):
         # at a steady pace; its way in arrives at that speed and its way back leaves at it
         pop = max(0., min(1., (t - start - seconds) / HEAD_POP))
         return u, [pop, pop]
+    if mode == 'all' and not has_head(item):
+        # exp.45 (the user: the hand stopped before the end of the circle): a shape without a head
+        # (circle, line) has only its line: the line takes the whole time (it kept the last 24 %
+        # for a head that is not there, and the hand stood still)
+        return u, [0., 0.]
     if mode == 'all':                       # the line, then each stroke of the head, by the hand
         line = min(1., u / .76)
         # the first stroke of the head, the pen back to the tip (no ink), the second stroke
