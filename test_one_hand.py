@@ -53,24 +53,22 @@ class OneHand(unittest.TestCase):
         st['drawing'] = 'Hand: outline'; st['start'] = start
         return st
 
-    def test_a_nothing_overlaps_and_it_stays_put(self):
+    def test_a_hand_motions_stay_where_they_are_put(self):
+        # exp.47 (the user: a Hand motion can be put over the hands' lines; moving it must not
+        # move anything else): nothing is pushed
         import camera_clips
         w = self.w
         busy = w.hand_busy_spans()
-        c = camera_clips.new_clip('Hand motion', round(busy[0][1] - .5, 2)); c['duration'] = 1.
-        w.cameras.append(c)                                   # starts during element 1's way back
-        st = self.sticker(round(busy[1][1] - .2, 2))         # overlaps element 2's way back
+        c = camera_clips.new_clip('Hand motion', round(busy[1][0] + 1., 2)); c['duration'] = 1.
+        w.cameras.append(c)                                   # over element 2's drawing
+        st = self.sticker(round(busy[1][1] + 1.5, 2))
         w.refresh(); APP.processEvents()
-        spans = self.spans()
-        for (a0, a1), (b0, b1) in zip(spans, spans[1:]):
-            self.assertLessEqual(a1, b0 + 1e-4, spans)
-        # exp.46 (the user: a Hand motion overrules what is under it): it stays where it was put;
-        # element 1's way back is dropped from that moment
-        self.assertAlmostEqual(c['start'], round(busy[0][1] - .5, 2), places=2)
-        self.assertAlmostEqual(w.scenes[0].get('_motion_cut_at'), c['start'], places=2)
-        before = (c['start'], st['start'])
+        self.assertAlmostEqual(c['start'], round(busy[1][0] + 1., 2), places=2)
+        before = st['start']
+        c['start'] = round(st['start'] - .2, 2)              # moved onto the sticker: it stays too
         w.refresh(); APP.processEvents()
-        self.assertEqual((c['start'], st['start']), before)   # stable
+        self.assertEqual(st['start'], before)
+        self.assertAlmostEqual(c['start'], round(before - .2, 2), places=2)
 
     def test_b_the_sticker_starts_where_a_hand_motion_left_the_hand(self):
         import camera_clips, stickers
