@@ -44,13 +44,23 @@ def build(w, Section, form_layout, linked_slider):
     w.sticker_tile_timer = QTimer(page); w.sticker_tile_timer.setInterval(16)
     w.sticker_tile_frames = 0
 
+    still = {}                                  # exp.54: the finished picture each tile shows at rest
+
     def play_tiles():
+        # exp.54 (the user: the presentation was ruined): every tile shows its finished sticker;
+        # the one under the mouse plays its animation (60 fps), from the start each time
         if not page.isVisible():
             return
         seconds = clock.elapsed() / 1000.
-        a = stickers.loop_amount(seconds)
         for shape, b in w.sticker_buttons.items():
-            b.setIcon(stickers.preview(shape, 56, amount=a, t=seconds))
+            if b.underMouse():
+                if still.get(shape) != 'playing':
+                    still[shape] = 'playing'; still['_from_' + shape] = seconds
+                run = seconds - still['_from_' + shape]
+                b.setIcon(stickers.preview(shape, 56, amount=max(.04, stickers.loop_amount(run)), t=run))
+            elif still.get(shape) != 'still':
+                still[shape] = 'still'
+                b.setIcon(stickers.preview(shape, 56))
         w.sticker_tile_frames += 1
     w.sticker_tile_timer.timeout.connect(play_tiles)
     w.sticker_tile_timer.start()
