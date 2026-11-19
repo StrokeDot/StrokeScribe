@@ -1894,6 +1894,13 @@ class StageTimeline(QFrame):
             self._choose_only('hand')
             self.selected_hand=None; self.selected_sticker_hand=oid
             self.overlay_selected.emit(oid)
+            # exp.47 (the user: the sticker's hand could not be moved): its bar can be dragged; it
+            # moves the sticker (the same as dragging the sticker's own clip)
+            item=next((o for o in self.overlays if o.get('id')==oid),None)
+            if item is not None:
+                self._frozen=self.total(); self._text_ghost=None
+                self._drag=('overlay',item,'move',pos.x(),pos.y(),float(item.get('start',0)),
+                            float(item.get('duration',3)),int(item.get('track',0)),self._px_per_sec())
             self.update(); event.accept(); return
         hand_k=self._hand_mark_at(pos) if self.items and self._clip_at(pos)[0] is None else None
         if hand_k is not None:

@@ -77,13 +77,32 @@ class Overrule(unittest.TestCase):
         self.assertAlmostEqual(st['_home_screen'][0], finish[0], delta=.01)          # from the finish
         self.assertEqual(w.hand_source_at(stickers.busy(st)[0])[0], 'link')
 
-    def test_c_a_drawing_still_comes_first(self):
-        import camera_clips
+    def test_c_the_sticker_bar_on_the_hand_row_can_be_dragged(self):
+        # exp.47 (the user: I cannot move the sticker's hand): dragging its bar moves the sticker
+        import stickers
+        from PySide6.QtCore import QPointF, Qt
+        from PySide6.QtGui import QMouseEvent
         w = self.w
-        m = w.hand_marks()[1]
-        c = camera_clips.new_clip('Hand motion', round(m[0] + m[1] + 1., 2)); c['duration'] = .5   # mid-drawing
-        w.cameras.append(c); w.refresh(); APP.processEvents()
-        self.assertGreaterEqual(c['start'], m[0] + m[1] + m[2] - 1e-3)
+        end = max(b for a, b in w.hand_busy_spans())
+        w.add_sticker('Circle'); st = [o for o in w.overlays if o.get('kind') == 'sticker'][-1]
+        st.update(drawing='Hand: outline', start=round(end + 3., 2))
+        w.refresh(); APP.processEvents()
+        tl = w.stage_timeline
+        tl.resize(1400, tl.height()); w.refresh(); APP.processEvents()
+        mark = next(m for m in tl.sticker_hand_marks if m[4] == st['id'])
+        hand_y = next(y for y in range(0, tl.height(), 2) if tl._sticker_hand_at(QPointF(tl._x(mark[0] + .1), y)))
+        x = tl._x(mark[0] + .1)
+
+        def ev(kind, px, buttons):
+            p = QPointF(px, hand_y)
+            return QMouseEvent(kind, p, p, Qt.MouseButton.LeftButton, buttons, Qt.KeyboardModifier.NoModifier)
+        before = st['start']
+        tl.mousePressEvent(ev(QMouseEvent.Type.MouseButtonPress, x, Qt.MouseButton.LeftButton))
+        target = x - (tl._x(1.) - tl._x(0.))                                        # one second left
+        tl.mouseMoveEvent(ev(QMouseEvent.Type.MouseMove, target, Qt.MouseButton.LeftButton))
+        tl.mouseReleaseEvent(ev(QMouseEvent.Type.MouseButtonRelease, target, Qt.MouseButton.NoButton))
+        APP.processEvents()
+        self.assertAlmostEqual(st['start'], before - 1., delta=.15)
 
 
 if __name__ == '__main__':

@@ -1488,28 +1488,6 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         total=max(.5,self.video_length())
         clip=camera_clips.new_clip(kind,0.)
         clip['start']=round(max(0.,min(start,total-float(clip.get('duration') or .5))),2)
-        if kind==camera_clips.MOVE:
-            # exp.43 (one hand does one thing at a time): when the hand is busy at the playhead it
-            # starts as soon as the hand is free, and in a short gap it is made shorter to fit
-            # (not pushed far away by the order of the hand's ways)
-            try:
-                import stickers
-                marks=[m for m in self.hand_marks() if len(m)>4]          # exp.46: a way back does not block it
-                solid=([(float(m[0]),float(m[0])+float(m[1])+float(m[2])) for m in marks] if marks
-                       else list(self.hand_busy_spans()))
-                busy=sorted(solid+[(float(c['start']),float(c['start'])+float(c['duration']))
-                                                      for c in self.cameras if c.get('kind')==camera_clips.MOVE]
-                            +[tuple(stickers.busy(o)) for o in self.overlays
-                              if o.get('kind')=='sticker' and stickers.hand_mode(o) and stickers.busy(o)])
-                begin=start
-                for a,b in busy:
-                    if a-1e-4<=begin<b: begin=b+.01
-                gap=min([a for a,b in busy if a>begin-1e-4]+[float('inf')])-begin
-                if gap>=.4:
-                    clip['start']=round(begin,2)
-                    clip['duration']=round(min(float(clip.get('duration') or 3.),gap-.02),2)
-            except Exception as exc:
-                import applog; applog.error('Hand motion: free time',exc)
         if kind in camera_clips.HAND_KINDS:              # exp.147/148: on the Hand row
             clip['side']='Right'
             if kind in (camera_clips.HAND,camera_clips.MOVE) and hasattr(self,'hand_rest') and not self.hand_rest.isChecked():
@@ -2144,49 +2122,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self._settling=False
 
     def hand_order(self):
-        """exp.43/46: the writing hand does one thing at a time. A Hand motion overrules a way back
-        (the user: the Hand motion should overrule what is under): it may start during one (the
-        hand then stays where the drawing finished and the motion takes it from there, see
-        motion_cuts); it only waits for drawings and ways in, and for the Hand motions before it.
-        Stickers drawn by the hand wait for everything. Returns what moved."""
-        import math, stickers, camera_clips
-        marks=[m for m in self.hand_marks() if len(m)>4]
-        solid=([(float(m[0]),float(m[0])+float(m[1])+float(m[2])) for m in marks] if marks
-               else list(self.hand_busy_spans()))
-        moved=[]
-
-        def place(kind,obj,s0,e0,placed):
-            s,e=s0,e0
-            for _ in range(len(placed)+2):
-                clash=next(((a,b) for a,b in sorted(placed) if s<b-1e-4 and e>a+1e-4),None)
-                if clash is None: break
-                shift=math.ceil((clash[1]+.005-s)*100)/100.            # whole hundredths, never short
-                s+=shift; e+=shift
-            if s>s0+1e-6:
-                obj['start']=round(float(obj['start'])+(s-s0),2)
-                moved.append((kind,obj,s))
-            placed.append((s,e))
-        placed=list(solid)
-        motions=sorted((c for c in getattr(self,'cameras',[]) or [] if c.get('kind')==camera_clips.MOVE and not c.get('off')),
-                       key=lambda c: float(c['start']))
-        for c in motions:
-            place('motion',c,float(c['start']),float(c['start'])+float(c['duration']),placed)
-        # exp.46 (the user: I could not join it to the one before): a sticker's hand overrules a
-        # way back too; it waits for drawings, ways in, Hand motions and the stickers before it
-        items=[o for o in self.overlays if o.get('kind')=='sticker' and not o.get('off') and stickers.hand_mode(o)
-               and stickers.busy(o)]
-        for o in sorted(items,key=lambda o: stickers.busy(o)[0]):
-            span=stickers.busy(o)
-            place('sticker',o,float(span[0]),float(span[1]),placed)
+        """exp.43-47: exp.47 (the user: the Hand motion could be put over the hands' lines before,
+        and that was right): nothing is pushed any more; a Hand motion or a sticker's hand stays
+        where it is put. Where one starts during a drawing's way back, it takes the hand over
+        from where the drawing finished (motion_cuts)."""
         self.motion_cuts()
-        if moved:
-            kind,obj,s=moved[0]
-            what='A Hand motion' if kind=='motion' else f'"{obj.get("name","Sticker")}"'
-            self.status.setText(f'{what} now starts at {s:.1f} s: the hand finishes what it was doing first '
-                                '(one hand does one thing at a time).')
-            if hasattr(self,'sync_camera_timeline'):
-                QTimer.singleShot(0,self.sync_camera_timeline)
-        return moved
+        return []
 
     def motion_cuts(self):
         """exp.46: an element whose way back a Hand motion (or a sticker's hand) starts during: the hand stays where the
@@ -2282,7 +2223,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         would work while an element's hand draws, it starts after that hand is done."""
         import stickers
         if item is None or item.get('kind')!='sticker' or not stickers.hand_mode(item): return False
-        spans=sorted(self.hand_busy_spans())
+        # exp.47: only while a hand comes in and draws; over a way back it takes the hand over
+        marks=[m for m in self.hand_marks() if len(m)>4]
+        spans=sorted([(float(m[0]),float(m[0])+float(m[1])+float(m[2])) for m in marks] if marks
+                     else self.hand_busy_spans())
         moved=False
         for _ in range(len(spans)+1):
             mine=stickers.busy(item)
