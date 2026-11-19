@@ -120,7 +120,8 @@ class InTheWindow(unittest.TestCase):
                 w.add_scene(); w.set_drawing(import_svg('samples/drawing.svg')); settle()
             w.scenes[1].update(start=5.4, track=1)
             w.scenes[2].update(start=16.9, track=0)
-            w.cameras = [dict(id='h', kind='Hand motion', start=20.1, duration=1., lane=0)]
+            # exp.43: in free time (one hand: a Hand motion never overlaps an element's hand)
+            w.cameras = [dict(id='h', kind='Hand motion', start=23.1, duration=1., lane=0)]
             w.select_scene(1); settle(); w.refresh(); settle()
             length = w.timeline_layout().items[1].length
             w.pause_after.setValue(w.pause_after.value() + 2.); settle()
@@ -128,7 +129,7 @@ class InTheWindow(unittest.TestCase):
             grew = lay.items[1].length - length
             self.assertAlmostEqual(grew, 2., places=1)
             self.assertAlmostEqual(lay.items[2].start, 16.9 + grew, places=2)
-            self.assertAlmostEqual(w.cameras[0]['start'], 20.1 + grew, places=2)
+            self.assertAlmostEqual(w.cameras[0]['start'], 23.1 + grew, places=2)
             w.pause_after.setValue(w.pause_after.value() - 1.); settle()
             self.assertAlmostEqual(w.timeline_layout().items[2].start, 16.9 + grew - 1., places=1)
         finally:
