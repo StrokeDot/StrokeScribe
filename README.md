@@ -6,6 +6,12 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## The Hand motion's green dot, explained (v1.0.1-experimental.49)
+
+- The Hand motion window says where its green dot comes from, for example "where the hand ended after the sticker Circle (Free ending)" or "where a Hand motion left the hand". When a Free ending or a Hand motion put the hand there, you can drag the dot to move that spot; nothing jumps.
+- New **Starts from** row, as in the other Hand windows: *Where the hand is* (the usual) or *Free beginning* (drag the green dot). The time row is now called **Starts at**.
+- **At the end**: *Goes back to where it started* (it was "Goes back to its corner"): the hand returns to the green dot. With nothing before it, that's the same spot as before.
+
 ## A Hand motion over a way back works as before (v1.0.1-experimental.48)
 
 - Back to the way it worked before experimental.46. The way back follows its own path until the Hand motion starts. From then on the hand heads for where the Hand motion is, following the new path, and when the way back is over the waiting hand carries on along the Hand motion from the same spot. Experimental.46 made the hand stand still at the end of the drawing and then jump; that's removed.

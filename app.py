@@ -7106,7 +7106,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         for kind,ref,clip in sorted(entries,key=lambda e: float(e[2]['start'])):
             if float(clip['start'])+float(clip['duration'])>t+1e-3: break
             if clip.get('back',True) is not False:
-                parked=None; continue                    # it went back where it was
+                continue                                 # exp.49: back to where it started (as it was)
             until=camera_clips.parked_until(clip,hands)
             parked=(kind,ref) if until is None or until>t+1e-3 else None
         if parked is not None: return parked
@@ -7153,7 +7153,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
               'own':('The hand is outside the picture here. Drag the green dot to choose where it comes from.'
                      if outside else 'Free beginning: drag the green dot to where the hand starts.'),
               'sticker_own':('The hand is outside the picture here. Drag the green dot to choose where it comes from.'
-                             if outside else 'Free beginning: drag the green dot to where the hand starts.')}[kind]
+                             if outside else 'Free beginning: drag the green dot to where the hand starts.'),
+              'none':'The hand comes from where it waits (nothing before it to move).'}[kind]
         return kind,ref,kind in ('motion','sticker','end','prev','own','sticker_own'),note
 
     def start_move(self,snap,kind,ref,a):
@@ -7538,12 +7539,24 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.status.setText('Hand motion: '+view); return
         image,home,begin,options,rect=view['image'],view['home'],view['begin'],view['options'],view['rect']
         ax,ay=view['anchor']; to_frame,to_page=view['to_frame'],view['to_page']
+        # exp.49 (the user: why is the green dot there?): what put the hand there, and Starts
+        dots={free:self.green_of(start-1e-4,False,free,('none',None)) for free in (False,True)}
         dialog=HandMotionDialog(self,image,home,[to_frame(q) for q in clip.get('path') or camera_clips.MOVE_PATH],
                                 (options['hand'],(float(ax),float(ay)),rect.width()),start,length,
                                 clip.get('how') or 'Smooth',('Smooth','Steady','Quick start','Slow start','Overshoot'),
                                 [to_frame(q) for q in camera_clips.MOVE_PATH],begin=begin,
-                                back=clip.get('back',True) is not False,line=clip.get('line'))
+                                back=clip.get('back',True) is not False,line=clip.get('line'),
+                                dots={free:(d[2],d[3]) for free,d in dots.items()},
+                                free_begin=clip.get('hand_begin')=='free')
         if dialog.exec()!=QDialog.DialogCode.Accepted: return
+        free=dialog.starts.currentData()=='free'
+        a0=begin if begin is not None else home
+        dot=dots[free]
+        if dot[2] and tuple(dialog.canvas.a)!=tuple(a0):
+            snap=dict(size=view['size'],place=view['place'])
+            moved=self.start_move(snap,dot[0],dot[1],dialog.canvas.a)
+        else:
+            moved=None
         if dialog.deleted:
             return self.camera_clip_action(cid,'delete')
         self.record_structure('hand motion')
@@ -7553,6 +7566,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         else: clip.pop('line',None)
         clip['path']=[to_page(q) for q in dialog.canvas.keys]
         clip['back']=dialog.end.currentIndex()==1          # exp.231
+        if free: clip['hand_begin']='free'                   # exp.49
+        else: clip.pop('hand_begin',None)
+        self.apply_start_move(moved)
         self.project_changes.mark_changed()
         self.clear_frames()
         self.fill_camera_panel(); self.sync_camera_timeline(); self.refresh()

@@ -521,7 +521,8 @@ class MotionCanvas(PathCanvas):
     straight = False            # exp.46: straight from point to point (not a curve through them)
 
     def points(self):
-        return [self.a] + list(self.keys) + ([self.b] if self.back else [])
+        # exp.49: back is back to where it started (the green dot, also when it is dragged)
+        return [self.a] + list(self.keys) + ([self.a] if self.back else [])
 
     def line(self, steps=24):
         from frame_render import spline
@@ -592,7 +593,7 @@ class HandMotionDialog(QDialog):
     """exp.224: double-click a Hand motion clip: when, how long, how it moves, and its path."""
 
     def __init__(self, parent, frame, home, keys, hand, start, length, how, styles, preset, begin=None, back=True,
-                 line=None):
+                 line=None, dots=None, free_begin=False):
         from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QFormLayout
         super().__init__(parent)
         self.setWindowTitle('Hand motion')
@@ -600,8 +601,8 @@ class HandMotionDialog(QDialog):
         layout = QVBoxLayout(self)
         help_text = QLabel('The hand goes from where it is (green) through the points: drag them anywhere, also '
                            'outside the video (the dashed edge). Right-click (or double-click) to add a point, '
-                           'right-click a point to remove it. At the end it goes back to its corner, or stays at '
-                           'the last point (red): the next drawing\'s hand starts from there. No picture is needed.')
+                           'right-click a point to remove it. At the end it stays at the last point (red: the next '
+                           'hand starts from there), or goes back to where it started (green). No picture is needed.')
         help_text.setWordWrap(True)
         layout.addWidget(help_text)
         form = QFormLayout()
@@ -625,15 +626,27 @@ class HandMotionDialog(QDialog):
                               '(it turns at each point). Any shape goes with any speed.')
         how_row = QHBoxLayout(); how_row.setSpacing(8)
         how_row.addWidget(self.shape, 1); how_row.addWidget(self.how, 1)
-        form.addRow('Starts', self.start)
+        form.addRow('Starts at', self.start)
         form.addRow('Length', self.length)
         form.addRow('How it moves', how_row)
-        self.end = QComboBox(); self.end.addItems(['Stays at the last point', 'Goes back to its corner'])
+        # exp.49 (the user: why is the green dot there?): Starts, as in the other Hand windows
+        self.dots = dots or {False: (False, ''), True: (False, '')}
+        self.starts = QComboBox()
+        self.starts.addItem('Where the hand is (from its last spot)', None)
+        self.starts.addItem('Free beginning: where you put it (drag the green dot)', 'free')
+        self.starts.setCurrentIndex(1 if free_begin else 0)
+        form.addRow('Starts from', self.starts)
+        self.end = QComboBox(); self.end.addItems(['Stays at the last point', 'Goes back to where it started'])
         self.end.setCurrentIndex(0 if not back else 1)
         form.addRow('At the end', self.end)
         layout.addLayout(form)
-        self.canvas = MotionCanvas(frame, begin if begin is not None else home, home, keys)
+        self.note = QLabel(''); self.note.setWordWrap(True); self.note.setObjectName('muted')
+        layout.addWidget(self.note)
+        origin = begin if begin is not None else home
+        self.canvas = MotionCanvas(frame, origin, origin, keys)    # exp.49: back to where it started
         self.canvas.back = bool(back)
+        self.starts.currentIndexChanged.connect(lambda *_: self._starts())
+        self._starts()
         self.canvas.straight = line == 'straight'
         self.shape.currentIndexChanged.connect(
             lambda *_: (setattr(self.canvas, 'straight', self.shape.currentData() == 'straight'), self.canvas.update()))
@@ -659,6 +672,11 @@ class HandMotionDialog(QDialog):
         buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
         self.timer = QTimer(self); self.timer.timeout.connect(self._step)
+
+    def _starts(self):
+        movable, note = self.dots.get(self.starts.currentData() == 'free', (False, ''))
+        self.canvas.movable_start = bool(movable)
+        self.note.setText(note)
 
     def _style(self, text):
         self.canvas.style = text; self.canvas.update()
