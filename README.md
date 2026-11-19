@@ -6,6 +6,10 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## The Hand motion's green dot drags (v1.0.1-experimental.50)
+
+- In the Hand motion window, the green dot can now be dragged with the mouse (Free beginning, or when a Free ending or a Hand motion put the hand there). The window used to grab only the purple points. Its points stay where they are when the green dot moves.
+
 ## The Hand motion's green dot, explained (v1.0.1-experimental.49)
 
 - The Hand motion window says where its green dot comes from, for example "where the hand ended after the sticker Circle (Free ending)" or "where a Hand motion left the hand". When a Free ending or a Hand motion put the hand there, you can drag the dot to move that spot; nothing jumps.

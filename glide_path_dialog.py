@@ -158,6 +158,9 @@ class PathCanvas(QWidget):
             self.keys = [self.key_of(q) for q in spots]
             self.update()
         elif self.drag == 'start':
+            if getattr(self, 'absolute_keys', False):   # exp.50: a Hand motion's points stay as they are
+                self.a = self.to_frame(event.position())
+                self.update(); return
             spots = self.points()[1:-1]           # exp.39: the same for the start
             self.a = self.to_frame(event.position())
             self.keys = [self.key_of(q) for q in spots]
@@ -518,6 +521,7 @@ class MotionCanvas(PathCanvas):
     (frame pixels, also outside the picture) and back to the corner."""
 
     back = True                 # exp.231: False: the hand stays at the last point
+    absolute_keys = True        # exp.50: its points are where they are (not relative to the dots)
     straight = False            # exp.46: straight from point to point (not a curve through them)
 
     def points(self):
@@ -575,6 +579,8 @@ class MotionCanvas(PathCanvas):
         i = self._key_at(event.position())
         if i is not None:
             self.drag = i
+        elif event.button() == Qt.MouseButton.LeftButton and self._start_at(event.position()):
+            self.drag = 'start'           # exp.50 (the user: the green dot did not drag): Free beginning
 
     def mouseDoubleClickEvent(self, event):
         self.add_point(self.to_frame(event.position()))
