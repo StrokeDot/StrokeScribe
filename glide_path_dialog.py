@@ -518,12 +518,15 @@ class MotionCanvas(PathCanvas):
     (frame pixels, also outside the picture) and back to the corner."""
 
     back = True                 # exp.231: False: the hand stays at the last point
+    straight = False            # exp.46: straight from point to point (not a curve through them)
 
     def points(self):
         return [self.a] + list(self.keys) + ([self.b] if self.back else [])
 
     def line(self, steps=24):
         from frame_render import spline
+        if self.straight:
+            return list(self.points())
         return spline(self.points(), steps)
 
     def key_of(self, spot):
@@ -588,7 +591,8 @@ class MotionCanvas(PathCanvas):
 class HandMotionDialog(QDialog):
     """exp.224: double-click a Hand motion clip: when, how long, how it moves, and its path."""
 
-    def __init__(self, parent, frame, home, keys, hand, start, length, how, styles, preset, begin=None, back=True):
+    def __init__(self, parent, frame, home, keys, hand, start, length, how, styles, preset, begin=None, back=True,
+                 line=None):
         from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QFormLayout
         super().__init__(parent)
         self.setWindowTitle('Hand motion')
@@ -609,15 +613,30 @@ class HandMotionDialog(QDialog):
         self.length = number(length, .4, 600)
         self.how = QComboBox(); self.how.addItems(list(styles))
         self.how.setCurrentText(how if how in styles else 'Smooth')
+        self.how.setToolTip('Its speed. Smooth: eases out and gently into place; Steady: the same speed all the way; '
+                            'Quick start: darts off, then arrives slowly; Slow start: leaves slowly, then hurries; '
+                            'Overshoot: goes past the end and comes back.')
+        # exp.46 (the user: shape and speed, like the drawing's hand): its shape through the points
+        self.shape = QComboBox()
+        self.shape.addItem('Curve through the points', None)
+        self.shape.addItem('Straight from point to point', 'straight')
+        self.shape.setCurrentIndex(max(0, self.shape.findData(line)))
+        self.shape.setToolTip('Its shape: a smooth curve through your points, or straight lines from one to the next '
+                              '(it turns at each point). Any shape goes with any speed.')
+        how_row = QHBoxLayout(); how_row.setSpacing(8)
+        how_row.addWidget(self.shape, 1); how_row.addWidget(self.how, 1)
         form.addRow('Starts', self.start)
         form.addRow('Length', self.length)
-        form.addRow('How it moves', self.how)
+        form.addRow('How it moves', how_row)
         self.end = QComboBox(); self.end.addItems(['Stays at the last point', 'Goes back to its corner'])
         self.end.setCurrentIndex(0 if not back else 1)
         form.addRow('At the end', self.end)
         layout.addLayout(form)
         self.canvas = MotionCanvas(frame, begin if begin is not None else home, home, keys)
         self.canvas.back = bool(back)
+        self.canvas.straight = line == 'straight'
+        self.shape.currentIndexChanged.connect(
+            lambda *_: (setattr(self.canvas, 'straight', self.shape.currentData() == 'straight'), self.canvas.update()))
         self.end.currentIndexChanged.connect(lambda i: (setattr(self.canvas, 'back', i == 1), self.canvas.update()))
         self.canvas.hand = hand
         self.canvas.style = self.how.currentText()

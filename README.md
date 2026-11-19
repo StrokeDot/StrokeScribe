@@ -6,6 +6,12 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## A Hand motion overrules a way back; shape and speed for Hand motions (v1.0.1-experimental.46)
+
+- A Hand motion (or a sticker's hand) can now start during a drawing's way back. The way back is dropped: the hand waits where the drawing finished, and the Hand motion or sticker takes it from there, so there's no jump. You can drag them right up to the drawing before, with no gap. The element keeps its length, so nothing else moves. Drawings and ways in still come first.
+- Adding a Hand motion while the playhead is in a drawing: it starts when the drawing ends (not after the way back).
+- The Hand motion window's **How it moves** now has two boxes, like the drawing's hand. Shape: *Curve through the points* (as before) or *Straight from point to point*. Speed: Smooth, Steady, Quick start, Slow start or Overshoot. Any shape goes with any speed.
+
 ## The hand draws a circle to the end (v1.0.1-experimental.45)
 
 - With **Hand: everything**, a sticker without an arrowhead (circle, hand-drawn circle, line, wavy line) used only 76% of its drawing time for its line, keeping the rest for an arrowhead that isn't there. The hand stopped before the end of the circle and stood still. Now the line takes the whole time. Arrows are unchanged: line first, then the two strokes of the head.

@@ -64,7 +64,10 @@ class OneHand(unittest.TestCase):
         spans = self.spans()
         for (a0, a1), (b0, b1) in zip(spans, spans[1:]):
             self.assertLessEqual(a1, b0 + 1e-4, spans)
-        self.assertGreaterEqual(c['start'], busy[0][1])       # after the way back
+        # exp.46 (the user: a Hand motion overrules what is under it): it stays where it was put;
+        # element 1's way back is dropped from that moment
+        self.assertAlmostEqual(c['start'], round(busy[0][1] - .5, 2), places=2)
+        self.assertAlmostEqual(w.scenes[0].get('_motion_cut_at'), c['start'], places=2)
         before = (c['start'], st['start'])
         w.refresh(); APP.processEvents()
         self.assertEqual((c['start'], st['start']), before)   # stable

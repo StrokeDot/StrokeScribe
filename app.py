@@ -1494,7 +1494,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # (not pushed far away by the order of the hand's ways)
             try:
                 import stickers
-                busy=sorted(self.hand_busy_spans()+[(float(c['start']),float(c['start'])+float(c['duration']))
+                marks=[m for m in self.hand_marks() if len(m)>4]          # exp.46: a way back does not block it
+                solid=([(float(m[0]),float(m[0])+float(m[1])+float(m[2])) for m in marks] if marks
+                       else list(self.hand_busy_spans()))
+                busy=sorted(solid+[(float(c['start']),float(c['start'])+float(c['duration']))
                                                       for c in self.cameras if c.get('kind')==camera_clips.MOVE]
                             +[tuple(stickers.busy(o)) for o in self.overlays
                               if o.get('kind')=='sticker' and stickers.hand_mode(o) and stickers.busy(o)])
@@ -2141,21 +2144,18 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self._settling=False
 
     def hand_order(self):
-        """exp.43: move Hand motions and hand-drawn stickers that overlap another way of the hand
-        to just after it (the elements' hands stay where they are). Returns what moved."""
+        """exp.43/46: the writing hand does one thing at a time. A Hand motion overrules a way back
+        (the user: the Hand motion should overrule what is under): it may start during one (the
+        hand then stays where the drawing finished and the motion takes it from there, see
+        motion_cuts); it only waits for drawings and ways in, and for the Hand motions before it.
+        Stickers drawn by the hand wait for everything. Returns what moved."""
         import math, stickers, camera_clips
-        placed=sorted(self.hand_busy_spans())
-        movable=[]
-        for c in getattr(self,'cameras',[]) or []:
-            if c.get('kind')==camera_clips.MOVE and not c.get('off'):
-                movable.append(('motion',c,float(c['start']),float(c['start'])+float(c['duration'])))
-        for o in self.overlays:
-            if o.get('kind')=='sticker' and not o.get('off') and stickers.hand_mode(o):
-                span=stickers.busy(o)
-                if span: movable.append(('sticker',o,float(span[0]),float(span[1])))
-        movable.sort(key=lambda m: (m[2],m[3]))
+        marks=[m for m in self.hand_marks() if len(m)>4]
+        solid=([(float(m[0]),float(m[0])+float(m[1])+float(m[2])) for m in marks] if marks
+               else list(self.hand_busy_spans()))
         moved=[]
-        for kind,obj,s0,e0 in movable:
+
+        def place(kind,obj,s0,e0,placed):
             s,e=s0,e0
             for _ in range(len(placed)+2):
                 clash=next(((a,b) for a,b in sorted(placed) if s<b-1e-4 and e>a+1e-4),None)
@@ -2163,10 +2163,22 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 shift=math.ceil((clash[1]+.005-s)*100)/100.            # whole hundredths, never short
                 s+=shift; e+=shift
             if s>s0+1e-6:
-                if kind=='motion': obj['start']=round(float(obj['start'])+(s-s0),2)
-                else: obj['start']=round(float(obj['start'])+(s-s0),2)
+                obj['start']=round(float(obj['start'])+(s-s0),2)
                 moved.append((kind,obj,s))
             placed.append((s,e))
+        placed=list(solid)
+        motions=sorted((c for c in getattr(self,'cameras',[]) or [] if c.get('kind')==camera_clips.MOVE and not c.get('off')),
+                       key=lambda c: float(c['start']))
+        for c in motions:
+            place('motion',c,float(c['start']),float(c['start'])+float(c['duration']),placed)
+        # exp.46 (the user: I could not join it to the one before): a sticker's hand overrules a
+        # way back too; it waits for drawings, ways in, Hand motions and the stickers before it
+        items=[o for o in self.overlays if o.get('kind')=='sticker' and not o.get('off') and stickers.hand_mode(o)
+               and stickers.busy(o)]
+        for o in sorted(items,key=lambda o: stickers.busy(o)[0]):
+            span=stickers.busy(o)
+            place('sticker',o,float(span[0]),float(span[1]),placed)
+        self.motion_cuts()
         if moved:
             kind,obj,s=moved[0]
             what='A Hand motion' if kind=='motion' else f'"{obj.get("name","Sticker")}"'
@@ -2175,6 +2187,36 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if hasattr(self,'sync_camera_timeline'):
                 QTimer.singleShot(0,self.sync_camera_timeline)
         return moved
+
+    def motion_cuts(self):
+        """exp.46: an element whose way back a Hand motion (or a sticker's hand) starts during: the hand stays where the
+        drawing finished and the motion takes it from there (_motion_cut: element seconds,
+        _motion_cut_at: whole-video seconds, on the element; the element keeps its length)."""
+        import camera_clips
+        import stickers
+        starts=sorted([float(c['start']) for c in getattr(self,'cameras',[]) or []
+                       if c.get('kind')==camera_clips.MOVE and not c.get('off')]
+                      +[float(stickers.busy(o)[0]) for o in self.overlays            # a sticker's hand too
+                        if o.get('kind')=='sticker' and not o.get('off') and stickers.hand_mode(o) and stickers.busy(o)])
+        found={}
+        for m in self.hand_marks():
+            if len(m)<5: continue
+            start,lead,draw,tail,k=m[:5]
+            back=float(start)+float(lead)+float(draw)
+            hit=next((t for t in starts if back-1e-3<=t<back+float(tail)-1e-3),None)
+            if hit is not None and float(tail)>0:
+                found[k]=(round(hit-float(start),4),round(hit,4))
+        changed=False
+        for k,s in enumerate(self.scenes):
+            want=found.get(k)
+            have=(s.get('_motion_cut'),s.get('_motion_cut_at')) if s.get('_motion_cut') is not None else None
+            if want!=have:
+                changed=True
+                if want: s['_motion_cut'],s['_motion_cut_at']=want
+                else: s.pop('_motion_cut',None); s.pop('_motion_cut_at',None)
+        if changed:
+            self._scene_cache={}; self._memo={}
+        return changed
 
     def hand_spot_at(self,W,H,t):
         """exp.43: where the hand is (its pen tip on a W × H screen) while it waits at t, with the
@@ -2198,7 +2240,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         for o in self.overlays:
             if o.get('kind')!='sticker': continue
             span=stickers.busy(o) if stickers.hand_mode(o) and o.get('hand_way')!='Comes in and leaves' else None
-            found=self.hand_spot_at(W,H,span[0]-1e-3) if span else None
+            found=self.hand_spot_at(W,H,span[0]+1e-4) if span else None      # exp.46: at its start
             if found is None:
                 o.pop('_home_screen',None); o.pop('_home_outside',None); continue
             (x,y),below=found
@@ -4399,7 +4441,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         state=self.scenes[k]['state']
         rest=self.hand_rest_settings()             # exp.143: the same for every element
         key=(id(state),width,height,over,tuple(sorted(rest.items())),tuple(self.scenes[k].get('glide') or ()),repr(self.scenes[k].get('glide_path')),
-             self.scenes[k].get('hand_flow'),repr(self.scenes[k].get('hand_end')),repr(self.scenes[k].get('hand_start')),self.scenes[k].get('hand_begin'))      # exp.38/40/44
+             self.scenes[k].get('hand_flow'),repr(self.scenes[k].get('hand_end')),repr(self.scenes[k].get('hand_start')),self.scenes[k].get('hand_begin'),self.scenes[k].get('_motion_cut'))      # exp.38/40/44/46
         cached=self._scene_cache.get(id(state))
         if cached is None or cached[0]!=key:
             drawing,options,_=job_from_state(state,self.hand,overrides=rest)
@@ -5212,7 +5254,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         try:
             sig=(width,height,tuple((id(m[0]),id(m[1]),id(m[3]),m[2]) for m in made),
                  repr(self.hand_video(None)),repr([dict(c) for c in self.live_clips()]),
-                 tuple((s.get('art_off'),s.get('hand_off'),s.get('hand_link'),s.get('hand_flow'),repr(s.get('hand_end')),repr(s.get('hand_start')),s.get('hand_begin'),
+                 tuple((s.get('art_off'),s.get('hand_off'),s.get('hand_link'),s.get('hand_flow'),repr(s.get('hand_end')),repr(s.get('hand_start')),s.get('hand_begin'),s.get('_motion_cut'),
                         s.get('transition'),s.get('transition_seconds'),s.get('uid')) for s in self.scenes),
                  repr(self.eraser_tool()),repr(self.board_frames()),tuple(sorted(self.hidden_elements())),
                  tuple((it.k,it.start,it.length) for it in self.timeline_layout().items),self.timeline_layout().total,
@@ -5248,7 +5290,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         try:
             import scenes as _scenes
             items=self.timeline_layout().items
-            if any(s.get('hand_link') or (s.get('hand_flow')=='free' and s.get('hand_end')) for s in self.scenes):
+            if any(s.get('hand_link') or (s.get('hand_flow')=='free' and s.get('hand_end')) or s.get('_motion_cut') is not None
+                   for s in self.scenes):
                 # exp.210: a hand linked from the element before comes from where that one finished
                 _scenes.link_hands(items,elements,self.board_frames(),self.hidden_elements())
             _scenes.hand_handover(items,elements,self.hidden_elements())   # exp.212: no jump in size
@@ -6634,7 +6677,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 repr(self.scenes[k].get('glide')) if 0<=k<len(self.scenes) else None,
                 repr(self.scenes[k].get('glide_path')) if 0<=k<len(self.scenes) else None,   # exp.217
                 tuple(bool(s.get('hand_link')) for s in self.scenes),          # exp.210: linked hands
-                tuple((s.get('hand_flow'),repr(s.get('hand_end')),repr(s.get('hand_start')),s.get('hand_begin')) for s in self.scenes),   # exp.218/38/40/44
+                tuple((s.get('hand_flow'),repr(s.get('hand_end')),repr(s.get('hand_start')),s.get('hand_begin'),s.get('_motion_cut')) for s in self.scenes),   # exp.218/38/40/44
                 (bool(self.scenes[k].get('art_off')),bool(self.scenes[k].get('hand_off'))) if 0<=k<len(self.scenes) else None)
 
     def hand_rest_settings(self):
@@ -7124,7 +7167,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if not before: return 'corner',None
         j=max(before)[1]
         scene=self.scenes[j]
-        if scene.get('hand_link'): return 'link',j
+        if scene.get('hand_link') or scene.get('_motion_cut') is not None: return 'link',j   # exp.46: cut way back
         if scene.get('hand_flow')=='free' and scene.get('hand_end'): return 'end',j
         return 'corner',j
 
@@ -7552,13 +7595,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                                 (options['hand'],(float(ax),float(ay)),rect.width()),start,length,
                                 clip.get('how') or 'Smooth',('Smooth','Steady','Quick start','Slow start','Overshoot'),
                                 [to_frame(q) for q in camera_clips.MOVE_PATH],begin=begin,
-                                back=clip.get('back',True) is not False)
+                                back=clip.get('back',True) is not False,line=clip.get('line'))
         if dialog.exec()!=QDialog.DialogCode.Accepted: return
         if dialog.deleted:
             return self.camera_clip_action(cid,'delete')
         self.record_structure('hand motion')
         clip['start']=round(dialog.start.value(),2); clip['duration']=round(dialog.length.value(),2)
         clip['how']=dialog.how.currentText()
+        if dialog.shape.currentData(): clip['line']=dialog.shape.currentData()      # exp.46
+        else: clip.pop('line',None)
         clip['path']=[to_page(q) for q in dialog.canvas.keys]
         clip['back']=dialog.end.currentIndex()==1          # exp.231
         self.project_changes.mark_changed()
@@ -7650,7 +7695,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # a hand finished counts only once it has finished (it took the spot of a hand to come)
             if finished and self.scenes[source_k].get('hand_flow') and not options.get('hand_link_out'):
                 options=self._flow_rest(options,source_k,width,height,seconds)      # exp.225
-            if finished and (options.get('hand_link_out') or options.get('_free_end')) and source is not None:
+            if finished and (options.get('hand_link_out') or options.get('_free_end')
+                             or options.get('_hand_cut') is not None) and source is not None:      # exp.46
                 from frame_render import last_tip
                 tip=(tuple(options['_free_end']) if options.get('_free_end') is not None    # exp.38: where it was put
                      else last_tip(source,options))                       # exp.210: waits where it finished
@@ -8594,7 +8640,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                              hidden=bool(self.track_flag(s,'hidden')),muted=bool(self.track_flag(s,'muted')),
                              art_off=bool(s.get('art_off')),hand_off=bool(s.get('hand_off')),
                              hand_link=bool(s.get('hand_link')),glide_path=s.get('glide_path'),hand_flow=s.get('hand_flow'),
-                             hand_end=s.get('hand_end'),hand_start=s.get('hand_start'),hand_begin=s.get('hand_begin'),   # exp.38/40/44
+                             hand_end=s.get('hand_end'),hand_start=s.get('hand_start'),hand_begin=s.get('hand_begin'),
+                             _motion_cut=s.get('_motion_cut'),_motion_cut_at=s.get('_motion_cut_at'),   # exp.38/40/44/46
                              glide=s.get('glide'))
                         for s in self.scenes]
             self.scenes[self.scene_index]['state']=None       # still edited here
