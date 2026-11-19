@@ -34,10 +34,14 @@ class Drawing(unittest.TestCase):
         import stickers
         for shape in stickers.SHAPES:
             item = stickers.new(shape); item.update(start=1., duration=4., draw_seconds=1.)
-            before, early, done = (ink(self.frame([item], t)) for t in (.9, 1.4, 2.5))
+            frames = [self.frame([item], t) for t in (.9, 1.4, 2.5)]
+            before, early, done = (ink(f) for f in frames)
             self.assertEqual(before, 0, shape)
             self.assertGreater(early, 0, shape)
-            self.assertGreater(done, early, shape)
+            if shape == 'Clock':                  # exp.52: its disc is whole early; then rings, numerals, hands
+                self.assertNotEqual(frames[1], frames[2], shape)
+            else:
+                self.assertGreater(done, early, shape)
 
     def test_an_arrow_gets_its_head_at_the_end(self):
         import stickers

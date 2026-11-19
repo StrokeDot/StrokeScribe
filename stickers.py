@@ -19,7 +19,11 @@ from __future__ import annotations
 import math
 import uuid
 
-SHAPES = ('Arrow', 'Curved arrow', 'Circle', 'Hand-drawn circle', 'Line', 'Wavy line')
+import sticker_art
+
+SHAPES = ('Arrow', 'Curved arrow', 'Circle', 'Hand-drawn circle', 'Line', 'Wavy line') + sticker_art.RICH
+# exp.52 (the user): an ending that undoes it the way it appeared, or none
+ENDINGS = ('Reverse of how it appeared', 'None')
 # exp.29 (the user): how it appears: by itself, or drawn by the hand, only its main shape
 # (the outline: an arrow's line, its head pops in) or every stroke (the head too)
 DRAWING = ('Animated', 'Hand: outline', 'Hand: everything')
@@ -29,19 +33,24 @@ HAND_WAYS = ('Rests in its corner', 'Comes in and leaves')
 GLIDE = .5            # seconds the hand takes to come to the line and to go back
 HEAD_POP = .2         # Hand: outline: the arrowhead pops in after the hand's line
 ASPECT = {'Arrow': .32, 'Curved arrow': .55, 'Circle': .62, 'Hand-drawn circle': .62, 'Line': .08,
-          'Wavy line': .16}
+          'Wavy line': .16, **sticker_art.ASPECT}
 HEAD_SHARE = .18          # arrows: the last part of the drawing time draws the head
 
 
 def new(shape='Arrow', start=0., duration=3., color='#E0463C'):
     shape = shape if shape in SHAPES else 'Arrow'
+    rich = shape in sticker_art.RICH
+    if rich:                                  # exp.52: its own colour, line and ending
+        color = sticker_art.COLOR[shape]
     return dict(id=uuid.uuid4().hex[:10], kind='sticker', name=shape, shape=shape, color=color,
-                thickness=.012, x=.5, y=.5, size=.3, aspect=ASPECT[shape], rotation=0., flip=False,
-                draw_seconds=.8, start=float(start), duration=float(duration),
+                thickness=sticker_art.THICKNESS[shape] if rich else .012, x=.5, y=.5,
+                size=.22 if shape in ('Magnifier', 'Clock') else .3, aspect=ASPECT[shape], rotation=0., flip=False,
+                draw_seconds=1.2 if rich else .8, start=float(start), duration=float(duration),
+                ending=ENDINGS[0] if rich else 'None',
                 drawing='Animated', hand_way='Rests in its corner',
                 hand_in=GLIDE, hand_out=GLIDE, hand_in_style='Smooth', hand_out_style='Smooth',
                 hand_in_bend='Auto', hand_out_bend='Auto', hand_in_path=None, hand_out_path=None,
-                effect_in='None', in_seconds=.4, effect_out='Fade', out_seconds=.4, track=0)
+                effect_in='None', in_seconds=.4, effect_out='None' if rich else 'Fade', out_seconds=.4, track=0)
 
 
 def _ease(p):
@@ -67,6 +76,8 @@ def _bezier(p0, p1, p2, p3, n=64):
 
 def stroke(shape):
     """(points of the main line in the unit box, arrowhead at its end?)."""
+    if shape in sticker_art.RICH:              # exp.52: the line a hand follows (drawn by sticker_art)
+        return sticker_art.main_line(shape), False
     if shape == 'Arrow':
         return [(.04, .5), (.96, .5)], True
     if shape == 'Curved arrow':
@@ -198,11 +209,40 @@ def pen_point(item, w, h, frame_h, t):
     return part[-1]
 
 
+def ending(item, t):
+    """exp.52: with the ending 'Reverse of how it appeared', how much is still built at t near the
+    end of its clip (1..0, the build played backwards over its draw time), else None."""
+    if t is None or item.get('ending', 'None') != ENDINGS[0]:
+        return None
+    seconds = max(.05, float(item.get('draw_seconds', .8)))
+    end = float(item.get('start', 0)) + float(item.get('duration', 3))
+    if t < end - seconds:
+        return None
+    return _ease((end - t) / seconds)
+
+
 def draw(painter, item, w, h, frame_h, amount=1., t=None):
     """Draw the sticker centred on the painter's origin, in a w × h box: `amount` (0..1) of it,
     or, with t, as much as is drawn at t (exp.29: by the hand, stroke by stroke)."""
     from PySide6.QtCore import QPointF, Qt
     from PySide6.QtGui import QColor, QPainterPath, QPen
+    back = ending(item, t)                     # exp.52: undone the way it appeared
+    if item.get('shape') in sticker_art.RICH:
+        if t is not None:
+            a = phases(item, t)[0] if hand_mode(item) else _ease(
+                (t - float(item.get('start', 0))) / max(.05, float(item.get('draw_seconds', .8))))
+            if back is not None:
+                a = min(a, back)
+        else:
+            a = amount
+        sticker_art.draw(painter, item, w, h, frame_h, a, t)
+        return
+    if back is not None:                       # the line shapes: the same drawing, backwards
+        built = phases(item, t)
+        amount = min(back, 1. if built[0] >= 1 else built[0])
+        if amount <= 1e-3:
+            return
+        t = None
     pts, heads, width = _geometry(item, w, h, frame_h)
     if t is not None:
         line, head = phases(item, t)
@@ -423,8 +463,25 @@ def busy_spans(items):
     return out
 
 
-def preview(shape, size=64, color='#E0463C', background=None):
-    """A small finished picture of a shape (the Stickers panel's library)."""
+LOOP = (1.2, .9, 1.2, .5)        # exp.52: the panel's tiles: build, hold, ending, pause (seconds)
+
+
+def loop_amount(seconds):
+    """How much a panel tile is built `seconds` into its loop (it builds, holds, undoes, rests)."""
+    build, hold, end, rest = LOOP
+    t = seconds % sum(LOOP)
+    if t < build:
+        return _ease(t / build)
+    if t < build + hold:
+        return 1.
+    if t < build + hold + end:
+        return _ease(1 - (t - build - hold) / end)
+    return 0.
+
+
+def preview(shape, size=64, color='#E0463C', background=None, amount=1., t=None):
+    """A small picture of a shape (the Stickers panel's library): finished, or `amount` built
+    (exp.52: the tiles play their animation; t turns a clock's hands)."""
     from PySide6.QtCore import QPointF, Qt
     from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
     image = QImage(size * 2, size * 2, QImage.Format.Format_ARGB32_Premultiplied)
@@ -432,8 +489,18 @@ def preview(shape, size=64, color='#E0463C', background=None):
     p = QPainter(image); p.setRenderHint(QPainter.RenderHint.Antialiasing)
     p.translate(QPointF(size, size))
     w = size * 1.6
-    item = dict(shape=shape, color=color, thickness=.045)
-    draw(p, item, w, w * min(.8, max(.22, ASPECT.get(shape, .4))), size * 2)
+    tone = sticker_art.COLOR.get(shape, color)
+    if QColor(tone).lightness() < 70 and not background:
+        tone = '#D8D8D8'                       # exp.52: a dark sticker shows on the dark panel
+    item = dict(shape=shape, color=tone,
+                thickness=.045 if shape not in sticker_art.RICH else sticker_art.THICKNESS[shape] * 3)
+    if t is not None:
+        item.update(start=0.)
+    hh = w * min(.8, max(.22, ASPECT.get(shape, .4))) if shape not in sticker_art.RICH else w * min(1., ASPECT.get(shape, .4))
+    if shape in sticker_art.RICH:
+        sticker_art.draw(p, item, w, hh, size * 2, amount, t)
+    else:
+        draw(p, item, w, hh, size * 2, amount)
     p.end()
     pix = QPixmap.fromImage(image); pix.setDevicePixelRatio(2.)
     return pix
