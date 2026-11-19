@@ -1373,14 +1373,19 @@ def hand_motion_at(options, seconds, home, place, size):
             break
         pts = [(px + float(x) * pw, py + float(y) * ph) for x, y in m['path']]
         back = m.get('back', True) is not False
+        origin = pos if pos is not None else home
         if t < start + length:
-            line = [pos if pos is not None else home] + pts + ([home] if back else [])
+            # exp.49 (the user: "goes back to its corner" made no sense): back is back to where it
+            # started (its green dot), not to the corner
+            line = [origin] + pts + ([origin] if back else [])
             # exp.46 (the user: shape and speed for a Hand motion too): a curve through the points,
             # or straight from point to point
             way = line if m.get('line') == 'straight' else spline(line)
             return _along_polyline(way, _glide_ease((t - start) / length, m.get('how') or 'Smooth'))
-        pos = None if back or not pts else pts[-1]
-        until = None if pos is None else m.get('until')
+        if not back and pts:                     # it stays at its last point
+            pos = pts[-1]
+            until = m.get('until')
+        # back: where it started (still parked there, or in its corner, as before it)
     if pos is not None and until is not None and t >= float(until):
         return None
     return pos
