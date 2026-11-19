@@ -493,7 +493,7 @@ def preview(shape, size=64, color='#E0463C', background=None, amount=1., t=None)
     if QColor(tone).lightness() < 70 and not background:
         tone = '#D8D8D8'                       # exp.52: a dark sticker shows on the dark panel
     item = dict(shape=shape, color=tone,
-                thickness=.045 if shape not in sticker_art.RICH else sticker_art.THICKNESS[shape] * 3)
+                thickness=.045 if shape not in sticker_art.RICH else sticker_art.THICKNESS[shape])   # exp.54
     if t is not None:
         item.update(start=0.)
     hh = w * min(.8, max(.22, ASPECT.get(shape, .4))) if shape not in sticker_art.RICH else w * min(1., ASPECT.get(shape, .4))

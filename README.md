@@ -6,6 +6,12 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Camera positions as elements; Stickers panel fixed (v1.0.1-experimental.54)
+
+- **+ Add element → Camera position…**: a step in the element list (shown as "Camera") with no picture and no hand. The camera travels to it like it does to a new element's page and stays for its length (stretch it on the timeline like any element). Set camera opens right away, so you can put the camera anywhere on the board, whether anything is there or not.
+- **Match camera of** (in Set camera) now lists the stickers too, so a camera can frame a sticker.
+- Stickers panel: the new stickers' tiles are drawn at their normal weight (the hook arrow and double arrow were blobs). Tiles show their finished sticker; the tile under the mouse plays its animation at 60 fps (no empty tiles).
+
 ## Better-looking stickers (v1.0.1-experimental.53)
 
 - **Hook arrow** redrawn: one solid crescent, needle-sharp at the tail and full-bodied near the head, with a thick round-ended chevron for its head.

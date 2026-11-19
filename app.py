@@ -4037,6 +4037,55 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             except Exception: pass
         self.fill_scenes(); self.make_missing_thumbs()
 
+    CAMERA_SVG=('<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">'
+                '<path d="M800 450 L801 450" stroke="#000" stroke-width="1" fill="none"/></svg>')
+
+    def add_camera_step(self):
+        """exp.54 (the user: a camera position as the next element, anywhere, with or without
+        anything there): a step in the element list with no picture and no hand (an invisible
+        placeholder drawing, its picture off): the camera goes to its place like to a new
+        element's page and stays there for its length. Set camera opens to put it anywhere."""
+        import tempfile, os
+        from engine import import_svg
+        if not self.drawing or self._artwork_busy(): return False
+        self.store_scene(thumbnail=False)
+        path=os.path.join(tempfile.gettempdir(),'strokescribe_camera_step.svg')
+        with open(path,'w',encoding='utf-8') as f: f.write(self.CAMERA_SVG)
+        self.record_structure('camera position')
+        self.add_scene()                            # in a new place: the camera moves there
+        self.set_drawing(import_svg(path))
+        self.fresh_element_settings() if hasattr(self,'fresh_element_settings') else None
+        self.duration.setValue(2.5)                 # how long the camera stays (stretch it on the timeline)
+        k=self.scene_index
+        self.scenes[k].update(name='Camera',art_off=True,hand_off=True,camera_step=True)
+        self.store_scene(thumbnail=False)
+        self.__dict__.pop('_memo',None); self._scene_cache={}
+        self.refresh(); QTimer.singleShot(0,self.refresh_thumbs)
+        self.status.setText(f'Element {k+1}: a camera position (no picture). Put the camera where you want it.')
+        QTimer.singleShot(0,lambda: self.set_camera(k))
+        return True
+
+    def sticker_views(self):
+        """exp.54 (the user: stickers should count, to match a camera to them): [(name, (cx, cy, w))]
+        a camera frame round each sticker on the board (board units, like the elements' views)."""
+        import overlays
+        frames=self.board_frames(); aspect=self.board_aspect()
+        out=[]
+        for o in self.overlays:
+            if o.get('kind')!='sticker' or o.get('off'): continue
+            t=float(o.get('start',0))+.01
+            shown=next((x for x in self.titles_split(t)[0] if x.get('id')==o.get('id')),None)
+            k=min(max(0,int((shown or o).get('_page',0) or 0)),len(frames)-1) if frames else 0
+            if not frames: continue
+            cx,cy,pw=frames[k]; ph=pw*aspect
+            W,H=1000.,1000.*aspect
+            bx,by,bw,bh=overlays.box(o,W,H)
+            sx,sy=(bx+bw/2)/W,(by+bh/2)/H
+            width=max(bw/W*1.8,bh/H/aspect*1.8,.15)*pw
+            out.append((f'Sticker · {o.get("name") or o.get("shape","sticker")} ({float(o.get("start",0)):.1f} s)',
+                        (cx-pw/2+sx*pw,cy-ph/2+sy*ph,width)))
+        return out
+
     def set_camera(self,k=None):
         """exp.200 (the user, like VideoScribe): where the camera looks for element k: its
         own view on the board (closer, further, anywhere), kept with the element."""
@@ -4056,6 +4105,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         W=1100; H=round(W*aspect)
         from PySide6.QtGui import QPainter, QColor
         others=[(f'{j+1} · {self.scene_label(j)}',views[j]) for j in range(len(self.scenes)) if j!=k]
+        try:
+            others+=self.sticker_views()                 # exp.54: stickers too
+        except Exception as exc:
+            import applog; applog.error('Stickers for Match camera',exc)
         # exp.202: the element alone on its page, to move it apart from the camera
         image=world.view(around,W,H,upto=len(frames),skip={k})
         bg=QImage(image.size(),QImage.Format.Format_RGB32); bg.fill(QColor(236,234,228))
@@ -4116,6 +4169,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         menu.addAction('Text (handwriting)…',lambda: choose('text'))
         menu.addAction('From the Library…',lambda: choose('library'))
         menu.addAction('Create an image with AI…',lambda: choose('ai'))
+        if not first:                               # exp.54 (the user): a camera step, no picture
+            menu.addAction('Camera position…',lambda: self.add_camera_step())
         if not first:
             menu.addSeparator()
             menu.addAction('Copy of this element',lambda: choose('copy'))
@@ -6889,7 +6944,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         try:
             lay=self.timeline_layout(); hidden=self.hidden_elements()
             for it in lay.items:
-                if it.k in hidden: continue
+                if it.k in hidden or self.scenes[it.k].get('camera_step'): continue   # exp.54: no hand there
                 drawing,opts,_,_=self.preview_scene(it.k,960,540)
                 plan=travel_plan(drawing,opts)
                 if plan is not None:
