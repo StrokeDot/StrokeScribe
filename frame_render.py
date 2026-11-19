@@ -1765,7 +1765,7 @@ def paint_hand_spec(frame, spec, options, place=None):
         target = spec.get('screen_target') or (tip if tip is not None else home)
         free = options.get('_free_end') if phase == 'out' else None
         outside = not (0. <= home[0] <= W and 0. <= home[1] <= H)
-        start = options.get('_free_start') if phase == 'in' and outside else None
+        start = options.get('_free_start') if phase == 'in' and (outside or options.get('_free_begin')) else None
         if start is not None:
             # exp.40 (the user): a hand coming from outside the picture starts where it was put
             home = (float(start[0]) * W, float(start[1]) * H)

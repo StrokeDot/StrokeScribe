@@ -87,7 +87,7 @@ class InTheWindow(unittest.TestCase):
 
     def test_a_corner(self):
         snap, _ = self.start_of_next()
-        self.assertEqual(self.w.way_in_source(1, snap['times'][0]), ('corner', None))
+        self.assertEqual(self.w.way_in_source(1, snap['times'][0]), ('corner', 0))   # exp.44: element 1 came before
 
     def test_b_free_ending_before(self):
         w = self.w

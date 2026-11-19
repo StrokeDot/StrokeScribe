@@ -6,6 +6,13 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Starts and Ends: the same choices for every hand (v1.0.1-experimental.44)
+
+- The Hand window (for a drawing's hand and for a sticker's hand) has two new rows:
+  - **Starts**: *Where the hand is* (from its last spot, the usual) or *Free beginning* (Edit path: drag the green dot). The hand waits there before (the way back before it ends there), so it never jumps.
+  - **Ends** (it was "At the corner"): *Stop and wait*, *Through the corner* and *Near the corner* (drawings), or *Free ending* (Edit path: drag the red dot).
+- Stickers drawn by the hand now have a Free ending too. Their red dot can be dragged in Edit path and in Hand paths. The hand stays there, and the next hand, sticker or Hand motion starts from there, in the preview and in the export.
+
 ## One hand, one thing at a time (v1.0.1-experimental.43)
 
 - The writing hand is one hand. Hand motions and stickers drawn by the hand now wait until it's free, so they never overlap an element's hand (way in, drawing, way back) or each other. The elements stay where they are; anything overlapping moves to just after, and the status bar says what moved.

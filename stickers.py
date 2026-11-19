@@ -269,6 +269,9 @@ def hand_tip(item, t, W, H, home=None):
         if (split_style(style)[1] or 'Smooth') == 'Smooth':   # exp.35/37: one movement, any shape
             return _flowing(home, first, p, bend, keys, centre, _pen_speed(item, w, h, H, 'start') * lead, True, style)
         return glide_point(home, first, p, style, centre, bend, keys)
+    end = free_end(item, W, H)              # exp.44: Free ending: the way back ends where it was put
+    if end is not None:
+        home = end
     if t > start + seconds:
         style = item.get('hand_out_style') or 'Smooth'
         bend, keys = item.get('hand_out_bend') or 'Auto', item.get('hand_out_path') or None
@@ -306,6 +309,30 @@ def _flowing(a, b, p, bend, keys, centre, reach, arriving, style='Smooth'):
         return x ** v        # exp.36: faster than a cubic can reach (it slowed down at the line before)
     q = h(p) if arriving else 1 - h(1 - p)
     return glide_point(a, b, _inverse_ease(max(0., min(1., q)), style), style, centre, bend, keys)
+
+
+def free_end(item, W, H):
+    """exp.44: where a sticker's way back ends when it has a Free ending (its frame's points), or
+    None (it goes back to where the hand waits)."""
+    if item.get('hand_flow') != 'free' or not item.get('hand_end') or item.get('hand_way') == 'Comes in and leaves':
+        return None
+    return (float(item['hand_end'][0]) * W, float(item['hand_end'][1]) * H)
+
+
+def park_clips(items):
+    """exp.44: each sticker's Free ending as a short Hand motion that leaves the hand there (at
+    the end of its way back, while the sticker's own hand is shown): so the waiting hand, the
+    next hand and the next Hand motion start there, in the preview and in the export alike."""
+    out = []
+    for o in items or ():
+        if o.get('kind') != 'sticker' or o.get('off') or not hand_mode(o) or free_end(o, 1., 1.) is None:
+            continue
+        span = busy(o)
+        if not span:
+            continue
+        out.append(dict(id=f"park-{o.get('id')}", kind='Hand motion', start=round(float(span[1]) - .2, 4),
+                        duration=.2, how='Steady', path=[list(o['hand_end'])], back=False, sticker=o.get('id')))
+    return out
 
 
 def way_ends(item, W, H):
