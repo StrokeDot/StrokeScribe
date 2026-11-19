@@ -217,6 +217,8 @@ def apply_glide(options, scene):
     if scene and scene.get('hand_start') and options.get('hand_travel'):
         # exp.40 (the user): where a hand coming from outside the picture starts (shares of the screen)
         options['_free_start'] = (float(scene['hand_start'][0]), float(scene['hand_start'][1]))
+        if scene.get('hand_begin') == 'free':
+            options['_free_begin'] = True       # exp.44: Free beginning: its own start, inside the picture too
     return options
 
 
@@ -499,7 +501,8 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
                                        item.length)
         import camera_clips, eraser_clips, timeline_render
         uids = [s.get('uid') for s in scenes]
-        away = list(cameras or ()) + eraser_clips.hand_leaves(
+        import stickers as _stickers
+        away = list(cameras or ()) + _stickers.park_clips(titles) + eraser_clips.hand_leaves(    # exp.44
             titles, [dict(uid=u) for u in uids], [q['frame'] for q in prepared],
             lambda sec: timeline_render.page_of(lay, sec))          # exp.186: the hand makes way
         hand_sig = camera_clips.hand_signature(away, export_hand_starts(scenes, lay, settings))   # exp.147/236
@@ -560,9 +563,10 @@ def export_timeline(scenes, folder, settings, hand=None, progress=lambda i, n: N
                     if spot is not None and place is not None:
                         rest = dict(rest, _wait_tip=((spot[0] - place[0]) / max(1., place[2]),
                                                      (spot[1] - place[1]) / max(1., place[3])), _spot_place=place)
-                if any(c.get('kind') == camera_clips.MOVE for c in cameras or ()):
+                parks = __import__('stickers').park_clips(titles)                          # exp.44
+                if parks or any(c.get('kind') == camera_clips.MOVE for c in cameras or ()):
                     rest = dict(rest, _hand_moves=camera_clips.hand_moves(
-                        cameras, export_hand_starts(scenes, lay, settings)))                  # exp.224/236
+                        list(cameras or ()) + parks, export_hand_starts(scenes, lay, settings)))   # exp.224/236
                 rest = dict(rest, _hand_view=timeline_render.hand_camera_zoom(               # exp.223
                     world, lay, state, elements, [c for c in cameras or () if c.get('hand_fixed')], i / fps))
                 for weight, start in camera_clips.fixed_hand_weight(cameras or (), i / fps):     # exp.222
@@ -892,7 +896,7 @@ def scenes_from_project(data):
                         hidden=bool(item.get('hidden')), muted=bool(item.get('muted')),
                         art_off=bool(item.get('art_off')), hand_off=bool(item.get('hand_off')),
                         hand_link=bool(item.get('hand_link')), hand_flow=item.get('hand_flow'),
-                        hand_end=item.get('hand_end'), hand_start=item.get('hand_start'),   # exp.38/40
+                        hand_end=item.get('hand_end'), hand_start=item.get('hand_start'), hand_begin=item.get('hand_begin'),   # exp.38/40/44
                         thumb_png=item.get('thumb_png'),
                         glide=tuple(item['glide']) if item.get('glide') else None,
                         glide_path=item.get('glide_path') or None))
@@ -910,7 +914,7 @@ def scenes_to_project(main_state, scene_list, index):
                                hidden=bool(s.get('hidden')), muted=bool(s.get('muted')),
                                art_off=bool(s.get('art_off')), hand_off=bool(s.get('hand_off')),
                                hand_link=bool(s.get('hand_link')), hand_flow=s.get('hand_flow'),
-                               hand_end=s.get('hand_end'), hand_start=s.get('hand_start'),   # exp.38/40
+                               hand_end=s.get('hand_end'), hand_start=s.get('hand_start'), hand_begin=s.get('hand_begin'),   # exp.38/40/44
                                glide=list(s['glide']) if s.get('glide') else None,
                                glide_path=s.get('glide_path') or None)
                           for k, s in enumerate(scene_list)]
