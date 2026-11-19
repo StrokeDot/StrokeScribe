@@ -3749,7 +3749,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if thumbnail:
             try:
                 from scenes import thumbnail as make_thumb
-                scene['thumb']=make_thumb(self.drawing,self.options())
+                scene['thumb']=(self.camera_thumb() if scene.get('camera_step')            # exp.55
+                                else make_thumb(self.drawing,self.options()))
             except Exception:
                 scene['thumb']=None
 
@@ -3768,8 +3769,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             k=todo[0]
             try:
                 from scenes import job_from_state, thumbnail
-                drawing,options,_=job_from_state(self.scenes[k]['state'],self.hand)
-                self.scenes[k]['thumb']=thumbnail(drawing,options)
+                if self.scenes[k].get('camera_step'):
+                    self.scenes[k]['thumb']=self.camera_thumb()                  # exp.55
+                else:
+                    drawing,options,_=job_from_state(self.scenes[k]['state'],self.hand)
+                    self.scenes[k]['thumb']=thumbnail(drawing,options)
             except Exception as exc:
                 import applog; applog.error(f'Picture of element {k+1}',exc)
                 self.scenes[k]['thumb']=QImage()          # tried: not again
@@ -3794,7 +3798,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # "+": drawn over pictures of earlier scenes (same page, or a frame on top of them).
             length,move=self.element_times(k)
             times=f'⏱ {length:.1f}s'+(f'  ➜ {move:.1f}s' if move else '')
-            item=QListWidgetItem(f'{k+1} {"+" if self.drawn_over(k) else "·"} {self.scene_label(k)}'[:20]+'\n'+times)
+            over=self.drawn_over(k) and not scene.get('camera_step')       # exp.55: a camera draws nothing
+            item=QListWidgetItem(f'{k+1} {"+" if over else "·"} {self.scene_label(k)}'[:20]+'\n'+times)
             thumb=scene.get('thumb')
             if thumb is not None and not thumb.isNull():
                 from PySide6.QtGui import QImage, QPainter
@@ -4040,6 +4045,23 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
     CAMERA_SVG=('<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">'
                 '<path d="M800 450 L801 450" stroke="#000" stroke-width="1" fill="none"/></svg>')
 
+    @staticmethod
+    def camera_thumb():
+        """exp.55 (the user): a camera step shows a camera in the element list (no picture)."""
+        from PySide6.QtGui import QImage, QPainter, QColor, QPen, QPolygonF
+        from PySide6.QtCore import QRectF, QPointF, Qt
+        img=QImage(160,90,QImage.Format.Format_ARGB32_Premultiplied); img.fill(QColor('#2a2d36'))
+        p=QPainter(img); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        ink=QColor('#c9c3ff')
+        p.setPen(QPen(ink,3)); p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(QRectF(46,30,60,38),7,7)                      # the body
+        p.drawEllipse(QPointF(76,49),11,11)                              # the lens
+        p.setBrush(ink); p.setPen(Qt.PenStyle.NoPen)
+        p.drawRoundedRect(QRectF(58,23,20,9),3,3)                        # the top
+        p.drawPolygon(QPolygonF([QPointF(108,42),QPointF(122,34),QPointF(122,64),QPointF(108,56)]))
+        p.end()
+        return img
+
     def add_camera_step(self):
         """exp.54 (the user: a camera position as the next element, anywhere, with or without
         anything there): a step in the element list with no picture and no hand (an invisible
@@ -4059,6 +4081,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         k=self.scene_index
         self.scenes[k].update(name='Camera',art_off=True,hand_off=True,camera_step=True)
         self.store_scene(thumbnail=False)
+        self.scenes[k]['thumb']=self.camera_thumb()                      # exp.55
+        import board
+        views=board.views(self.scenes,self.board_frames())
+        if k>0:                                                          # it starts where the camera was
+            b=dict(self.scenes[k].get('board') or {}); b['view']=list(views[k-1]); self.scenes[k]['board']=b
         self.__dict__.pop('_memo',None); self._scene_cache={}
         self.refresh(); QTimer.singleShot(0,self.refresh_thumbs)
         self.status.setText(f'Element {k+1}: a camera position (no picture). Put the camera where you want it.')
@@ -4100,8 +4127,25 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         views=board.views(self.scenes,frames)
         world=self.preview_world(960,round(960*aspect))
         page=frames[k]
-        # the element's page in the middle, with room around it to go further
-        around=(page[0],page[1],max(page[2],views[k][2])*2.2)
+        step=bool(self.scenes[k].get('camera_step'))
+        if step:
+            # exp.55 (the user): a camera step: the whole board with every element, the camera
+            # starting where it was (the element before), to move it anywhere
+            default=tuple(views[k-1]) if k>0 else tuple(views[k])
+            own=(self.scenes[k].get('board') or {}).get('view')
+            idx=[j for j in range(len(frames)) if j!=k and not self.scenes[j].get('camera_step')] or [k]
+            xs=[frames[j][0]-frames[j][2]/2 for j in idx]+[frames[j][0]+frames[j][2]/2 for j in idx]
+            ys=[frames[j][1]-frames[j][2]*aspect/2 for j in idx]+[frames[j][1]+frames[j][2]*aspect/2 for j in idx]
+            if own:
+                xs+=[own[0]-own[2]/2,own[0]+own[2]/2]; ys+=[own[1]-own[2]*aspect/2,own[1]+own[2]*aspect/2]
+            cx,cy=(min(xs)+max(xs))/2,(min(ys)+max(ys))/2
+            width=max(max(xs)-min(xs),(max(ys)-min(ys))/aspect)*1.35
+            around=(cx,cy,max(width,default[2]*2.2))
+            page=default
+            views=list(views); views[k]=tuple(own) if own else default
+        else:
+            # the element's page in the middle, with room around it to go further
+            around=(page[0],page[1],max(page[2],views[k][2])*2.2)
         W=1100; H=round(W*aspect)
         from PySide6.QtGui import QPainter, QColor
         others=[(f'{j+1} · {self.scene_label(j)}',views[j]) for j in range(len(self.scenes)) if j!=k]
@@ -4116,17 +4160,20 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         x,y,pw,ph=world.place(page,around,W,H)
         import timeline_render
         it=world.items[k]
-        alone=timeline_render.element_frame(it['drawing'],dict(it['options'],background=False,overlays=[]),1.,
-                                            max(64,round(pw)),max(36,round(ph)),'art')
+        alone=None if step else timeline_render.element_frame(it['drawing'],dict(it['options'],background=False,overlays=[]),1.,
+                                                             max(64,round(pw)),max(36,round(ph)),'art')
         if k==self.scene_index:
             place=[self.picture_x.value(),self.picture_y.value(),self.artwork_size.value()]
         else:
             st=(self.scenes[k].get('state') or {}).get('settings',{})
             place=[float(st.get('picture_x',0)),float(st.get('picture_y',0)),float(st.get('artwork_size',100))]
-        dialog=SetCameraDialog(self,bg,around,views[k],page,aspect,f'Set camera: element {k+1} · {self.scene_label(k)}',
-                               others,picture=alone,place=place)
+        dialog=SetCameraDialog(self,bg,around,views[k],page,aspect,
+                               f'Camera position: element {k+1}' if step else f'Set camera: element {k+1} · {self.scene_label(k)}',
+                               others,picture=alone,place=place,camera_only=step)
         if dialog.exec()!=QDialog.DialogCode.Accepted: return
         chosen=dialog.chosen()
+        if step and chosen is None:
+            chosen=tuple(page)                         # exp.55: where the camera was (kept as its own)
         moved=dialog.picture_place()
         self.record_structure('set camera')
         if moved is not None:
@@ -5135,6 +5182,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.switch_scene_flag(self.scene_index,'art_off','The picture of element {k}')
 
     def switch_scene_flag(self,k,key,what):
+        if self.scenes[k].get('camera_step') and key in ('art_off','hand_off'):
+            self.status.setText(f'Element {k+1} is a camera position: it has no picture or hand.')   # exp.55
+            return
         self.record_structure('switch '+key)
         scene=self.scenes[k]
         scene[key]=not scene.get(key)
@@ -5211,8 +5261,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         items,moves=self.timeline_items()
         tl.set_scenes(segments,current=self.scene_index,items=items,moves=moves,
                       flags=getattr(self,'track_flags',{}),
-                      element_flags={k:{key:True for key in ('hidden','muted','art_off','hand_off') if s.get(key)}
-                                     for k,s in enumerate(self.scenes) if s.get('hidden') or s.get('muted') or s.get('art_off') or s.get('hand_off')})
+                      element_flags={k:{key:True for key in ('hidden','muted','art_off','hand_off') if s.get(key)
+                                        and not (s.get('camera_step') and key in ('art_off','hand_off'))}   # exp.55
+                                     for k,s in enumerate(self.scenes) if s.get('hidden') or s.get('muted')
+                                     or ((s.get('art_off') or s.get('hand_off')) and not s.get('camera_step'))})
         self.sync_titles_timeline(force=True)
         tl.cam_marks=self.element_camera_marks(items)
         tl.set_audio(self.timeline_audio())

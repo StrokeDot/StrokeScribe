@@ -40,6 +40,12 @@ class CameraStep(unittest.TestCase):
             step = w.scenes[1]
             self.assertTrue(step['camera_step'] and step['art_off'] and step['hand_off'])
             self.assertEqual(w.scene_label(1), 'Camera')
+            # exp.55: a camera in the element list, no "picture off" look, no switching it on
+            self.assertEqual(step['thumb'].size().width(), 160)
+            w.refresh(); APP.processEvents()
+            self.assertNotIn(1, getattr(w.stage_timeline, 'element_flags', {}))
+            w.switch_scene_flag(1, 'art_off', 'x')
+            self.assertTrue(step['art_off'])
             self.assertTrue(any(m.startswith('Sticker · Circle') for m in seen['match']))   # stickers count
             self.assertAlmostEqual(step['board']['view'][2], seen and step['board']['view'][2])
             w.add_scene(); w.set_drawing(import_svg('samples/drawing.svg'))
@@ -57,6 +63,35 @@ class CameraStep(unittest.TestCase):
             img = w.timeline_frame(state_at(lay, end), 480, 270, end)
             b = np.frombuffer(img.constBits(), np.uint8).reshape(270, img.bytesPerLine() // 4, 4)[:, :480]
             self.assertGreater(len(np.unique(b.reshape(-1, 4)[:, :3], axis=0)), 5)   # the next element shows
+        finally:
+            QDialog.exec = real
+            w.close()
+
+
+
+class Restore(unittest.TestCase):
+    def test_restore_camera_and_picture(self):
+        """exp.55 (the user, like VideoScribe): Restore camera / Restore picture in Set camera."""
+        from app import Window
+        from engine import import_svg
+        w = Window(); w.show()
+        real = QDialog.exec
+        try:
+            w.set_drawing(import_svg('samples/drawing.svg'))
+            w.add_scene(); w.set_drawing(import_svg('samples/drawing.svg'))
+            for _ in range(20): APP.processEvents()
+            b = dict(w.scenes[1].get('board') or {}); b['view'] = [5., 2., .4]; w.scenes[1]['board'] = b
+            w.artwork_size.setValue(40); w.picture_x.setValue(-20); w.store_scene(thumbnail=False)
+            from PySide6.QtWidgets import QPushButton
+
+            def fake(d):
+                buttons = {x.text(): x for x in d.findChildren(QPushButton)}
+                buttons['Restore camera'].click(); buttons['Restore picture'].click()
+                return QDialog.DialogCode.Accepted
+            QDialog.exec = fake
+            w.set_camera(1)
+            self.assertNotIn('view', w.scenes[1].get('board') or {})            # its default camera
+            self.assertEqual((w.artwork_size.value(), w.picture_x.value(), w.picture_y.value()), (100, 0, 0))
         finally:
             QDialog.exec = real
             w.close()

@@ -6,6 +6,15 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Restore camera; camera steps look and work like a camera (v1.0.1-experimental.55)
+
+- Set camera (double-click an element's camera, like VideoScribe):
+  - **Restore camera** puts the camera back to its default: the element where its picture is. It was "The whole page".
+  - **Restore picture** puts the element's picture back where it was first, at its first size.
+- A **Camera position** step:
+  - Shows a camera in the element list (no picture, no "picture off" look, and its picture can't be switched on).
+  - Its window shows the whole board with all your elements, and the camera starts where it was (the element before), so you just move it anywhere. There's no picture to move. Restore camera puts it back where the camera was.
+
 ## Camera positions as elements; Stickers panel fixed (v1.0.1-experimental.54)
 
 - **+ Add element → Camera position…**: a step in the element list (shown as "Camera") with no picture and no hand. The camera travels to it like it does to a new element's page and stays for its length (stretch it on the timeline like any element). Set camera opens right away, so you can put the camera anywhere on the board, whether anything is there or not.

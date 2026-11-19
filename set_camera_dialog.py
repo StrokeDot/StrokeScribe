@@ -120,14 +120,21 @@ class BoardFrame(QWidget):
 
 
 class SetCameraDialog(QDialog):
-    def __init__(self, parent, image, board_view, frame, page, aspect, title, others=(), picture=None, place=None):
+    def __init__(self, parent, image, board_view, frame, page, aspect, title, others=(), picture=None, place=None,
+                 camera_only=False):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.page = tuple(page)
+        self.camera_only = camera_only
         box = QVBoxLayout(self)
-        help_ = QLabel('Move the camera: drag the orange frame, mouse wheel (or the slider) to go closer or '
-                       'further. Move the picture: drag this element\'s picture where it goes on the page, mouse '
-                       'wheel to make it bigger or smaller. The dashed frame is the element\'s page.')
+        if camera_only:                     # exp.55 (the user): a camera step: just the camera
+            help_ = QLabel('Put the camera where you want it: drag the orange frame anywhere on the board, mouse '
+                           'wheel (or the slider) to go closer or further. The dashed frame is where the camera '
+                           'was before this step; Restore camera puts it back there.')
+        else:
+            help_ = QLabel('Move the camera: drag the orange frame, mouse wheel (or the slider) to go closer or '
+                           'further. Move the picture: drag this element\'s picture where it goes on the page, mouse '
+                           'wheel to make it bigger or smaller. The dashed frame is the element\'s page.')
         help_.setWordWrap(True); box.addWidget(help_)
         self.board = BoardFrame(image, board_view, frame, aspect, page, picture, place)
         if picture is not None:
@@ -149,9 +156,17 @@ class SetCameraDialog(QDialog):
         self.zoom.setValue(round(frame[2] / page[2] * 100))
         self.zoom.valueChanged.connect(lambda v: self.board.set_width(self.page[2] * v / 100.))
         self.board.changed.connect(self._sync)
-        whole = QPushButton('The whole page'); whole.setToolTip('The camera shows the element\'s whole page (as before).')
+        # exp.55 (the user, like VideoScribe): Restore camera: back to its default
+        whole = QPushButton('Restore camera')
+        whole.setToolTip('Where the camera was before this step.' if camera_only else
+                         'Back to the default: the camera shows this element where its picture is (its page).')
         whole.clicked.connect(self.reset)
         row.addWidget(whole)
+        if picture is not None:
+            again = QPushButton('Restore picture')
+            again.setToolTip('This element\'s picture back to where it was first, at its first size.')
+            again.clicked.connect(self.restore_picture)
+            row.addWidget(again)
         # exp.201 (the user): Match camera: the same camera as another element
         if others:
             from PySide6.QtWidgets import QComboBox
@@ -189,6 +204,14 @@ class SetCameraDialog(QDialog):
         self.zoom.blockSignals(True)
         self.zoom.setValue(round(self.board.frame[2] / self.page[2] * 100))
         self.zoom.blockSignals(False)
+
+    def restore_picture(self):
+        """exp.55: the picture back to its first place and size (the middle of its page, 100 %)."""
+        self.board.place = [0., 0., 100.]
+        self.board.update()
+
+    def picture_place_or_reset(self):
+        return self.picture_place()
 
     def reset(self):
         self.board.frame = list(self.page); self.board.update(); self._sync(); self.cleared = True
