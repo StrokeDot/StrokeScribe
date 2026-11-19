@@ -78,7 +78,8 @@ class InTheWindow(unittest.TestCase):
         w.cameras.remove(clip)
         w.position = .1; w.refresh(); APP.processEvents()           # while the hand draws
         clip = w.add_camera_clip('Hand motion')
-        self.assertAlmostEqual(clip['start'], spans[0][1] + .01, delta=.02)         # when it is free
+        m = w.hand_marks()[0]                     # exp.46: when the drawing ends (a way back gives way)
+        self.assertAlmostEqual(clip['start'], m[0] + m[1] + m[2] + .01, delta=.02)
         w.cameras.remove(clip)
         self.assertLess(len(w.add_hand_motion_button.toolTip()), 70)    # short
 

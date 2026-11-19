@@ -263,7 +263,7 @@ def hand_moves(clips, hands=()):
     """exp.224: the Hand motion clips as plain data for the render options."""
     return tuple(dict(start=float(c['start']), duration=float(c['duration']), how=c.get('how') or 'Smooth',
                       path=tuple(tuple(p) for p in c.get('path') or MOVE_PATH), back=c.get('back', True) is not False,
-                      until=parked_until(c, hands))
+                      until=parked_until(c, hands), line=c.get('line'))                  # exp.46
                  for c in clips or () if c.get('kind') == MOVE and not c.get('off'))
 
 
@@ -273,7 +273,8 @@ def hand_signature(clips, hands=()):
                   round(float(c.get('in_s', IN_SECONDS)), 4), round(float(c.get('out_s', OUT_SECONDS)), 4),
                   c.get('side') or 'Right', c.get('kind', HAND))
                  + ((c.get('how') or 'Smooth', tuple(tuple(p) for p in c.get('path') or MOVE_PATH),
-                     c.get('back', True) is not False, bool(c.get('off')), parked_until(c, hands))
+                     c.get('back', True) is not False, bool(c.get('off')), parked_until(c, hands),
+                     c.get('line'))                                                       # exp.46
                     if c.get('kind') == MOVE else ()) for c in hand_clips(clips))
 
 

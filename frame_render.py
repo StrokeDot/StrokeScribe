@@ -1053,7 +1053,12 @@ def hand_window(drawing, options):
     if plan is None:
         return None
     lead, hand_end, tail, inner_total, _, hand_start = plan
-    return lead + hand_end - hand_start + tail, travel_total(plan, options)
+    done = lead + hand_end - hand_start + tail
+    if options.get('_hand_cut') is not None:
+        # exp.46 (the user: a Hand motion overrules what is under it): a Hand motion starts during
+        # the way back: the hand is done then (the motion takes it from where the drawing finished)
+        done = max(lead + hand_end - hand_start, min(done, float(options['_hand_cut'])))
+    return done, travel_total(plan, options)
 
 
 def hand_busy(drawing, options, fraction):
@@ -1342,7 +1347,8 @@ def _moves_of(options):
     for r in options.get('hand_away') or ():
         if len(r) > 8 and r[6] == camera_clips.MOVE and not (len(r) > 10 and r[10]):
             found.append(dict(start=float(r[1]), duration=float(r[2]), how=r[7] or 'Smooth', path=tuple(r[8]),
-                              back=bool(r[9]) if len(r) > 9 else True, until=r[11] if len(r) > 11 else None))
+                              back=bool(r[9]) if len(r) > 9 else True, until=r[11] if len(r) > 11 else None,
+                              line=r[12] if len(r) > 12 else None))                     # exp.46
     return tuple(found)
 
 
@@ -1369,7 +1375,10 @@ def hand_motion_at(options, seconds, home, place, size):
         back = m.get('back', True) is not False
         if t < start + length:
             line = [pos if pos is not None else home] + pts + ([home] if back else [])
-            return _along_polyline(spline(line), _glide_ease((t - start) / length, m.get('how') or 'Smooth'))
+            # exp.46 (the user: shape and speed for a Hand motion too): a curve through the points,
+            # or straight from point to point
+            way = line if m.get('line') == 'straight' else spline(line)
+            return _along_polyline(way, _glide_ease((t - start) / length, m.get('how') or 'Smooth'))
         pos = None if back or not pts else pts[-1]
         until = None if pos is None else m.get('until')
     if pos is not None and until is not None and t >= float(until):
@@ -1745,6 +1754,9 @@ def paint_hand_spec(frame, spec, options, place=None):
         return _paint_move_hand(frame, spec, tip, shown, options)
     image, anchor, ratio = spec.get('image'), spec.get('anchor'), float(spec.get('ratio') or 1.)
     phase = spec.get('phase')
+    if phase == 'out' and options.get('_hand_cut_at') is not None and spec.get('seconds') is not None \
+            and float(spec['seconds']) >= float(options['_hand_cut_at']) - 1e-6:
+        return frame             # exp.46: a Hand motion took the hand over (the waiting hand shows it)
     tilt = 0.
     if phase in ('in', 'out'):
         # exp.210: a hand linked from the element before comes from where that one finished.
@@ -1781,6 +1793,8 @@ def paint_hand_spec(frame, spec, options, place=None):
             # element's picture), and the hand stays there
             px, py, pw, ph = place if place is not None else (0., 0., float(W), float(H))
             home = (px + float(free[0]) * pw, py + float(free[1]) * ph)
+        if phase == 'out' and options.get('_hand_cut') is not None:
+            home = target            # exp.46: a Hand motion takes it from here: no way back, it waits
         p = max(0., min(1., float(spec.get('p') or 0.)))
         style = options.get('hand_glide_style_in' if phase == 'in' else 'hand_glide_style_out') or 'Smooth'
         bend = options.get('hand_glide_bend_in' if phase == 'in' else 'hand_glide_bend_out') or 'Auto'
