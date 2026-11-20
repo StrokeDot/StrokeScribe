@@ -348,7 +348,7 @@ def _clock(p, item, w, h, frame_h, a, t):
     hands = max(grow_minute, grow_hour, grow_second)
     if hands <= 0:
         return
-    run = (float(t) - float(item.get('start', 0))) if t is not None else 0.
+    run = (float(t) - _drawn_at(item)) if t is not None else 0.
     p.setPen(Qt.PenStyle.NoPen); p.setBrush(ink)
 
     def along(ang, r, side=0.):
@@ -517,7 +517,7 @@ def pen_at(item, w, h, frame_h, a, t=None):
             k = min(11., stage(a, .4, .78) * 12)
             ang = -math.pi / 2 + 2 * math.pi * k / 12
             return (R * .765 * math.cos(ang), R * .765 * math.sin(ang))
-        run = (float(t) - float(item.get('start', 0))) if t is not None else 0.
+        run = (float(t) - _drawn_at(item)) if t is not None else 0.
         if a < .9:                                         # out along the minute hand, then the hour hand
             ang, L = math.radians(150 + run * 12), R * .7 * stage(a, .78, .9)
         else:
@@ -559,3 +559,9 @@ def pen_at(item, w, h, frame_h, a, t=None):
         return (tip[0] + arm * math.cos(q), tip[1] + arm * math.sin(q))
     pts = [_pt(q, w, h, flip) for q in main_line(shape)]
     return _partial(pts, a)[-1]
+
+
+def _drawn_at(item):
+    """exp.70: the moment the sticker starts being drawn (after its hand's way in)."""
+    import stickers
+    return stickers.draw_start(item)

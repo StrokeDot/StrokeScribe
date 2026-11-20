@@ -6,6 +6,12 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Extra hand seconds go to the right; the hand follows its path (v1.0.1-experimental.70)
+
+- A sticker's hand now starts at the start of its clip: "To the drawing" seconds come first and the drawing after them, so adding seconds pushes the drawing and the way back later instead of earlier. If the hand needs more time than the clip lasts, the clip grows to the right. Stickers from older projects are adjusted when opened so they draw at exactly the same moment as before.
+- Edit path in projects with elements on tracks used the first element's page, so the dots you dragged were in the wrong place and the hand went somewhere else. It now uses the sticker's own page.
+- A camera step that starts while a Hand motion is still going now ends the motion's parking, so the hand goes back to its corner instead of staying below the middle.
+
 ## The wheel only changes what you clicked; "Back to its corner" says so (v1.0.1-experimental.69)
 
 - **Rule for every slider, number box and list:** the mouse wheel changes it only after you click it. Otherwise the wheel scrolls the panel it is in (no more values changing while you scroll).

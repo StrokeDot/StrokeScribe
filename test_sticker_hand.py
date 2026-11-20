@@ -21,6 +21,15 @@ def hand_picture():
     return img
 
 
+
+def _new(*a, **kw):
+    """These tests time the drawing from 'start' (the pen's moment); since exp.70 a new sticker's
+    clip starts with its hand's way in, so they use the drawing-at-start timing (test_hand_timing
+    covers the new one)."""
+    import stickers
+    item = stickers.new(*a, **kw); item['clip_v2'] = False
+    return item
+
 class Logic(unittest.TestCase):
     def setUp(self):
         import stickers
@@ -32,7 +41,7 @@ class Logic(unittest.TestCase):
 
     def test_off_by_default(self):
         import stickers
-        item = stickers.new('Circle')
+        item = _new('Circle')
         self.assertEqual(item['drawing'], 'Animated')
         self.assertIsNone(stickers.busy(item))
         self.assertIsNone(stickers.hand_tip(item, 1., 640, 360))
@@ -40,7 +49,7 @@ class Logic(unittest.TestCase):
     def test_the_pen_follows_the_line_and_the_hand_comes_from_its_corner(self):
         import stickers
         from frame_render import REST_CORNERS
-        item = stickers.new('Line'); item.update(start=1., draw_seconds=1., drawing='Hand: outline', x=.5, y=.5,
+        item = _new('Line'); item.update(start=1., draw_seconds=1., drawing='Hand: outline', x=.5, y=.5,
                                                 size=.5)
         W, H = 640, 360
         corner = (REST_CORNERS['Bottom right'][0] * W, REST_CORNERS['Bottom right'][1] * H)
@@ -57,13 +66,13 @@ class Logic(unittest.TestCase):
 
     def test_comes_in_and_leaves_goes_out_of_the_picture(self):
         import stickers
-        item = stickers.new('Circle'); item.update(start=1., drawing='Hand: everything', hand_way='Comes in and leaves')
+        item = _new('Circle'); item.update(start=1., drawing='Hand: everything', hand_way='Comes in and leaves')
         self.assertGreater(stickers.hand_tip(item, 1. - stickers.GLIDE, 640, 360)[1], 360)
         self.assertEqual(stickers.busy_spans([item]), [])               # the corner hand is not used
 
     def test_outline_pops_the_head_everything_draws_it_by_hand(self):
         import stickers
-        item = stickers.new('Arrow'); item.update(start=0., draw_seconds=1., drawing='Hand: outline')
+        item = _new('Arrow'); item.update(start=0., draw_seconds=1., drawing='Hand: outline')
         line, head = stickers.phases(item, 1.)
         self.assertEqual((line, head), (1., [0., 0.]))                   # the head comes after the hand
         self.assertEqual(stickers.phases(item, 1.01 + stickers.HEAD_POP)[1], [1., 1.])
@@ -75,7 +84,7 @@ class Logic(unittest.TestCase):
     def test_the_waiting_hand_leaves_its_corner_meanwhile(self):
         import stickers
         from frame_render import paint_rest_hand
-        item = stickers.new('Circle'); item.update(start=2., draw_seconds=1., drawing='Hand: outline')
+        item = _new('Circle'); item.update(start=2., draw_seconds=1., drawing='Hand: outline')
         blank = QImage(320, 180, QImage.Format.Format_ARGB32_Premultiplied); blank.fill(0)
         opts = dict(hand=hand_picture(), hand_scale=.2, anchor=(.05, .1), hand_rest_corner='Bottom right',
                     _sticker_busy=stickers.busy_spans([item]))
@@ -84,7 +93,7 @@ class Logic(unittest.TestCase):
 
     def test_the_hand_is_painted_and_not_in_drawing_only(self):
         import overlays, stickers
-        item = stickers.new('Line', color='#2050E0'); item.update(start=1., drawing='Hand: outline', duration=3.)
+        item = _new('Line', color='#2050E0'); item.update(start=1., drawing='Hand: outline', duration=3.)
         f = QImage(320, 180, QImage.Format.Format_ARGB32); f.fill(QColor('white'))
         g = f.copy()
         overlays.paint(f, [item], .8)                                     # the hand on its way
@@ -104,7 +113,7 @@ class Ways(unittest.TestCase):
 
     def item(self, **kw):
         import stickers
-        item = stickers.new('Line'); item.update(start=2., draw_seconds=1., drawing='Hand: outline', x=.3, y=.3, size=.3)
+        item = _new('Line'); item.update(start=2., draw_seconds=1., drawing='Hand: outline', x=.3, y=.3, size=.3)
         item.update(kw)
         return item
 
@@ -112,6 +121,8 @@ class Ways(unittest.TestCase):
         import stickers
         item = self.item(hand_in=1.2, hand_out=.7)
         self.assertEqual(stickers.busy(item), (.8, 3.7))
+        item['clip_v2'] = True                                       # exp.70: from the clip's start
+        self.assertEqual(stickers.busy(item), (2., 4.9))
 
     def test_curve_bends_the_way_and_a_path_is_followed(self):
         import math, stickers
@@ -150,7 +161,7 @@ class OneMovement(unittest.TestCase):
     def test_it_does_not_stop_where_the_line_starts_or_ends(self):
         import stickers
         for shape, mode in (('Circle', 'Hand: outline'), ('Line', 'Hand: outline'), ('Curved arrow', 'Hand: everything')):
-            item = stickers.new(shape); item.update(start=2., draw_seconds=1., drawing=mode, hand_in=1., hand_out=1.)
+            item = _new(shape); item.update(start=2., draw_seconds=1., drawing=mode, hand_in=1., hand_out=1.)
             pen = stickers._pen_speed(item, item['size'] * 640, item['size'] * 640 * item['aspect'], 360, 'start')
             before, after = self.speed(item, 1.99), self.speed(item, 2.01)
             self.assertGreater(before, pen * .6, shape)              # arrives moving, not stopped
@@ -158,7 +169,7 @@ class OneMovement(unittest.TestCase):
             end = self.speed(item, 3.01)
             self.assertGreater(end, pen * .2, shape)                 # leaves moving
         # exp.36: a short, quick way (the pen much faster than the way): still no slowing down
-        item = stickers.new('Circle'); item.update(start=2., draw_seconds=.4, drawing='Hand: outline', hand_in=1.5,
+        item = _new('Circle'); item.update(start=2., draw_seconds=.4, drawing='Hand: outline', hand_in=1.5,
                                                   size=.6)
         pen = stickers._pen_speed(item, item['size'] * 640, item['size'] * 640 * item['aspect'], 360, 'start')
         self.assertGreater(self.speed(item, 1.995, .002), pen * .8)
@@ -186,7 +197,7 @@ class HandSize(unittest.TestCase):
 
     def test_the_same_size_with_a_zooming_camera(self):
         import stickers, timeline_render
-        item = stickers.new('Line', color='#2050E0')
+        item = _new('Line', color='#2050E0')
         item.update(start=1., draw_seconds=1., drawing='Hand: outline', x=.3, y=.3, size=.2)
         W, H = 640, 360
 

@@ -62,7 +62,8 @@ def new(shape='Arrow', start=0., duration=3., color='#E0463C'):
                 drawing='Animated', hand_way='Rests in its corner',
                 hand_in=GLIDE, hand_out=GLIDE, hand_in_style='Smooth', hand_out_style='Smooth',
                 hand_in_bend='Auto', hand_out_bend='Auto', hand_in_path=None, hand_out_path=None,
-                effect_in='None', in_seconds=.4, effect_out='None' if rich else 'Fade', out_seconds=.4, track=0)
+                effect_in='None', in_seconds=.4, effect_out='None' if rich else 'Fade', out_seconds=.4, track=0,
+                clip_v2=True)           # exp.70: the hand's way in starts at the clip's start
 
 
 def _ease(p):
@@ -74,7 +75,7 @@ def _ease(p):
 def progress(item, t):
     """How much of the sticker is drawn at t (seconds of its timeline): 0..1."""
     seconds = max(.05, float(item.get('draw_seconds', .8)))
-    return _ease((t - float(item.get('start', 0))) / seconds)
+    return _ease((t - draw_start(item)) / seconds)
 
 
 def _bezier(p0, p1, p2, p3, n=64):
@@ -142,11 +143,42 @@ def ways(item):
     return (max(.05, float(item.get('hand_in', GLIDE) or GLIDE)), max(.05, float(item.get('hand_out', GLIDE) or GLIDE)))
 
 
+def draw_start(item):
+    """exp.70 (the user: seconds added to the way in must go to the right, not before): when the
+    sticker starts being drawn. With a hand, its way in starts at the clip's start and the drawing
+    after it (clip_v2); older stickers (before exp.70) are moved by migrate() when opened."""
+    start = float(item.get('start', 0))
+    if item.get('clip_v2') and hand_mode(item):
+        return start + ways(item)[0]
+    return start
+
+
+def migrate(items):
+    """exp.70: stickers made before exp.70 drew at their clip's start (the hand came before it):
+    the clip starts earlier by the way in and is that much longer, so everything happens at the
+    same moment as before. Returns how many changed."""
+    changed = 0
+    for item in items or ():
+        if item.get('kind') != 'sticker' or item.get('clip_v2'):
+            continue
+        if hand_mode(item):
+            lead = ways(item)[0]
+            start = float(item.get('start', 0))
+            new_start = max(0., start - lead)
+            item['duration'] = round(float(item.get('duration', 3)) + (start - new_start), 4)
+            item['start'] = round(new_start, 4)
+            if new_start == 0. and start < lead:       # no room before 0: its way in is shorter
+                item['hand_in'] = max(.05, round(start, 4))
+        item['clip_v2'] = True
+        changed += 1
+    return changed
+
+
 def busy(item):
     """(from, to) seconds the hand is busy with this sticker (coming, drawing, going), or None."""
     if not hand_mode(item):
         return None
-    start = float(item.get('start', 0))
+    start = draw_start(item)
     lead, tail = ways(item)
     return start - lead, start + max(.05, float(item.get('draw_seconds', .8))) + tail
 
@@ -159,7 +191,7 @@ def has_head(item):
 def phases(item, t):
     """(line 0..1, head strokes [0..1, 0..1]) drawn at t."""
     seconds = max(.05, float(item.get('draw_seconds', .8)))
-    start = float(item.get('start', 0))
+    start = draw_start(item)
     e = _ease((t - start) / seconds)
     mode = hand_mode(item)
     u = max(0., min(1., (t - start) / seconds))
@@ -214,7 +246,7 @@ def pen_point(item, w, h, frame_h, t):
             if 0 < share < 1:
                 return (a[0] + (b[0] - a[0]) * share, a[1] + (b[1] - a[1]) * share)
         if head[0] >= 1 and head[1] <= 0:       # lifted, back to the tip for the second stroke
-            u = (t - float(item.get('start', 0))) / max(.05, float(item.get('draw_seconds', .8)))
+            u = (t - draw_start(item)) / max(.05, float(item.get('draw_seconds', .8)))
             k = _ease((u - .86) / .04)
             end, tip = heads[0][1], heads[1][0]
             return (end[0] + (tip[0] - end[0]) * k, end[1] + (tip[1] - end[1]) * k)
@@ -244,7 +276,7 @@ def draw(painter, item, w, h, frame_h, amount=1., t=None):
     if item.get('shape') in sticker_art.RICH:
         if t is not None:
             a = phases(item, t)[0] if hand_mode(item) else _ease(
-                (t - float(item.get('start', 0))) / max(.05, float(item.get('draw_seconds', .8))))
+                (t - draw_start(item)) / max(.05, float(item.get('draw_seconds', .8))))
             if back is not None:
                 a = min(a, back)
         else:
@@ -311,7 +343,7 @@ def hand_tip(item, t, W, H, home=None, back=None):
         a = math.radians(float(item.get('rotation', 0) or 0))
         x, y = pt
         return (bx + bw / 2 + x * math.cos(a) - y * math.sin(a), by + bh / 2 + x * math.sin(a) + y * math.cos(a))
-    start = float(item.get('start', 0)); seconds = max(.05, float(item.get('draw_seconds', .8)))
+    start = draw_start(item); seconds = max(.05, float(item.get('draw_seconds', .8)))
     if home is not None and item.get('hand_way') != 'Comes in and leaves':
         pass
     elif item.get('hand_way') == 'Comes in and leaves':
