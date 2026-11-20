@@ -664,7 +664,9 @@ def export_scenes(scenes, folder, settings, hand=None, progress=lambda i, n: Non
                   titles=None, cameras=None, span=None):
     """Render all scenes into one PNG sequence + videos. `settings`: the editor's settings
     (its output settings are used for every scene). Returns a summary text."""
-    if span is not None or on_tracks(scenes) or (settings or {}).get('video_end'):   # exp.230: a longer video too
+    import rest_hands
+    if span is not None or on_tracks(scenes) or (settings or {}).get('video_end') or \
+            any(rest_hands.is_rest_hand(o) for o in titles or ()):   # exp.230: a longer video too; exp.68: in its layer
         return export_timeline(scenes, folder, settings, hand, progress, interrupted, titles, cameras, span)
     from engine import export_frames
     from export_job import encode_outputs, formats_from_settings

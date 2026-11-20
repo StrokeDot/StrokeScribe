@@ -4396,13 +4396,22 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.add_hand_motion_button.setToolTip('Hand motion at the playhead (double-click it to shape it)')   # exp.38: shorter
     w.add_hand_motion_button.clicked.connect(lambda checked=False: w.add_hand_motion())
     timeline_head.addWidget(w.add_hand_motion_button)
+    # exp.68 (the user): a resting hand (the left hand), a clip at the playhead
+    w.add_rest_hand_button=QPushButton(); w.add_rest_hand_button.setObjectName('subtle')
+    w.add_rest_hand_button.setIcon(plus_icon('hand')); w.add_rest_hand_button.setIconSize(_QS(22,22))
+    w.add_rest_hand_button.setFixedSize(38,32)
+    w.add_rest_hand_button.setToolTip('Resting hand at the playhead: your left hand on top of the page or holding '
+                                      'the book (double-click it for its photo and layer)')
+    w.add_rest_hand_button.clicked.connect(lambda checked=False: w.add_rest_hand(
+        w.add_rest_hand_button.mapToGlobal(w.add_rest_hand_button.rect().bottomLeft())))
+    timeline_head.addWidget(w.add_rest_hand_button)
 
     def refresh_timeline_icons():
         """exp.238: the timeline's add buttons follow the theme (Dark / Light)."""
         import theme as _theme
         for button,name in ((w.add_picture_overlay,'image'),(w.add_text_overlay,'text'),
                             (w.add_eraser_clip,'eraser'),(w.add_camera_clip_button,'camera'),
-                            (w.add_hand_motion_button,'handwriting')):
+                            (w.add_hand_motion_button,'handwriting'),(w.add_rest_hand_button,'hand')):
             button.setIcon(plus_icon(name))
         w.hand_paths_button.setIcon(_hicon('hand',_theme.colors()['text']))
     w.refresh_timeline_icons=refresh_timeline_icons
