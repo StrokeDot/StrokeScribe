@@ -6,6 +6,10 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## A compact element strip: more room for the timeline (v1.0.1-experimental.66)
+
+- The elements are one row of miniatures with the name beside each (their times are in the tooltip), and the buttons (+ Add element, Edit, Camera, ◀ ▶, Delete) are in one row. The strip takes about half the height it took, and that room goes to the timeline's tracks.
+
 ## The hand menus agree (v1.0.1-experimental.65)
 
 From the menu audit (findings 2, 4, 6, 7):

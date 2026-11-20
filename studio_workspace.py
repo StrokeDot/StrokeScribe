@@ -4422,12 +4422,15 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.scene_list.setObjectName('sceneStrip')
     w.scene_list.setFlow(QListWidget.Flow.LeftToRight)
     w.scene_list.setWrapping(False)
-    w.scene_list.setViewMode(QListWidget.ViewMode.IconMode)
+    # exp.66 (the user: the elements take too much room, the tracks need it): one row of
+    # miniatures, the name beside the picture
+    w.scene_list.setViewMode(QListWidget.ViewMode.ListMode)
     w.scene_list.setMovement(QListWidget.Movement.Static)
-    w.scene_list.setIconSize(QSize(58,33))         # exp.110: smaller cards
-    w.scene_list.setGridSize(QSize(112,78))
-    w.scene_list.setWordWrap(True)
-    w.scene_list.setFixedHeight(90)
+    w.scene_list.setIconSize(QSize(40,23))
+    w.scene_list.setGridSize(QSize(138,36))
+    w.scene_list.setWordWrap(False)
+    w.scene_list.setTextElideMode(Qt.TextElideMode.ElideRight)
+    w.scene_list.setFixedHeight(44)
     w.scene_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
     w.scene_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
     w.scene_list.setToolTip('The elements of your video, in order (like VideoScribe). Click one to work on it; '
@@ -4443,7 +4446,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
         w.add_element_menu(False,None,at=w.scene_list.viewport().mapToGlobal(rect.bottomLeft()))
     w._strip_menu_at=strip_menu_at
     scene_row.addWidget(w.scene_list,1)
-    scene_buttons=QVBoxLayout();scene_buttons.setSpacing(4)
+    scene_buttons=QHBoxLayout();scene_buttons.setSpacing(4)     # exp.66: one row, not two
     w.scene_add=QPushButton('+ Add element')
     w.scene_add.setToolTip('A new element after this one: choose a picture or SVG, write a text, or pick from the Library. '
                            'The camera moves to it.')
