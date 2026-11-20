@@ -2581,6 +2581,19 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import applog
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(applog.folder())))
 
+    def copy_selection(self,focus=None):
+        """exp.57 (the user): Ctrl+C copies what is chosen (clipboard_edit)."""
+        import clipboard_edit
+        return clipboard_edit.copy_selection(self,focus if focus is not None else QApplication.focusWidget(),
+                                             lines_only=getattr(self,'_advanced',None) is not None)
+
+    def paste_selection(self,focus=None):
+        """exp.57: Ctrl+V pastes it (at the playhead)."""
+        import clipboard_edit
+        if self._artwork_busy(): return None
+        return clipboard_edit.paste(self,focus if focus is not None else QApplication.focusWidget(),
+                                    lines_only=getattr(self,'_advanced',None) is not None)
+
     def copy_log(self):
         import applog
         QApplication.clipboard().setText(applog.tail(300))
@@ -3814,7 +3827,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from ui_icons import icon as ui_icon
         import theme
         plus.setIcon(ui_icon('plus',theme.colors()['brand'],size=32))
-        plus.setToolTip('Add a new element after the last one')
+        plus.setToolTip('Add a new element at the playhead (or at the end)')
         plus.setData(Qt.ItemDataRole.UserRole,'add')
         self.scene_list.addItem(plus)
         self.scene_list.setCurrentRow(self.scene_index)
@@ -3905,15 +3918,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from ui_icons import icon as ui_icon
         import theme
         plus.setIcon(ui_icon('plus',theme.colors()['brand'],size=32))
-        plus.setToolTip('Add a new element after the last one')
+        plus.setToolTip('Add a new element at the playhead (or at the end)')
         plus.setData(Qt.ItemDataRole.UserRole,'add')
         self.scene_list.addItem(plus)
         self.scene_list.setCurrentRow(self.scene_index)
         self.scene_list.blockSignals(False)
         if not self.drawing or (self.builder and self.builder.isRunning()): return
-        if self.scene_index!=len(self.scenes)-1:
-            self.select_scene(len(self.scenes)-1)
-            if self.scene_index!=len(self.scenes)-1: return
+        # exp.57 (the user): no jump to the last element: the new element goes at the playhead
+        # (the menu also offers the end)
         from PySide6.QtGui import QCursor
         menu_at=getattr(self,'_strip_menu_at',None)
         if menu_at is not None: menu_at()
@@ -3952,8 +3964,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.status.setText(f'Editing element {row+1} of {len(self.scenes)}: {self.scene_label(row)}')
         self.follow_selection_panels()
 
-    def add_scene(self):
-        """A new scene after the current one (starts as a copy; import its own artwork)."""
+    def add_scene(self,source=None):
+        """A new scene after the current one (starts as a copy; import its own artwork).
+        source: copy that element instead (exp.57: a copy goes at the playhead)."""
         if not self.drawing or (self.builder and self.builder.isRunning()): return
         import copy, applog
         applog.info('Adding a scene after scene %d',self.scene_index+1)
@@ -3962,9 +3975,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self._leave_scene()
         self._stash_history()
         current=self.scenes[self.scene_index]
-        new=dict(state=copy.deepcopy(current['state']),transition=current['transition'],
+        model=(source if isinstance(source,dict) else
+               self.scenes[source] if source is not None and 0<=source<len(self.scenes) else current)
+        new=dict(state=copy.deepcopy(model['state']),transition=current['transition'],
                  transition_seconds=current['transition_seconds'],name=f'Element {len(self.scenes)+1}',
-                 thumb=current.get('thumb'))
+                 thumb=model.get('thumb'))
+        self.take_new_start(new)
         self.scenes.insert(self.scene_index+1,new)
         self.project_changes.mark_changed()
         self._enter_scene(self.scene_index+1)
@@ -4260,12 +4276,22 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if self.builder and self.builder.isRunning(): return
         where=at if at is not None else button.mapToGlobal(button.rect().bottomLeft()) if button is not None else QCursor.pos()
         first=not self.drawing            # exp.199 (the user): the first element too, from here
+        slot=None if first else self.playhead_slot()
         def choose(how):
             # exp.199 (the user): after what, where: on this page, or in a new place
             if first: return self.new_element(how,False)
+            # exp.57 (the user): by default where the playhead is; the end is still a choice
+            k,start=slot
+            last=len(self.scenes)-1
             ask=QMenu(self)
-            ask.addAction('On this page (no camera move)',lambda: self.new_element(how,True))
-            ask.addAction('In a new place (the camera moves there)',lambda: self.new_element(how,False))
+            ask.addSection(f'At the playhead (after element {k+1})' if start is None else
+                           f'At the playhead ({start:.1f} s, after element {k+1})')
+            ask.addAction('On this page (no camera move)',lambda: self.add_element_at(k,start,how,True))
+            ask.addAction('In a new place (the camera moves there)',lambda: self.add_element_at(k,start,how,False))
+            if k!=last or start is not None:
+                ask.addSection(f'At the end (after element {last+1})')
+                ask.addAction('On this page (no camera move) ',lambda: self.add_element_at(last,None,how,True))
+                ask.addAction('In a new place (the camera moves there) ',lambda: self.add_element_at(last,None,how,False))
             ask.exec(QCursor.pos())
         menu=QMenu(self)
         menu.addAction('Picture or SVG file…',lambda: choose('file'))
@@ -4273,7 +4299,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         menu.addAction('From the Library…',lambda: choose('library'))
         menu.addAction('Create an image with AI…',lambda: choose('ai'))
         if not first:                               # exp.54 (the user): a camera step, no picture
-            menu.addAction('Camera position…',lambda: self.add_camera_step())
+            menu.addAction('Camera position…',lambda: self.add_element_at(slot[0],slot[1],'camera',False))
         if not first:
             menu.addSeparator()
             menu.addAction('Copy of this element',lambda: choose('copy'))
@@ -4293,6 +4319,64 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 menu.addAction('Pencil, brush and eraser sounds…',lambda: self.show_left_panel('sound'))
                 menu.addAction('Music…',lambda: self.show_left_panel('music'))
         menu.exec(where)
+
+    def playhead_slot(self):
+        """exp.57 (the user: the new element goes where the playhead is, not after the last one):
+        (k, start): it goes after element k, the element under the playhead (the last one that
+        has started by then); start: its own start in seconds when the playhead is in empty time
+        after element k (else None: right after it, like before)."""
+        k=max(0,min(self.scene_index,len(self.scenes)-1))
+        if not self.drawing or len(self.scenes)<2 or not (self.all_scenes() or self.board_mode()):
+            return k,None                               # This element: after it
+        try:
+            t=self.video_seconds(); lay=self.timeline_layout()
+            _,joins=self.scene_timeline(960,540)
+        except Exception as exc:
+            import applog; applog.error('Where the new element goes',exc); return k,None
+        started=[it for it in lay.items if it.start<=t+1e-6]
+        if not started: return 0,None
+        it=max(started,key=lambda i:(i.start,i.k))
+        natural=it.end+(float(joins[it.k]) if it.k<len(joins) and it.k<len(self.scenes)-1 else 0.)
+        return it.k,(round(t,2) if t>natural+.05 else None)
+
+    def add_element_at(self,k,start,how,same_spot=False):
+        """exp.57: a new element after element k (start: its own start, or None). 'copy' copies the
+        element that was chosen; 'camera' is a camera position."""
+        if not self.drawing or self._artwork_busy(): return False
+        source=self.scene_index
+        if 0<=k<len(self.scenes) and k!=self.scene_index:
+            self.select_scene(k)
+            if self.scene_index!=k: return False
+        self._new_start=start
+        self._copy_source=source if how=='copy' else None
+        try:
+            if how=='paste':                                     # exp.57: Ctrl+V of an element
+                import clipboard_edit
+                snap=clipboard_edit.CLIPBOARD.get('data')
+                if not isinstance(snap,dict) or self.add_scene(source=snap) is False: done=False
+                else:
+                    j=self.scene_index
+                    for key in ('name','art_off','hand_off','camera_step','hidden'):
+                        if key in snap: self.scenes[j][key]=snap[key]
+                    self.scenes[j]['thumb']=snap.get('thumb')
+                    if len(self.scenes)>1 and self.preview_scope.currentIndex()==0:
+                        self.preview_scope.setCurrentIndex(1)
+                    self.__dict__.pop('_memo',None); self._scene_cache={}
+                    self.fill_scenes(); self.refresh(); QTimer.singleShot(0,self.refresh_thumbs)
+                    self.status.setText(f'Pasted a copy as element {j+1} ({self.scene_label(j)}). Ctrl+Z takes it out.')
+                    done=True
+            else:
+                done=self.add_camera_step() if how=='camera' else self.new_element(how,same_spot)
+        finally:
+            self._copy_source=None
+        if not done: self._new_start=None
+        return done
+
+    def take_new_start(self,scene):
+        """exp.57: the playhead's start for the element being added (once)."""
+        start=self.__dict__.pop('_new_start',None)
+        if start is not None: scene['start']=float(start)
+        return scene
 
     def new_element(self,how,same_spot=False,path=None,text=None,item=None):
         """Acquire first, then send the complete result through Add placement."""
@@ -4339,7 +4423,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.scenes[self.scene_index]['name']=text.strip().splitlines()[0][:30]
             self.text.setPlainText(text);self.letter()
         elif how=='copy' and self.drawing:
-            (self.add_picture if same_spot else self.add_scene)()
+            (self.add_picture if same_spot else self.add_scene)(source=getattr(self,'_copy_source',None))
         else:return False
         if len(self.scenes)>1 and self.preview_scope.currentIndex()==0:
             self.preview_scope.setCurrentIndex(1)
@@ -4436,7 +4520,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             import applog; applog.error('Middle of the camera',exc)
         return (100.,centre[0],centre[1])
 
-    def add_picture(self):
+    def add_picture(self,source=None):
         """Another picture on the same page (like VideoScribe): it goes to the biggest
         free place on the page; when the page is full, to a new page (the camera moves).
         Returns True on the same page, False on a new page."""
@@ -4450,13 +4534,15 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self._leave_scene()
         self._stash_history()
         current=self.scenes[self.scene_index]
-        state=copy.deepcopy(current['state'])
+        model=self.scenes[source] if source is not None and 0<=source<len(self.scenes) else current
+        state=copy.deepcopy(model['state'])
         settings=state.setdefault('settings',{})
         settings['artwork_size'],settings['picture_x'],settings['picture_y']=spot
         if 'erase_mode' in settings: settings['erase_mode']='Off'   # the page stays until it is finished
         new=dict(state=state,transition=current['transition'],transition_seconds=current['transition_seconds'],
                  name=f'Picture {self.scene_index+2}',thumb=None)
         if current_board: new['board']=current_board        # exp.208: the same page and camera
+        self.take_new_start(new)
         current['transition']='Same page'
         self.scenes.insert(self.scene_index+1,new)
         self._base_cache=OrderedDict()

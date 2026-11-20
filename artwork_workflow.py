@@ -272,6 +272,7 @@ class ArtworkWorkflow:
                 from scenes import DEFAULT_TRANSITION,DEFAULT_TRANSITION_SECONDS
                 scene=dict(state=None,transition=DEFAULT_TRANSITION,
                            transition_seconds=DEFAULT_TRANSITION_SECONDS,name=ctx['name'],thumb=None)
+                if hasattr(self,'take_new_start'): self.take_new_start(scene)     # exp.57: at the playhead
                 if spot is not None:
                     current=self.scenes[self.scene_index]
                     scene['transition']=current['transition']

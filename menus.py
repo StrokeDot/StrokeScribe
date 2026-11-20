@@ -105,6 +105,9 @@ def build_menus(w):
     undo = edit.addAction('Undo  (Ctrl+Z)', lambda: w.undo())
     redo = edit.addAction('Redo  (Ctrl+Y)', lambda: w.redo())
     edit.addSeparator()
+    copy_ = edit.addAction('Copy\tCtrl+C', lambda: w.copy_selection())      # exp.57
+    paste_ = edit.addAction('Paste\tCtrl+V', lambda: w.paste_selection())
+    edit.addSeparator()
     delete = edit.addAction('Delete selected lines\tDel', lambda: w.delete_lines())
     reverse = edit.addAction('Reverse selected lines', lambda: w.reverse_lines())
     edit.addSeparator()
@@ -117,6 +120,8 @@ def build_menus(w):
 
     def edit_state():
         undo.setEnabled(w.history.can_undo()); redo.setEnabled(w.history.can_redo())
+        import clipboard_edit
+        copy_.setEnabled(w.drawing is not None); paste_.setEnabled(w.drawing is not None and bool(clipboard_edit.CLIPBOARD))
         has_lines = bool(w.selected_rows()) if w.drawing else False
         delete.setEnabled(has_lines); reverse.setEnabled(has_lines)
         add_scene.setEnabled(w.drawing is not None); del_scene.setEnabled(len(w.scenes) > 1)

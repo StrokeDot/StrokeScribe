@@ -4778,6 +4778,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # Ctrl+Z / Ctrl+Y in a number box or a list undo the program, not just the typing.
     w.undo_keys=UndoKeys(w)
     QApplication.instance().installEventFilter(w.undo_keys)
+    w.copy_keys=CopyKeys(w)                       # exp.57 (the user): Ctrl+C / Ctrl+V everywhere
+    QApplication.instance().installEventFilter(w.copy_keys)
     w.delete_shortcuts=[]
     element_delete=QShortcut(QKeySequence(Qt.Key.Key_Delete),w.scene_list)    # exp.246: the element strip
     element_delete.setContext(Qt.ShortcutContext.WidgetShortcut)
@@ -4855,6 +4857,36 @@ _UNDO_KEY_EVENTS = (_QEvent.Type.ShortcutOverride, _QEvent.Type.KeyPress)
 
 # exp.20: the export settings a new project starts with (the user's 2K videos)
 EXPORT_DEFAULTS = {'res': '2560 × 1440', 'fps': 60, 'webm': True, 'webm_quality': 18}
+
+
+class CopyKeys(QObject):
+    """exp.57 (the user): Ctrl+C / Ctrl+V copy and paste what is chosen (clipboard_edit) in the
+    main window and in Advanced edit, wherever the keyboard is, except in a field you type in
+    (a text field or a number box keeps its own copy and paste)."""
+
+    def __init__(self, window):
+        super().__init__(window)
+        self.main = window
+
+    def eventFilter(self, obj, event):
+        if event.type() not in _UNDO_KEY_EVENTS:
+            return False
+        from PySide6.QtGui import QKeySequence
+        copy_ = event.matches(QKeySequence.StandardKey.Copy)
+        paste_ = event.matches(QKeySequence.StandardKey.Paste)
+        if not (copy_ or paste_) or not isinstance(obj, QWidget):
+            return False
+        top = QWidget.window(obj)
+        if top is not self.main and top is not getattr(self.main, '_advanced', None):
+            return False
+        from PySide6.QtWidgets import QLineEdit, QPlainTextEdit, QTextEdit
+        if isinstance(obj, (QLineEdit, QPlainTextEdit, QTextEdit, QAbstractSpinBox)):
+            return False                                 # typing: its own copy and paste
+        if event.type() == QEvent.Type.ShortcutOverride:
+            event.accept()                               # the key comes to us as a key press
+            return True
+        (self.main.copy_selection if copy_ else self.main.paste_selection)(obj)
+        return True
 
 
 class UndoKeys(QObject):
