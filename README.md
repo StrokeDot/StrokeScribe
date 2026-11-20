@@ -6,6 +6,13 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## The wheel only changes what you clicked; "Back to its corner" says so (v1.0.1-experimental.69)
+
+- **Rule for every slider, number box and list:** the mouse wheel changes it only after you click it. Otherwise the wheel scrolls the panel it is in (no more values changing while you scroll).
+- The hand's ending **Back to its corner (and waits there)** (it was called "Stop and wait"). Under **Starts** and **Ends** a line says in plain words what the chosen option does.
+- One name: **Hand way in and back…** for elements and stickers (the stickers' button said "Hand ways…"); the Stickers panel says "From where the hand is → back to its corner".
+- The Stickers panel's number boxes are wide enough for their values ("100 %" was cut).
+
 ## A resting hand (v1.0.1-experimental.68)
 
 - New **resting hand** (the button with a hand and a + at the end of the timeline's tools): your left hand, as a clip at the playhead. Pick its pose (**On top of the page** or **Holding from below**) and a photo of the hand from your computer: its white background is taken out and it is **mirrored** (a photo of a right hand becomes the left hand). The photo is kept inside the project; the next resting hand can use it again without choosing the file.

@@ -52,6 +52,25 @@ import math
 
 
 
+
+# exp.69 (the user: "where is the option to return to the corner?"; add little explanations):
+# the Hand way in and back window's words, in one place
+BACK_TO_CORNER='Back to its corner (and waits there)'
+START_NOTES={
+    None:'The hand comes from where it is now: its corner, or where the last way or a Hand motion left it.',
+    'free':'The hand starts where you put the green dot (Edit path). It waits there before, so it never jumps.',
+    'below':'The hand comes in from below the picture.',
+}
+END_NOTES={
+    None:'After drawing, the hand goes back to its corner and waits there. (If a Hand motion moved the '
+         'waiting hand, it goes back to where the Hand motion left it.)',
+    'exact':'If the next hand starts the moment this one is back, the hand goes through its corner without stopping.',
+    'near':'If the next hand starts the moment this one is back, the hand passes near its corner without stopping.',
+    'link':'No way back: the hand stays where it finished, and the next drawing\'s hand starts from there.',
+    'free':'The way back ends where you put the red dot (Edit path of the way back); the hand waits there.',
+    'below':'The hand leaves below the picture, the way it came in.',
+}
+
 _ROTATE_CURSOR=None
 
 
@@ -7368,7 +7387,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if not stickers.hand_mode(item):
             self.status.setText('This sticker draws itself: set Appears to a Hand choice first.'); return
         lead,tail=stickers.ways(item)
-        ui=self.hand_ways_dialog(f'Hand: {item.get("name","sticker")}',
+        ui=self.hand_ways_dialog(f'Hand way in and back: {item.get("name","sticker")}',
                                  dict(go=lead,back=tail,how_in=item.get('hand_in_style'),how_out=item.get('hand_out_style'),
                                       bend_in=item.get('hand_in_bend'),bend_out=item.get('hand_out_bend'),
                                       paths={w:k for w,k in (('in',item.get('hand_in_path')),('out',item.get('hand_out_path'))) if k},
@@ -7378,7 +7397,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                                       starts=(('Where the hand is (from its last spot)',None),
                                               ('Free beginning: where you put it (Edit path: drag the green dot)','free'),
                                               ('Comes in from below the picture (and leaves below)','below')),
-                                      ends=(('Stop and wait',None),
+                                      ends=((BACK_TO_CORNER,None),
                                             ('Free ending: where you put it (Edit path: drag the red dot)','free'),
                                             ('Leaves below the picture (it came in from below)','below'))),   # exp.44
                                  lambda which,style,bend,keys: self.edit_sticker_path(item,which,style,bend,keys))
@@ -7556,7 +7575,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         how_in, how_out, bend_in, bend_out, paths ({'in': keys, 'out': keys}); edit_path(which,
         style, bend, keys) -> keys / None / False. Returns the dialog, its form and the fields
         (the caller adds its own rows and the OK / Cancel buttons)."""
-        from PySide6.QtWidgets import QDialog, QFormLayout, QDoubleSpinBox, QComboBox, QPushButton
+        from PySide6.QtWidgets import QDialog, QFormLayout, QDoubleSpinBox, QComboBox, QPushButton, QLabel
         from frame_render import GLIDE_STYLES, GLIDE_BENDS
         dialog=QDialog(self); dialog.setWindowTitle(title)
         dialog.setMinimumWidth(760)              # the same size, whichever hand it is
@@ -7617,18 +7636,29 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         out_path=path_button('out')
         form.addRow(help_label('Path ','Your own path for the way back, with keyframes.'),out_path)
         ends=QComboBox()                          # exp.44: Ends (was "At the corner")
-        for label,data in values.get('ends') or (('Stop and wait',None),
+        for label,data in values.get('ends') or ((BACK_TO_CORNER,None),
                                                   ('Free ending: where you put it (Edit path: drag the red dot)','free')):
             ends.addItem(label,data)
         ends.setCurrentIndex(max(0,ends.findData(values.get('end'))))
-        ends.setToolTip('Stop and wait: back to where the hand waits then (its corner, of the camera at that moment, '
-                        'or where a Hand motion left it), and it waits there. Through / Near the corner (drawings): '
+        ends.setToolTip('Back to its corner: after drawing it goes back to its corner (of the camera at that '
+                        'moment) and waits there; if a Hand motion moved the waiting hand, back to where that left '
+                        'it. Through / Near the corner (drawings): '
                         'only when the next hand starts the moment this one is back, the two ways become one '
                         'movement. Stays where it finished (drawings): no way back, the next drawing\'s hand starts '
                         'there. Free ending: the way back ends where you put it (Edit path of the way back: drag the '
                         'red dot); the hand stays there and the next hand starts there. Leaves below (stickers): out '
                         'of the picture, as it came in.')
         form.addRow(help_label('Ends','Where the way back ends.'),ends)
+        # exp.69 (the user: add the little explanations): what the chosen Starts / Ends will do
+        start_note=QLabel(); start_note.setWordWrap(True); start_note.setObjectName('panelHint')
+        end_note=QLabel(); end_note.setWordWrap(True); end_note.setObjectName('panelHint')
+        def explain(*_):
+            start_note.setText(START_NOTES.get(starts.currentData(),''))
+            end_note.setText(END_NOTES.get(ends.currentData(),''))
+        starts.currentIndexChanged.connect(explain); ends.currentIndexChanged.connect(explain); explain()
+        row=form.getWidgetPosition(starts)[0]
+        form.insertRow(row+1,'',start_note)
+        form.addRow('',end_note)
         # Edit path needs to know (before OK) which dots may be dragged
         self._free_begin_chosen=starts.currentData()=='free'
         self._free_ending_chosen=ends.currentData()=='free'
@@ -7653,7 +7683,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         default=float(self.hand_rest_travel.value())
         stored=tuple(self.scenes[k].get('glide') or ())
         paths=dict(self.scenes[k].get('glide_path') or {})
-        ui=self.hand_ways_dialog(f'Hand: element {k+1}',
+        ui=self.hand_ways_dialog(f'Hand way in and back: element {k+1}',
                                  dict(go=float(settings.get('hand_glide_in') or 0) or default,
                                       back=float(settings.get('hand_glide_out') or 0) or default,
                                       how_in=glide[2],how_out=glide[3],
@@ -7661,7 +7691,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                                       bend_out=stored[5] if len(stored)>5 else 'Auto',paths=paths,
                                       start=self.scenes[k].get('hand_begin'),
                                       end='link' if self.scenes[k].get('hand_link') else self.scenes[k].get('hand_flow'),
-                                      ends=(('Stop and wait',None),('Through the corner, without stopping','exact'),
+                                      ends=((BACK_TO_CORNER,None),('Through the corner, without stopping','exact'),
                                             ('Near the corner, without stopping','near'),
                                             # exp.65 (menu audit: two controls for one question): was a checkbox
                                             ('Stays where it finished (no way back; the next drawing\'s hand starts there)','link'),

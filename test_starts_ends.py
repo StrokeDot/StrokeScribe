@@ -62,14 +62,14 @@ class StartsEnds(unittest.TestCase):
         w = self.w
         texts = self.window_rows(lambda: w.edit_hand_glide(1))
         self.assertTrue(any(t[0].startswith('Where the hand is') and any('Free beginning' in x for x in t) for t in texts))
-        ends = next(t for t in texts if t and t[0] == 'Stop and wait')
+        ends = next(t for t in texts if t and t[0] == 'Back to its corner (and waits there)')
         self.assertTrue(any('Through the corner' in x for x in ends) and any('Free ending' in x for x in ends))
         w.add_sticker('Circle')
         st = [o for o in w.overlays if o.get('kind') == 'sticker'][-1]
         st['drawing'] = 'Hand: outline'
         texts = self.window_rows(lambda: w.edit_sticker_hand(st['id']))
         self.assertTrue(any(t[0].startswith('Where the hand is') for t in texts))
-        ends = next(t for t in texts if t and t[0] == 'Stop and wait')
+        ends = next(t for t in texts if t and t[0] == 'Back to its corner (and waits there)')
         self.assertTrue(any('Free ending' in x for x in ends))
 
     def test_b_free_beginning_moves_the_way_back_before(self):

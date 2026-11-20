@@ -45,7 +45,7 @@ def hand_summary(item):
     if item.get('hand_way') == 'Comes in and leaves':
         return 'Comes in from below → leaves below'
     start = 'From where you put it' if item.get('hand_begin') == 'free' else 'From where the hand is'
-    end = 'stays where you put it' if item.get('hand_flow') == 'free' else 'back to where the hand waits'
+    end = 'stays where you put it' if item.get('hand_flow') == 'free' else 'back to its corner'   # exp.69
     return f'{start} → {end}'
 
 
