@@ -232,7 +232,9 @@ class WindowTests(unittest.TestCase):
             w.playing = False
         self.assertAlmostEqual(w.shown_seconds(), w.video_seconds())
 
-    def test_plus_card_after_the_last_element(self):
+    def test_plus_card_opens_the_add_menu(self):
+        """exp.57 (the user): the "+" card opens the Add menu without jumping to the last
+        element: the new element goes at the playhead (the menu also offers the end)."""
         from unittest import mock
         from PySide6.QtCore import Qt
         w = self.w
@@ -241,7 +243,7 @@ class WindowTests(unittest.TestCase):
         w.select_scene(0); self.app.processEvents()
         with mock.patch.object(type(w), 'add_element_menu') as menu:
             w.strip_plus_clicked()
-        self.assertEqual(w.scene_index, len(w.scenes) - 1)
+        self.assertEqual(w.scene_index, 0)
         self.assertTrue(menu.called)
 
     def test_camera_moves_can_be_clicked_and_changed(self):
