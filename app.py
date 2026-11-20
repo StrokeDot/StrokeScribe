@@ -2,7 +2,7 @@ import os, sys, time
 from collections import OrderedDict
 from pathlib import Path
 from datetime import datetime
-from PySide6.QtCore import Qt, QTimer, QThread, Signal, QUrl, QItemSelectionModel, QEventLoop, QObject, QRectF
+from PySide6.QtCore import Qt, QSize, QTimer, QThread, Signal, QUrl, QItemSelectionModel, QEventLoop, QObject, QRectF
 from PySide6.QtGui import QImage, QPainter, QColor, QFont, QFontDatabase, QIcon, QPixmap, QDesktopServices
 from PySide6.QtWidgets import (QListWidgetItem,QApplication,QMainWindow,QWidget,QVBoxLayout,QHBoxLayout,QFormLayout,QPushButton,QLabel,QDoubleSpinBox,QSpinBox,QComboBox,QFileDialog,QListWidget,QSlider,QCheckBox,QPlainTextEdit,QMessageBox,QSplitter,QProgressBar,QScrollArea,QColorDialog)
 from toast import notify
@@ -4022,7 +4022,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             length,move=self.element_times(k)
             times=f'⏱ {length:.1f}s'+(f'  ➜ {move:.1f}s' if move else '')
             over=self.drawn_over(k) and not scene.get('camera_step')       # exp.55: a camera draws nothing
-            item=QListWidgetItem(f'{k+1} {"+" if over else "·"} {self.scene_label(k)}'[:20]+'\n'+times)
+            item=QListWidgetItem(f'{k+1} {"+" if over else "·"} {self.scene_label(k)}')   # exp.66: one line
+            item.setSizeHint(self.scene_list.gridSize()-QSize(6,4))
             thumb=scene.get('thumb')
             if thumb is not None and not thumb.isNull():
                 from PySide6.QtGui import QImage, QPainter
@@ -4030,10 +4031,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 card.fill(QColor('white'))
                 painter=QPainter(card); painter.drawImage(0,0,thumb); painter.end()
                 item.setIcon(QIcon(QPixmap.fromImage(card)))
-            item.setToolTip(f'Scene {k+1}: {self.scene_label(k)}')
+            item.setToolTip(f'Element {k+1}: {self.scene_label(k)}\n{times}')
             self.scene_list.addItem(item)
         # exp.110: a "+" after the last element: add the next element there.
-        plus=QListWidgetItem('Add\nelement')
+        plus=QListWidgetItem('Add…'); plus.setSizeHint(self.scene_list.gridSize()-QSize(6,4))
         from ui_icons import icon as ui_icon
         import theme
         plus.setIcon(ui_icon('plus',theme.colors()['brand'],size=32))
@@ -4126,7 +4127,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         """The "+" after the last element in the strip: a new element after the last one."""
         self.scene_list.blockSignals(True)
         # exp.110: a "+" after the last element: add the next element there.
-        plus=QListWidgetItem('Add\nelement')
+        plus=QListWidgetItem('Add…'); plus.setSizeHint(self.scene_list.gridSize()-QSize(6,4))
         from ui_icons import icon as ui_icon
         import theme
         plus.setIcon(ui_icon('plus',theme.colors()['brand'],size=32))
