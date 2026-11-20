@@ -6,6 +6,12 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Restore camera in the Camera tab, and it now really shows the page (v1.0.1-experimental.56)
+
+- The **Camera** tab (side panel and Advanced edit) starts with **Set camera…**, **Restore camera** and **Restore picture**; the last two act straight away.
+- Fix: an element on the same page as one with a close camera keeps that camera when it has none of its own (so adding a text does not pull the camera back). Restore camera used to clear the element's camera, so the preview kept the close camera of the element before while the Set camera window showed the whole page. Restore camera (in the tab or the window) now gives the element the whole page as its own camera, exactly what the window shows. Elements you never touched work as before.
+- The Set camera window opens on the camera the preview really uses.
+
 ## Restore camera; camera steps look and work like a camera (v1.0.1-experimental.55)
 
 - Set camera (double-click an element's camera, like VideoScribe):

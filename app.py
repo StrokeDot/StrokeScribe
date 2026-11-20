@@ -4113,6 +4113,58 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                         (cx-pw/2+sx*pw,cy-ph/2+sy*ph,width)))
         return out
 
+    def whole_page_view(self,k):
+        """exp.56 (the user: Restore camera showed the page, the preview did not): the camera on
+        element k's whole page. With no camera of its own, an element on the same page as the
+        one before keeps that one's camera (exp.208), so the whole page must then be its own
+        camera; None when no own camera already gives the whole page."""
+        import board
+        frames=self.board_frames()
+        scenes=list(self.scenes); s=dict(scenes[k]); b=dict(s.get('board') or {}); b.pop('view',None)
+        s['board']=b or None; scenes[k]=s
+        inherited=board.views(scenes,frames,self.edited_place())[k]
+        same=all(abs(float(a)-float(c))<1e-9 for a,c in zip(inherited,frames[k]))
+        return None if same else [float(v) for v in frames[k]]
+
+    def restore_camera(self,k=None):
+        """exp.56 (the user, like VideoScribe): this element's camera back to its default (the
+        element where its picture is); a camera step: where the camera was (the element before)."""
+        import board
+        k=self.scene_index if k is None else k
+        if not self.drawing or not 0<=k<len(self.scenes): return
+        self.store_scene(thumbnail=False)
+        self.record_structure('restore camera')
+        b=dict(self.scenes[k].get('board') or {})
+        b.pop('view',None)
+        if self.scenes[k].get('camera_step') and k>0:
+            b['view']=list(board.views(self.scenes,self.board_frames(),self.edited_place())[k-1])
+        else:
+            page=self.whole_page_view(k)
+            if page is not None: b['view']=page
+        self.scenes[k]['board']=b or None
+        self.project_changes.mark_changed()
+        self.__dict__.pop('_memo',None); self._scene_cache={}
+        self.clear_frames(); self.refresh()
+        self.status.setText(f'Element {k+1}: the camera is back to its default.')
+
+    def restore_picture(self,k=None):
+        """exp.56: this element's picture back to where it was first, at its first size."""
+        k=self.scene_index if k is None else k
+        if not self.drawing or not 0<=k<len(self.scenes) or self.scenes[k].get('camera_step'): return
+        self.record_structure('restore picture')
+        if k==self.scene_index:
+            for control,value in ((self.picture_x,0),(self.picture_y,0),(self.artwork_size,100)):
+                control.setValue(value)
+            self.store_scene(thumbnail=True)
+        else:
+            st=self.scenes[k].get('state') or {}
+            st.setdefault('settings',{}).update(picture_x=0,picture_y=0,artwork_size=100)
+            self.scenes[k]['thumb']=None
+        self.project_changes.mark_changed()
+        self.__dict__.pop('_memo',None); self._scene_cache={}
+        self.clear_frames(); self.refresh(); QTimer.singleShot(0,self.refresh_thumbs)
+        self.status.setText(f'Element {k+1}: its picture is back where it was first.')
+
     def set_camera(self,k=None):
         """exp.200 (the user, like VideoScribe): where the camera looks for element k: its
         own view on the board (closer, further, anywhere), kept with the element."""
@@ -4124,7 +4176,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.store_scene(thumbnail=False)
         aspect=self.board_aspect()
         frames=self.board_frames()
-        views=board.views(self.scenes,frames)
+        views=board.views(self.scenes,frames,self.edited_place())    # exp.56: as the preview
         world=self.preview_world(960,round(960*aspect))
         page=frames[k]
         step=bool(self.scenes[k].get('camera_step'))
@@ -4186,7 +4238,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self._scene_cache={}
             self.scenes[k]['thumb']=None; QTimer.singleShot(0,self.refresh_thumbs)
         b=dict(self.scenes[k].get('board') or {})
-        if chosen is None: b.pop('view',None)
+        if chosen is None:
+            # exp.56: the whole page, as the window showed it (not the camera before, exp.208)
+            b.pop('view',None)
+            page=self.whole_page_view(k)
+            if page is not None: b['view']=page
         else: b['view']=list(chosen)
         self.scenes[k]['board']=b or None
         self.fit_areas_to_cameras([k])                   # exp.235: a place off the page becomes its area
