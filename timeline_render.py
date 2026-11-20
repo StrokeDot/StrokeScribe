@@ -412,7 +412,8 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
     out = world.view(view, width, height, upto=len(elements), skip=set(range(len(elements))))
     out = _erasing(world, elements, erasers, view, out, width, height, state, glides)
     tracks = {it.k: it.track for it in lay.items}
-    waiting = sorted(titles or (), key=lambda o: int(o.get('track', 0)))
+    import rest_hands                  # exp.68: a resting hand under or over every element
+    waiting = sorted(titles or (), key=rest_hands.layer_key)
     # exp.248 (the user: with picture 5 above, the hand going to draw 4 was not seen): the
     # drawing hand is the main hand; a hand carrying a picture in comes as well (more_hands)
     drawing = [(k, f) for k, f in state.active if (elements[k]['options'].get('entrance') or 'draw') == 'draw']
@@ -427,7 +428,7 @@ def _page(world, lay, state, elements, view, width, height, titles=None, seconds
     sequence = sorted(set(finished) | set(active), key=lambda k: order.get(k, (0, k)))
     more_hands = []                     # exp.247: a move-in hand at the same time as the drawing hand
     for k in sequence:
-        under = [o for o in waiting if int(o.get('track', 0)) < tracks.get(k, 0)]
+        under = [o for o in waiting if rest_hands.layer_key(o) < tracks.get(k, 0)]
         if under:
             out = _texts(out, under, seconds, world, view)
             waiting = [o for o in waiting if o not in under]

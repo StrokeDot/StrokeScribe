@@ -113,6 +113,7 @@ class Canvas(QWidget):
         # ('start' | 'move' | 'done', degrees) to on_rotate
         self.angle_provider=None; self.on_rotate=None; self._rotate=None
         self.titles_frame=None      # exp.116: texts / pictures on top, over everything (screen)
+        self.resting_under=None; self.resting_over=None     # exp.68: resting hands (one element)
         self.rest_frame=None        # exp.143: the hand waiting in its corner (screen)
         self._press=None
         self.highlight=[]           # selected lines: polylines in frame pixels
@@ -313,6 +314,10 @@ class Canvas(QWidget):
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             from blend_modes import composition_mode
             rect=self.picture_rect()                # exp.228: the part of it the video's camera shows
+            if self.resting_under is not None:      # exp.68: a resting hand under the pictures
+                p.drawImage(rect,self.resting_under)
+            if self.resting_over is not None and self.art_frame is None:
+                p.drawImage(rect,self.resting_over)  # (playing: one picture; under it, never over the hand)
             if self.art_frame is not None:
                 from artwork_compositor import bounded_opacity
                 p.setCompositionMode(composition_mode(self.blend_mode))
@@ -320,6 +325,8 @@ class Canvas(QWidget):
                 p.drawImage(rect,self.art_frame)
                 p.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
                 p.setOpacity(1.)
+                if self.resting_over is not None:     # exp.68: over the pictures, under the writing hand
+                    p.drawImage(rect,self.resting_over)
                 if self.hand_frame is not None:
                     p.drawImage(rect,self.hand_frame)
             else:
@@ -1936,6 +1943,21 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                      **({'_until':float(o['_until'])-start} if o.get('_until') is not None else {}))
                 for o in self.visible_titles()]   # (exp.208: not the ones switched off with E)
 
+    def rest_hand_layers(self,width,height,seconds=None):
+        """exp.68: with one element (its preview is not the whole video's frame): the resting
+        hands (under the pictures, over the pictures) on two clear pictures, or None."""
+        import overlays, rest_hands
+        if self.board_mode() or len(self.scenes)>1 or self.zoomed_out(): return None,None
+        t=self.video_seconds() if seconds is None else float(seconds)
+        out=[]
+        for layer in ('under','over'):
+            items=[o for o in self.visible_titles() if rest_hands.is_rest_hand(o) and o.get('layer','under')==layer
+                   and overlays.on_screen(o,t)]
+            if not items: out.append(None); continue
+            img=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); img.fill(0)
+            overlays.paint(img,items,t,hands=False); out.append(img)
+        return tuple(out)
+
     def titles_layer(self,width,height,seconds=None):
         """The texts / pictures on top at the playhead, on a clear picture (None: nothing).
         `seconds`: the time of the frame shown (playing: the video frame, exp.126)."""
@@ -1944,6 +1966,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if not self.all_scenes() and len(self.scenes)>1: return None     # exp.189: the element alone
         t=self.video_seconds() if seconds is None else float(seconds)
         shown=self.visible_titles() if self.zoomed_out() else self.titles_split(t)[0]
+        import rest_hands                     # exp.68: a resting hand is never over the writing hand
+        shown=[o for o in shown if not rest_hands.is_rest_hand(o)]
         if not shown or not any(overlays.on_screen(o,t) for o in shown): return None     # exp.29
         layer=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
         placed=self.text_view(t,width,height)          # exp.123: on their pages
@@ -1952,6 +1976,102 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             return timeline_render.paint_texts(layer,shown,t)
         frames,place,view=placed
         return timeline_render.paint_texts(layer,shown,t,frames,place,view)
+
+    def rest_hand_choices(self):
+        """exp.68: the Add resting hand menu: [(pose, None) section, (label, (pose, name, data)) ...]."""
+        import rest_hands
+        known={}
+        for o in self.overlays:
+            if rest_hands.is_rest_hand(o) and o.get('data'):
+                known.setdefault(o.get('photo_name') or 'photo',o['data'])
+        out=[]
+        for pose in rest_hands.POSES:
+            out.append((pose,None))
+            out+=[(f'Photo: {name}',(pose,name,data)) for name,data in known.items()]
+            out.append(('Choose a photo…',(pose,None,None)))
+        return out
+
+    def add_rest_hand(self,at=None,choice=None):
+        """exp.68 (the user: a resting hand, the left hand: on top of the page or holding the
+        book from below; under or over the pictures, always under the writing hand): a clip at
+        the playhead. Its photo: one already in the project, or one picked now (kept inside
+        the project; its white background taken out; mirrored)."""
+        import rest_hands
+        from PySide6.QtGui import QCursor
+        from PySide6.QtWidgets import QMenu
+        if not self.drawing:
+            self.status.setText('Add a drawing first; a resting hand goes with your elements.'); return None
+        if choice is None:
+            menu=QMenu(self)
+            for label,data in self.rest_hand_choices():
+                if data is None: menu.addSection(label)
+                else: menu.addAction(label).setData(data)
+            picked=menu.exec(at or QCursor.pos())
+            if picked is None: return None
+            choice=picked.data()
+        pose,name,data=choice
+        if data is None:
+            path,_=QFileDialog.getOpenFileName(self,'Resting hand: a photo of the hand','',
+                                               'Pictures (*.png *.jpg *.jpeg *.webp *.bmp)')
+            if not path: return None
+            try:
+                data,name=rest_hands.load_photo(path)
+            except Exception as exc:
+                QMessageBox.warning(self,'Resting hand',f'This photo could not be used: {exc}'); return None
+        item=self.add_overlay(rest_hands.new(data,name,pose=pose))
+        self.status.setText(f'Resting hand ({pose.lower()}) added at {item["start"]:.1f} s, under the pictures. '
+                            'Drag it on the preview, Ctrl+T to size and turn it, double-click its clip for more.')
+        return item
+
+    def open_rest_hand_window(self,oid):
+        """exp.68: a resting hand's settings: its photo, pose, mirrored, its layer, how it comes and goes."""
+        import overlays, rest_hands
+        from PySide6.QtWidgets import QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel, QPushButton
+        item=self.find_overlay(oid)
+        if item is None or not rest_hands.is_rest_hand(item): return None
+        dialog=QDialog(self); dialog.setWindowTitle('Resting hand'); dialog.setMinimumWidth(460)
+        form=QFormLayout(dialog)
+        photo=dict(data=item.get('data'),name=item.get('photo_name') or 'photo')
+        name=QLabel(photo['name'])
+        other=QPushButton('Another photo…')
+        def another():
+            path,_=QFileDialog.getOpenFileName(dialog,'Resting hand: a photo of the hand','',
+                                               'Pictures (*.png *.jpg *.jpeg *.webp *.bmp)')
+            if not path: return
+            try:
+                photo['data'],photo['name']=rest_hands.load_photo(path); name.setText(photo['name'])
+            except Exception as exc:
+                QMessageBox.warning(dialog,'Resting hand',f'This photo could not be used: {exc}')
+        other.clicked.connect(lambda checked=False: another())
+        form.addRow('Photo',name); form.addRow('',other)
+        pose=QComboBox(); pose.addItems(rest_hands.POSES); pose.setCurrentText(item.get('pose',rest_hands.POSES[0]))
+        form.addRow('Pose',pose)
+        flip=QCheckBox('Mirrored (a photo of the right hand becomes the left hand)')
+        flip.setChecked(bool(item.get('flip',True))); form.addRow('',flip)
+        layer=QComboBox()
+        for label,data in rest_hands.LAYERS: layer.addItem(label,data)
+        layer.setCurrentIndex(max(0,layer.findData(item.get('layer','under'))))
+        layer.setToolTip('Under the pictures: every element and sticker covers it. Over the pictures: it covers '
+                         'them. The writing hand is always on top of it.')
+        form.addRow('Layer',layer)
+        comes=QComboBox(); comes.addItems(overlays.EFFECTS); comes.setCurrentText(item.get('effect_in','Slide from bottom'))
+        goes=QComboBox(); goes.addItems(overlays.EFFECTS); goes.setCurrentText(item.get('effect_out','Slide from bottom'))
+        form.addRow('Comes in',comes); form.addRow('Goes out',goes)
+        buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Ok|QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(dialog.accept); buttons.rejected.connect(dialog.reject); form.addRow(buttons)
+        try:
+            if dialog.exec()!=QDialog.DialogCode.Accepted: return False
+            values=dict(data=photo['data'],photo_name=photo['name'],pose=pose.currentText(),flip=flip.isChecked(),
+                        layer=layer.currentData(),effect_in=comes.currentText(),effect_out=goes.currentText())
+        finally:
+            dialog.deleteLater()
+        if all(item.get(k)==v for k,v in values.items()): return False
+        self.record_structure('resting hand')
+        item.update(values)
+        self.project_changes.mark_changed(); self.__dict__.pop('_memo',None)
+        self.sync_titles_timeline(); self.refresh()
+        self.status.setText('Resting hand changed. Ctrl+Z undoes it.')
+        return True
 
     def add_overlay_picture(self,path=None,at=None):
         import overlays
@@ -2593,6 +2713,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         import copy
         item=self.find_overlay(oid)
         if item is None: return
+        if item.get('kind')=='rest_hand':               # exp.68: its own window
+            self.select_overlay(oid); return self.open_rest_hand_window(oid)
         if item.get('kind')=='sticker':                 # exp.27: its settings are in the Stickers panel
             if hasattr(self,'show_right_panel'): self.show_right_panel('stickers')
             self.select_overlay(oid)
@@ -5332,6 +5454,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         key=('layout',tuple(lengths),tuple(joins),tuple((s.get('start'),s.get('track'),repr((s.get('board') or {}).get('view'))) for s in self.scenes))
         already=self.already_elements(width,height)
         key=key+(getattr(self,'video_end',None),)
+        import rest_hands
+        rest=any(rest_hands.is_rest_hand(o) and not o.get('off') for o in getattr(self,'overlays',()) or ())
+        key=key+(rest,)
         key=key+(repr(sorted(getattr(self,'track_flags',{}).items())),tuple(sorted(self.hidden_elements())),tuple(already),
                  tuple((bool(s.get('art_off')),bool(s.get('hand_off'))) for s in self.scenes))
         if key not in memo:
@@ -5342,6 +5467,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 lay.sequential=False                             # drawn moment by moment, without them
             import board as _board
             if _board.has_views(self.scenes): lay.sequential=False   # exp.200: the cameras that were set
+            if rest: lay.sequential=False        # exp.68: a resting hand goes between the pictures
             memo[key]=lay
         return memo[key]
 
@@ -8504,6 +8630,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             self.canvas.rest_frame=self.rest_hand_layer(frame.width(),frame.height(),self.shown_seconds())
         except Exception as exc:
             import applog; applog.error('Hand in its corner',exc); self.canvas.rest_frame=None
+        try:
+            self.canvas.resting_under,self.canvas.resting_over=self.rest_hand_layers(frame.width(),frame.height(),
+                                                                                      self.shown_seconds())
+        except Exception as exc:
+            import applog; applog.error('Resting hand',exc); self.canvas.resting_under=self.canvas.resting_over=None
         self.canvas.art_frame=None; self.canvas.hand_frame=None
         self.canvas.blend_mode='Normal'
         self.canvas.artwork_opacity=100
@@ -8514,7 +8645,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             opts=view['options']
             mode=opts.get('blend_mode','Normal')
             opacity=opts.get('artwork_opacity',100)
-            if mode!='Normal' or opacity!=100:
+            if mode!='Normal' or opacity!=100 or self.canvas.resting_over is not None:   # exp.68: between them
                 from frame_render import compose_frame
                 preview_opts=dict(opts,width=frame.width(),height=frame.height())
                 camera=self.preview_camera(preview_opts)

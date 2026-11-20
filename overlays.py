@@ -449,7 +449,7 @@ def paint(frame, items, t, hands=True):
         turn = rotation + float(item.get('rotation', 0) or 0)     # exp.61: texts and pictures turn too
         if turn:
             p.rotate(turn)
-        p.scale(scale, scale)
+        p.scale(-scale if item.get('flip') else scale, scale)     # exp.68: mirrored (a resting hand)
         p.drawImage(QRectF(-w / 2, -h / 2, w, h), img)
         p.restore()
     if p is not None:

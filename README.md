@@ -6,6 +6,12 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## A resting hand (v1.0.1-experimental.68)
+
+- New **resting hand** (the button with a hand and a + at the end of the timeline's tools): your left hand, as a clip at the playhead. Pick its pose (**On top of the page** or **Holding from below**) and a photo of the hand from your computer: its white background is taken out and it is **mirrored** (a photo of a right hand becomes the left hand). The photo is kept inside the project; the next resting hand can use it again without choosing the file.
+- Its **layer**: **Under the pictures** (every element and sticker covers it) or **Over the pictures**; either way **the writing hand is always on top of it**. Double-click its clip for its photo, pose, mirroring, layer and how it comes in and goes out (it slides in from the bottom). Drag it on the preview; Ctrl+T sizes and turns it.
+- It is shown in the Whole video, the Board and the export (in its layer); a project with one element shows it in its preview too.
+
 ## The hand and the sticker draw together (v1.0.1-experimental.67)
 
 - Fix: the hand's pen was up to 30–80 px away from where the Marker ellipse, Hook arrow, Double arrow, Magnifier and Clock were drawing, because the hand followed a simple outline while each of them is drawn its own way. Now the pen follows each sticker's own drawing (measured: within about 1 px of the new ink for every shape).

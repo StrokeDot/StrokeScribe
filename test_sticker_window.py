@@ -144,5 +144,17 @@ class Shadow(unittest.TestCase):
         self.assertIsNone(overlays.shadow_of({}))
 
 
+
+def tearDownModule():
+    """exp.68 (Windows crashed at exit after every test passed): the windows waiting to be
+    deleted are deleted now, while Qt is still running, not while Python shuts down."""
+    import gc
+    from PySide6.QtCore import QCoreApplication, QEvent
+    for _ in range(3):
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        APP.processEvents()
+        gc.collect()
+
+
 if __name__ == '__main__':
     unittest.main()
