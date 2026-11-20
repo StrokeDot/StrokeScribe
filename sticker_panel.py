@@ -83,9 +83,9 @@ def build(w, Section, form_layout, linked_slider):
     # what happened): where the hand comes from and ends is chosen in Hand ways only; this says it
     w.sticker_hand_way = QLabel('')
     w.sticker_hand_way.setWordWrap(True)
-    w.sticker_hand_way.setToolTip('Where the hand comes from and where it ends (change it in Hand ways…).')
+    w.sticker_hand_way.setToolTip('Where the hand comes from and where it ends (change it in Hand way in and back…).')
     form.addRow('Hand', w.sticker_hand_way)
-    w.sticker_hand_ways = QPushButton('Hand ways…')
+    w.sticker_hand_ways = QPushButton('Hand way in and back…')      # exp.69: the elements' name for it
     w.sticker_hand_ways.setToolTip('How the hand goes to the line and back: time, How, Turn, Path (like an '
                                    'element\'s hand; or double-click its bar on the Hand row).')
     w.sticker_hand_ways.clicked.connect(lambda checked=False: chosen_item() is not None and
@@ -104,6 +104,9 @@ def build(w, Section, form_layout, linked_slider):
         holder = QWidget(); row = QVBoxLayout(holder); row.setContentsMargins(0, 0, 0, 0)
         from PySide6.QtWidgets import QHBoxLayout
         line = QHBoxLayout(); line.setContentsMargins(0, 0, 0, 0); line.setSpacing(8)
+        # exp.69 (the user: "100 ?"): wide enough for its largest value
+        widest = max(box.textFromValue(box.maximum()), box.textFromValue(box.minimum()), key=len) + box.suffix()
+        box.setMinimumWidth(box.fontMetrics().horizontalAdvance(widest + '  ') + 36)
         line.addWidget(box); line.addWidget(linked_slider(box, lo, hi), 1)
         row.addLayout(line)
         form.addRow(title, holder)

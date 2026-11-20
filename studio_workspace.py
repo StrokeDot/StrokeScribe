@@ -3855,7 +3855,7 @@ def build_workspace(w, Canvas, BRAND_ICON):
     h.addRow('Corner',w.hand_rest_corner)
     w.hand_rest_travel=w.number(.2,5,.8,.1); w.hand_rest_travel.setSuffix(' s')
     w.hand_rest_travel.setToolTip('How long the hand takes to glide from the corner to the drawing (and back), '
-                                  'for every drawing and sticker that has no time of its own in Hand ways… '
+                                  'for every drawing and sticker that has no time of its own in Hand way in and back… '
                                   '(theirs wins).')                # exp.65 (menu audit)
     h.addRow('Glide (default)',w.hand_rest_travel)
     # exp.155 (the user, like Filmora): the hand is over the cameras: their zooms never move or
@@ -4802,6 +4802,8 @@ def build_workspace(w, Canvas, BRAND_ICON):
     QApplication.instance().installEventFilter(w.undo_keys)
     w.copy_keys=CopyKeys(w)                       # exp.57 (the user): Ctrl+C / Ctrl+V everywhere
     QApplication.instance().installEventFilter(w.copy_keys)
+    w.wheel_guard=WheelGuard(w)                   # exp.69 (the user): the wheel only changes a chosen control
+    QApplication.instance().installEventFilter(w.wheel_guard)
     w.delete_shortcuts=[]
     element_delete=QShortcut(QKeySequence(Qt.Key.Key_Delete),w.scene_list)    # exp.246: the element strip
     element_delete.setContext(Qt.ShortcutContext.WidgetShortcut)
@@ -4879,6 +4881,38 @@ _UNDO_KEY_EVENTS = (_QEvent.Type.ShortcutOverride, _QEvent.Type.KeyPress)
 
 # exp.20: the export settings a new project starts with (the user's 2K videos)
 EXPORT_DEFAULTS = {'res': '2560 × 1440', 'fps': 60, 'webm': True, 'webm_quality': 18}
+
+
+class WheelGuard(QObject):
+    """exp.69 (the user: "you have to select the item before you can move the bar"): the mouse
+    wheel changes a slider, a number box or a list only after it was clicked (it has the
+    keyboard); otherwise the wheel scrolls the panel it is in, as if the control were not there."""
+
+    def eventFilter(self, obj, event):
+        if event.type() != QEvent.Type.Wheel:
+            return False
+        from PySide6.QtWidgets import QAbstractScrollArea, QAbstractSlider, QComboBox
+        control = obj
+        if not isinstance(control, (QAbstractSlider, QAbstractSpinBox, QComboBox)):
+            parent = obj.parentWidget() if isinstance(obj, QWidget) else None
+            if isinstance(parent, (QAbstractSpinBox, QComboBox)):
+                control = parent                  # the text field inside a number box
+            else:
+                return False
+        if isinstance(control, QAbstractSlider) and isinstance(control.parentWidget(), QAbstractScrollArea):
+            return False                          # a scroll bar scrolls, as always
+        if control.hasFocus() or (control.isWindow() if hasattr(control, 'isWindow') else False):
+            return False
+        area = control.parentWidget()
+        while area is not None and not isinstance(area, QAbstractScrollArea):
+            area = area.parentWidget()
+        if area is not None:
+            bar = area.verticalScrollBar()
+            if bar is not None and bar.maximum() > bar.minimum():
+                steps = event.angleDelta().y() / 120.
+                bar.setValue(bar.value() - int(round(steps * bar.singleStep() * 3)))
+        event.accept()
+        return True
 
 
 class CopyKeys(QObject):

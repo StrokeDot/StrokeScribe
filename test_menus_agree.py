@@ -39,7 +39,7 @@ class MenusAgree(unittest.TestCase):
         def run(dialog):
             boxes = dialog.findChildren(QComboBox)
             seen['starts'] = next(b for b in boxes if b.count() and b.itemText(0).startswith('Where the hand is'))
-            seen['ends'] = next(b for b in boxes if b.count() and b.itemText(0) == 'Stop and wait')
+            seen['ends'] = next(b for b in boxes if b.count() and b.itemText(0) == 'Back to its corner (and waits there)')
             seen['checks'] = [c.text() for c in dialog.findChildren(QCheckBox)]
             seen['texts'] = [[b.itemText(i) for i in range(b.count())] for b in (seen['starts'], seen['ends'])]
             if act is None:
@@ -68,7 +68,7 @@ class MenusAgree(unittest.TestCase):
         item = w.add_sticker('Circle'); item['drawing'] = 'Hand: outline'
         w.select_overlay(item['id']); pump()
         self.assertNotIsInstance(w.sticker_hand_way, QComboBox)             # one place to choose
-        self.assertEqual(w.sticker_hand_way.text(), 'From where the hand is → back to where the hand waits')
+        self.assertEqual(w.sticker_hand_way.text(), 'From where the hand is → back to its corner')
         seen = self.boxes(lambda: w.edit_sticker_hand(item['id']),
                           lambda s, e: s.setCurrentIndex(s.findData('below')))
         self.assertEqual(item['hand_way'], 'Comes in and leaves')

@@ -287,7 +287,7 @@ class SameWindow(unittest.TestCase):
             spins, boxes = dialog.findChildren(QDoubleSpinBox), dialog.findChildren(QComboBox)
             # the way rows (Starts / Ends differ on purpose: a sticker can come in from below, exp.65)
             ways = [b for b in boxes if not (b.count() and (b.itemText(0).startswith('Where the hand is')
-                                                            or b.itemText(0) == 'Stop and wait'))]
+                                                            or b.itemText(0) == 'Back to its corner (and waits there)'))]
             seen[dialog.windowTitle()] = (dialog.minimumWidth(), [b.count() for b in ways[:4]])
             spins[0].setValue(2.3); boxes[0].setCurrentText('Swoop')
             return QDialog.DialogCode.Accepted
