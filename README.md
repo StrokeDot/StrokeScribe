@@ -6,6 +6,11 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## The hand and the sticker draw together (v1.0.1-experimental.67)
+
+- Fix: the hand's pen was up to 30–80 px away from where the Marker ellipse, Hook arrow, Double arrow, Magnifier and Clock were drawing, because the hand followed a simple outline while each of them is drawn its own way. Now the pen follows each sticker's own drawing (measured: within about 1 px of the new ink for every shape).
+- Drawn by the hand, they are built the way one pen can draw them: the Double arrow one arm and its head, then the other; the Magnifier's glass drawn round from the handle; the Clock's face and rings appearing as the pen goes round, each numeral as the pen reaches it, then the minute hand and the hour hand. Without a hand they animate as before.
+
 ## A compact element strip: more room for the timeline (v1.0.1-experimental.66)
 
 - The elements are one row of miniatures with the name beside each (their times are in the tooltip), and the buttons (+ Add element, Edit, Camera, ◀ ▶, Delete) are in one row. The strip takes about half the height it took, and that room goes to the timeline's tracks.

@@ -205,6 +205,8 @@ def pen_point(item, w, h, frame_h, t):
     mode = hand_mode(item)
     if not mode:
         return None
+    if item.get('shape') in sticker_art.RICH:    # exp.67: the pen of its own drawing
+        return sticker_art.pen_at(item, w, h, frame_h, phases(item, t)[0], t)
     pts, heads, _ = _geometry(item, w, h, frame_h)
     line, head = phases(item, t)
     if mode == 'all' and heads and line >= 1:
@@ -321,6 +323,9 @@ def hand_tip(item, t, W, H, home=None, back=None):
     pts, heads, _ = _geometry(item, w, h, H)
     first = on_frame(pts[0])
     last = on_frame(heads[-1][1] if heads and hand_mode(item) == 'all' else pts[-1])
+    if item.get('shape') in sticker_art.RICH:    # exp.67: its drawing's own first and last pen points
+        first = on_frame(sticker_art.pen_at(item, w, h, H, 0.))
+        last = on_frame(sticker_art.pen_at(item, w, h, H, 1.))
     from frame_render import glide_point, split_style
     lead, tail = ways(item)
     centre = (W / 2., H / 2.)
