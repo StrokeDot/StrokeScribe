@@ -4173,6 +4173,22 @@ def build_workspace(w, Canvas, BRAND_ICON):
     # Camera: camera follow (moves between elements are set on the timeline).
     camera_page=QWidget();camera_l=QVBoxLayout(camera_page)
     camera_l.setContentsMargins(9,12,9,8);camera_l.setSpacing(10)
+    # exp.56 (the user: where is Restore camera?): this element's camera, right here
+    camera_l.addWidget(label('THIS ELEMENT: CAMERA POSITION'))
+    w.set_camera_here=QPushButton('Set camera…')
+    w.set_camera_here.setToolTip('Where the camera looks for this element: drag its frame anywhere on the board.')
+    w.set_camera_here.clicked.connect(lambda checked=False: w.set_camera())
+    w.restore_camera_button=QPushButton('Restore camera')
+    w.restore_camera_button.setToolTip('The camera back to its default: this element, where its picture is.')
+    w.restore_camera_button.clicked.connect(lambda checked=False: w.restore_camera())
+    w.restore_picture_button=QPushButton('Restore picture')
+    w.restore_picture_button.setToolTip('This element\'s picture back to where it was first (the middle of its page), '
+                                        'at its first size.')
+    w.restore_picture_button.clicked.connect(lambda checked=False: w.restore_picture())
+    camera_l.addWidget(w.set_camera_here)
+    restore_row=QHBoxLayout(); restore_row.setSpacing(8)
+    restore_row.addWidget(w.restore_camera_button,1); restore_row.addWidget(w.restore_picture_button,1)
+    camera_l.addLayout(restore_row)
     camera_l.addWidget(label('THIS ELEMENT: CAMERA FOLLOW'))
     camera_form=form_layout();camera_form.addRow('Camera',w.camera)
     camera_l.addLayout(camera_form)
