@@ -6,6 +6,11 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Camera steps stay camera steps after saving; a turning cursor (v1.0.1-experimental.62)
+
+- Fix: a camera step lost its mark when the project was saved, so after opening it again it became an ordinary empty element (a blank picture, a "+", no camera icon). The mark is saved now, and projects saved before this fix get it back when they open (an element called "Camera" with its picture and hand off). A camera step always shows its camera icon.
+- Over the round handle of the Ctrl+T box the mouse becomes a **turning arrow**, so it is clear that it turns the sticker, text or picture.
+
 ## Ctrl+T turns too, not only resizes (v1.0.1-experimental.61)
 
 - The **Ctrl+T** box on the preview has a round handle above it: drag it to **turn** the chosen sticker, text or picture on top (Shift: steps of 15°). The box turns with it; corners still resize, inside still moves. One Ctrl+Z undoes a turn.

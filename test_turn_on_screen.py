@@ -64,6 +64,13 @@ class TurnOnScreen(unittest.TestCase):
         self.drag(handle, QPointF(centre.x() + 100, centre.y() - 37), Qt.KeyboardModifier.ShiftModifier)
         self.assertEqual(float(self.item['rotation']) % 15, 0.)
 
+    def test_over_the_handle_the_cursor_is_a_turning_arrow(self):
+        import app
+        c = self.w.canvas
+        h = c._rotate_handle()
+        QTest.mouseMove(c, QPoint(round(h.x()), round(h.y()))); pump(3)
+        self.assertEqual(c.cursor().pixmap().cacheKey(), app.rotate_cursor().pixmap().cacheKey())
+
     def test_corners_still_resize(self):
         c = self.w.canvas
         r = c._transform_rect(); s0 = float(self.item['size'])

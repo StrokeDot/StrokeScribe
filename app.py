@@ -51,6 +51,46 @@ def timecode(seconds):
 import math
 
 
+
+_ROTATE_CURSOR=None
+
+
+def rotate_cursor():
+    """exp.62 (the user: over the turn handle, an arrow that says it turns): a round arrow,
+    black with a white edge so it shows on any picture; drawn once."""
+    global _ROTATE_CURSOR
+    if _ROTATE_CURSOR is not None:
+        return _ROTATE_CURSOR
+    from PySide6.QtCore import QPointF, QRectF
+    from PySide6.QtGui import QCursor, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
+    size=32
+    pix=QPixmap(size,size); pix.fill(Qt.GlobalColor.transparent)
+    p=QPainter(pix); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    cx,cy,rad=16.,17.,9.
+    # an arc of 270° (from the left, over the top, round to the bottom), the head at its end
+    a0,a1=math.radians(200),math.radians(200+270)
+    arc=QPainterPath()
+    steps=40
+    for i in range(steps+1):
+        a=a0+(a1-a0)*i/steps
+        pt=QPointF(cx+rad*math.cos(a),cy+rad*math.sin(a))
+        arc.moveTo(pt) if i==0 else arc.lineTo(pt)
+    end=QPointF(cx+rad*math.cos(a1),cy+rad*math.sin(a1))
+    tx,ty=-math.sin(a1),math.cos(a1)                 # the way the arc goes at its end
+    nx,ny=-ty,tx
+    head=QPolygonF([QPointF(end.x()+tx*6,end.y()+ty*6),
+                    QPointF(end.x()-tx*3+nx*5.5,end.y()-ty*3+ny*5.5),
+                    QPointF(end.x()-tx*3-nx*5.5,end.y()-ty*3-ny*5.5)])
+    for colour,width in ((QColor('white'),5.),(QColor('#111111'),2.2)):
+        p.setPen(QPen(colour,width,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap,Qt.PenJoinStyle.RoundJoin))
+        p.setBrush(Qt.BrushStyle.NoBrush); p.drawPath(arc)
+        p.setPen(QPen(colour,width*.6,Qt.PenStyle.SolidLine,Qt.PenCapStyle.RoundCap,Qt.PenJoinStyle.RoundJoin))
+        p.setBrush(colour); p.drawPolygon(head)
+    p.end()
+    _ROTATE_CURSOR=QCursor(pix,size//2,size//2)
+    return _ROTATE_CURSOR
+
+
 class Canvas(QWidget):
     """Program monitor: the frame on its preview background, plus a loading card."""
     def __init__(self):
@@ -134,6 +174,7 @@ class Canvas(QWidget):
             # exp.61: the turn handle of the Ctrl+T box
             c=self._transform_rect().center(); pos=event.position()
             self._rotate=(c,math.atan2(pos.y()-c.y(),pos.x()-c.x()),self._angle() or 0.)
+            self.setCursor(rotate_cursor())
             self.on_rotate('start',self._angle() or 0.); self.setFocus(); event.accept(); return
         hit=self._corner_at(event.position())
         if hit is not None and self.on_transform is not None:     # exp.28: a corner of the Ctrl+T box
@@ -159,7 +200,7 @@ class Canvas(QWidget):
             hit=self._corner_at(event.position())
             handle=self._rotate_handle()
             if handle is not None and abs(event.position().x()-handle.x())<=12 and abs(event.position().y()-handle.y())<=12:
-                self.setCursor(Qt.CursorShape.CrossCursor); self._corner_cursor=True
+                self.setCursor(rotate_cursor()); self._corner_cursor=True     # exp.62: a turning arrow
             elif hit is not None:
                 r,c=hit
                 diag=(c==r.topLeft() or c==r.bottomRight())
@@ -3658,6 +3699,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             # exp.120: the pictures saved with the project (none: made after opening).
             try: scene['thumb']=qimage_from_b64(scene.pop('thumb_png',None))
             except Exception: scene['thumb']=None
+            if scene.get('camera_step'): scene['thumb']=self.camera_thumb()     # exp.62: always its camera
             if k==index: scene['state']=None          # lives in the editor
             elif scene.get('state') and scene['state'].get('overlays'):
                 state=dict(scene['state']); self._legacy_titles.append((k,list(state.pop('overlays'))))
