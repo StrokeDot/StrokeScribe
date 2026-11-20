@@ -269,7 +269,7 @@ def export_hand_starts(scenes, lay, settings):
     if not (settings or {}).get('hand_rest'):
         return ()
     default = float((settings or {}).get('hand_rest_travel', 1.5) or 1.5)
-    out = []
+    out = list(camera_changes(scenes, lay))                     # exp.64
     for it in lay.items:
         s = scenes[it.k]
         if s.get('hand_off') or s.get('art_off') or s.get('hidden'):
@@ -278,6 +278,24 @@ def export_hand_starts(scenes, lay, settings):
         lead = float(glide[0]) if glide and float(glide[0] or 0) > 0 else default
         out.append((round(it.start, 4), round(lead, 4)))
     return tuple(out)
+
+
+def camera_changes(scenes, lay, hidden=()):
+    """exp.64 (the user: a new camera position has its own corner): (start, seconds, 'camera')
+    for each element with no hand of its own (a camera step, or its hand off) that the camera
+    moves to: a hand parked by a Hand motion glides back to its corner during that move."""
+    moves = {m.k + 1: m for m in getattr(lay, 'moves', ()) or ()}
+    out = []
+    for it in lay.items:
+        s = scenes[it.k]
+        if it.k in hidden or s.get('hidden') or not (s.get('camera_step') or s.get('hand_off') or s.get('art_off')):
+            continue
+        m = moves.get(it.k)
+        if m is not None and m.length > .05:
+            out.append((round(m.start, 4), round(m.length, 4), 'camera'))
+        elif s.get('camera_step'):
+            out.append((round(it.start, 4), .6, 'camera'))     # no move: a short glide as it starts
+    return out
 
 
 def flow_hands(items, elements, frames, hidden=()):

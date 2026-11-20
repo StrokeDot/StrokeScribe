@@ -43,7 +43,8 @@ class AfterSticker(unittest.TestCase):
         W = 960; H = round(W * self.w.board_aspect())
         span = stickers.busy(st)
         _, to_screen = self.w.sticker_view_at(st, span[1] - 1e-3, W, H)
-        tip = stickers.hand_tip(st, span[1] - 1e-3, W, H, stickers.home_on_frame(st, W, H, W, None, to_screen))
+        tip = stickers.hand_tip(st, span[1] - 1e-3, W, H, stickers.home_on_frame(st, W, H, W, None, to_screen),
+                                stickers.home_on_frame(st, W, H, W, None, to_screen, '_back_screen'))   # exp.64
         return to_screen(*tip), (W, H)
 
     def check(self, st, motion):
@@ -84,7 +85,11 @@ class AfterSticker(unittest.TestCase):
         w.hand_spot_at = lambda W, H, t: None if abs(t - (__import__('stickers').busy(st)[0] + 1e-4)) < 1e-6 else real(W, H, t)
         try:
             w.refresh(); APP.processEvents()
-            self.assertIsNone(st.get('_home_screen'))          # it uses its fixed corner
+            # exp.64: no waiting hand known: the corner of the screen (Hand panel → Corner)
+            from frame_render import REST_CORNERS
+            fx, fy = REST_CORNERS.get(w.hand_rest_corner.currentText(), REST_CORNERS['Bottom right'])
+            self.assertAlmostEqual(st['_home_screen'][0], fx, places=3)
+            self.assertAlmostEqual(st['_home_screen'][1], fy, places=3)
         finally:
             w.hand_spot_at = real
         self.check(st, b)

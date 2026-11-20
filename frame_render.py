@@ -1349,7 +1349,8 @@ def _moves_of(options):
             found.append(dict(start=float(r[1]), duration=float(r[2]), how=r[7] or 'Smooth', path=tuple(r[8]),
                               back=bool(r[9]) if len(r) > 9 else True, until=r[11] if len(r) > 11 else None,
                               line=r[12] if len(r) > 12 else None,                      # exp.46
-                              screen=r[13] if len(r) > 13 else None))                   # exp.51
+                              screen=r[13] if len(r) > 13 else None,                    # exp.51
+                              glide=r[14] if len(r) > 14 else None))                    # exp.64
     return tuple(found)
 
 
@@ -1366,10 +1367,11 @@ def hand_motion_at(options, seconds, home, place, size):
     px, py, pw, ph = place if place is not None else (0., 0., float(size[0]), float(size[1]))
     pos = None                                   # None: in its corner
     until = None                                 # exp.236: a parked hand stays until the next hand came
+    glide = None                                 # exp.64: or glides back while the camera moves on
     for m in sorted(moves, key=lambda m: float(m['start'])):
         start, length = float(m['start']), max(.2, float(m['duration']))
         if until is not None and start >= until:
-            pos = until = None                   # the next drawing's hand took it back to its corner
+            pos = until = glide = None           # the next drawing's hand took it back to its corner
         if t < start:
             break
         if m.get('screen'):
@@ -1391,9 +1393,16 @@ def hand_motion_at(options, seconds, home, place, size):
         if not back and pts:                     # it stays at its last point
             pos = pts[-1]
             until = m.get('until')
+            glide = m.get('glide')
         # back: where it started (still parked there, or in its corner, as before it)
     if pos is not None and until is not None and t >= float(until):
         return None
+    if pos is not None and glide and float(glide[0]) <= t:
+        # exp.64 (the user: a new camera position has its own corner): back to its corner while
+        # the camera moves to it
+        g0, g1 = float(glide[0]), float(glide[1])
+        e = _glide_ease(max(0., min(1., (t - g0) / max(1e-6, g1 - g0))), 'Smooth')
+        return (pos[0] + (home[0] - pos[0]) * e, pos[1] + (home[1] - pos[1]) * e)
     return pos
 
 

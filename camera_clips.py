@@ -253,9 +253,24 @@ def parked_until(clip, hands=()):
     that the corner is its place again (it was its place for the rest of the video). None: no
     later hand."""
     end = float(clip['start']) + float(clip['duration'])
-    for start, lead in sorted(hands or ()):
+    for entry in sorted(hands or ()):
+        start, lead = entry[0], entry[1]
         if float(start) >= end - 1e-3:
             return round(float(start) + float(lead), 4)
+    return None
+
+
+def parked_glide(clip, hands=()):
+    """exp.64 (the user: a new camera position has its own corner): when what ends the parking
+    is a new camera position (an entry (start, seconds, 'camera'): the camera moving to an
+    element with no hand of its own), the hand glides back to its corner during that move:
+    (from, to) seconds; None when a drawing's hand takes it back (its own way in hides it)."""
+    end = float(clip['start']) + float(clip['duration'])
+    for entry in sorted(hands or ()):
+        if float(entry[0]) >= end - 1e-3:
+            if len(entry) > 2 and entry[2] == 'camera':
+                return (round(float(entry[0]), 4), round(float(entry[0]) + float(entry[1]), 4))
+            return None
     return None
 
 
@@ -263,7 +278,8 @@ def hand_moves(clips, hands=()):
     """exp.224: the Hand motion clips as plain data for the render options."""
     return tuple(dict(start=float(c['start']), duration=float(c['duration']), how=c.get('how') or 'Smooth',
                       path=tuple(tuple(p) for p in c.get('path') or MOVE_PATH), back=c.get('back', True) is not False,
-                      until=parked_until(c, hands), line=c.get('line'), screen=c.get('screen'))   # exp.46/51
+                      until=parked_until(c, hands), line=c.get('line'), screen=c.get('screen'),   # exp.46/51
+                      glide=parked_glide(c, hands))                                              # exp.64
                  for c in clips or () if c.get('kind') == MOVE and not c.get('off'))
 
 
@@ -274,7 +290,7 @@ def hand_signature(clips, hands=()):
                   c.get('side') or 'Right', c.get('kind', HAND))
                  + ((c.get('how') or 'Smooth', tuple(tuple(p) for p in c.get('path') or MOVE_PATH),
                      c.get('back', True) is not False, bool(c.get('off')), parked_until(c, hands),
-                     c.get('line'), c.get('screen'))                                      # exp.46/51
+                     c.get('line'), c.get('screen'), parked_glide(c, hands))              # exp.46/51/64
                     if c.get('kind') == MOVE else ()) for c in hand_clips(clips))
 
 

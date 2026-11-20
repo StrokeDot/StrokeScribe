@@ -281,7 +281,7 @@ def set_hand(image, scale, anchor, corner):
                      corner=corner or 'Bottom right')
 
 
-def hand_tip(item, t, W, H, home=None):
+def hand_tip(item, t, W, H, home=None, back=None):
     """Where the hand's pen tip is on a W × H frame at t (seconds), or None (not there).
     exp.43: home, where its ways start and end (the waiting hand's real spot), in the frame's
     points; default: its corner."""
@@ -322,6 +322,10 @@ def hand_tip(item, t, W, H, home=None):
     end = free_end(item, W, H)              # exp.44: Free ending: the way back ends where it was put
     if end is not None:
         home = end
+    elif back is not None and item.get('hand_way') != 'Comes in and leaves':
+        # exp.64 (the user: a new camera position has its own corner): back to where the waiting
+        # hand is when it finishes (the corner of the camera then), like an element's hand
+        home = back
     if t > start + seconds:
         style = item.get('hand_out_style') or 'Smooth'
         bend, keys = item.get('hand_out_bend') or 'Auto', item.get('hand_out_path') or None
@@ -377,8 +381,10 @@ def park_clips(items):
     for o in items or ():
         if o.get('kind') != 'sticker' or o.get('off') or not hand_mode(o):
             continue
-        if not o.get('_end_screen') and free_end(o, 1., 1.) is None:
-            continue                            # exp.51: every sticker hand leaves the hand where it ended
+        if free_end(o, 1., 1.) is None:
+            # exp.64 (the user): Stop and wait goes back to the corner of the camera then, where
+            # the waiting hand is: nothing to pin. Only a Free ending leaves the hand where it ended.
+            continue
         span = busy(o)
         if not span:
             continue
@@ -410,10 +416,11 @@ def way_ends(item, W, H):
     return home, on_frame(pts[0]), on_frame(heads[-1][1] if heads and hand_mode(item) == 'all' else pts[-1])
 
 
-def home_on_frame(item, W, H, screen_w=None, painter=None, to_screen=None):
+def home_on_frame(item, W, H, screen_w=None, painter=None, to_screen=None, key='_home_screen'):
     """exp.43: the sticker's home (_home_screen: shares of the screen, set by the window from
-    where the waiting hand is) in the points of its W × H frame, or None (its corner)."""
-    spot = item.get('_home_screen')
+    where the waiting hand is) in the points of its W × H frame, or None (its corner).
+    exp.64: key='_back_screen': where its way back ends (the waiting hand's spot then)."""
+    spot = item.get(key)
     if not spot:
         return None
     if to_screen is None:
@@ -435,7 +442,8 @@ def paint_hand(painter, item, t, W, H, screen_w=None, to_screen=None):
     is drawn on; exp.30 (the user: the hand was huge): when that frame is a page the camera
     zooms, to_screen maps its points to the screen and the hand has the screen's size
     (screen_w wide), like the elements' hands, which the camera never zooms."""
-    tip = hand_tip(item, t, W, H, home_on_frame(item, W, H, screen_w, painter, to_screen))
+    tip = hand_tip(item, t, W, H, home_on_frame(item, W, H, screen_w, painter, to_screen),
+                   home_on_frame(item, W, H, screen_w, painter, to_screen, '_back_screen'))
     if tip is None:
         return False
     if to_screen is not None:
