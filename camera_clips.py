@@ -255,7 +255,11 @@ def parked_until(clip, hands=()):
     end = float(clip['start']) + float(clip['duration'])
     for entry in sorted(hands or ()):
         start, lead = entry[0], entry[1]
-        if float(start) >= end - 1e-3:
+        # exp.70 (the user's project: the camera began moving to the camera step while the Hand
+        # motion was still going; the hand stayed parked for the rest of the video): a camera
+        # move still going when the motion ends counts too
+        camera = len(entry) > 2 and entry[2] == 'camera'
+        if float(start) >= end - 1e-3 or (camera and float(start) + float(lead) > end + 1e-3):
             return round(float(start) + float(lead), 4)
     return None
 
@@ -267,9 +271,10 @@ def parked_glide(clip, hands=()):
     (from, to) seconds; None when a drawing's hand takes it back (its own way in hides it)."""
     end = float(clip['start']) + float(clip['duration'])
     for entry in sorted(hands or ()):
-        if float(entry[0]) >= end - 1e-3:
-            if len(entry) > 2 and entry[2] == 'camera':
-                return (round(float(entry[0]), 4), round(float(entry[0]) + float(entry[1]), 4))
+        camera = len(entry) > 2 and entry[2] == 'camera'
+        if float(entry[0]) >= end - 1e-3 or (camera and float(entry[0]) + float(entry[1]) > end + 1e-3):
+            if camera:          # exp.70: from when both have begun: no jump back while the motion still goes
+                return (round(max(float(entry[0]), end), 4), round(float(entry[0]) + float(entry[1]), 4))
             return None
     return None
 

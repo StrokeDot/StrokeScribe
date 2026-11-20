@@ -2444,6 +2444,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         back=lambda sx,sy:((sx-x)*W/max(1e-9,rw),(sy-y)*H/max(1e-9,rh))
         return to,back
 
+    def migrate_stickers(self):
+        """exp.70: stickers from before exp.70 get their clip starting where their hand starts."""
+        import stickers
+        return stickers.migrate(getattr(self,'overlays',None))
+
     def sticker_homes(self):
         """exp.43/51: for each sticker drawn by the hand, in time order: where its hand comes from
         (_home_screen: where the waiting hand is when it starts; outside the picture: below the
@@ -2451,6 +2456,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         is painted at, on the screen; the waiting hand stays there and the next hand / Hand motion
         starts there). Shares of the screen."""
         import stickers
+        self.migrate_stickers()                # exp.70 (a pasted or restored older sticker too)
         W=960; H=round(W*self.board_aspect())
         items=[o for o in self.overlays if o.get('kind')=='sticker']
         for o in items:
@@ -2534,7 +2540,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             if clash is None: break
             # exp.34 (the user: the sticker would not move): its own way in, not a fixed 0.5 s (a
             # longer way in landed it on the other hand again, so every drag came back to one spot)
-            item['start']=round(clash[1]+stickers.ways(item)[0]+.005,2); moved=True
+            # exp.70: its way in starts at its clip's start (older ones: the way in came before it)
+            item['start']=round(clash[1]+(0. if item.get('clip_v2') else stickers.ways(item)[0])+.005,2); moved=True
         if moved:
             self.status.setText(f'"{item.get("name","")}" waits for the drawing hand: it starts at '
                                 f'{item["start"]:.1f} s (a hand draws one thing at a time).')
@@ -3847,6 +3854,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.track_flags={int(t):dict(f) for t,f in (data.get('track_flags') or {}).items()}
         import copy
         self.overlays=copy.deepcopy(data.get('titles') or [])
+        self.migrate_stickers()                # exp.70: clips start where their hand starts
         import camera_clips
         self.cameras=[camera_clips.upgrade(dict(c,**{'from':tuple(c['from']) if c.get('from') else None,
                                                      'to':tuple(c.get('to') or (1.,.5,.5))}))
@@ -5988,7 +5996,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                                     lambda st,plain=False: view,erasers,eraser_clips.glides(titles,elements,seconds))
         return image,place
 
-    def timeline_frame(self,state,width,height,seconds=None,view_scale=1.,view_pan=(0.,0.)):
+    def timeline_frame(self,state,width,height,seconds=None,view_scale=1.,view_pan=(0.,0.),titles=None):
         """Whole video with elements on tracks: one moment (timeline_render); texts under an
         element of a higher track are drawn in it (the others: on the screen, titles_layer)."""
         import timeline_render
@@ -6001,6 +6009,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             state=replace(state,active=active,finished=[k for k in state.finished if k not in hidden],
                           top=active[-1][0] if active else -1)
         under=self.titles_split(seconds)[1] if seconds is not None and view_scale<=1. else []
+        if titles is not None: under=titles          # exp.70: the caller's (e.g. stickers without hands)
         return timeline_render.compose(world,self.timeline_layout(width,height),state,elements,width,height,
                                        titles=under,seconds=seconds,view_scale=view_scale,view_pan=view_pan)
 
@@ -7437,6 +7446,10 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                     hand_in_style=ui['how_in'].currentText(),hand_out_style=ui['how_out'].currentText(),
                     hand_in_bend=ui['bend_in'].currentText(),hand_out_bend=ui['bend_out'].currentText(),
                     hand_in_path=ui['paths'].get('in'),hand_out_path=ui['paths'].get('out'))
+        # exp.70 (the user: added seconds go to the right): the clip keeps its start and grows
+        # when its hand needs longer than it lasts (the finished sticker is still seen)
+        need=stickers.ways(item)[0]+max(.05,float(item.get('draw_seconds',.8)))+.5
+        if item.get('clip_v2') and float(item.get('duration',3))<need: item['duration']=round(need,2)
         self.place_hand_sticker(item)            # longer ways: it still waits for the drawing hand
         self.project_changes.mark_changed(); self.refresh(); self.sync_camera_timeline()
 
@@ -7449,20 +7462,24 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         image=None
         if self.all_scenes() and len(self.scenes)>1:
             try:
-                image=self.timeline_frame(state_at(self.timeline_layout(),t),W,H,t)
-                placed=self.text_view(t,W,H)
-                shown=[]
-                for o in self.titles_split(t)[0]:
+                top,low=self.titles_split(t)
+                def plain(o):
                     o=dict(o,drawing='Animated')          # no hand in the picture (the window shows its own)
                     if o.get('id')==item.get('id'):        # this sticker whole, so its line shows
                         d=max(.05,float(o.get('draw_seconds',.8)))
                         o.update(start=t-d-.01,duration=max(float(o.get('duration',3)),d+.5),effect_in='None')
-                    shown.append(o)
+                    return o
+                # exp.70 (the user: the hand did not follow the path; the red dot was outside the
+                # video): with elements on tracks every sticker is in the frame (exp.168), so the
+                # frame gets them without hands too, and the sticker's page is its own
+                image=self.timeline_frame(state_at(self.timeline_layout(),t),W,H,t,titles=[plain(o) for o in low])
+                placed=self.text_view(t,W,H)
+                shown=[plain(o) for o in top]
                 if placed is not None:
                     frames,place,view=placed
                     image=timeline_render.paint_texts(image,shown,t,frames,place,view)
-                    mine=next((o for o in self.titles_split(t)[0] if o.get('id')==item.get('id')),None)
-                    k=min(max(0,int((mine or {}).get('_page',0) or 0)),len(frames)-1)
+                    mine=next((o for o in list(top)+list(low) if o.get('id')==item.get('id')),None)
+                    k=min(max(0,int((mine or item).get('_page',0) or 0)),len(frames)-1)
                     x,y,rw,rh=place(frames[k],view,W,H)
                     to_screen=lambda px,py,x=x,y=y,rw=rw,rh=rh:(x+px*rw/W,y+py*rh/H)
                 else:
@@ -7482,7 +7499,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         from glide_path_dialog import GlidePathDialog
         import stickers, frame_render
         W=960; H=round(W*self.board_aspect())
-        start=float(item.get('start',0)); draw=max(.05,float(item.get('draw_seconds',.8)))
+        start=stickers.draw_start(item); draw=max(.05,float(item.get('draw_seconds',.8)))   # exp.70
         image,to_screen=self.sticker_view_at(item,start if which=='in' else start+draw,W,H)
         if image is None:
             self.status.setText('Edit path: there is no picture in the preview.'); return False
