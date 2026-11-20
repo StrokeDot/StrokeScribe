@@ -35,7 +35,19 @@ class AdvancedEdit(QDialog):
         self.saved = dict(snapshot=w.snapshot(), name=scene.get('name'),
                           transition=scene.get('transition'), seconds=scene.get('transition_seconds'),
                           overlays=[dict(o) for o in getattr(w, 'overlays', []) or []])
-        if self.scope:
+        self.camera = bool(scene.get('camera_step'))
+        if self.camera and len(w.scenes) > 1:
+            # exp.59 (the user: to place a camera, see where everything is): a camera step shows
+            # the whole video where the camera has arrived, with everything around it
+            w.preview_scope.setCurrentIndex(1)
+            try:
+                lay = w.timeline_layout(); it = lay.items[k]
+                w.position = max(0., min(1., (it.start + it.length * .999) / max(1e-6, lay.total)))
+                w.slider.blockSignals(True); w.slider.setValue(round(w.position * 1000)); w.slider.blockSignals(False)
+                w.refresh()
+            except Exception as exc:
+                import applog; applog.error('Advanced edit: a camera step', exc)
+        elif self.scope:
             w.preview_scope.setCurrentIndex(0)                 # the element itself
         self.text = getattr(w.drawing, 'source_kind', None) in ('font', 'lettering')
         self.setObjectName('advancedEdit')
@@ -45,11 +57,11 @@ class AdvancedEdit(QDialog):
 
         # ------------------------------------------------ header: what it is, extra editors
         head = QHBoxLayout(); head.setSpacing(8)
-        kind = 'Text' if self.text else ('Image' if w.is_image_artwork() else 'Drawing')
+        kind = 'Camera position' if self.camera else 'Text' if self.text else ('Image' if w.is_image_artwork() else 'Drawing')
         title = QLabel(f'{kind} · {w.scene_label(k)}'); title.setObjectName('panelTitle')
         head.addWidget(title); head.addStretch(1)
         self.extra = []
-        if not self.text:
+        if not self.text and not self.camera:
             for label, stage, tip in (('Replace drawing…', 'draw', 'Another SVG or line-art picture for its lines.'),
                                       ('Replace colours…', 'paint', 'Another picture for the colours it paints.')):
                 b = QPushButton(label); b.setToolTip(tip)
@@ -59,6 +71,7 @@ class AdvancedEdit(QDialog):
         glide.setToolTip('How the hand comes to the element and goes back to its corner (the Hand row).')
         glide.clicked.connect(lambda checked=False: w.edit_hand_glide(self.k))
         head.addWidget(glide); self.extra.append(glide)
+        glide.setVisible(not self.camera)                   # exp.59: a camera has no hand
         root.addLayout(head)
 
         # ------------------------------------------------ the real preview and panels
@@ -82,7 +95,7 @@ class AdvancedEdit(QDialog):
         width = min(1500, int(screen.width() * .9)) if screen else 1400
         height = min(920, int(screen.height() * .88)) if screen else 860
         self.resize(width, height)
-        self.open_tab(PART_TAB.get(part, 'draw'))
+        self.open_tab('camera' if self.camera else PART_TAB.get(part, 'draw'))     # exp.59
         w.slider.setValue(1000)                 # the finished element (press play to watch it)
         w.refresh()
 
@@ -164,7 +177,7 @@ class AdvancedEdit(QDialog):
             page = next((p for key, p, _ in self.borrowed if key == 'text'), None) if self.text else None
             page = page or self.page_of('source')
         else:
-            page = self.page_of(which)
+            page = next((p for key, p, _ in self.borrowed if key == which), None) or self.page_of(which)
         if page is not None and tabs.indexOf(page) >= 0:
             tabs.setCurrentIndex(tabs.indexOf(page))
         if self.part == 'paint' and hasattr(w, 'section_painting'):
@@ -212,7 +225,7 @@ class AdvancedEdit(QDialog):
     def _back_to_view(self):
         w = self.w
         scope = w.preview_scope
-        if self.scope and scope.currentIndex() != self.scope and len(w.scenes) > 1:
+        if scope.currentIndex() != self.scope and len(w.scenes) > 1:      # exp.59: also back to This element
             scope.setCurrentIndex(self.scope)
         w.position = self.main_position
         w.slider.blockSignals(True); w.slider.setValue(round(w.position * 1000)); w.slider.blockSignals(False)

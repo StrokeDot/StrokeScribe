@@ -1737,6 +1737,9 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
 
     def fill_camera_panel(self):
         """The Camera panel shows the chosen camera clip."""
+        if hasattr(self,'restore_picture_button'):        # exp.59: a camera step has no picture
+            step=0<=self.scene_index<len(self.scenes) and bool(self.scenes[self.scene_index].get('camera_step'))
+            self.restore_picture_button.setEnabled(not step)
         if not hasattr(self,'camera_clip_box'): return
         clip=self.find_camera(getattr(self,'selected_camera',None))
         self.camera_clip_box.setVisible(clip is not None)
@@ -2801,6 +2804,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if target is None: return None
         if target[0]=='overlay':
             return self.overlay_box()
+        if 0<=self.scene_index<len(self.scenes) and self.scenes[self.scene_index].get('camera_step'):
+            return None                                  # exp.59: a camera has no picture to resize
         lines=self.preview_lines()
         pts=[pt for line in lines for pt in line]
         if not pts: return None
@@ -3908,6 +3913,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.sync_workspace()
         self.settle_rev()                  # as opened = as saved: its frames stay ready
         self.fill_scenes()
+        if hasattr(self,'restore_picture_button'):        # exp.59: a camera step has no picture
+            self.restore_picture_button.setEnabled(not self.scenes[self.scene_index].get('camera_step'))
         self.refresh()
 
     def strip_plus_clicked(self):
@@ -4096,6 +4103,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.duration.setValue(2.5)                 # how long the camera stays (stretch it on the timeline)
         k=self.scene_index
         self.scenes[k].update(name='Camera',art_off=True,hand_off=True,camera_step=True)
+        if hasattr(self,'restore_picture_button'): self.restore_picture_button.setEnabled(False)   # exp.59
         self.store_scene(thumbnail=False)
         self.scenes[k]['thumb']=self.camera_thumb()                      # exp.55
         import board
@@ -4107,6 +4115,41 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.status.setText(f'Element {k+1}: a camera position (no picture). Put the camera where you want it.')
         QTimer.singleShot(0,lambda: self.set_camera(k))
         return True
+
+    def board_overlays(self,image,around,seconds):
+        """exp.59 (the user: to put the camera somewhere, see where everything is): the stickers,
+        texts and pictures on top shown at `seconds`, painted on a board picture of `around`
+        (cx, cy, w) on their pages, as in the video (no hands)."""
+        import overlays
+        from PySide6.QtGui import QPainter
+        try:
+            self.mark_title_holds()
+        except Exception:
+            pass
+        frames=self.board_frames(); aspect=self.board_aspect()
+        if not frames or not self.overlays: return image
+        W,H=image.width(),image.height()
+        pages={}
+        for o in self.visible_titles():
+            if o.get('kind')=='eraser' or o.get('off') or overlays.state_at(o,seconds) is None: continue
+            k=min(max(0,int(o.get('_page',0) or 0)),len(frames)-1)
+            pages.setdefault(k,[]).append(o)
+        if not pages: return image
+        import board
+        p=QPainter(image); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        for k,items in pages.items():
+            cx,cy,pw=frames[k]; ph=pw*aspect
+            x0=(cx-pw/2-(around[0]-around[2]/2))/around[2]*W
+            y0=(cy-ph/2-(around[1]-around[2]*aspect/2))/(around[2]*aspect)*H
+            ww=pw/around[2]*W; hh=ph/(around[2]*aspect)*H
+            if ww<4 or hh<4: continue
+            scale=min(1.,1600./ww)
+            layer=QImage(max(4,round(ww*scale)),max(4,round(hh*scale)),QImage.Format.Format_ARGB32_Premultiplied)
+            layer.fill(0)
+            overlays.paint(layer,items,seconds,hands=False)
+            p.drawImage(QRectF(x0,y0,ww,hh),layer)
+        p.end()
+        return image
 
     def sticker_views(self):
         """exp.54 (the user: stickers should count, to match a camera to them): [(name, (cx, cy, w))]
@@ -4225,6 +4268,11 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         image=world.view(around,W,H,upto=len(frames),skip={k})
         bg=QImage(image.size(),QImage.Format.Format_RGB32); bg.fill(QColor(236,234,228))
         p=QPainter(bg); p.drawImage(0,0,image); p.end()
+        try:                                             # exp.59: stickers, texts, pictures too
+            lay=self.timeline_layout(); it=lay.items[k]
+            self.board_overlays(bg,around,it.start+(it.length*.999 if not step else min(.05,it.length)))
+        except Exception as exc:
+            import applog; applog.error('Set camera: what is on top',exc)
         x,y,pw,ph=world.place(page,around,W,H)
         import timeline_render
         it=world.items[k]

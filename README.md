@@ -6,6 +6,11 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Placing a camera: see everything around it (v1.0.1-experimental.59)
+
+- **Set camera** shows the stickers, texts and pictures on top too (as they are at that moment), not only the elements, so a camera can be placed knowing where everything is.
+- **Advanced edit on a camera step** shows the whole video where the camera has arrived (every element and sticker around it), opens on the Camera tab, and has no resize box or hand buttons (a camera has no picture). **Restore picture** is greyed out for camera steps.
+
 ## A click on the ruler keeps what is chosen (v1.0.1-experimental.58)
 
 - Fix: while changing a sticker's settings, a click on the timeline's ruler (to move the playhead) let go of the sticker, and the element at that time (for example a camera step) looked chosen instead. The ruler now only moves the playhead: a chosen sticker, text, picture or camera clip stays chosen. A click on an empty spot of the tracks still lets go, as before.

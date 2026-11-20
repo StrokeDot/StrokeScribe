@@ -176,5 +176,72 @@ class RestoreMeansThePage(unittest.TestCase):
         self.assertNotIn('view', self.w.scenes[0].get('board') or {})
 
 
+
+class SeeEverythingAround(unittest.TestCase):
+    """exp.59 (the user: to place a camera, see where everything is): Set camera shows the
+    stickers / texts on top too, and Advanced edit on a camera step shows the whole video there."""
+
+    def setUp(self):
+        import stickers
+        from app import Window
+        from engine import import_svg
+        self.w = w = Window(); w.show(); w.resize(1500, 950)
+        w.set_drawing(import_svg('samples/drawing.svg'))
+        for _ in range(20): APP.processEvents()
+        self.sticker = stickers.new('Arrow', .5, 60., color='#00C000')
+        w.overlays.append(self.sticker); w.sync_titles_timeline()
+        real = w.set_camera; w.set_camera = lambda k=None: None
+        w.add_camera_step()
+        for _ in range(20): APP.processEvents()          # its Set camera (a later call) opens here
+        w.set_camera = real
+
+    def tearDown(self):
+        self.w.close()
+
+    def green(self, image):
+        import numpy as np
+        from PySide6.QtGui import QImage
+        img = image.convertToFormat(QImage.Format.Format_RGB32)
+        a = np.frombuffer(img.constBits(), np.uint8).reshape(img.height(), img.bytesPerLine() // 4, 4)
+        return int(((a[..., 1] > 150) & (a[..., 0] < 90) & (a[..., 2] < 90)).sum())
+
+    def test_set_camera_shows_the_sticker(self):
+        import set_camera_dialog
+        from PySide6.QtWidgets import QDialog
+        seen = {}
+        old = set_camera_dialog.SetCameraDialog.exec
+        def look(d):
+            seen['n'] = self.green(d.board._pixmap.toImage()); return QDialog.DialogCode.Rejected
+        set_camera_dialog.SetCameraDialog.exec = look
+        try:
+            self.w.set_camera(self.w.scene_index)
+        finally:
+            set_camera_dialog.SetCameraDialog.exec = old
+        self.assertGreater(seen['n'], 50)
+
+    def test_advanced_edit_shows_the_whole_video_on_the_camera_tab(self):
+        import advanced_edit
+        w = self.w
+        w.preview_scope.setCurrentIndex(0)
+        seen = {}
+        old = advanced_edit.AdvancedEdit.exec
+        def look(d):
+            for _ in range(10): APP.processEvents()
+            seen['scope'] = w.preview_scope.currentIndex()
+            seen['tab'] = w.inspector_tabs.currentWidget().isAncestorOf(w.set_camera_here)
+            seen['box'] = w.transform_box()
+            d.reject(); return 0
+        advanced_edit.AdvancedEdit.exec = look
+        try:
+            w.edit_element(w.scene_index)
+        finally:
+            advanced_edit.AdvancedEdit.exec = old
+        self.assertEqual(seen['scope'], 1)
+        self.assertTrue(seen['tab'])
+        self.assertIsNone(seen['box'])
+        self.assertEqual(w.preview_scope.currentIndex(), 0)          # back as it was
+        self.assertFalse(w.restore_picture_button.isEnabled())
+
+
 if __name__ == '__main__':
     unittest.main()
