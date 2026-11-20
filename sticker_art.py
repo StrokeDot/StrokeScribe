@@ -69,6 +69,12 @@ def main_line(shape):
     return [(.1, .5), (.9, .5)]
 
 
+def by_hand(item):
+    """exp.67: drawn by the hand (then every part is built the way one pen can draw it)."""
+    import stickers
+    return bool(stickers.hand_mode(item))
+
+
 def _pt(q, w, h, flip=False):
     x, y = q
     return ((1 - x if flip else x) * w - w / 2, y * h - h / 2)
@@ -257,6 +263,15 @@ def _magnifier(p, item, w, h, frame_h, a, t):
     if handle > 0:
         p.setPen(_pen(color, width)); p.setBrush(Qt.BrushStyle.NoBrush)
         p.drawLine(QPointF(*end), QPointF(end[0] + (edge[0] - end[0]) * handle, end[1] + (edge[1] - end[1]) * handle))
+    if by_hand(item):                          # exp.67: the pen draws the glass round, from the handle
+        sweep = stage(a, .42, 1.)
+        if sweep > 0:
+            from PySide6.QtCore import QRectF
+            p.setPen(_pen(color, width * 1.45)); p.setBrush(Qt.BrushStyle.NoBrush)
+            start = -45. if not flip else -135.            # Qt angles: from 3 o'clock, anticlockwise
+            p.drawArc(QRectF(c[0] - r, c[1] - r, 2 * r, 2 * r), int(start * 16),
+                      int((-360. if not flip else 360.) * sweep * 16))
+        return
     glass = back_out(stage(a, .38, 1.))
     if glass > 0:
         p.setPen(_pen(color, width * 1.45)); p.setBrush(Qt.BrushStyle.NoBrush)   # exp.53: a heavier ring
@@ -277,14 +292,26 @@ def _clock(p, item, w, h, frame_h, a, t):
     face = QColor(item.get('color', COLOR['Clock']))
     ink = QColor('#1b1815')
     line = max(.6, s_ * .0045)
-    disc = back_out(stage(a, 0., .28))
+    hand = by_hand(item)
+    disc = back_out(stage(a, 0., .28)) if not hand else (1. if a > 0 else 0.)
     if disc <= 0:
         return
+    if hand and a < .28:                       # exp.67: the face appears as the pen goes round its rim
+        sweep = stage(a, 0., .28)
+        clip = QPainterPath(); clip.moveTo(0, 0)
+        clip.arcTo(QRectF(-R * 1.05, -R * 1.05, 2.1 * R, 2.1 * R), 90., -360. * sweep); clip.closeSubpath()
+        p.setClipPath(clip, Qt.ClipOperation.IntersectClip)
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(face.darker(112)); p.drawEllipse(QPointF(0, 0), R * disc, R * disc)        # its rim
     p.setBrush(face); p.drawEllipse(QPointF(0, 0), R * .965 * disc, R * .965 * disc)
-    rings = ease(stage(a, .22, .45))
+    rings = ease(stage(a, .22, .45)) if not hand else (1. if a > .28 else 0.)
     if rings > 0:
+        p.save()
+        if hand and a < .4:                    # exp.67: the rings appear as the pen goes round them
+            sweep = stage(a, .28, .4)
+            clip = QPainterPath(); clip.moveTo(0, 0)
+            clip.arcTo(QRectF(-R * 1.05, -R * 1.05, 2.1 * R, 2.1 * R), 90., -360. * sweep); clip.closeSubpath()
+            p.setClipPath(clip, Qt.ClipOperation.IntersectClip)
         grow = .85 + .15 * rings
         col = QColor(ink); col.setAlphaF(rings)
         p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(_pen(col, line * 1.2))
@@ -296,13 +323,15 @@ def _clock(p, item, w, h, frame_h, a, t):
             ang = 2 * math.pi * i / 60
             r0, r1 = R * .53 * grow, R * .6 * grow
             p.drawLine(QPointF(r0 * math.cos(ang), r0 * math.sin(ang)), QPointF(r1 * math.cos(ang), r1 * math.sin(ang)))
+        p.restore()
     numerals = stage(a, .4, .78)
     if numerals > 0:
         font = QFont('Times New Roman'); font.setPixelSize(max(4, int(R * .27)))
         font.setStretch(80); font.setWeight(QFont.Weight.Normal)
         p.setFont(font)
         for i, text in enumerate(ROMAN):
-            show = clamp(numerals * 12 - i)
+            # by hand: complete when the pen reaches it (the pen is at numeral k, k = numerals × 12)
+            show = clamp((numerals * 12 - i) * 3 + 1) if hand else clamp(numerals * 12 - i)
             if show <= 0:
                 continue
             col = QColor(ink); col.setAlphaF(show); p.setPen(col)
@@ -311,7 +340,12 @@ def _clock(p, item, w, h, frame_h, a, t):
             p.save(); p.translate(cx, cy); p.rotate(math.degrees(ang) + 90)
             p.drawText(QRectF(-R * .25, -R * .16, R * .5, R * .32), Qt.AlignmentFlag.AlignCenter, text)
             p.restore()
-    hands = back_out(stage(a, .74, 1.), 1.2)
+    if hand:                                   # exp.67: the minute hand, then the hour hand, by the pen
+        grow_minute, grow_hour = stage(a, .78, .9), stage(a, .9, 1.)
+        grow_second = 1. if a >= .999 else 0.
+    else:
+        grow_minute = grow_hour = grow_second = back_out(stage(a, .74, 1.), 1.2)
+    hands = max(grow_minute, grow_hour, grow_second)
     if hands <= 0:
         return
     run = (float(t) - float(item.get('start', 0))) if t is not None else 0.
@@ -322,7 +356,7 @@ def _clock(p, item, w, h, frame_h, a, t):
         return QPointF(r * math.cos(ang) - side * math.sin(ang), r * math.sin(ang) + side * math.cos(ang))
     # the hour hand: a slim shaft, an open diamond and a spear tip
     hour = math.radians(300 + run * 1)
-    L = R * .42 * hands
+    L = R * .42 * grow_hour
     p.drawPolygon(QPolygonF([along(hour, -R * .06, R * .02), along(hour, L * .55, R * .012), along(hour, L * .62, R * .05),
                              along(hour, L * .72, R * .012), along(hour, L, 0), along(hour, L * .72, -R * .012),
                              along(hour, L * .62, -R * .05), along(hour, L * .55, -R * .012),
@@ -331,7 +365,7 @@ def _clock(p, item, w, h, frame_h, a, t):
     p.setBrush(face); p.drawPath(hole); p.setBrush(ink)
     # the minute hand: thin, with a teardrop before its tip
     minute = math.radians(150 + run * 12)
-    L = R * .7 * hands
+    L = R * .7 * grow_minute
     p.drawPolygon(QPolygonF([along(minute, -R * .08, R * .014), along(minute, L * .7, R * .01), along(minute, L, 0),
                              along(minute, L * .7, -R * .01), along(minute, -R * .08, -R * .014)]))
     drop = QPainterPath()
@@ -342,7 +376,8 @@ def _clock(p, item, w, h, frame_h, a, t):
     # the second hand: a hair with a little counterweight; it ticks once a second
     second = math.radians(int(run) * 6 + 40)
     p.setPen(_pen(ink, line * .8)); p.setBrush(Qt.BrushStyle.NoBrush)
-    p.drawLine(along(second, -R * .2), along(second, R * .82 * hands))
+    if grow_second > 0:
+        p.drawLine(along(second, -R * .2), along(second, R * .82 * grow_second))
     p.setPen(Qt.PenStyle.NoPen); p.setBrush(ink)
     p.drawEllipse(along(second, -R * .16), R * .025, R * .025)
     p.drawEllipse(QPointF(0, 0), R * .045, R * .045)
@@ -372,17 +407,24 @@ def _double_arrow(p, item, w, h, frame_h, a, t):
     s_ = min(w, h)
     width = s_ * .045 * float(item.get('thickness', THICKNESS['Double arrow'])) / THICKNESS['Double arrow']
     color = item.get('color', COLOR['Double arrow'])
-    grow = ease(stage(a, 0., .7))
     size = s_ * .13
-    for near, far in (((.43, .43), (.07, .07)), ((.57, .57), (.93, .93))):
+    for i, (near, far) in enumerate(DOUBLE_ARMS):
         n, f = _pt(near, w, h, flip), _pt(far, w, h, flip)
+        if by_hand(item):                      # exp.67: one pen: an arm and its head, then the other
+            grow = stage(a, DOUBLE_STAGES[i][0], DOUBLE_STAGES[i][1])
+            head = stage(a, DOUBLE_STAGES[i][1], DOUBLE_STAGES[i][2])
+        else:
+            grow = ease(stage(a, 0., .7)); head = back_out(stage(a, .62, 1.))
         tip = (n[0] + (f[0] - n[0]) * grow, n[1] + (f[1] - n[1]) * grow)
         if grow > 0:
             pen = _pen(color, width); pen.setCapStyle(Qt.PenCapStyle.FlatCap)
             p.setPen(pen); p.drawLine(QPointF(*n), QPointF(*tip))
-        head = back_out(stage(a, .62, 1.))
         if head > 0:
             _head(p, tip, n, size * head, color, width, square=True)
+
+
+DOUBLE_ARMS = (((.43, .43), (.07, .07)), ((.57, .57), (.93, .93)))
+DOUBLE_STAGES = ((0., .36, .5), (.5, .86, 1.))     # by hand: arm, its head; then the other
 
 
 def _hook(p, item, w, h, frame_h, a, t):
@@ -426,7 +468,7 @@ def _hook(p, item, w, h, frame_h, a, t):
     end = at(body)
     if body >= .999:                                       # a round end under the head
         p.drawEllipse(QPointF(*end), half(1.) , half(1.))
-    head = back_out(stage(a, .74, 1.))
+    head = back_out(stage(a, .74, 1.)) if not by_hand(item) else stage(a, .8, 1.)
     if head > 0:
         before = at(.97)
         ang = math.atan2(end[1] - before[1], end[0] - before[0])
@@ -436,3 +478,84 @@ def _hook(p, item, w, h, frame_h, a, t):
         for side in (-1, 1):
             q = ang + math.pi - side * math.radians(52)
             p.drawLine(QPointF(*tip), QPointF(tip[0] + arm * math.cos(q), tip[1] + arm * math.sin(q)))
+
+
+def pen_at(item, w, h, frame_h, a, t=None):
+    """exp.67 (the user: the sticker and the hand were not together): where the pen is (box
+    points, centred, as draw paints) when the sticker is built `a` (0..1) by the hand: the same
+    geometry and stages as its drawing."""
+    shape = item.get('shape')
+    flip = bool(item.get('flip'))
+    a = clamp(a)
+    s_ = min(w, h)
+    if shape == 'Marker ellipse':
+        pts = [_pt(q, w, h, flip) for q in main_line(shape)]
+        return _partial(pts, ease(a) if a < 1 else 1.)[-1]
+    if shape == 'Magnifier':
+        c = _pt((.4, .4), w, h, flip); r = .3 * s_
+        edge = _pt((.4 + .3 * math.cos(math.radians(45)), .4 + .3 * math.sin(math.radians(45))), w, h, flip)
+        end = _pt((.9, .9), w, h, flip)
+        if a < .14:
+            return end                                     # the dot
+        if a < .42:
+            k = ease(stage(a, .14, .42))
+            return (end[0] + (edge[0] - end[0]) * k, end[1] + (edge[1] - end[1]) * k)
+        sweep = stage(a, .42, 1.)
+        ang = math.radians(45.) + (2 * math.pi * sweep) * (1 if not flip else -1)   # screen y down
+        if flip:
+            ang = math.radians(135.) - 2 * math.pi * sweep
+        return (c[0] + r * math.cos(ang), c[1] + r * math.sin(ang))
+    if shape == 'Clock':
+        R = .48 * s_
+        if a < .28:                                        # round the rim, from 12 o'clock clockwise
+            ang = -math.pi / 2 + 2 * math.pi * stage(a, 0., .28)
+            return (R * math.cos(ang), R * math.sin(ang))
+        if a < .4:                                         # the rings: round the track
+            ang = -math.pi / 2 + 2 * math.pi * stage(a, .28, .4)
+            return (R * .6 * math.cos(ang), R * .6 * math.sin(ang))
+        if a < .78:                                        # each numeral as it appears
+            k = min(11., stage(a, .4, .78) * 12)
+            ang = -math.pi / 2 + 2 * math.pi * k / 12
+            return (R * .765 * math.cos(ang), R * .765 * math.sin(ang))
+        run = (float(t) - float(item.get('start', 0))) if t is not None else 0.
+        if a < .9:                                         # out along the minute hand, then the hour hand
+            ang, L = math.radians(150 + run * 12), R * .7 * stage(a, .78, .9)
+        else:
+            ang, L = math.radians(300 + run * 1), R * .42 * stage(a, .9, 1.)
+        ang -= math.pi / 2
+        return (L * math.cos(ang), L * math.sin(ang))
+    if shape == 'Double arrow':
+        for i, (near, far) in enumerate(DOUBLE_ARMS):
+            g0, g1, g2 = DOUBLE_STAGES[i]
+            if a <= g2 or i == 1:
+                n, f = _pt(near, w, h, flip), _pt(far, w, h, flip)
+                grow = stage(a, g0, g1)
+                tip = (n[0] + (f[0] - n[0]) * grow, n[1] + (f[1] - n[1]) * grow)
+                head = stage(a, g1, g2)
+                if head <= 0:
+                    return tip
+                size = s_ * .13
+                ang = math.atan2(tip[1] - n[1], tip[0] - n[0]) + math.pi - math.radians(40)
+                return (tip[0] + size * head * math.cos(ang), tip[1] + size * head * math.sin(ang))
+    if shape == 'Hook arrow':
+        cx, cy = .5 * w - w / 2, .4 * h - h / 2
+        rx, ry = .42 * w, .5 * h
+        a0, a1 = math.radians(-18), math.radians(172)
+        fat = s_ * .2 * float(item.get('thickness', THICKNESS['Hook arrow'])) / THICKNESS['Hook arrow']
+
+        def at(u):
+            ang = a0 + (a1 - a0) * u
+            x, y = cx + rx * math.cos(ang), cy + ry * math.sin(ang)
+            return ((-x if flip else x), y)
+        body = ease(stage(a, 0., .8))
+        if a < .8:
+            return at(body)
+        end, before = at(1.), at(.97)
+        ang = math.atan2(end[1] - before[1], end[0] - before[0])
+        tip = (end[0] + math.cos(ang) * fat * .55, end[1] + math.sin(ang) * fat * .55)
+        head = stage(a, .8, 1.)
+        q = ang + math.pi + math.radians(52)
+        arm = fat * 1.75 * head
+        return (tip[0] + arm * math.cos(q), tip[1] + arm * math.sin(q))
+    pts = [_pt(q, w, h, flip) for q in main_line(shape)]
+    return _partial(pts, a)[-1]
