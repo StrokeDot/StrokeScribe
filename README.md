@@ -6,6 +6,13 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## A new camera position brings the hand back to its corner; sticker hands follow the corner rule (v1.0.1-experimental.64)
+
+- **A new camera position ends a Hand motion's parking.** A Hand motion that leaves the hand somewhere kept it there until the next drawing's hand came; a camera step (or any element without a hand that the camera moves to) did not end it, so every later sticker started and ended at that old spot. Now the hand glides back to its corner while the camera moves to the new position.
+- **A sticker's hand that stops and waits goes back to where the hand waits when it finishes** (the corner of the camera at that moment, or where a Hand motion left it), like an element's hand. It no longer pins the waiting hand at the spot it started from (exp.51); only a **Free ending** leaves the hand where you put it.
+- When no waiting hand is known, a sticker's hand uses the corner of the screen (Hand panel → Corner), not the corner of the sticker's page.
+- From the menu audit (findings 1 and 3). The menu fixes come next.
+
 ## Camera steps found again in older projects, also with the picture switched on (v1.0.1-experimental.63)
 
 - Fix to exp.62: a camera step saved before its mark was kept can have had its picture switched on again, so it was not found. It is now recognised by its own invisible placeholder drawing (nothing else is made of it); it gets its camera icon, and its picture and hand are off again.

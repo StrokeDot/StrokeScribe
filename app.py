@@ -2280,6 +2280,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         ax,ay=options.get('anchor',(.1,.1))
         return (rect.x()+float(ax)*rect.width(),rect.y()+float(ay)*rect.height()),rect.height()*float(ay)
 
+    def screen_corner(self,W,H):
+        """exp.64: the hand's corner (Hand panel → Corner) on a W × H screen, as hand_spot_at
+        gives it ((x, y), the hand's height below the tip), for when no waiting hand is known."""
+        from frame_render import REST_CORNERS
+        corner=self.hand_rest_corner.currentText() if hasattr(self,'hand_rest_corner') else 'Bottom right'
+        fx,fy=REST_CORNERS.get(corner,REST_CORNERS['Bottom right'])
+        return (fx*W,fy*H),H*.1
+
     def sticker_screen_map(self,item,t,W,H):
         """exp.51: (to_screen, from_screen) between a sticker's W × H frame and the screen at t (its
         own page as the camera shows it; not the element's page)."""
@@ -2309,11 +2317,14 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         for o in items:
             if not stickers.hand_mode(o) or o.get('off'):
                 o.pop('_home_screen',None); o.pop('_home_outside',None); o.pop('_end_screen',None)
+                o.pop('_back_screen',None)
         for o in sorted((o for o in items if stickers.hand_mode(o) and not o.get('off') and stickers.busy(o)),
                         key=lambda o: stickers.busy(o)[0]):
             span=stickers.busy(o)
             # where it comes from (earlier stickers' ends are already known: they park the hand)
             found=None if o.get('hand_way')=='Comes in and leaves' else self.hand_spot_at(W,H,span[0]+1e-4)
+            if found is None and o.get('hand_way')!='Comes in and leaves':
+                found=self.screen_corner(W,H)          # exp.64: no waiting hand: the screen's corner
             if found is None:
                 o.pop('_home_screen',None); o.pop('_home_outside',None)
             else:
@@ -2326,12 +2337,23 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 elif outside:
                     x,y=W/2.,H+below+2.
                 o['_home_screen']=[round(x/W,4),round(y/H,4)]; o['_home_outside']=outside
+            # exp.64 (the user: a new camera position has its own corner): where its way back
+            # ends: where the waiting hand is when it finishes (the corner of the camera then,
+            # moved by any Hand motion), like an element's hand; outside the picture: below the middle
+            o.pop('_back_screen',None)
+            if o.get('hand_way')!='Comes in and leaves':
+                back=self.hand_spot_at(W,H,float(span[1])) or self.screen_corner(W,H)
+                if back is not None:
+                    (bx,by),below=back
+                    if not (0.<=bx<=W and 0.<=by<=H): bx,by=W/2.,H+below+2.
+                    o['_back_screen']=[round(bx/W,4),round(by/H,4)]
             # where its hand really ends
             if o.get('hand_way')=='Comes in and leaves':
                 o.pop('_end_screen',None); continue
             t=float(span[1])-1e-3
             to,_=self.sticker_screen_map(o,t,W,H)
-            tip=stickers.hand_tip(o,t,W,H,stickers.home_on_frame(o,W,H,W,None,to))
+            tip=stickers.hand_tip(o,t,W,H,stickers.home_on_frame(o,W,H,W,None,to),
+                                  stickers.home_on_frame(o,W,H,W,None,to,'_back_screen'))
             if tip is None:
                 o.pop('_end_screen',None); continue
             ex,ey=to(*tip); o['_end_screen']=[round(ex/W,4),round(ey/H,4)]
@@ -7172,7 +7194,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 return ()
             default=float(self.hand_rest_travel.value())
             hidden=self.hidden_elements()
-            out=[]
+            import scenes as _scenes
+            out=list(_scenes.camera_changes(self.scenes,self.timeline_layout(),hidden))     # exp.64
             for it in self.timeline_layout().items:
                 s=self.scenes[it.k]
                 if it.k in hidden or s.get('hand_off') or s.get('art_off'): continue
@@ -7306,6 +7329,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         free_begin=getattr(self,'_free_begin_chosen',False) if mine else item.get('hand_begin')=='free'
         free_end=getattr(self,'_free_ending_chosen',False) if mine else item.get('hand_flow')=='free'
         end=home
+        if item.get('_back_screen'):                       # exp.64: back to the corner then
+            end=(float(item['_back_screen'][0])*W,float(item['_back_screen'][1])*H)
         if free_end and item.get('hand_end') and item.get('hand_way')!='Comes in and leaves':
             end=to_screen(float(item['hand_end'][0])*W,float(item['hand_end'][1])*H)
         a,b=(home,first) if which=='in' else (last,end)
@@ -7357,7 +7382,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
             return ('The hand is outside the picture here, so it comes in from below the middle. Drag the green '
                     'dot to choose where it comes from (it goes back there too).')
         if item.get('_home_screen'):
-            return 'The green dot is where the hand is when this sticker starts. It goes back there when done.'
+            return ('The green dot is where the hand is when this sticker starts. When done it goes back to '
+                    'where the hand waits then (the corner of the camera at that moment).')
         return ''
 
     def hand_marks(self):
@@ -7770,6 +7796,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                     x0,y0=to_screen(0.,0.); x1,y1=to_screen(float(W),float(H))
                     place=(x0,y0,x1-x0,y1-y0)
                     end=home
+                    if item.get('_back_screen'):                            # exp.64: the corner then
+                        end=(float(item['_back_screen'][0])*W,float(item['_back_screen'][1])*H)
                     if stickers.free_end(item,W,H) is not None:             # exp.44: Free ending
                         end=to_screen(*stickers.free_end(item,W,H))
                 except Exception as exc:
