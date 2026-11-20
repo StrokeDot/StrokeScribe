@@ -40,7 +40,7 @@ class StickerWindow(unittest.TestCase):
         w.overlays.append(self.item); w.sync_titles_timeline(); pump()
 
     def tearDown(self):
-        self.w.close()
+        self.w.close(); self.w.deleteLater(); pump()
 
     def run_window(self, act):
         import sticker_dialog
@@ -90,6 +90,7 @@ class StickerWindow(unittest.TestCase):
             ev = QWheelEvent(c.frame()[0], c.mapToGlobal(c.frame()[0]), QPoint(0, 0), QPoint(0, 120),
                              Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier, Qt.ScrollPhase.NoScrollPhase, False)
             QApplication.sendEvent(c, ev)
+            del ev
             self.assertGreater(d.item['size'], s0)
             return QDialog.DialogCode.Accepted
         self.assertTrue(self.run_window(act))

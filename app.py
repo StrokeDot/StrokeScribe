@@ -2531,9 +2531,12 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         draw=float(item.get('draw_seconds',.8))
         t=start+max(.05,min(length-draw-.05 if length>2*draw+.1 else length*.5,draw+.3))
         dialog=StickerDialog(self,item,lambda it,sec: self.sticker_moment(it,sec),t)
-        if dialog.exec()!=QDialog.DialogCode.Accepted: return False
-        values=dialog.values()
-        if not values: return False
+        try:
+            accepted=dialog.exec()==QDialog.DialogCode.Accepted
+            values=dialog.values() if accepted else {}
+        finally:
+            dialog.hide(); dialog.deleteLater()          # not kept until the program ends
+        if not accepted or not values: return False
         self.record_structure('sticker window')
         item.update(values)
         import stickers
