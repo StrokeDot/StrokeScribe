@@ -79,9 +79,11 @@ def build(w, Section, form_layout, linked_slider):
     w.sticker_drawing.setToolTip('Animated: it draws itself. Hand: outline: the hand draws its main shape '
                                  '(an arrow\'s line; the head pops in). Hand: everything: the hand draws every stroke.')
     form.addRow('Appears', w.sticker_drawing)
-    w.sticker_hand_way = QComboBox(); w.sticker_hand_way.addItems(stickers.HAND_WAYS)
-    w.sticker_hand_way.setToolTip('Where the hand comes from and goes back to: its resting corner, or in from '
-                                  'the bottom and out again.')
+    # exp.65 (menu audit: "Rests in its corner" here, "Stop and wait" in Hand ways, and neither was
+    # what happened): where the hand comes from and ends is chosen in Hand ways only; this says it
+    w.sticker_hand_way = QLabel('')
+    w.sticker_hand_way.setWordWrap(True)
+    w.sticker_hand_way.setToolTip('Where the hand comes from and where it ends (change it in Hand ways…).')
     form.addRow('Hand', w.sticker_hand_way)
     w.sticker_hand_ways = QPushButton('Hand ways…')
     w.sticker_hand_ways.setToolTip('How the hand goes to the line and back: time, How, Turn, Path (like an '
@@ -171,7 +173,7 @@ def build(w, Section, form_layout, linked_slider):
                 chosen.set_expanded(True)      # a sticker chosen: its settings open
             w.sticker_shape.setCurrentText(item.get('shape', 'Arrow'))
             w.sticker_drawing.setCurrentText(item.get('drawing', 'Animated'))
-            w.sticker_hand_way.setCurrentText(item.get('hand_way', 'Rests in its corner'))
+            w.sticker_hand_way.setText(stickers.hand_summary(item))
             w.sticker_hand_way.setEnabled(stickers.hand_mode(item) is not None)
             w.sticker_hand_ways.setEnabled(stickers.hand_mode(item) is not None)
             paint_color(item.get('color', '#E0463C'))
@@ -224,7 +226,6 @@ def build(w, Section, form_layout, linked_slider):
 
     w.sticker_shape.currentTextChanged.connect(lambda s: change(shape=s))
     w.sticker_drawing.currentTextChanged.connect(lambda s: change(drawing=s))
-    w.sticker_hand_way.currentTextChanged.connect(lambda s: change(hand_way=s))
     w.sticker_thickness.valueChanged.connect(lambda v: change(thickness=round(v / 1000, 4)))
     w.sticker_size.valueChanged.connect(lambda v: change(size=round(v / 100, 4)))
     w.sticker_aspect.valueChanged.connect(lambda v: change(aspect=round(v / 100, 4)))

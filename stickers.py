@@ -37,6 +37,18 @@ ASPECT = {'Arrow': .32, 'Curved arrow': .55, 'Circle': .62, 'Hand-drawn circle':
 HEAD_SHARE = .18          # arrows: the last part of the drawing time draws the head
 
 
+def hand_summary(item):
+    """exp.65 (menu audit): the Stickers panel's Hand row, in the words of the Hand ways window:
+    where the hand comes from → where it ends."""
+    if hand_mode(item) is None:
+        return 'No hand (it draws itself)'
+    if item.get('hand_way') == 'Comes in and leaves':
+        return 'Comes in from below → leaves below'
+    start = 'From where you put it' if item.get('hand_begin') == 'free' else 'From where the hand is'
+    end = 'stays where you put it' if item.get('hand_flow') == 'free' else 'back to where the hand waits'
+    return f'{start} → {end}'
+
+
 def new(shape='Arrow', start=0., duration=3., color='#E0463C'):
     shape = shape if shape in SHAPES else 'Arrow'
     rich = shape in sticker_art.RICH
