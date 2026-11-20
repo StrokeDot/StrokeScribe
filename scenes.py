@@ -906,17 +906,37 @@ def scenes_from_project(data):
                         hand_link=bool(item.get('hand_link')), hand_flow=item.get('hand_flow'),
                         hand_end=item.get('hand_end'), hand_start=item.get('hand_start'), hand_begin=item.get('hand_begin'), _motion_cut=item.get('_motion_cut'), _motion_cut_at=item.get('_motion_cut_at'),   # exp.38/40/44/46
                         thumb_png=item.get('thumb_png'),
-                        camera_step=is_camera_step(item),          # exp.62
+                        camera_step=is_camera_step(item, state),   # exp.62/63
                         glide=tuple(item['glide']) if item.get('glide') else None,
                         glide_path=item.get('glide_path') or None))
+        if out[-1]['camera_step']:
+            out[-1].update(art_off=True, hand_off=True)   # exp.63: a camera has no picture, no hand
     return out
 
 
-def is_camera_step(item):
-    """exp.62 (the user: the camera element lost its camera icon): a camera step, also in a
-    project saved before its mark was saved (exp.54-61): named 'Camera', picture and hand off,
-    which only a camera step is made with."""
+def placeholder_drawing(state):
+    """exp.63: the camera step's invisible drawing (app.CAMERA_SVG): one line of 1 pixel in the
+    middle of a 1600 × 900 page. Nothing else is made of exactly that."""
+    try:
+        drawing = state.get('drawing') if isinstance(state, dict) else None
+        strokes = drawing.get('strokes') if isinstance(drawing, dict) else None
+        if not isinstance(strokes, list) or len(strokes) != 1 or not isinstance(strokes[0], dict):
+            return False
+        pts = strokes[0].get('points') or []
+        return bool(pts) and float(strokes[0].get('width', 1) or 1) <= 1.01 and all(
+            abs(float(x) - 800.5) <= 1. and abs(float(y) - 450.) <= .5 for x, y in pts)
+    except (TypeError, ValueError):
+        return False
+
+
+def is_camera_step(item, state=None):
+    """exp.62/63 (the user: the camera element lost its camera icon): a camera step, also in a
+    project saved before its mark was saved (exp.54-61), where its picture may have been
+    switched on again: its drawing is the camera's invisible placeholder (or, without the
+    drawing at hand: named 'Camera', picture and hand off)."""
     if item.get('camera_step'):
+        return True
+    if state is not None and placeholder_drawing(state):
         return True
     return bool(item.get('art_off') and item.get('hand_off') and (item.get('name') or '') == 'Camera')
 

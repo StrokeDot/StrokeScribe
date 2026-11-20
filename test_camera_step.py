@@ -297,6 +297,28 @@ class KeptWhenSaved(unittest.TestCase):
         self.assertTrue(other.scenes[1].get('camera_step'))
         self.assertTrue(self.camera_icon(other.scenes[1].get('thumb')))
 
+    def test_saved_before_the_fix_with_its_picture_switched_on_again(self):
+        """exp.63 (the user's project: no mark, picture on, hand off): its placeholder drawing
+        says it is a camera; it gets its picture and hand off again."""
+        data = self.w.project_state()
+        for item in data['scenes']:
+            if item.get('camera_step'):
+                item.update(art_off=False)
+            item.pop('camera_step', None)
+        other = self.reopen(data)
+        self.assertTrue(other.scenes[1].get('camera_step'))
+        self.assertTrue(other.scenes[1].get('art_off') and other.scenes[1].get('hand_off'))
+        self.assertTrue(self.camera_icon(other.scenes[1].get('thumb')))
+        self.assertFalse(other.scenes[0].get('camera_step'))
+
+    def test_only_the_placeholder_drawing_counts(self):
+        import scenes
+        one = {'drawing': {'strokes': [{'points': [[800, 450], [801, 450]], 'width': 1.0}]}}
+        line = {'drawing': {'strokes': [{'points': [[100, 450], [801, 450]], 'width': 1.0}]}}
+        self.assertTrue(scenes.placeholder_drawing(one))
+        self.assertFalse(scenes.placeholder_drawing(line))
+        self.assertFalse(scenes.placeholder_drawing({'drawing': {'strokes': []}}))
+
     def test_an_ordinary_element_named_camera_is_not_one(self):
         import scenes
         self.assertFalse(scenes.is_camera_step({'name': 'Camera', 'art_off': False, 'hand_off': True}))
