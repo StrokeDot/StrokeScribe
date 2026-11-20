@@ -3854,8 +3854,10 @@ def build_workspace(w, Canvas, BRAND_ICON):
     w.hand_rest_corner.setToolTip('Where the hand waits.')
     h.addRow('Corner',w.hand_rest_corner)
     w.hand_rest_travel=w.number(.2,5,.8,.1); w.hand_rest_travel.setSuffix(' s')
-    w.hand_rest_travel.setToolTip('How long the hand takes to glide from the corner to the drawing (and back).')
-    h.addRow('Glide',w.hand_rest_travel)
+    w.hand_rest_travel.setToolTip('How long the hand takes to glide from the corner to the drawing (and back), '
+                                  'for every drawing and sticker that has no time of its own in Hand ways… '
+                                  '(theirs wins).')                # exp.65 (menu audit)
+    h.addRow('Glide (default)',w.hand_rest_travel)
     # exp.155 (the user, like Filmora): the hand is over the cameras: their zooms never move or
     # size it. Under them, the zooms move it with the drawing. (Or drag the Hand row.)
     w.hand_under=QCheckBox('Under the cameras')

@@ -6,6 +6,15 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## The hand menus agree (v1.0.1-experimental.65)
+
+From the menu audit (findings 2, 4, 6, 7):
+- **Stickers panel → Hand** now only says what the sticker's hand does, in the Hand ways window's words (for example "From where the hand is → back to where the hand waits"). It is chosen in **Hand ways…** only, which now also has **Comes in from below** (Starts) and **Leaves below** (Ends); the two go together.
+- **An element's Hand ways**: "Stays where it finished" is an **Ends** choice (it was a separate checkbox that greyed out Ends).
+- **Back** no longer promises "its corner": where the way back ends is what **Ends** says, and its explanation says where the hand waits (its corner of the camera at that moment, or where a Hand motion left it).
+- Hand panel: **Glide (default)**: the time for every drawing and sticker without its own time in Hand ways.
+- Not done yet (finding 5): Through / Near the corner for stickers needs new movement for sticker hands.
+
 ## A new camera position brings the hand back to its corner; sticker hands follow the corner rule (v1.0.1-experimental.64)
 
 - **A new camera position ends a Hand motion's parking.** A Hand motion that leaves the hand somewhere kept it there until the next drawing's hand came; a camera step (or any element without a hand that the camera moves to) did not end it, so every later sticker started and ended at that old spot. Now the hand glides back to its corner while the camera moves to the new position.
