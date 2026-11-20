@@ -6,6 +6,10 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## A click on the ruler keeps what is chosen (v1.0.1-experimental.58)
+
+- Fix: while changing a sticker's settings, a click on the timeline's ruler (to move the playhead) let go of the sticker, and the element at that time (for example a camera step) looked chosen instead. The ruler now only moves the playhead: a chosen sticker, text, picture or camera clip stays chosen. A click on an empty spot of the tracks still lets go, as before.
+
 ## Ctrl+C / Ctrl+V everywhere; a new element goes at the playhead (v1.0.1-experimental.57)
 
 - **Ctrl+C / Ctrl+V** (also Edit → Copy / Paste) copy what is chosen, in This element, Whole video and Board: an element, a text / picture / sticker / eraser on top, a camera clip or Hand motion, or lines of the element (when the line list or the preview has the keyboard; in Advanced edit too). A paste goes at the playhead; an element is pasted where a new element goes. Text fields and number boxes keep their own copy and paste. Ctrl+Z takes a paste out.
