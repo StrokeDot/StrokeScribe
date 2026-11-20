@@ -9,7 +9,7 @@ from color_reveal import render_color_timeline
 from adaptive_hand import plan_for,pil_image
 out=Path('samples/image-reconstruction-demo'); out.mkdir(parents=True,exist_ok=True)
 source=out/'representative-transparent.png'; artwork().save(source)
-result=reconstruct(source,'stroke_reconstruction','medium')
+result=reconstruct(source,'line_art','medium')
 plan=plan_for(result.drawing,result.image)
 frames=[]
 for fraction in (.25,.5,.75,1):

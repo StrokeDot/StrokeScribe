@@ -1,0 +1,31 @@
+name: Model download check
+on:
+  push:
+    paths:
+      - 'ai_engine.py'
+      - 'tools/ci_download_check.py'
+      - '.github/workflows/download-check.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python tools/ci_download_check.py /tmp/dl
+      - name: Publish the result to the download-check branch
+        if: always()
+        run: |
+          cp /tmp/dl/download-check.txt /tmp/result.txt 2>/dev/null || echo "download check failed" > /tmp/result.txt
+          git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
+          git checkout --orphan download-check-new
+          git rm -rfq .
+          cp /tmp/result.txt download-check.txt
+          git add download-check.txt
+          git commit -qm "Download check for ${GITHUB_SHA}"
+          git push -f origin HEAD:download-check
