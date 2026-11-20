@@ -6,6 +6,10 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Camera steps found again in older projects, also with the picture switched on (v1.0.1-experimental.63)
+
+- Fix to exp.62: a camera step saved before its mark was kept can have had its picture switched on again, so it was not found. It is now recognised by its own invisible placeholder drawing (nothing else is made of it); it gets its camera icon, and its picture and hand are off again.
+
 ## Camera steps stay camera steps after saving; a turning cursor (v1.0.1-experimental.62)
 
 - Fix: a camera step lost its mark when the project was saved, so after opening it again it became an ordinary empty element (a blank picture, a "+", no camera icon). The mark is saved now, and projects saved before this fix get it back when they open (an element called "Camera" with its picture and hand off). A camera step always shows its camera icon.
