@@ -6,6 +6,11 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Ctrl+C / Ctrl+V everywhere; a new element goes at the playhead (v1.0.1-experimental.57)
+
+- **Ctrl+C / Ctrl+V** (also Edit → Copy / Paste) copy what is chosen, in This element, Whole video and Board: an element, a text / picture / sticker / eraser on top, a camera clip or Hand motion, or lines of the element (when the line list or the preview has the keyboard; in Advanced edit too). A paste goes at the playhead; an element is pasted where a new element goes. Text fields and number boxes keep their own copy and paste. Ctrl+Z takes a paste out.
+- **A new element goes where the playhead is**: after the element under the playhead (in empty time after it, it starts at the playhead). The Add… tile no longer jumps to the last element. The menu still offers **At the end (after element N)**.
+
 ## Restore camera in the Camera tab, and it now really shows the page (v1.0.1-experimental.56)
 
 - The **Camera** tab (side panel and Advanced edit) starts with **Set camera…**, **Restore camera** and **Restore picture**; the last two act straight away.
