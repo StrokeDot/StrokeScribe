@@ -6,6 +6,11 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Stickers in their own window: move, turn, size, colour and shadow (v1.0.1-experimental.60)
+
+- **Double-click a sticker** (or Stickers panel → **Window…**) to open it in its own window: the video at that moment around it (the elements, the other stickers and texts), with the sticker drawn on top exactly as in the video. Drag it to move it, drag a corner or use the mouse wheel to make it bigger or smaller, drag the round handle to **turn** it (Shift: steps of 15°; also buttons for 15° and 90°). A Moment slider shows another moment of its clip. Apply keeps the changes (one Ctrl+Z undoes them), Cancel leaves it as it was.
+- **Shadow** for stickers: colour, strength, softness, distance and direction (in the window); the Stickers panel has a Shadow switch. Shadows are in the preview, the export and Set camera.
+
 ## Placing a camera: see everything around it (v1.0.1-experimental.59)
 
 - **Set camera** shows the stickers, texts and pictures on top too (as they are at that moment), not only the elements, so a camera can be placed knowing where everything is.
