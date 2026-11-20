@@ -1,0 +1,4 @@
+frames: 61
+ready-made frames: 61
+drawing a frame: 26.5 ms
+ready-made frame: 3.82 ms
