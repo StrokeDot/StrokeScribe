@@ -119,6 +119,14 @@ def build(w, Section, form_layout, linked_slider):
     slider_row('Rotation', w.sticker_rotation, -180, 180)
     w.sticker_flip = QCheckBox('Mirrored (left ↔ right)')
     form.addRow('', w.sticker_flip)
+    # exp.60 (the user): a shadow; its colour, softness and direction in the sticker's window
+    w.sticker_shadow = QCheckBox('Shadow')
+    w.sticker_shadow.setToolTip('A soft shadow under the sticker (its colour, softness, distance and direction: Window…).')
+    form.addRow('', w.sticker_shadow)
+    w.sticker_window = QPushButton('Window…')
+    w.sticker_window.setToolTip('The sticker in its own window, with the video around it: drag it, turn it, '
+                                'size, colour and shadow (double-click it on the timeline does the same).')
+    form.addRow('', w.sticker_window)
     w.sticker_draw = number(.1, 10, .1, 1, ' s')
     w.sticker_draw.setToolTip('How long it takes to draw itself')
     form.addRow('Draw time', w.sticker_draw)
@@ -138,7 +146,7 @@ def build(w, Section, form_layout, linked_slider):
     lay.addStretch(1)
 
     fields = [w.sticker_shape, w.sticker_drawing, w.sticker_hand_way, w.sticker_hand_ways, w.sticker_thickness, w.sticker_size, w.sticker_aspect, w.sticker_rotation,
-              w.sticker_flip, w.sticker_draw, w.sticker_length, w.sticker_ending, w.sticker_out, w.sticker_color,
+              w.sticker_flip, w.sticker_shadow, w.sticker_window, w.sticker_draw, w.sticker_length, w.sticker_ending, w.sticker_out, w.sticker_color,
               w.sticker_delete]
     state = dict(filling=False, last=(None, 0.))
 
@@ -172,6 +180,7 @@ def build(w, Section, form_layout, linked_slider):
             w.sticker_aspect.setValue(float(item.get('aspect', .4)) * 100)
             w.sticker_rotation.setValue(float(item.get('rotation', 0) or 0))
             w.sticker_flip.setChecked(bool(item.get('flip')))
+            w.sticker_shadow.setChecked(overlays.shadow_of(item) is not None)
             w.sticker_draw.setValue(float(item.get('draw_seconds', .8)))
             w.sticker_length.setValue(float(item.get('duration', 3)))
             w.sticker_ending.setCurrentText(item.get('ending', 'None'))
@@ -221,6 +230,16 @@ def build(w, Section, form_layout, linked_slider):
     w.sticker_aspect.valueChanged.connect(lambda v: change(aspect=round(v / 100, 4)))
     w.sticker_rotation.valueChanged.connect(lambda v: change(rotation=round(v, 1)))
     w.sticker_flip.toggled.connect(lambda on: change(flip=bool(on)))
+
+    def shadow(on):
+        item = chosen_item()
+        if item is None:
+            return
+        sh = dict(overlays.SHADOW); sh.update(item.get('shadow') or {}); sh['on'] = bool(on)
+        change(shadow=sh)
+    w.sticker_shadow.toggled.connect(shadow)
+    w.sticker_window.clicked.connect(lambda checked=False: chosen_item() is not None and
+                                     w.open_sticker_window(chosen_item()['id']))
     w.sticker_draw.valueChanged.connect(lambda v: change(draw_seconds=round(v, 2)))
     w.sticker_length.valueChanged.connect(lambda v: change(duration=round(v, 2)))
     w.sticker_out.currentTextChanged.connect(lambda s: change(effect_out=s))

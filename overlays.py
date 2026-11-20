@@ -322,6 +322,87 @@ def box(item, width, height):
     return cx - w / 2, cy - h / 2, w, h
 
 
+# exp.60 (the user: stickers with shadows): a soft shadow under the sticker. distance and blur
+# are shares of the video height; angle: where the shadow falls (0 right, 90 down).
+SHADOW = dict(color='#000000', opacity=.45, distance=.012, angle=60., blur=.01)
+
+
+def shadow_of(item):
+    """The sticker's shadow settings (with the defaults), or None when it has none."""
+    sh = item.get('shadow')
+    if not sh or not sh.get('on', True):
+        return None
+    return dict(SHADOW, **{k: v for k, v in sh.items() if k != 'on'})
+
+
+def _blur_alpha(alpha, radius):
+    """Three box blurs (close to a Gaussian) of a float alpha array."""
+    import numpy as np
+    r = int(max(0, round(radius)))
+    if r < 1:
+        return alpha
+    out = alpha
+    for _ in range(3):
+        for axis in (0, 1):
+            pad = [(0, 0), (0, 0)]; pad[axis] = (r + 1, r)
+            c = np.cumsum(np.pad(out, pad, mode='constant'), axis=axis, dtype=np.float32)
+            n = out.shape[axis]
+            if axis == 0:
+                out = (c[2 * r + 1:2 * r + 1 + n] - c[:n]) / (2 * r + 1)
+            else:
+                out = (c[:, 2 * r + 1:2 * r + 1 + n] - c[:, :n]) / (2 * r + 1)
+    return out
+
+
+def _sticker_with_shadow(p, item, x, y, w, h, W, H, t, opacity, dx, dy, scale, rotation):
+    """Draw the sticker on its own layer, then its blurred shadow under it."""
+    import math
+    import numpy as np
+    import stickers
+    from PySide6.QtCore import QPointF
+    from PySide6.QtGui import QColor, QImage, QPainter
+    sh = shadow_of(item)
+    dist = float(sh['distance']) * H
+    blur = max(0., float(sh['blur']) * H)
+    angle = math.radians(float(sh['angle']))
+    ox, oy = math.cos(angle) * dist, math.sin(angle) * dist
+    draw_h = w * float(item.get('aspect', .4))
+    radius = .5 * math.hypot(w, max(h, draw_h)) * max(1., scale) + float(item.get('thickness', .012)) * H * 3 + 4
+    margin = int(math.ceil(radius + blur * 2 + 2))
+    size = 2 * margin
+    if size > 4096:                               # very big: no shadow rather than a huge layer
+        margin = 2048; size = 4096
+    cx, cy = x + w / 2 + dx * W, y + h / 2 + dy * H
+    layer = QImage(size, size, QImage.Format.Format_ARGB32_Premultiplied); layer.fill(0)
+    lp = QPainter(layer)
+    lp.setRenderHint(QPainter.RenderHint.Antialiasing); lp.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    lp.translate(QPointF(margin, margin))
+    if rotation or item.get('rotation'):
+        lp.rotate(rotation + float(item.get('rotation', 0) or 0))
+    lp.scale(scale, scale)
+    stickers.draw(lp, item, w, draw_h, H, t=t)
+    lp.end()
+    a = np.frombuffer(layer.constBits(), np.uint8).reshape(size, layer.bytesPerLine() // 4, 4)[:, :size, 3]
+    if a.any():
+        alpha = _blur_alpha(a.astype(np.float32) / 255., blur / 2.)
+        col = QColor(sh['color'])
+        shade = np.empty((size, size, 4), np.uint8)
+        al = np.clip(alpha, 0, 1)
+        shade[..., 3] = (al * 255).astype(np.uint8)
+        shade[..., 2] = (al * col.red()).astype(np.uint8)       # premultiplied BGRA
+        shade[..., 1] = (al * col.green()).astype(np.uint8)
+        shade[..., 0] = (al * col.blue()).astype(np.uint8)
+        shadow = QImage(shade.tobytes(), size, size, size * 4, QImage.Format.Format_ARGB32_Premultiplied).copy()
+        p.save()
+        p.setOpacity(opacity * max(0., min(1., float(sh['opacity']))))
+        p.drawImage(QPointF(cx - margin + ox, cy - margin + oy), shadow)
+        p.restore()
+    p.save()
+    p.setOpacity(opacity)
+    p.drawImage(QPointF(cx - margin, cy - margin), layer)
+    p.restore()
+
+
 def paint(frame, items, t, hands=True):
     """Draw the overlays visible at t (seconds) onto `frame` (in place) and return it.
     exp.29: hands=False: no hand drawing a sticker (the Drawing only export)."""
@@ -346,6 +427,9 @@ def paint(frame, items, t, hands=True):
         if p is None:
             p = QPainter(frame)
             p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform); p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if item.get('kind') == 'sticker' and shadow_of(item):      # exp.60: with its shadow
+            _sticker_with_shadow(p, item, x, y, w, h, W, H, t, opacity, dx, dy, scale, rotation)
+            continue
         if item.get('kind') == 'sticker':         # exp.27: drawn as lines, as much as is drawn by now
             import stickers
             p.save()

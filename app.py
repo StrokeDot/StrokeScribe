@@ -2473,7 +2473,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if item is None: return
         if item.get('kind')=='sticker':                 # exp.27: its settings are in the Stickers panel
             if hasattr(self,'show_right_panel'): self.show_right_panel('stickers')
-            self.select_overlay(oid); return
+            self.select_overlay(oid)
+            return self.open_sticker_window(oid)        # exp.60 (the user): and its own window
         if item.get('kind')=='eraser':                  # exp.186
             choice=self.eraser_dialog(item)
             if choice is None: return
@@ -2490,6 +2491,61 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if item==before and self.project_undo and self.project_undo[-1][3]=='text settings':
             self.project_undo.pop(); self.update_history_controls()      # nothing changed
         self.refresh()
+
+    def sticker_moment(self,item,seconds,width=960):
+        """exp.60: (picture, page) for the sticker window: the video at `seconds` with everything
+        in it but this sticker, and where the sticker's page is in that picture (x, y, w, h)."""
+        import timeline_render
+        height=round(width*self.board_aspect())
+        if len(self.scenes)>1:
+            lay=self.timeline_layout()
+            base=self.all_scenes_frame(width,height,max(0.,min(1.,seconds/max(1e-6,lay.total))))[0]
+        else:
+            base=self.render_view(max(0.,min(1.,seconds/max(1e-6,self.scene_seconds()))),width)
+        base=base.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+        W,H=base.width(),base.height()
+        others=[o for o in self.titles_split(seconds)[0] if o.get('id')!=item.get('id')]
+        placed=self.text_view(seconds,W,H)
+        base=timeline_render.paint_texts(base,others,seconds,*placed) if placed else \
+            timeline_render.paint_texts(base,others,seconds)
+        if placed:
+            frames,place,view=placed
+            k=min(max(0,int(item.get('_page',0) or 0)),len(frames)-1)
+            page=tuple(float(v) for v in place(frames[k],view,W,H))
+        else:
+            page=(0.,0.,float(W),float(H))
+        return base,page
+
+    def open_sticker_window(self,oid):
+        """exp.60 (the user): a sticker in its own window: the video around it at that moment;
+        move, size, turn, colour and shadow. One undo step."""
+        import copy
+        from sticker_dialog import StickerDialog
+        from PySide6.QtWidgets import QDialog
+        item=self.find_overlay(oid)
+        if item is None or item.get('kind')!='sticker' or not self.drawing: return None
+        if len(self.scenes)>1 and not self.all_scenes(): self.preview_scope.setCurrentIndex(1)
+        if getattr(self,'selected_overlay',None)!=oid: self.select_overlay(oid)   # the panel shows it too
+        self.mark_title_holds()
+        start,length=float(item.get('start',0)),max(.1,float(item.get('duration',3)))
+        draw=float(item.get('draw_seconds',.8))
+        t=start+max(.05,min(length-draw-.05 if length>2*draw+.1 else length*.5,draw+.3))
+        dialog=StickerDialog(self,item,lambda it,sec: self.sticker_moment(it,sec),t)
+        try:
+            accepted=dialog.exec()==QDialog.DialogCode.Accepted
+            values=dialog.values() if accepted else {}
+        finally:
+            dialog.hide(); dialog.deleteLater()          # not kept until the program ends
+        if not accepted or not values: return False
+        self.record_structure('sticker window')
+        item.update(values)
+        import stickers
+        if stickers.hand_mode(item): self.place_hand_sticker(item)
+        self.project_changes.mark_changed()
+        if hasattr(self,'sync_sticker_panel'): self.sync_sticker_panel()
+        self.sync_titles_timeline(); self.refresh()
+        self.status.setText(f'Sticker "{item.get("name") or item.get("shape")}" changed. Ctrl+Z undoes it.')
+        return True
 
     def overlay_action(self,oid,action,recorded=False):
         import copy, uuid
