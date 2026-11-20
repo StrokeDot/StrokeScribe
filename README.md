@@ -6,6 +6,11 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## Ctrl+T turns too, not only resizes (v1.0.1-experimental.61)
+
+- The **Ctrl+T** box on the preview has a round handle above it: drag it to **turn** the chosen sticker, text or picture on top (Shift: steps of 15°). The box turns with it; corners still resize, inside still moves. One Ctrl+Z undoes a turn.
+- Texts and pictures on top can now be turned (stickers already could). An element's own picture still only resizes.
+
 ## Stickers in their own window: move, turn, size, colour and shadow (v1.0.1-experimental.60)
 
 - **Double-click a sticker** (or Stickers panel → **Window…**) to open it in its own window: the video at that moment around it (the elements, the other stickers and texts), with the sticker drawn on top exactly as in the video. Drag it to move it, drag a corner or use the mouse wheel to make it bigger or smaller, drag the round handle to **turn** it (Shift: steps of 15°; also buttons for 15° and 90°). A Moment slider shows another moment of its clip. Apply keeps the changes (one Ctrl+Z undoes them), Cancel leaves it as it was.

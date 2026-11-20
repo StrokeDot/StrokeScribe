@@ -68,6 +68,10 @@ class Canvas(QWidget):
         # exp.28 (the user: Ctrl+T, like Photoshop's Free Transform): a box with corner handles;
         # dragging a corner reports ('start' | 'move' | 'done', factor) to on_transform
         self.transform_provider=None; self.on_transform=None; self._resize=None
+        # exp.61 (the user: Ctrl+T turns too, not only resizes): angle_provider() → degrees of the
+        # chosen thing (None: it cannot turn); a round handle above the box reports
+        # ('start' | 'move' | 'done', degrees) to on_rotate
+        self.angle_provider=None; self.on_rotate=None; self._rotate=None
         self.titles_frame=None      # exp.116: texts / pictures on top, over everything (screen)
         self.rest_frame=None        # exp.143: the hand waiting in its corner (screen)
         self._press=None
@@ -96,16 +100,41 @@ class Canvas(QWidget):
         rect=self.picture_rect(); k=rect.width()/max(1,self.frame.width())
         bx,by,bw,bh=box
         return QRectF(rect.x()+bx*k,rect.y()+by*k,max(1.,bw*k),max(1.,bh*k))
+    def _angle(self):
+        try:
+            a=self.angle_provider() if self.angle_provider is not None else None
+        except Exception:
+            a=None
+        return None if a is None else float(a)
+    def _turned(self,r,pad=0.):
+        """The corners of rect r turned about its centre by the chosen thing's angle."""
+        from PySide6.QtCore import QPointF
+        a=math.radians(self._angle() or 0.); ca,sa=math.cos(a),math.sin(a)
+        c=r.center(); hw,hh=r.width()/2+pad,r.height()/2+pad
+        return [QPointF(c.x()+x*ca-y*sa,c.y()+x*sa+y*ca) for x,y in ((-hw,-hh),(hw,-hh),(hw,hh),(-hw,hh))]
+    def _rotate_handle(self):
+        """exp.61: where the round turn handle is (above the box's top edge), or None."""
+        from PySide6.QtCore import QPointF
+        r=self._transform_rect()
+        if r is None or self._angle() is None or self.on_rotate is None: return None
+        a=math.radians(self._angle()); d=r.height()/2+26
+        return QPointF(r.center().x()+d*math.sin(a),r.center().y()-d*math.cos(a))
     def _corner_at(self,pos):
         r=self._transform_rect()
         if r is None: return None
-        for corner in (r.topLeft(),r.topRight(),r.bottomLeft(),r.bottomRight()):
+        for corner in self._turned(r):
             if abs(pos.x()-corner.x())<=10 and abs(pos.y()-corner.y())<=10: return r,corner
         return None
     def mousePressEvent(self,event):
         self._press=None
         if self.frame is None or self.busy_text is not None or event.button()!=Qt.MouseButton.LeftButton:
             return super().mousePressEvent(event)
+        handle=self._rotate_handle()
+        if handle is not None and abs(event.position().x()-handle.x())<=12 and abs(event.position().y()-handle.y())<=12:
+            # exp.61: the turn handle of the Ctrl+T box
+            c=self._transform_rect().center(); pos=event.position()
+            self._rotate=(c,math.atan2(pos.y()-c.y(),pos.x()-c.x()),self._angle() or 0.)
+            self.on_rotate('start',self._angle() or 0.); self.setFocus(); event.accept(); return
         hit=self._corner_at(event.position())
         if hit is not None and self.on_transform is not None:     # exp.28: a corner of the Ctrl+T box
             r,corner=hit
@@ -115,13 +144,23 @@ class Canvas(QWidget):
         self._press=(event.position(),False)
         self.setFocus()
     def mouseMoveEvent(self,event):
+        if self._rotate is not None:
+            c,a0,r0=self._rotate; pos=event.position()
+            r=r0+math.degrees(math.atan2(pos.y()-c.y(),pos.x()-c.x())-a0)
+            r=(r+180.)%360.-180.
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier: r=round(r/15.)*15.
+            self.on_rotate('move',round(r,1)); self.update()
+            return
         if self._resize is not None:
             centre,d0=self._resize; pos=event.position()
             self.on_transform('move',max(.05,math.hypot(pos.x()-centre.x(),pos.y()-centre.y())/d0))
             return
         if not event.buttons() and self.transform_provider is not None:
             hit=self._corner_at(event.position())
-            if hit is not None:
+            handle=self._rotate_handle()
+            if handle is not None and abs(event.position().x()-handle.x())<=12 and abs(event.position().y()-handle.y())<=12:
+                self.setCursor(Qt.CursorShape.CrossCursor); self._corner_cursor=True
+            elif hit is not None:
                 r,c=hit
                 diag=(c==r.topLeft() or c==r.bottomRight())
                 self.setCursor(Qt.CursorShape.SizeFDiagCursor if diag else Qt.CursorShape.SizeBDiagCursor)
@@ -143,6 +182,10 @@ class Canvas(QWidget):
         r=self.picture_rect()
         self.on_drag('move',d.x()/max(1.,r.width()),d.y()/max(1.,r.height()))
     def mouseReleaseEvent(self,event):
+        if self._rotate is not None:
+            self._rotate=None
+            if self.on_rotate is not None: self.on_rotate('done',self._angle() or 0.)
+            return
         if self._resize is not None:
             self._resize=None
             if self.on_transform is not None: self.on_transform('done',1.)
@@ -251,15 +294,30 @@ class Canvas(QWidget):
                 bx,by,bw,bh=box
                 ox,oy=rect.x(),rect.y()
                 p.setBrush(Qt.BrushStyle.NoBrush)
-                p.setPen(QPen(QColor(255,255,255,200),3)); p.drawRoundedRect(QRectF(ox+bx*k-3,oy+by*k-3,bw*k+6,bh*k+6),6,6)
-                p.setPen(QPen(QColor(c['accent']),2,Qt.PenStyle.DashLine)); p.drawRoundedRect(QRectF(ox+bx*k-3,oy+by*k-3,bw*k+6,bh*k+6),6,6)
+                if self._angle():                    # exp.61: turned with the sticker / text
+                    from PySide6.QtGui import QPolygonF
+                    poly=QPolygonF(self._turned(QRectF(ox+bx*k,oy+by*k,bw*k,bh*k),3))
+                    p.setPen(QPen(QColor(255,255,255,200),3)); p.drawPolygon(poly)
+                    p.setPen(QPen(QColor(c['accent']),2,Qt.PenStyle.DashLine)); p.drawPolygon(poly)
+                else:
+                    p.setPen(QPen(QColor(255,255,255,200),3)); p.drawRoundedRect(QRectF(ox+bx*k-3,oy+by*k-3,bw*k+6,bh*k+6),6,6)
+                    p.setPen(QPen(QColor(c['accent']),2,Qt.PenStyle.DashLine)); p.drawRoundedRect(QRectF(ox+bx*k-3,oy+by*k-3,bw*k+6,bh*k+6),6,6)
             tr=self._transform_rect()
             if tr is not None:                       # exp.28: Ctrl+T box with its corner handles
                 from PySide6.QtGui import QPen
-                p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(QColor(c['accent']),1.6)); p.drawRect(tr)
+                from PySide6.QtGui import QPolygonF
+                from PySide6.QtCore import QPointF
+                corners=self._turned(tr)
+                p.setBrush(Qt.BrushStyle.NoBrush); p.setPen(QPen(QColor(c['accent']),1.6)); p.drawPolygon(QPolygonF(corners))
+                handle=self._rotate_handle()
+                if handle is not None:                # exp.61: the round handle turns it
+                    top=QPointF((corners[0].x()+corners[1].x())/2,(corners[0].y()+corners[1].y())/2)
+                    p.drawLine(top,handle)
                 p.setBrush(QColor('white')); p.setPen(QPen(QColor(c['accent']),1.6))
-                for corner in (tr.topLeft(),tr.topRight(),tr.bottomLeft(),tr.bottomRight()):
+                for corner in corners:
                     p.drawRect(QRectF(corner.x()-5,corner.y()-5,10,10))
+                if handle is not None:
+                    p.setBrush(QColor(c['accent'])); p.setPen(QPen(QColor('white'),2)); p.drawEllipse(handle,7,7)
             if self.highlight:
                 from PySide6.QtGui import QPainterPath, QPen
                 from PySide6.QtCore import QPointF
@@ -645,6 +703,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         self.canvas.on_drag=self.drag_picture
         self.canvas.box_provider=self.overlay_box
         self.canvas.transform_provider=self.transform_box; self.canvas.on_transform=self.transform_drag   # exp.28
+        self.canvas.angle_provider=self.transform_angle; self.canvas.on_rotate=self.transform_rotate       # exp.61
         self.canvas.on_wheel=self.preview_wheel
         self.canvas.on_double=self.preview_double
         from menus import build_menus
@@ -2840,7 +2899,8 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
                 self.exit_fullscreen_key.setEnabled(getattr(self,'_fullscreen_esc',False))
             self.transforming_prev=on
             self.transform_done_key.setEnabled(on); self.transform_esc_key.setEnabled(on)
-        self.status.setText('Resize: drag a corner (drag inside to move). Ctrl+T, Enter or Esc when done.' if on
+        self.status.setText('Resize: drag a corner; turn: drag the round handle (Shift: 15° steps); drag inside to move. '
+                            'Ctrl+T, Enter or Esc when done.' if on
                             else self.status.text() if not self.status.text().startswith('Resize:') else 'Resize done.')
         self.canvas.update()
 
@@ -2867,6 +2927,31 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if not pts: return None
         xs=[x for x,_ in pts]; ys=[y for _,y in pts]
         return (min(xs),min(ys),max(xs)-min(xs),max(ys)-min(ys))
+
+    def transform_angle(self):
+        """exp.61: the angle (degrees) of the chosen sticker / text / picture on top, or None
+        (an element's picture, a camera: they cannot turn). Cheap: asked while painting."""
+        if getattr(self,'selected_camera',None) or self.zoomed_out(): return None
+        oid=getattr(self,'selected_overlay',None)
+        item=self.find_overlay(oid) if oid else None
+        if item is None or item.get('kind')=='eraser': return None
+        return float(item.get('rotation',0) or 0)
+
+    def transform_rotate(self,kind,degrees):
+        """exp.61 (the user): the Ctrl+T box's round handle turns the chosen thing on top."""
+        oid=getattr(self,'selected_overlay',None)
+        item=self.find_overlay(oid) if oid else None
+        if item is None: return
+        if kind=='start':
+            self.playing=False; self.record_structure('turn on the screen'); return
+        if kind=='move':
+            item['rotation']=round(float(degrees),1)
+            self._box_cache=None; self.refresh(); return
+        self.project_changes.mark_changed()
+        if hasattr(self,'sync_sticker_panel'): self.sync_sticker_panel()
+        self.status.setText(f'"{item.get("name","")}" turned to {float(item.get("rotation",0) or 0):.0f}°. '
+                            'Shift while turning: steps of 15°.')
+        self.refresh()
 
     def transform_drag(self,kind,factor):
         target=self.transform_target()

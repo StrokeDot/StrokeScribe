@@ -446,8 +446,9 @@ def paint(frame, items, t, hands=True):
         p.save()
         p.setOpacity(opacity)
         p.translate(QPointF(x + w / 2 + dx * W, y + h / 2 + dy * H))
-        if rotation:
-            p.rotate(rotation)
+        turn = rotation + float(item.get('rotation', 0) or 0)     # exp.61: texts and pictures turn too
+        if turn:
+            p.rotate(turn)
         p.scale(scale, scale)
         p.drawImage(QRectF(-w / 2, -h / 2, w, h), img)
         p.restore()
