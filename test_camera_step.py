@@ -4,6 +4,7 @@ position: a step with no picture and no hand, whose camera goes where it is set.
 import os
 import tempfile
 import unittest
+from pathlib import Path
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 os.environ.setdefault('STROKESCRIBE_TEST_AUTODISCARD', '1')
@@ -241,6 +242,65 @@ class SeeEverythingAround(unittest.TestCase):
         self.assertIsNone(seen['box'])
         self.assertEqual(w.preview_scope.currentIndex(), 0)          # back as it was
         self.assertFalse(w.restore_picture_button.isEnabled())
+
+
+
+class KeptWhenSaved(unittest.TestCase):
+    """exp.62 (the user: the camera element lost its camera icon): a camera step stays a camera
+    step when the project is saved and opened again (its mark was not saved), also a project
+    saved before the fix."""
+
+    def setUp(self):
+        from app import Window
+        from engine import import_svg
+        self.dir = Path(tempfile.mkdtemp())
+        self.w = w = Window(); w.show()
+        w.set_drawing(import_svg('samples/drawing.svg'))
+        for _ in range(20): APP.processEvents()
+        real = w.set_camera; w.set_camera = lambda k=None: None
+        w.add_camera_step()
+        for _ in range(20): APP.processEvents()
+        w.set_camera = real
+        w.select_scene(0)
+        for _ in range(10): APP.processEvents()
+
+    def tearDown(self):
+        self.w.close()
+
+    def reopen(self, data):
+        import projects
+        from app import Window
+        saved = projects.save(self.dir / 'camera', data)
+        other = Window(); self.addCleanup(other.close)
+        self.assertTrue(other.open_project(str(saved)))
+        from PySide6.QtTest import QTest
+        for _ in range(40):                                  # the pictures are made just after opening
+            QTest.qWait(50)
+            if all(s.get('thumb') is not None for s in other.scenes): break
+        return other
+
+    def camera_icon(self, img):
+        ref = self.w.camera_thumb()
+        return img is not None and not img.isNull() and img.convertToFormat(ref.format()) == ref
+
+    def test_saved_and_opened_again(self):
+        other = self.reopen(self.w.project_state())
+        self.assertTrue(other.scenes[1].get('camera_step'))
+        self.assertTrue(self.camera_icon(other.scenes[1].get('thumb')))
+        self.assertNotIn('+', other.scene_list.item(1).text().split()[1])
+
+    def test_a_project_saved_before_the_fix(self):
+        data = self.w.project_state()
+        for item in data['scenes']:
+            item.pop('camera_step', None)                 # as exp.54-61 saved it
+        other = self.reopen(data)
+        self.assertTrue(other.scenes[1].get('camera_step'))
+        self.assertTrue(self.camera_icon(other.scenes[1].get('thumb')))
+
+    def test_an_ordinary_element_named_camera_is_not_one(self):
+        import scenes
+        self.assertFalse(scenes.is_camera_step({'name': 'Camera', 'art_off': False, 'hand_off': True}))
+        self.assertTrue(scenes.is_camera_step({'name': 'Camera', 'art_off': True, 'hand_off': True}))
 
 
 if __name__ == '__main__':

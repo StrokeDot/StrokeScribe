@@ -906,9 +906,19 @@ def scenes_from_project(data):
                         hand_link=bool(item.get('hand_link')), hand_flow=item.get('hand_flow'),
                         hand_end=item.get('hand_end'), hand_start=item.get('hand_start'), hand_begin=item.get('hand_begin'), _motion_cut=item.get('_motion_cut'), _motion_cut_at=item.get('_motion_cut_at'),   # exp.38/40/44/46
                         thumb_png=item.get('thumb_png'),
+                        camera_step=is_camera_step(item),          # exp.62
                         glide=tuple(item['glide']) if item.get('glide') else None,
                         glide_path=item.get('glide_path') or None))
     return out
+
+
+def is_camera_step(item):
+    """exp.62 (the user: the camera element lost its camera icon): a camera step, also in a
+    project saved before its mark was saved (exp.54-61): named 'Camera', picture and hand off,
+    which only a camera step is made with."""
+    if item.get('camera_step'):
+        return True
+    return bool(item.get('art_off') and item.get('hand_off') and (item.get('name') or '') == 'Camera')
 
 
 def scenes_to_project(main_state, scene_list, index):
@@ -921,6 +931,7 @@ def scenes_to_project(main_state, scene_list, index):
                                start=s.get('start'), track=s.get('track') or 0,
                                hidden=bool(s.get('hidden')), muted=bool(s.get('muted')),
                                art_off=bool(s.get('art_off')), hand_off=bool(s.get('hand_off')),
+                               camera_step=bool(s.get('camera_step')),     # exp.62: it was lost on save
                                hand_link=bool(s.get('hand_link')), hand_flow=s.get('hand_flow'),
                                hand_end=s.get('hand_end'), hand_start=s.get('hand_start'), hand_begin=s.get('hand_begin'), _motion_cut=s.get('_motion_cut'), _motion_cut_at=s.get('_motion_cut_at'),   # exp.38/40/44/46
                                glide=list(s['glide']) if s.get('glide') else None,
