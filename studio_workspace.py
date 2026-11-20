@@ -1989,6 +1989,14 @@ class StageTimeline(QFrame):
                         self.track_toggled.emit(t,which)
                         event.accept(); return
             event.accept(); return
+        if (event.button()==Qt.MouseButton.LeftButton and pos.x()>=self.LEFT
+                and pos.y()<=self._rows()[0]+4):
+            # exp.58 (the user: changing a sticker's settings, a click on the timeline let go of
+            # it and the element there (a camera) was chosen instead): the ruler only moves the
+            # playhead; what is chosen (a sticker, a text, a camera clip, a hand bar) stays chosen
+            self._drag=('seek',)
+            self._seek(pos.x())
+            event.accept(); return
         # Anything else clicked: the texts are not chosen any more (one thing at a time).
         if self.selected_overlay or self.selected_overlays:
             self.selected_overlay=None; self.selected_overlays=set(); self.overlay_selected.emit('')
