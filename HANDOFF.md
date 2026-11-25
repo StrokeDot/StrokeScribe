@@ -76,7 +76,7 @@ It has a built-in updater: new versions install from inside the app (Help → up
 ## Next steps
 
 1. Wait for the owner's feedback on exp.70 (hand timing and Edit path) in the real app.
-2. Confirm Quick checks passes on the dev branch after the exp.71 merge (open problem 1).
+2. Keep Quick checks green (it passed on all 5 jobs after the exp.71 merge, 2026-11-25).
 3. Ask whether to add action logging (open problem 4).
 4. Through / Near the corner for stickers.
 
