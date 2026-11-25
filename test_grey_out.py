@@ -145,6 +145,8 @@ class DrawingSwitchTests(unittest.TestCase):
         from unittest import mock
         w = self.w
         self.assertTrue(w.section_move_in.isAncestorOf(w.move_in_hand_button))
+        w.move_in_on.setChecked(True)                        # exp.18: a section that is off is greyed out
+        self.assertTrue(w.move_in_hand_button.isEnabled())
         with mock.patch.object(w, 'choose_move_hand') as choose:
             w.move_in_hand_button.click()
             choose.assert_called_once()

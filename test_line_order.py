@@ -224,3 +224,20 @@ class WindowTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def tearDownModule():
+    """exp.71 (Windows crashed at exit, code 3221225477, after the tests passed): the windows and
+    Line order dialogs waiting to be deleted are deleted now, while Qt is still running, not while
+    Python shuts down."""
+    if SKIP:
+        return
+    import gc
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    for _ in range(3):
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        if app is not None:
+            app.processEvents()
+        gc.collect()
