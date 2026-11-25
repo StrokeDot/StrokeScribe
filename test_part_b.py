@@ -97,8 +97,9 @@ class WindowTests(unittest.TestCase):
 
     def test_element_cards_and_editor(self):
         w = self.w
-        self.assertIn('⏱', w.scene_list.item(0).text())
-        self.assertIn('➜', w.scene_list.item(0).text())          # the camera move after element 1
+        # exp.66: the card is one line; its times are in its tooltip
+        self.assertIn('⏱', w.scene_list.item(0).toolTip())
+        self.assertIn('➜', w.scene_list.item(0).toolTip())       # the camera move after element 1
         self.assertEqual(w.scene_add.text(), '+ Add element')
         self.assertEqual(w.preview_scope.itemText(0), 'This element')
         from element_dialog import ElementDialog

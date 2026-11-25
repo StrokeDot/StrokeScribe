@@ -1,6 +1,10 @@
 # StrokeScribe — Handoff
 
-Last updated: 2026-11-25. Current version: **1.0.1-experimental.70** (Prototype channel).
+Last updated: 2026-11-25. Current version: **1.0.1-experimental.71** (Prototype channel).
+
+**Keep this file current (the owner's rule):** after every change, update HANDOFF.md in the repo
+(same PR as the change) and the copy on the owner's PC (`Documents\StrokeScribe Projects\HANDOFF.md`),
+and send it to the owner when a new task starts. If you see an error, fix it.
 
 ## What it is
 
@@ -13,7 +17,10 @@ It has a built-in updater: new versions install from inside the app (Help → up
 
 - Dev branch: `fix/svg-guide-coverage-experimental12`. It is what the in-app updater reads,
   so every merge to it is effectively a release to the owner.
-- exp.56–70 are merged (PRs #273–#287). Recent work, newest first:
+- exp.56–71 are merged (PRs #273–#289). Recent work, newest first:
+  - exp.71: Quick checks green again. Picking a "Goes out" mode now un-greys the Exit settings;
+    stale tests updated (card times live in the tooltip since exp.66; Move in must be on before
+    its button works); `test_line_order` cleans up Qt windows so Windows doesn't crash at exit.
   - exp.70: sticker hand timing goes to the right; Edit path uses the sticker's own page;
     a camera move that starts during a Hand motion ends the hand's parking.
   - exp.69: `WheelGuard` (the mouse wheel only changes a control you clicked first);
@@ -55,13 +62,9 @@ It has a built-in updater: new versions install from inside the app (Help → up
 
 ## Open problems
 
-1. **Quick checks fails on the dev branch:**
-   - `test_part_b.test_element_cards_and_editor` expects '⏱' in the element card text.
-   - `test_grey_out` (`test_goes_out`, `test_move_in_has_its_own_upload_hand_button`).
-
-   These are probably from the compact strip (exp.66) changing card text and buttons. They are
-   not in the PR-gating test chain, so merges still went through. Fix the code or update the
-   tests after checking which is right.
+1. **Watch Quick checks after each merge.** On a push it runs every test, not only the ones for
+   the changed files. It had been failing for weeks (fixed in exp.71) without blocking merges,
+   because the PR run only picks tests for the changed files.
 2. **"Through / Near the corner"** options for sticker hands are not done
    (finding 5 of the menus audit).
 3. The **resting hand** is not shown in the "This element" preview of multi-element projects.
@@ -73,7 +76,7 @@ It has a built-in updater: new versions install from inside the app (Help → up
 ## Next steps
 
 1. Wait for the owner's feedback on exp.70 (hand timing and Edit path) in the real app.
-2. Fix the Quick checks failures (open problem 1).
+2. Confirm Quick checks passes on the dev branch after the exp.71 merge (open problem 1).
 3. Ask whether to add action logging (open problem 4).
 4. Through / Near the corner for stickers.
 

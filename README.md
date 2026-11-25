@@ -6,6 +6,11 @@
 
 A small local desktop tool for short SVG drawing overlays. Built from original application code with PySide6/Qt and svgelements; no proprietary software was reverse-engineered.
 
+## The Exit settings come back when you pick how it goes out (v1.0.1-experimental.71)
+
+- Choosing a "Goes out" mode (Fade out, Zigzag…) turned the Exit switch on but left its settings greyed out. They now become usable right away.
+- The automatic checks that had been failing for a while pass again (three outdated tests updated, and a Windows crash at the end of one test run fixed).
+
 ## Extra hand seconds go to the right; the hand follows its path (v1.0.1-experimental.70)
 
 - A sticker's hand now starts at the start of its clip: "To the drawing" seconds come first and the drawing after them, so adding seconds pushes the drawing and the way back later instead of earlier. If the hand needs more time than the clip lasts, the clip grows to the right. Stickers from older projects are adjusted when opened so they draw at exactly the same moment as before.

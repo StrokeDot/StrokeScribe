@@ -6708,6 +6708,7 @@ class Window(SourceEditing,ArtworkWorkflow,QMainWindow):
         if hasattr(self,'erase_on') and self.erase_on.isChecked()!=(erase!='Off'):
             self.erase_on.blockSignals(True); self.erase_on.setChecked(erase!='Off'); self.erase_on.blockSignals(False)
             if hasattr(self,'section_out') and self.section_out.switch is not None: self.section_out.switch.update()
+            if hasattr(self,'section_out'): self.section_out.sync()   # exp.71: its settings come back too
         if erase!='Off': self._last_erase=erase
         rubbing=erase in ('Zigzag (follows the shapes)','Along the lines')
         able(self.erase_time,erase!='Off','"Goes out" is Off.')
