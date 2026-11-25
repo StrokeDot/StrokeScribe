@@ -10,7 +10,7 @@ from engine import import_svg, export_frames, encode_mov, render
 app=QApplication([]); here=Path(__file__).parent; out=here/'test-output'
 out.mkdir(exist_ok=True); d=import_svg(here/'samples/drawing.svg')
 start=time.perf_counter(); folder=out/'sample-1080p'
-count=export_frames(d,folder,duration=2,fps=24)
+count=export_frames(d,folder,duration=2,fps=24,workers=1)
 render_seconds=time.perf_counter()-start
 mov=encode_mov(folder,24)
 probe=subprocess.run(['ffprobe','-v','error','-select_streams','v:0','-show_entries','stream=codec_name,profile,width,height,pix_fmt,nb_frames,r_frame_rate','-of','json',str(mov)],capture_output=True,text=True,check=True)

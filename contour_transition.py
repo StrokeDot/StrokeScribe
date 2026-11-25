@@ -72,18 +72,19 @@ def source_frame(drawing, image, width, height):
     frame.fill(Qt.GlobalColor.transparent)
     painter = QPainter(frame)
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    painter.drawImage(artwork_rect(drawing, image, width, height), image)
+    from source_render import draw_source
+    draw_source(painter, artwork_rect(drawing, image, width, height), image)
     painter.end()
     return frame
 
 def render_transition(drawing, image, width, height, progress, thickness,
                       brush_width, stroke_spacing, hand, hand_scale, anchor,
-                      reveal_mode='adaptive'):
+                      reveal_mode='adaptive', display_image=None):
     from color_reveal import artwork_rect, paint_mask, draw_hand, last_stroke_canvas_endpoint
     progress = max(0., min(1., float(progress)))
     if progress <= 0:
         return render(drawing,1,width,height,thickness)
-    original = source_frame(drawing, image, width, height)
+    original = source_frame(drawing, display_image if display_image is not None else image, width, height)
     if progress >= RETIRE_END:
         return original
     rect = artwork_rect(drawing, image, width, height)
@@ -118,6 +119,10 @@ def render_transition(drawing, image, width, height, progress, thickness,
     painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
     painter.drawImage(0,0,mask)
     painter.end()
+    if reveal_mode == 'adaptive' and paint_progress < 1:     # exp.2: pencil first, then colour
+        from adaptive_hand import under_pencil
+        painted = under_pencil(painted,drawing,image,width,height,rect,paint_progress,
+                               brush_width,stroke_spacing)
     contours = remaining_contours(drawing,progress,
                                   getattr(drawing,'retirement_direction','forward'))
     outline = render(contours,1,width,height,thickness)

@@ -1,0 +1,703 @@
+"""exp.217 (the user: "keyframes inside the trajectory"): Edit path of a hand's way.
+
+The video frame of that moment, with the hand's way from where it starts (green) to where it
+arrives (red) and its keyframes: round handles to drag. The chosen way (Swoop, Curve...) gives
+the first keyframes; drag them to change the path; double-click the path to add a keyframe,
+right-click one to remove it. There is room around the picture: a keyframe can be outside it.
+The hand keeps the speed of its way (Smooth, Swoop...).
+"""
+from __future__ import annotations
+
+import math
+
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPushButton, QSlider,
+                               QVBoxLayout, QWidget)
+
+ROOM = .3          # room around the picture (share of its size) for keyframes outside it
+
+
+class PathCanvas(QWidget):
+    def __init__(self, frame, a, b, keys, parent=None):
+        super().__init__(parent)
+        self.frame, self.a, self.b = frame, tuple(a), tuple(b)
+        self.keys = [tuple(k) for k in keys]
+        self.drag = None
+        self.try_at = None                     # 0..1: the hand shown along the path (Try)
+        self.style = 'Smooth'
+        self.hand = None                       # exp.219: (picture, grip, width in frame pixels)
+        self.movable_end = False               # exp.38: Free ending: the red dot can be dragged
+        self.movable_start = False             # exp.39: the green dot (where the hand is) can be dragged
+        self.locked = False                    # exp.41: shown only (shaped in its own window)
+        self.setMinimumSize(760, 520)
+        self.setMouseTracking(True)
+
+    # frame pixels <-> widget pixels
+    def _box(self):
+        fw, fh = self.frame.width(), self.frame.height()
+        # exp.40 (the user: I could not see where the green dot was): the view takes in every
+        # dot of the path, however far outside the video (and the room around the video). It is
+        # fixed while a dot is dragged, so the dot stays under the mouse.
+        if self.drag is not None and getattr(self, '_held', None) is not None:
+            return self._held
+        xs = [-fw * ROOM, fw * (1 + ROOM)]; ys = [-fh * ROOM, fh * (1 + ROOM)]
+        try:
+            for x, y in [self.a, self.b] + list(self.points()):
+                xs.append(x); ys.append(y)
+        except Exception:
+            pass
+        pad = .04 * max(fw, fh)
+        left, right, top, bottom = min(xs) - pad, max(xs) + pad, min(ys) - pad, max(ys) + pad
+        total_w, total_h = right - left, bottom - top
+        k = min(self.width() / max(1., total_w), self.height() / max(1., total_h))
+        ox = (self.width() - total_w * k) / 2 - left * k
+        oy = (self.height() - total_h * k) / 2 - top * k
+        self._held = (ox, oy, k)
+        return ox, oy, k
+
+    def to_widget(self, p):
+        ox, oy, k = self._box()
+        return QPointF(ox + p[0] * k, oy + p[1] * k)
+
+    def to_frame(self, q):
+        ox, oy, k = self._box()
+        return ((q.x() - ox) / k, (q.y() - oy) / k)
+
+    def points(self):
+        from frame_render import _path_points
+        return _path_points(self.a, self.b, self.keys)
+
+    def line(self, steps=24):
+        from frame_render import path_polyline
+        return path_polyline(self.a, self.b, self.keys, steps)
+
+    def key_of(self, spot):
+        """A keyframe for this spot of the frame."""
+        from frame_render import to_keyframe
+        return to_keyframe(self.a, self.b, spot)
+
+    def paintEvent(self, event):
+        from frame_render import path_polyline, _along_polyline, _glide_ease
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QColor('#1d1d24'))
+        ox, oy, k = self._box()
+        rect = QRectF(ox, oy, self.frame.width() * k, self.frame.height() * k)
+        p.fillRect(rect, QColor('white'))           # the video's background (the picture is clear)
+        p.drawImage(rect, self.frame)
+        p.setPen(QPen(QColor('#8a7cff'), 1.5, Qt.PenStyle.DashLine)); p.setBrush(Qt.BrushStyle.NoBrush)
+        p.drawRect(rect)                         # the edge of the video
+        line = self.line()
+        path = QPainterPath(self.to_widget(line[0]))
+        for q in line[1:]:
+            path.lineTo(self.to_widget(q))
+        p.setPen(QPen(QColor(255, 255, 255, 200), 5)); p.drawPath(path)
+        p.setPen(QPen(QColor('#e5484d'), 2.5)); p.drawPath(path)
+        spot = _along_polyline(line, _glide_ease(self.try_at or 0., self.style))
+        c = self.to_widget(spot)
+        if self.hand is not None:
+            # exp.219 (the user): the hand itself, at its size in the video, its pen on the path
+            image, (gx, gy), size = self.hand
+            hw = size * k; hh = hw * image.height() / max(1, image.width())
+            p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            p.setOpacity(.92)
+            p.drawImage(QRectF(c.x() - gx * hw, c.y() - gy * hh, hw, hh), image)
+            p.setOpacity(1.)
+        elif self.try_at is not None:
+            p.setPen(Qt.PenStyle.NoPen); p.setBrush(QColor('#ffd166')); p.drawEllipse(c, 8, 8)
+        for i, q in enumerate(self.points()):
+            c = self.to_widget(q)
+            if i == 0 or i == len(self.keys) + 1:
+                p.setPen(QPen(QColor('white'), 2)); p.setBrush(QColor('#2ecc71' if i == 0 else '#e5484d'))
+                p.drawEllipse(c, 7, 7)
+            else:
+                p.setPen(QPen(QColor('white'), 2)); p.setBrush(QColor('#6c5ce7'))
+                p.drawEllipse(c, 9, 9)
+        p.end()
+
+    def _key_at(self, pos):
+        for i, q in enumerate(self.points()[1:-1]):
+            c = self.to_widget(q)
+            if math.hypot(c.x() - pos.x(), c.y() - pos.y()) <= 12:
+                return i
+        return None
+
+    def _end_at(self, pos):
+        if not self.movable_end:
+            return False
+        c = self.to_widget(self.b)
+        return math.hypot(c.x() - pos.x(), c.y() - pos.y()) <= 12
+
+    def _start_at(self, pos):
+        if not self.movable_start:
+            return False
+        c = self.to_widget(self.a)
+        return math.hypot(c.x() - pos.x(), c.y() - pos.y()) <= 12
+
+    def mousePressEvent(self, event):
+        if self.locked:
+            return
+        if event.button() == Qt.MouseButton.LeftButton and self._end_at(event.position()):
+            self.drag = 'end'; return              # exp.38: where the hand ends (Free ending)
+        if event.button() == Qt.MouseButton.LeftButton and self._start_at(event.position()):
+            self.drag = 'start'; return            # exp.39: where the hand is before it comes in
+        i = self._key_at(event.position())
+        if event.button() == Qt.MouseButton.RightButton:
+            if i is not None:
+                del self.keys[i]; self.update()
+            return
+        if i is not None:
+            self.drag = i
+
+    def mouseMoveEvent(self, event):
+        if self.drag == 'end':
+            # the keyframes keep their place on the screen while the end moves
+            spots = self.points()[1:-1]
+            self.b = self.to_frame(event.position())
+            self.keys = [self.key_of(q) for q in spots]
+            self.update()
+        elif self.drag == 'start':
+            if getattr(self, 'absolute_keys', False):   # exp.50: a Hand motion's points stay as they are
+                self.a = self.to_frame(event.position())
+                self.update(); return
+            spots = self.points()[1:-1]           # exp.39: the same for the start
+            self.a = self.to_frame(event.position())
+            self.keys = [self.key_of(q) for q in spots]
+            self.update()
+        elif self.drag is not None:
+            self.keys[self.drag] = self.key_of(self.to_frame(event.position()))
+            self.update()
+        else:
+            self.setCursor(Qt.CursorShape.OpenHandCursor if (self._key_at(event.position()) is not None
+                                                             or self._end_at(event.position())
+                                                             or self._start_at(event.position()))
+                           else Qt.CursorShape.ArrowCursor)
+
+    def mouseReleaseEvent(self, event):
+        self.drag = None
+
+    def mouseDoubleClickEvent(self, event):
+        """A new keyframe where the path was double-clicked (between the two around it)."""
+        if self.locked:
+            return
+        spot = self.to_frame(event.position())
+        new = self.key_of(spot)
+        # put it in order along the way: after the keyframes that come before it on the path
+        line = self.line(24)
+        nearest = min(range(len(line)), key=lambda j: math.hypot(line[j][0] - spot[0], line[j][1] - spot[1]))
+        index = min(len(self.keys), nearest // 24)
+        self.keys.insert(index, new)
+        self.update()
+
+
+class GlidePathDialog(QDialog):
+    def __init__(self, parent, frame, a, b, keys, preset, style, title):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.preset = [tuple(k) for k in preset]
+        layout = QVBoxLayout(self)
+        help_text = QLabel('Drag the purple keyframes to shape the hand\'s way from the green dot to the red one. '
+                           'Double-click the path to add a keyframe, right-click one to remove it. '
+                           'They can go outside the video (the dashed edge).')
+        help_text.setWordWrap(True)
+        layout.addWidget(help_text)
+        self.canvas = PathCanvas(frame, a, b, keys or preset)
+        self.canvas.style = style
+        layout.addWidget(self.canvas, 1)
+        row = QHBoxLayout()
+        reset = QPushButton('Back to the preset'); reset.clicked.connect(self.reset)
+        row.addWidget(reset)
+        row.addWidget(QLabel('Try:'))
+        self.slider = QSlider(Qt.Orientation.Horizontal); self.slider.setRange(0, 100)
+        self.slider.valueChanged.connect(self.tried)
+        row.addWidget(self.slider, 1)
+        play = QPushButton('Play'); play.clicked.connect(self.play)
+        row.addWidget(play)
+        layout.addLayout(row)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.timer = QTimer(self); self.timer.timeout.connect(self._step)
+
+    def reset(self):
+        self.canvas.keys = list(self.preset); self.canvas.update()
+
+    def tried(self, value):
+        self.canvas.try_at = value / 100.; self.canvas.update()
+
+    def play(self):
+        self.slider.setValue(0); self.timer.start(25)
+
+    def _step(self):
+        if self.slider.value() >= 100:
+            self.timer.stop(); return
+        self.slider.setValue(self.slider.value() + 2)
+
+    def keyframes(self):
+        """The keyframes, or None when they are the preset's (no path of its own)."""
+        keys = [tuple(round(v, 4) for v in k) for k in self.canvas.keys]
+        if keys == [tuple(round(v, 4) for v in k) for k in self.preset]:
+            return None
+        return keys
+
+
+class PathsCanvas(PathCanvas):
+    """exp.220: the canvas of Hand paths: the chosen way with its keyframes, the other ways
+    faint (with their element number) so they are seen together."""
+
+    def __init__(self, parent=None):
+        from PySide6.QtGui import QImage
+        blank = QImage(960, 540, QImage.Format.Format_ARGB32); blank.fill(0)
+        super().__init__(blank, (0, 0), (1, 1), [], parent)
+        self.others = []                       # [(a, b, keys, label, done)]
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        from frame_render import path_polyline
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        for a, b, keys, label, done in self.others:
+            line = path_polyline(a, b, keys or [])
+            path = QPainterPath(self.to_widget(line[0]))
+            for q in line[1:]:
+                path.lineTo(self.to_widget(q))
+            colour = QColor('#8a7cff') if not done else QColor(160, 160, 170)
+            colour.setAlpha(150)
+            p.setPen(QPen(colour, 2, Qt.PenStyle.DashLine)); p.setBrush(Qt.BrushStyle.NoBrush); p.drawPath(path)
+            mid = self.to_widget(line[len(line) // 2])
+            p.setPen(QColor('white')); p.drawText(QRectF(mid.x() + 6, mid.y() - 9, 140, 18),
+                                                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label)
+        p.end()
+
+
+KIND_COLOURS = {'element': '#8a7cff', 'sticker': '#f5a524', 'motion': '#2ec4b6'}
+
+
+class HandStrip(QWidget):
+    """exp.41 (the user: all the hand paths in one line, in time order, every hand): one lane
+    per hand, a bar for each of its ways; click a bar to choose it."""
+
+    def __init__(self, rows, parent=None):
+        super().__init__(parent)
+        self.rows = rows                       # the dialog's ways (times, kind, who)
+        self.current = -1
+        self.chosen = None                     # callback(row)
+        self.hands = []
+        for mv in rows:
+            if mv.get('who', 'Writing hand') not in self.hands:
+                self.hands.append(mv.get('who', 'Writing hand'))
+        self.setMinimumHeight(30 + 24 * max(1, len(self.hands)))
+        self.setMouseTracking(True)
+
+    def _span(self):
+        t0 = min((mv['times'][0] for mv in self.rows), default=0.)
+        t1 = max((mv['times'][1] for mv in self.rows), default=1.)
+        return t0, max(t0 + .1, t1)
+
+    def _bar(self, i):
+        mv = self.rows[i]
+        t0, t1 = self._span()
+        left, right = 110., self.width() - 10.
+        x0 = left + (mv['times'][0] - t0) / (t1 - t0) * (right - left)
+        x1 = left + (mv['times'][1] - t0) / (t1 - t0) * (right - left)
+        lane = self.hands.index(mv.get('who', 'Writing hand'))
+        return QRectF(x0, 6 + 24 * lane, max(4., x1 - x0), 18)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QColor('#16161c'))
+        for lane, name in enumerate(self.hands):
+            p.setPen(QColor('#c8c8d0'))
+            p.drawText(QRectF(6, 6 + 24 * lane, 100, 18), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, name)
+        for i, mv in enumerate(self.rows):
+            r = self._bar(i)
+            colour = QColor(KIND_COLOURS.get(mv.get('kind', 'element'), '#8a7cff'))
+            colour.setAlpha(255 if i == self.current else 170)
+            p.setBrush(colour)
+            p.setPen(QPen(QColor('white'), 2) if i == self.current else Qt.PenStyle.NoPen)
+            p.drawRoundedRect(r, 4, 4)
+        t0, t1 = self._span()
+        p.setPen(QColor('#8a8a96'))
+        y = 6 + 24 * len(self.hands) + 2
+        p.drawText(QRectF(110, y, 80, 16), Qt.AlignmentFlag.AlignLeft, f'{t0:.1f} s')
+        p.drawText(QRectF(self.width() - 90, y, 80, 16), Qt.AlignmentFlag.AlignRight, f'{t1:.1f} s')
+        p.end()
+
+    def mousePressEvent(self, event):
+        pos = event.position()
+        for i in range(len(self.rows)):
+            if self._bar(i).adjusted(-3, -3, 3, 3).contains(pos):
+                if self.chosen:
+                    self.chosen(i)
+                return
+
+
+class HandPathsDialog(QDialog):
+    """exp.220/41 (the user): every way of every hand in the video, in the order they happen:
+    a strip with one line per hand, the list, and the chosen way on the picture of its moment
+    (the others faint). Its keyframes, and its green / red dot where that can move without a
+    jump, can be dragged; Hand motions are shown and shaped in their own window (Edit this one).
+    OK keeps every change."""
+
+    def __init__(self, parent, moves):
+        from PySide6.QtWidgets import QListWidget, QSplitter
+        super().__init__(parent)
+        self.setWindowTitle('Hand paths')
+        self.resize(1220, 820)
+        self.moves = moves
+        for mv in self.moves:
+            mv.setdefault('kind', 'element')
+            mv['edit'] = list(mv['keys'] or mv['preset'])
+            mv['edit_a'], mv['edit_b'] = tuple(mv['a']), tuple(mv['b'])
+        self.open_after = None                 # (kind, ref): its own window, after OK
+        layout = QVBoxLayout(self)
+        tip = QLabel('Every way of the hands, in the order they happen (one line per hand above). Choose one to '
+                     'shape it: drag its purple keyframes (double-click the path to add one, right-click to remove '
+                     'one). The green dot is where the hand comes from, the red one where it goes. The other ways are '
+                     'the dashed lines. Play goes through them all.')
+        tip.setWordWrap(True)
+        layout.addWidget(tip)
+        self.strip = HandStrip(self.moves)
+        self.strip.chosen = lambda i: self.list.setCurrentRow(i)
+        layout.addWidget(self.strip)
+        self.note = QLabel(''); self.note.setWordWrap(True); self.note.setObjectName('muted')
+        layout.addWidget(self.note)
+        split = QSplitter()
+        self.list = QListWidget()
+        for mv in self.moves:
+            t0, t1 = mv['times']
+            self.list.addItem(f"{t0:.1f}–{t1:.1f} s   {mv.get('label') or self._label(mv)}")
+        self.list.setMinimumWidth(340)
+        split.addWidget(self.list)
+        self.canvas = PathsCanvas()
+        split.addWidget(self.canvas)
+        split.setStretchFactor(1, 1)
+        layout.addWidget(split, 1)
+        row = QHBoxLayout()
+        self.reset_button = QPushButton('Back to the preset'); self.reset_button.clicked.connect(self.reset)
+        row.addWidget(self.reset_button)
+        self.own_button = QPushButton('Edit this one…')
+        self.own_button.setToolTip('Close this window (keeping the changes) and open the chosen way\'s own window.')
+        self.own_button.clicked.connect(self.open_own)
+        row.addWidget(self.own_button)
+        row.addWidget(QLabel('Try:'))
+        self.slider = QSlider(Qt.Orientation.Horizontal); self.slider.setRange(0, 100)
+        self.slider.valueChanged.connect(self.tried)
+        row.addWidget(self.slider, 1)
+        play = QPushButton('Play this one'); play.clicked.connect(lambda: self.play(False))
+        row.addWidget(play)
+        play_all = QPushButton('Play all'); play_all.clicked.connect(lambda: self.play(True))
+        row.addWidget(play_all)
+        layout.addLayout(row)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.timer = QTimer(self); self.timer.timeout.connect(self._step)
+        self.all = False
+        self.current = -1
+        self.list.currentRowChanged.connect(self.choose)
+        self.list.setCurrentRow(0)
+
+    @staticmethod
+    def _label(mv):
+        if mv.get('kind') == 'motion':
+            return 'Hand motion'
+        which = 'to the drawing' if mv['which'] == 'in' else 'back'
+        if mv.get('kind') == 'sticker':
+            return f"Sticker {mv.get('name') or ''}: {which}".replace('  ', ' ')
+        return f"Element {mv['k'] + 1}: {which}"
+
+    @staticmethod
+    def _short(mv):
+        if mv.get('kind') == 'motion':
+            return 'motion'
+        tag = 'in' if mv['which'] == 'in' else 'back'
+        return (f"{mv['k'] + 1} " if mv.get('kind', 'element') == 'element' else 'sticker ') + tag
+
+    def _keep(self):
+        if 0 <= self.current < len(self.moves):
+            mv = self.moves[self.current]
+            mv['edit'] = list(self.canvas.keys)
+            mv['edit_a'], mv['edit_b'] = tuple(self.canvas.a), tuple(self.canvas.b)
+
+    def choose(self, row):
+        self._keep()
+        if not 0 <= row < len(self.moves):
+            return
+        self.current = row
+        self.strip.current = row; self.strip.update()
+        mv = self.moves[row]
+        c = self.canvas
+        c.drag = None
+        c.frame, c.a, c.b, c.keys, c.style, c.hand = mv['image'], tuple(mv['edit_a']), tuple(mv['edit_b']), \
+            list(mv['edit']), mv['style'], mv['hand']
+        c.movable_start = bool(mv.get('movable_start'))
+        c.movable_end = bool(mv.get('movable_end'))
+        c.locked = bool(mv.get('locked'))
+        c.others = [(o['edit_a'], o['edit_b'], o['edit'], self._short(o), o['times'][1] <= mv['times'][0])
+                    for i, o in enumerate(self.moves) if i != row]
+        c.try_at = self.slider.value() / 100.
+        self.note.setText(mv.get('note') or '')
+        self.reset_button.setEnabled(not c.locked)
+        c.update()
+
+    def reset(self):
+        if 0 <= self.current < len(self.moves) and not self.canvas.locked:
+            self.canvas.keys = list(self.moves[self.current]['preset']); self.canvas.update()
+
+    def open_own(self):
+        if 0 <= self.current < len(self.moves):
+            mv = self.moves[self.current]
+            self.open_after = mv.get('own')
+            self.accept()
+
+    def tried(self, value):
+        self.canvas.try_at = value / 100.; self.canvas.update()
+
+    def play(self, everything):
+        self.all = everything
+        if everything:
+            self.list.setCurrentRow(0)
+        self.slider.setValue(0)
+        self.timer.start(25)
+
+    def _step(self):
+        mv = self.moves[self.current] if 0 <= self.current < len(self.moves) else None
+        seconds = max(.2, (mv['times'][1] - mv['times'][0])) if mv else 1.
+        step = max(1, round(100 * .025 / seconds))       # about its real speed
+        if self.slider.value() >= 100:
+            if self.all and self.current + 1 < len(self.moves):
+                self.list.setCurrentRow(self.current + 1); self.slider.setValue(0); return
+            self.timer.stop(); return
+        self.slider.setValue(min(100, self.slider.value() + step))
+
+    def _new_keys(self, mv):
+        now = [tuple(round(v, 4) for v in k) for k in mv['edit']]
+        preset = [tuple(round(v, 4) for v in k) for k in mv['preset']]
+        before = [tuple(round(v, 4) for v in k) for k in mv['keys']] if mv['keys'] else None
+        new = None if now == preset else now
+        return new, new != before
+
+    def changed(self):
+        """{(element, 'in' / 'out'): keyframes (None: back to the preset)} of the ways changed."""
+        self._keep()
+        out = {}
+        for mv in self.moves:
+            if mv.get('kind', 'element') != 'element':
+                continue
+            new, differs = self._new_keys(mv)
+            if differs:
+                out[(mv['k'], mv['which'])] = new
+        return out
+
+    def sticker_changes(self):
+        """exp.41: {(sticker id, 'in' / 'out'): keyframes (None: the preset)} of the sticker ways changed."""
+        self._keep()
+        out = {}
+        for mv in self.moves:
+            if mv.get('kind') != 'sticker':
+                continue
+            new, differs = self._new_keys(mv)
+            if differs:
+                out[(mv['oid'], mv['which'])] = new
+        return out
+
+    def dots_moved(self):
+        """exp.41: [(way, moved green dot or None, moved red dot or None)]."""
+        self._keep()
+        out = []
+        for mv in self.moves:
+            a = mv['edit_a'] if mv.get('movable_start') and tuple(mv['edit_a']) != tuple(mv['a']) else None
+            b = mv['edit_b'] if mv.get('movable_end') and tuple(mv['edit_b']) != tuple(mv['b']) else None
+            if a is not None or b is not None:
+                out.append((mv, a, b))
+        return out
+
+
+class MotionCanvas(PathCanvas):
+    """exp.224 (the user): a Hand motion: from the corner (green) through points anywhere
+    (frame pixels, also outside the picture) and back to the corner."""
+
+    back = True                 # exp.231: False: the hand stays at the last point
+    absolute_keys = True        # exp.50: its points are where they are (not relative to the dots)
+    straight = False            # exp.46: straight from point to point (not a curve through them)
+
+    def points(self):
+        # exp.49: back is back to where it started (the green dot, also when it is dragged)
+        return [self.a] + list(self.keys) + ([self.a] if self.back else [])
+
+    def line(self, steps=24):
+        from frame_render import spline
+        if self.straight:
+            return list(self.points())
+        return spline(self.points(), steps)
+
+    def key_of(self, spot):
+        return (float(spot[0]), float(spot[1]))
+
+    def _key_at(self, pos):
+        for i, q in enumerate(self.keys):
+            c = self.to_widget(q)
+            if math.hypot(c.x() - pos.x(), c.y() - pos.y()) <= 12:
+                return i
+        return None
+
+    def add_point(self, spot):
+        """exp.231: a new point at `spot`, in its place along the path (at the end when it is past
+        the last point and the hand stays there)."""
+        spot = self.key_of(spot)
+        pts = self.points()
+        best, where = None, len(self.keys)
+        for j in range(len(pts) - 1):            # the nearest piece of the path between two points
+            ax, ay = pts[j]; bx, by = pts[j + 1]
+            dx, dy = bx - ax, by - ay
+            u = max(0., min(1., ((spot[0] - ax) * dx + (spot[1] - ay) * dy) / max(1e-9, dx * dx + dy * dy)))
+            d = math.hypot(spot[0] - (ax + u * dx), spot[1] - (ay + u * dy))
+            if best is None or d < best:
+                best, where = d, j
+        if not self.back and self.keys:
+            last = self.keys[-1]
+            if math.hypot(spot[0] - last[0], spot[1] - last[1]) < best:
+                where = len(self.keys)              # nearer the end: a new end
+        self.keys.insert(min(where, len(self.keys)), spot)
+        self.update()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            # exp.231 (the user, like Filmora): right-click to add a point, or to remove one
+            from PySide6.QtWidgets import QMenu
+            i = self._key_at(event.position())
+            spot = self.to_frame(event.position())
+            menu = QMenu(self)
+            menu.addAction('Add a point here', lambda: self.add_point(spot))
+            if i is not None and len(self.keys) > 1:
+                menu.addAction('Remove this point', lambda: (self.keys.pop(i), self.update()))
+            menu.exec(event.globalPosition().toPoint())
+            return
+        i = self._key_at(event.position())
+        if i is not None:
+            self.drag = i
+        elif event.button() == Qt.MouseButton.LeftButton and self._start_at(event.position()):
+            self.drag = 'start'           # exp.50 (the user: the green dot did not drag): Free beginning
+
+    def mouseDoubleClickEvent(self, event):
+        self.add_point(self.to_frame(event.position()))
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if not self.back and self.keys:              # where the hand stays: the red end
+            p = QPainter(self)
+            p.setRenderHint(QPainter.RenderHint.Antialiasing)
+            p.setPen(QPen(QColor('white'), 2)); p.setBrush(QColor('#e5484d'))
+            p.drawEllipse(self.to_widget(self.keys[-1]), 9, 9)
+            p.end()
+
+
+class HandMotionDialog(QDialog):
+    """exp.224: double-click a Hand motion clip: when, how long, how it moves, and its path."""
+
+    def __init__(self, parent, frame, home, keys, hand, start, length, how, styles, preset, begin=None, back=True,
+                 line=None, dots=None, free_begin=False):
+        from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QFormLayout
+        super().__init__(parent)
+        self.setWindowTitle('Hand motion')
+        self.preset = [tuple(k) for k in preset]
+        layout = QVBoxLayout(self)
+        help_text = QLabel('The hand goes from where it is (green) through the points: drag them anywhere, also '
+                           'outside the video (the dashed edge). Right-click (or double-click) to add a point, '
+                           'right-click a point to remove it. At the end it stays at the last point (red: the next '
+                           'hand starts from there), or goes back to where it started (green). No picture is needed.')
+        help_text.setWordWrap(True)
+        layout.addWidget(help_text)
+        form = QFormLayout()
+
+        def number(value, low, high):
+            box = QDoubleSpinBox(); box.setRange(low, high); box.setSingleStep(.1); box.setDecimals(1)
+            box.setSuffix(' s'); box.setValue(float(value)); return box
+        self.start = number(start, 0, 3600)
+        self.length = number(length, .4, 600)
+        self.how = QComboBox(); self.how.addItems(list(styles))
+        self.how.setCurrentText(how if how in styles else 'Smooth')
+        self.how.setToolTip('Its speed. Smooth: eases out and gently into place; Steady: the same speed all the way; '
+                            'Quick start: darts off, then arrives slowly; Slow start: leaves slowly, then hurries; '
+                            'Overshoot: goes past the end and comes back.')
+        # exp.46 (the user: shape and speed, like the drawing's hand): its shape through the points
+        self.shape = QComboBox()
+        self.shape.addItem('Curve through the points', None)
+        self.shape.addItem('Straight from point to point', 'straight')
+        self.shape.setCurrentIndex(max(0, self.shape.findData(line)))
+        self.shape.setToolTip('Its shape: a smooth curve through your points, or straight lines from one to the next '
+                              '(it turns at each point). Any shape goes with any speed.')
+        how_row = QHBoxLayout(); how_row.setSpacing(8)
+        how_row.addWidget(self.shape, 1); how_row.addWidget(self.how, 1)
+        form.addRow('Starts at', self.start)
+        form.addRow('Length', self.length)
+        form.addRow('How it moves', how_row)
+        # exp.49 (the user: why is the green dot there?): Starts, as in the other Hand windows
+        self.dots = dots or {False: (False, ''), True: (False, '')}
+        self.starts = QComboBox()
+        self.starts.addItem('Where the hand is (from its last spot)', None)
+        self.starts.addItem('Free beginning: where you put it (drag the green dot)', 'free')
+        self.starts.setCurrentIndex(1 if free_begin else 0)
+        form.addRow('Starts from', self.starts)
+        self.end = QComboBox(); self.end.addItems(['Stays at the last point', 'Goes back to where it started'])
+        self.end.setCurrentIndex(0 if not back else 1)
+        form.addRow('At the end', self.end)
+        layout.addLayout(form)
+        self.note = QLabel(''); self.note.setWordWrap(True); self.note.setObjectName('muted')
+        layout.addWidget(self.note)
+        origin = begin if begin is not None else home
+        self.canvas = MotionCanvas(frame, origin, origin, keys)    # exp.49: back to where it started
+        self.canvas.back = bool(back)
+        self.starts.currentIndexChanged.connect(lambda *_: self._starts())
+        self._starts()
+        self.canvas.straight = line == 'straight'
+        self.shape.currentIndexChanged.connect(
+            lambda *_: (setattr(self.canvas, 'straight', self.shape.currentData() == 'straight'), self.canvas.update()))
+        self.end.currentIndexChanged.connect(lambda i: (setattr(self.canvas, 'back', i == 1), self.canvas.update()))
+        self.canvas.hand = hand
+        self.canvas.style = self.how.currentText()
+        self.how.currentTextChanged.connect(self._style)
+        layout.addWidget(self.canvas, 1)
+        row = QHBoxLayout()
+        reset = QPushButton('Back to the start'); reset.clicked.connect(self.reset)
+        row.addWidget(reset)
+        row.addWidget(QLabel('Try:'))
+        self.slider = QSlider(Qt.Orientation.Horizontal); self.slider.setRange(0, 1000)
+        self.slider.valueChanged.connect(lambda v: (setattr(self.canvas, 'try_at', v / 1000.), self.canvas.update()))
+        row.addWidget(self.slider, 1)
+        play = QPushButton('Play'); play.clicked.connect(self.play)
+        row.addWidget(play)
+        layout.addLayout(row)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.remove = buttons.addButton('Delete', QDialogButtonBox.ButtonRole.DestructiveRole)
+        self.deleted = False
+        self.remove.clicked.connect(lambda: (setattr(self, 'deleted', True), self.accept()))
+        buttons.accepted.connect(self.accept); buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.timer = QTimer(self); self.timer.timeout.connect(self._step)
+
+    def _starts(self):
+        movable, note = self.dots.get(self.starts.currentData() == 'free', (False, ''))
+        self.canvas.movable_start = bool(movable)
+        self.note.setText(note)
+
+    def _style(self, text):
+        self.canvas.style = text; self.canvas.update()
+
+    def reset(self):
+        self.canvas.keys = list(self.preset); self.canvas.update()
+
+    def play(self):
+        """At the clip's own speed (its Length)."""
+        import time
+        self._t0 = time.monotonic(); self.slider.setValue(0); self.timer.start(20)
+
+    def _step(self):
+        import time
+        u = (time.monotonic() - self._t0) / max(.2, self.length.value())
+        self.slider.setValue(min(1000, round(u * 1000)))
+        if u >= 1:
+            self.timer.stop()

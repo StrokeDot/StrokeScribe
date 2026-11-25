@@ -7,7 +7,9 @@ stamp. The planner audits coverage and adds real repair strokes before playback.
 from __future__ import annotations
 import bisect
 import hashlib
+import os
 import math
+import numpy as np
 from collections import OrderedDict, deque
 from dataclasses import dataclass
 from PIL import Image, ImageDraw
@@ -15,6 +17,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPainter
 
 _CACHE = OrderedDict()
+PLAN_CACHE_SIZE = 24
 GRID_LIMIT = 224
 NEIGHBORS = ((1,0),(-1,0),(0,1),(0,-1))
 
@@ -61,13 +64,22 @@ class PaintPlan:
         f = min(1., max(0., (clock-segment.start)/(segment.end-segment.start)))
         point = (segment.a[0]+(segment.b[0]-segment.a[0])*f,
                  segment.a[1]+(segment.b[1]-segment.a[1])*f)
-        return segment, point if segment.painting else None
+        # Pen-up transfers never paint (segment.painting is False), but the
+        # hand stays visible and glides to the next region. Hiding it here made
+        # the hand blink out for a frame at every transfer.
+        return segment, point
 
     def mask(self, progress):
         clock = max(0., min(1., float(progress)))/.98*self.total
         # No full-image shortcut, including at progress==1.
-        return Image.frombytes('L', self.size, bytes(
-            255 if t <= clock and progress > 0 else 0 for t in self.arrival))
+        # exp.120: numpy comparison (the same cells), not a Python loop per frame.
+        arrival = self.__dict__.get('_arrival_np')
+        if arrival is None or len(arrival) != len(self.arrival):
+            arrival = np.asarray(self.arrival, dtype=np.float64)
+            self.__dict__['_arrival_np'] = arrival
+        if progress <= 0:
+            return Image.new('L', self.size, 0)
+        return Image.frombytes('L', self.size, ((arrival <= clock) * 255).astype(np.uint8).tobytes())
 
 def _components(labels, width, height):
     """Split disconnected pieces even if they share a closed-contour ID."""
@@ -111,7 +123,94 @@ def _shortest(start, finish, region, labels, width, height):
                     queue.append(n)
     raise ValueError('Region traversal failed; no safe brush connection.')
 
-def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
+VISIBLE_ALPHA = 64  # about 25% visible; fainter pixels get no brush visit
+
+
+def _reveal_faint_with_neighbours(arrival, labels, faint, gw, gh):
+    """Faint cells appear at the same moment as the nearest painted cell."""
+    if not any(faint):
+        return
+    import cv2
+    import numpy as np
+    painted = np.asarray(labels, np.int32).reshape(gh, gw) > 0
+    if not painted.any():
+        return
+    times = np.asarray(arrival, np.float64).reshape(gh, gw)
+    _, nearest = cv2.distanceTransformWithLabels(
+        (~painted).astype(np.uint8), cv2.DIST_L2, 3, labelType=cv2.DIST_LABEL_PIXEL)
+    lookup = np.full(int(nearest.max()) + 1, np.inf)
+    lookup[nearest[painted]] = times[painted]
+    borrowed = lookup[nearest].ravel()
+    for cell, is_faint in enumerate(faint):
+        if is_faint and not labels[cell]:
+            arrival[cell] = float(borrowed[cell])
+
+
+OPEN_AREA_SHARE = .30   # one region bigger than this share of the picture: split it by colour
+COLOUR_SPLIT = 'colour-areas-1'    # in the plan key: plans made before this change are not reused
+SPLIT_DETAIL = 'medium'  # colour areas for the split ('low' merges shades across parts)
+
+
+def _split_open_area_by_colour(labels, support, source, gw, gh):
+    """Paint part by part even when the SVG has few closed shapes.
+
+    Adaptive paints one region at a time, and an SVG's regions are its closed
+    shapes. Traced line drawings are mostly open lines (often with only the
+    outer outline closed), so nearly the whole picture was ONE region and the
+    brush zigzagged across all of it. Any region covering more than
+    OPEN_AREA_SHARE of the picture is split into the picture's colour areas
+    (the same segmentation as image sources); smaller closed shapes keep
+    their own regions."""
+    from collections import Counter
+    painted = sum(1 for a in support if a)
+    if not painted:
+        return
+    sizes = Counter(rid for rid in labels if rid)
+    big = {rid for rid, n in sizes.items() if n > OPEN_AREA_SHARE * painted}
+    if not big:
+        return
+    try:
+        from image_regions import segment_regions
+        regions = segment_regions(source, SPLIT_DETAIL)
+    except Exception:
+        return
+    if tuple(regions.size) != (gw, gh):
+        return
+    first = max(labels) + 1
+    for i, rid in enumerate(labels):
+        if rid in big and regions.labels[i]:
+            labels[i] = first + regions.labels[i]
+
+
+def _alpha_cells(source, iw, ih, gw, gh):
+    """(support, faint) grid cells: where the image is visible / only faintly there.
+    exp.120: numpy instead of a Python loop over every pixel (same cells)."""
+    import numpy as np
+    alpha=np.frombuffer(source.getchannel('A').tobytes(),np.uint8).reshape(ih,iw)
+    rows=np.minimum(gh-1,(2*np.arange(ih,dtype=np.int64)+1)*gh//(2*ih))
+    cols=np.minimum(gw-1,(2*np.arange(iw,dtype=np.int64)+1)*gw//(2*iw))
+    cells=(rows[:,None]*gw+cols[None,:])
+    strong=np.zeros(gw*gh,np.uint8); weak=np.zeros(gw*gh,np.uint8)
+    strong[cells[alpha>=VISIBLE_ALPHA]]=1
+    weak[cells[(alpha>0)&(alpha<VISIBLE_ALPHA)]]=1
+    return bytearray(strong.tobytes()),bytearray(weak.tobytes())
+
+
+def _nearest_entry(pool, cursor, gw):
+    """The region whose nearest cell is closest to the cursor, and that cell (exp.120:
+    vectorised; the first one wins ties, as with min())."""
+    import numpy as np
+    best=None
+    for i,(_,cells) in pool:
+        arr=np.asarray(cells,dtype=np.int64)
+        d=np.hypot(arr%gw+.5-cursor[0],arr//gw+.5-cursor[1])
+        j=int(np.argmin(d))
+        if best is None or d[j]<best[0]:
+            best=(float(d[j]),i,int(arr[j]))
+    return best[1],best[2]
+
+
+def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55, short_vertical=False):
     from color_reveal import artwork_rect, last_stroke_canvas_endpoint
     source=pil_image(image)
     iw,ih=source.size
@@ -122,13 +221,14 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
         return ((point[0]-rect.x())*gw/rect.width(),
                 (point[1]-rect.y())*gh/rect.height())
     origin=grid_point(last_stroke_canvas_endpoint(drawing,1920,1080))
-    # Conservative support: retain even tiny disconnected alpha details.
-    support=bytearray(gw*gh)
-    for i,a in enumerate(source.getchannel('A').tobytes()):
-        if a:
-            support[min(gh-1,(2*(i//iw)+1)*gh//(2*ih))*gw+min(gw-1,(2*(i%iw)+1)*gw//(2*iw))]=1
+    # The hand paints only where the image is actually visible (alpha at
+    # least VISIBLE_ALPHA). Nearly invisible leftovers from background removal
+    # are revealed with their nearest painted area instead, with no hand visit.
+    support,faint=_alpha_cells(source,iw,ih,gw,gh)
     if not any(support):
-        raise ValueError('The color image has no nontransparent pixels.')
+        if not any(faint):
+            raise ValueError('The color image has no nontransparent pixels.')
+        support,faint=faint,bytearray(gw*gh)   # all faint: paint it anyway
     labels=[1 if a else 0 for a in support]
     polygons=[]
     x0,y0,x1,y1=drawing.bounds
@@ -152,6 +252,8 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
             if inside and support[i] and not assigned[i]:
                 labels[i]=rid; assigned[i]=1
     image_regions=getattr(drawing,'image_regions',None)
+    if image_regions is None:
+        _split_open_area_by_colour(labels,support,source,gw,gh)
     if image_regions is not None:
         # Image reconstruction supplies coarse color regions. Preserve the
         # existing SVG segmentation path when this metadata is absent.
@@ -199,16 +301,22 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
         return y*gw+x if 0<=x<gw and 0<=y<gh else None
     def stamp(point,radius,rid,when):
         # Pixel-center disk footprints; region clip prevents boundary bleed.
+        # (exp.120: the same disk, without a min() call per cell: planning was slow.)
         x,y=point
+        r2=radius**2
+        xs=range(max(0,math.floor(x-radius)),min(gw,math.ceil(x+radius)))
         for yy in range(max(0,math.floor(y-radius)),min(gh,math.ceil(y+radius))):
-            for xx in range(max(0,math.floor(x-radius)),min(gw,math.ceil(x+radius))):
-                cell=yy*gw+xx
-                if labels[cell]==rid and (xx+.5-x)**2+(yy+.5-y)**2<=radius**2:
-                    arrival[cell]=min(arrival[cell],when)
-    def move(point,rid,painting,radius=.72):
+            row=yy*gw; dy2=(yy+.5-y)**2
+            for xx in xs:
+                cell=row+xx
+                if labels[cell]==rid and (xx+.5-x)**2+dy2<=r2 and when<arrival[cell]:
+                    arrival[cell]=when
+    def move(point,rid,painting,radius=.72,quick=False):
         nonlocal cursor,clock
         distance=math.dist(cursor,point)
-        duration=max(.05,distance) if painting else max(.5,min(12.,distance*.2))
+        # The optional vertical brush flicks should look quick, not like a
+        # second slow traversal of the image. Ordinary adaptive timing is unchanged.
+        duration=(max(.04,distance*.12) if quick else max(.05,distance)) if painting else max(.5,min(12.,distance*.2))
         seg=Segment(cursor,point,radius,rid,painting,clock,clock+duration)
         segments.append(seg)
         if painting:
@@ -220,6 +328,34 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
         clock+=duration; cursor=point
     def radius(cell):
         return min(maximum,max(.72,(clearance[cell]-.5)*.7))
+    def paint_vertical_flick(cell,rid):
+        """A brisk up/down stroke on the ORIGINAL adaptive region route.
+
+        Clip the hand path to this region before moving; brush stamps are also
+        region-clipped by stamp(). Never turn the plan into top-down bands.
+        """
+        x,y=center(cell)
+        brush_radius=radius(cell)
+        reach=max(1.2,min(maximum*.60,brush_radius*.90))
+        def tip(sign):
+            furthest=None
+            steps=max(2,math.ceil(reach/.5))
+            for i in range(1,steps+1):
+                point=(x,y+sign*reach*i/steps)
+                at=cell_at(point)
+                if at is None or labels[at]!=rid:
+                    break
+                furthest=point
+            return furthest
+        above,below=tip(-1),tip(1)
+        if above is None or below is None or y-above[1]<.7 or below[1]-y<.7:
+            return
+        # A real three-part brush motion, not a stationary tap or opacity trick.
+        r=max(.72,brush_radius*.7)
+        move(above,rid,True,r,quick=True)
+        move(below,rid,True,r,quick=True)
+        move((x,y),rid,True,r,quick=True)
+
     def paint_to(cell,rid):
         start=cell_at(cursor)
         if start is None or labels[start]!=rid:
@@ -259,9 +395,7 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
             pool=[item for item in pool if band(item[1][1])==best]
         first_region=False
         # Nearest region, preserving the actual final stroke as route origin.
-        ri,entry=min(((i,min(cells,key=lambda c:math.dist(cursor,center(c))))
-                      for i,(_,cells) in pool),
-                     key=lambda pair:math.dist(cursor,center(pair[1])))
+        ri,entry=_nearest_entry(pool,cursor,gw)
         rid,cells=remaining.pop(ri)
         paint_to(entry,rid)
         xs=[c%gw for c in cells]; ys=[c//gw for c in cells]
@@ -290,85 +424,539 @@ def build_plan(drawing, image, brush_width=.14, stroke_spacing=.55):
                 ids=[col*gw+row if vertical else row*gw+col for col in run]
                 paint_to(ids[0],rid)
                 prev=ids[0]
-                for cell in ids[1:]:
+                flick_stride=max(2,round(maximum*.6))
+                for index,cell in enumerate(ids[1:],1):
                     move(center(cell),rid,True,min(radius(prev),radius(cell)))
+                    if short_vertical and index%flick_stride==0:
+                        paint_vertical_flick(cell,rid)
                     prev=cell
         # Coverage repair is planned, timed physical painting, not a final fill.
         missing={cell for cell in cells if not math.isfinite(arrival[cell])}
         while missing:
-            target=min(missing,key=lambda cell:math.dist(cursor,center(cell)))
+            # exp.120: vectorised nearest (set order kept, so ties go the same way as min()).
+            order=list(missing)
+            arr=np.fromiter(order,dtype=np.int64,count=len(order))
+            target=order[int(np.argmin(np.hypot(arr%gw+.5-cursor[0],arr//gw+.5-cursor[1])))]
             paint_to(target,rid)
             missing={cell for cell in missing if not math.isfinite(arrival[cell])}
     assert all(not rid or math.isfinite(arrival[i]) for i,rid in enumerate(labels))
+    _reveal_faint_with_neighbours(arrival,labels,faint,gw,gh)
     return PaintPlan((gw,gh),labels,segments,[s.end for s in segments],arrival,
                      origin,clock,warnings,len(groups))
 
-def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
+_ALPHA_DIGESTS = OrderedDict()
+
+def _alpha_digest(image):
+    """SHA-256 of the PNG alpha, computed once per image instead of per frame.
+
+    QImage.cacheKey changes whenever an image's pixels change, so a stale
+    digest can never be reused for modified artwork.
+    """
+    key=(image.cacheKey(),image.width(),image.height())
+    digest=_ALPHA_DIGESTS.get(key)
+    if digest is None:
+        digest=hashlib.sha256(pil_image(image).getchannel('A').tobytes()).digest()
+        _ALPHA_DIGESTS[key]=digest
+        if len(_ALPHA_DIGESTS)>8: _ALPHA_DIGESTS.popitem(last=False)
+    else:
+        _ALPHA_DIGESTS.move_to_end(key)
+    return digest
+
+def _plan_key(drawing,image,brush_width,stroke_spacing):
     # Content-based keys survive deepcopy/export and include the full stroke order.
     geometry=tuple((s.name,tuple(s.points)) for s in drawing.strokes)
-    raw=pil_image(image)
     region_map=getattr(drawing,'image_regions',None)
-    key=(geometry,region_map,getattr(drawing,'image_region_priority',False),
-         getattr(drawing,'image_semantic_order',()),tuple(drawing.bounds),raw.size,
-         hashlib.sha256(raw.getchannel('A').tobytes()).digest(),
-         float(brush_width),float(stroke_spacing))
+    return (geometry,region_map,getattr(drawing,'image_region_priority',False),
+            getattr(drawing,'image_semantic_order',()),tuple(drawing.bounds),
+            (image.width(),image.height()),_alpha_digest(image),
+            float(brush_width),float(stroke_spacing),getattr(drawing,'paint_method','adaptive'),
+            COLOUR_SPLIT,getattr(drawing,'ai_parts_digest',None),
+            tuple(getattr(drawing,'paint_part_order',None) or ()),
+            repr(getattr(drawing,'paint_circles',None) or ()),pencil_key(drawing))
+
+_FAST=OrderedDict()      # exp.233 (audit C2): quick identity of a plan's inputs -> its full key
+
+
+def _fast_entry(drawing,image,brush_width,stroke_spacing):
+    """exp.233: the full plan key holds every stroke point (12,000+ here) and was built and hashed
+    many times per frame. Edits replace stroke objects (never change their points in place), so
+    the objects' identities tell when it must be built again; the entry keeps those objects
+    alive, so their ids cannot be reused by other ones while it is kept."""
+    strokes=drawing.strokes
+    region_map=getattr(drawing,'image_regions',None)
+    fast=(id(drawing),tuple(id(s) for s in strokes),id(region_map),
+          getattr(drawing,'image_region_priority',False),repr(getattr(drawing,'image_semantic_order',())),
+          tuple(drawing.bounds),image.cacheKey(),image.width(),image.height(),
+          float(brush_width),float(stroke_spacing),getattr(drawing,'paint_method','adaptive'),
+          COLOUR_SPLIT,getattr(drawing,'ai_parts_digest',None),
+          tuple(getattr(drawing,'paint_part_order',None) or ()),repr(getattr(drawing,'paint_circles',None) or ()),
+          pencil_key(drawing))
+    entry=_FAST.get(fast)
+    if entry is None:
+        key=_plan_key(drawing,image,brush_width,stroke_spacing)
+        entry=dict(key=key,h=hash(key),plan=None,keep=(drawing,list(strokes),region_map,image))
+        _FAST[fast]=entry
+        while len(_FAST)>32: _FAST.popitem(last=False)
+    else:
+        _FAST.move_to_end(fast)
+    return entry
+
+
+def plan_digest(drawing,image,brush_width=.14,stroke_spacing=.55):
+    """exp.233: a number standing for everything the brush plan depends on (computed once)."""
+    return _fast_entry(drawing,image,brush_width,stroke_spacing)['h']
+
+
+def plan_ready(drawing,image,brush_width=.14,stroke_spacing=.55):
+    """True when plan_for would return at once (the brush plan is cached)."""
+    try:
+        return _plan_key(drawing,image,brush_width,stroke_spacing) in _CACHE
+    except Exception:
+        return True
+
+def _plan_file(key):
+    """exp.204: where a brush plan is kept between runs (opening a project planned every
+    painted element again: two seconds for two pictures)."""
+    import pickle
+    from preview_cache import default_folder
+    try:
+        from version import APP_VERSION
+    except Exception:
+        APP_VERSION=''
+    name=hashlib.sha1(pickle.dumps((APP_VERSION,key),protocol=4)).hexdigest()[:24]
+    return default_folder().parent/'plan-cache'/f'{name}.npz'       # exp.233: no pickle (audit S1)
+
+PLAN_FILES=40
+
+def _plan_from_disk(key):
+    """exp.233 (audit S1): the plan is kept as plain numbers (NumPy, pickle off), so a file in the
+    cache folder can never run code when a project opens (it was a pickle)."""
+    import numpy as np
+    try:
+        path=_plan_file(key)
+        if not path.exists(): return None
+        with np.load(path,allow_pickle=False) as z:
+            seg=z['segments']
+            segments=[Segment((float(r[0]),float(r[1])),(float(r[2]),float(r[3])),float(r[4]),int(r[5]),bool(r[6]),
+                              float(r[7]),float(r[8])) for r in seg.tolist()]
+            plan=PaintPlan(size=tuple(int(v) for v in z['size'].tolist()),labels=z['labels'].tolist(),
+                           segments=segments,ends=z['ends'].tolist(),arrival=z['arrival'].tolist(),
+                           origin=tuple(float(v) for v in z['origin'].tolist()),total=float(z['total']),
+                           warnings=[str(v) for v in z['warnings'].tolist()],region_count=int(z['region_count']))
+        os.utime(path,None)
+        return plan
+    except Exception:
+        return None
+
+def _plan_to_disk(key,plan):
+    import numpy as np
+    try:
+        path=_plan_file(key)
+        path.parent.mkdir(parents=True,exist_ok=True)
+        tmp=path.with_name(path.stem+'.tmp.npz')
+        np.savez(tmp,size=np.array(plan.size,dtype=np.int64),labels=np.array(plan.labels,dtype=np.int64),
+                 segments=np.array([(s.a[0],s.a[1],s.b[0],s.b[1],s.radius,s.region,1. if s.painting else 0.,s.start,s.end)
+                                    for s in plan.segments],dtype=np.float64).reshape(-1,9),
+                 ends=np.array(plan.ends,dtype=np.float64),arrival=np.array(plan.arrival,dtype=np.float64),
+                 origin=np.array(plan.origin,dtype=np.float64),total=np.float64(plan.total),
+                 warnings=np.array([str(w) for w in plan.warnings],dtype=str),region_count=np.int64(plan.region_count))
+        os.replace(tmp,path)
+        for old in path.parent.glob('*.plan'): old.unlink(missing_ok=True)      # the old pickle files
+        files=sorted(path.parent.glob('*.npz'),key=lambda p:p.stat().st_mtime)
+        for old in files[:-PLAN_FILES]: old.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+def plan_for(drawing,image,brush_width=.14,stroke_spacing=.55):
+    entry=_fast_entry(drawing,image,brush_width,stroke_spacing)
+    plan=entry['plan']
+    if plan is not None and any(v is plan for v in _CACHE.values()):
+        return plan                                  # exp.233: still kept: no rebuild or re-hash of the key
+    entry['plan']=plan=_plan_for(entry['key'],drawing,image,brush_width,stroke_spacing)
+    return plan
+
+
+# exp.2 (the user: "pencil first, then colour"): an element can be drawn twice: first in pencil
+# (a gray version of the picture, drawn by Hand drawing or another mode), then painted in colour
+# by its paint mode over the pencil. Both passes are one plan, so the hand, the sound and the
+# camera simply follow it; the colour covers the pencil exactly where it is painted.
+PENCIL_SHARE=.5          # of the paint time, for the pencil pass
+
+
+PENCIL_METHODS=('adaptive','zigzag','rows','columns','short_zigzag','painter','strokes')
+
+
+def apply_pencil(drawing,value):
+    """Sets an element's pencil pass from its option: a paint mode code ('strokes'...), or ''
+    for none."""
+    value=value if value in PENCIL_METHODS else ''
+    drawing.pencil_first=bool(value)
+    drawing.pencil_method=value or 'strokes'
+
+
+def pencil_key(drawing):
+    if not getattr(drawing,'pencil_first',False): return None
+    return (getattr(drawing,'pencil_method','strokes') or 'strokes',
+            float(getattr(drawing,'pencil_share',PENCIL_SHARE) or PENCIL_SHARE))
+
+
+def _pencil_plan(drawing,image,brush_width,stroke_spacing):
+    """The pencil pass, then the colour pass, as one plan (.pencil / .colour keep the passes)."""
+    import copy
+    method,share=pencil_key(drawing)
+    share=min(.85,max(.15,share))
+    passes=[]
+    for paint_method in (method,getattr(drawing,'paint_method','adaptive') or 'adaptive'):
+        part=copy.copy(drawing)          # the element is not touched (the window may read it now)
+        part.pencil_first=False; part.paint_method=paint_method
+        passes.append((plan_for(part,image,brush_width,stroke_spacing),paint_method))
+    (pencil,pencil_method),(colour,colour_method)=passes
+    scale=share/(1.-share)*max(1e-9,colour.total)/max(1e-9,pencil.total)
+    segments=[Segment(a.a,a.b,a.radius,a.region,a.painting,a.start*scale,a.end*scale) for a in pencil.segments]
+    split=pencil.total*scale
+    if pencil.size!=colour.size:         # (the same picture: the grids match; else the colour's grid)
+        segments=[Segment((a.a[0]*colour.size[0]/pencil.size[0],a.a[1]*colour.size[1]/pencil.size[1]),
+                          (a.b[0]*colour.size[0]/pencil.size[0],a.b[1]*colour.size[1]/pencil.size[1]),
+                          a.radius,a.region,a.painting,a.start,a.end) for a in segments]
+    if colour.segments:                  # the hand goes on to where the colour starts
+        end=segments[-1].b if segments else colour.origin
+        segments.append(Segment(end,colour.segments[0].a,1.,0,False,split,split))
+    segments+=[Segment(a.a,a.b,a.radius,a.region,a.painting,a.start+split,a.end+split) for a in colour.segments]
+    arrival=[c+split if math.isfinite(c) else c for c in colour.arrival]
+    plan=PaintPlan(colour.size,colour.labels,segments,[a.end for a in segments],arrival,
+                   pencil.origin,split+colour.total,list(colour.warnings),colour.region_count)
+    plan.pencil,plan.pencil_method,plan.colour,plan.colour_method,plan.split=\
+        pencil,pencil_method,colour,colour_method,split
+    return plan
+
+
+def pencil_passes(plan,progress):
+    """(pencil progress, colour progress) of a pencil-first plan at progress (each 0..1, the
+    passes' own .98 = done)."""
+    clock=max(0.,min(1.,float(progress)))/.98*plan.total
+    first=min(1.,clock/max(1e-9,plan.split))*.98
+    second=min(1.,max(0.,clock-plan.split)/max(1e-9,plan.colour.total)*.98)
+    return first,second
+
+
+def _plan_for(key,drawing,image,brush_width,stroke_spacing):
+    if key not in _CACHE and pencil_key(drawing) is not None:
+        _CACHE[key]=_pencil_plan(drawing,image,brush_width,stroke_spacing)     # (memory only: quick)
+        if len(_CACHE)>PLAN_CACHE_SIZE: _CACHE.popitem(last=False)
+        return _CACHE[key]
     if key not in _CACHE:
-        _CACHE[key]=build_plan(drawing,image,brush_width,stroke_spacing)
-        if len(_CACHE)>3: _CACHE.popitem(last=False)
+        disk=PLAN_DISK and _disk_allowed()
+        kept=_plan_from_disk(key) if disk else None
+        if kept is not None:
+            _CACHE[key]=kept
+            if len(_CACHE)>PLAN_CACHE_SIZE: _CACHE.popitem(last=False)
+            _strokes_field(drawing,image,kept)
+            return kept
+        _plan_build(drawing,image,brush_width,stroke_spacing,key)
+        if disk: _plan_to_disk(key,_CACHE[key])
+        _strokes_field(drawing,image,_CACHE[key])
     else:
         _CACHE.move_to_end(key)
     return _CACHE[key]
 
+
+def _strokes_field(drawing,image,plan):
+    """1.0.1: Hand drawing's lines are worked out with its plan (where the plan is made: in
+    the background or behind the 'Preparing' card), not on the first frame of the preview."""
+    if getattr(drawing,'paint_method','adaptive')!='strokes': return
+    try:
+        from stroke_paint import field_for
+        field_for(plan,image)
+    except Exception:
+        pass
+
+def _disk_allowed():
+    # tests count and replace plans, so they always plan afresh
+    import sys
+    return not os.environ.get('STROKESCRIBE_NO_PLAN_CACHE') and 'unittest' not in sys.modules and 'pytest' not in sys.modules
+
+PLAN_DISK=True
+
+def _plan_build(drawing,image,brush_width,stroke_spacing,key):
+    if True:
+        method=getattr(drawing,'paint_method','adaptive')
+        if method in ('rows','columns'):
+            from zigzag_paint import build_band_plan
+            _CACHE[key]=build_band_plan(drawing,image,brush_width,stroke_spacing,
+                                        across=method=='columns')
+        elif method=='painter':
+            from painter_paint import build_painter_plan
+            _CACHE[key]=build_painter_plan(drawing,image,brush_width,stroke_spacing)
+        elif method=='short_zigzag':
+            _CACHE[key]=build_plan(drawing,image,brush_width,stroke_spacing,
+                                   short_vertical=True)
+        elif method=='zigzag':
+            from zigzag_paint import build_zigzag_plan
+            _CACHE[key]=build_zigzag_plan(drawing,image,brush_width,stroke_spacing)
+        elif method=='strokes':
+            from stroke_paint import build_stroke_plan          # 1.0.1: real zigzag strokes
+            _CACHE[key]=build_stroke_plan(drawing,image,brush_width,stroke_spacing)
+        else:
+            _CACHE[key]=build_plan(drawing,image,brush_width,stroke_spacing)
+        # Enough plans for a whole video's painted elements: with only 3, playing
+        # the whole video re-planned every element each time ("Preparing scene…").
+        if len(_CACHE)>PLAN_CACHE_SIZE: _CACHE.popitem(last=False)
+
+# exp.177 (the user: make the painting feel real, not squares switching on): the paint edge.
+# Every point of the picture gets its own moment the brush reaches it (the plan's grid of
+# moments, smoothed and blended between cells), and appears over a short moment instead of a
+# whole square at once. The edge also catches on a fixed paper grain, so it is ragged and
+# grainy like a dry brush or charcoal, and the grain stays put on the paper while the edge
+# moves through it.
+# exp.180 (the user: "add it as an option in painting, not as the default"): the paint look is
+# chosen per element (Paint look). Classic: the brush's squares, as before exp.177.
+PAINT_LOOKS = {'Classic': 'classic', 'Smooth brush': 'smooth', 'Ink appearance': 'ink'}
+# look: (fade-in share of the painting, how far the paper grain pushes the edge)
+LOOK_EDGE = {'smooth': (.01, .004), 'ink': (.025, .06)}
+SOFT_PAINT = True        # tests: False forces the classic squares
+SOFT_LIMIT = 1280        # the edge is worked out at most this many pixels across
+SOFT_FEATHER = .01       # default fade-in share (when no look is given)
+SOFT_GRAIN = .004        # default grain share
+SOFT_ROUND = .8          # cells: how much the brush's grid of moments is rounded
+
+
+def _grain(height, width, seed):
+    """A fixed paper grain, -1..1: fine fibres over soft blotches (the same every frame)."""
+    import cv2
+    rng = np.random.default_rng(seed)
+    out = np.zeros((height, width), np.float32)
+    for scale, weight in ((2, .45), (6, .35), (24, .2)):
+        h, w = max(2, height // scale), max(2, width // scale)
+        layer = cv2.resize(rng.random((h, w), dtype=np.float32), (width, height),
+                           interpolation=cv2.INTER_CUBIC)
+        out += weight * layer
+    out -= out.mean()
+    return out / max(1e-6, float(np.abs(out).max()))
+
+
+def _soft_field(plan, image):
+    """(moments, grain) at the edge's working size, in the plan's own clock (cached)."""
+    cached = plan.__dict__.get('_soft_field')
+    if cached is not None:
+        return cached
+    iw, ih = image.width(), image.height()
+    scale = min(1., SOFT_LIMIT / max(1, iw, ih))
+    width, height = max(2, round(iw * scale)), max(2, round(ih * scale))
+    import cv2
+    gw, gh = plan.size
+    arrival = np.asarray(plan.arrival, np.float64).reshape(gh, gw)
+    valid = np.isfinite(arrival).astype(np.float32)
+    late = float(plan.total) * 1.05
+    times = np.where(valid > 0, arrival, 0.).astype(np.float32)
+    # Rounded and blended only between cells the brush paints (a cell it never paints must
+    # not make its neighbours late).
+    if SOFT_ROUND > 0:
+        times = cv2.GaussianBlur(times, (0, 0), SOFT_ROUND)
+        weight = cv2.GaussianBlur(valid, (0, 0), SOFT_ROUND)
+    else:
+        weight = valid.copy()
+    up_t = cv2.resize(times, (width, height), interpolation=cv2.INTER_LINEAR)
+    up_w = cv2.resize(weight, (width, height), interpolation=cv2.INTER_LINEAR)
+    painted = cv2.resize(valid, (width, height), interpolation=cv2.INTER_NEAREST) > 0
+    moments = np.where(painted & (up_w > 1e-4), up_t / np.maximum(up_w, 1e-4), late).astype(np.float32)
+    grain = _grain(height, width, (gw * 7919 + gh * 104729 + len(plan.segments)) % (2 ** 32))
+    field = (moments, grain)
+    plan.__dict__['_soft_field'] = field
+    return field
+
+
+def soft_paint_alpha(plan, image, progress, look=None):
+    """0..255 at the edge's working size: how painted every point is at this progress."""
+    moments, grain = _soft_field(plan, image)
+    feather_share, grain_share = LOOK_EDGE.get(look, (SOFT_FEATHER, SOFT_GRAIN))
+    clock = max(0., min(1., float(progress))) / .98 * plan.total
+    if progress <= 0:
+        return np.zeros(moments.shape, np.uint8)
+    total = max(1e-9, float(plan.total))
+    feather = feather_share * total
+    # The grain only moves the edge; a point is fully painted by the time the brush is
+    # well past it (so nothing is left unpainted when the brush is done).
+    shift = grain_share * total * grain
+    amount = np.clip((clock - moments + shift + feather * .5) / feather, 0., 1.)
+    done = clock >= np.minimum(moments + grain_share * total + feather, total)
+    amount[done] = 1.
+    return np.asarray(np.rint(amount * 255), np.uint8)
+
+
+def painting_done(drawing,image,progress,brush_width,stroke_spacing=.55):
+    """exp.182 (the user: when the hand reached its corner the last lines vanished): the
+    painting is finished at the hand's last brush stroke, not at the end of the paint time.
+    The hand goes back to its corner from there, and while it travels the frame is held at
+    that moment; it used to be a hair before 98%, so the last bits of pencil line stayed until
+    the hand was back."""
+    if progress>=.98: return True
+    try:
+        plan=plan_for(drawing,image,brush_width,stroke_spacing)
+        last=max((s.end for s in plan.segments if s.painting),default=plan.total)
+        return progress>=last/max(1e-9,plan.total)*.98-1e-6
+    except Exception:
+        return False
+
+
+def finished_tip(drawing,image,rect,progress,brush_width,stroke_spacing=.55):
+    """exp.182 (the user: the hand disappeared for a moment after the painting): where the
+    pen is on a finished frame (its last stroke), or None after the brush route."""
+    try:
+        plan=plan_for(drawing,image,brush_width,stroke_spacing)
+        _,tip=plan.state(progress)
+        painting=[s for s in plan.segments if s.painting]
+        last=painting[-1] if painting else None
+    except Exception:
+        return None
+    if last is not None and progress<=last.end/max(1e-9,plan.total)*.98+1e-3:
+        tip=last.b                              # the pen where its last stroke ended
+    if tip is None: return None
+    return (rect.x()+tip[0]*rect.width()/plan.size[0],rect.y()+tip[1]*rect.height()/plan.size[1])
+
+
+ENDING=.1       # exp.228: seconds in which the painting hand settles on its last stroke
+
+
+def _onto_last(plan,progress,tip,seconds):
+    """exp.228 (the user: the hand jumped right before its way back): the brush strokes as
+    always; only in the last ENDING seconds the hand eases onto the end of the last stroke, so
+    its way back starts where it was seen (the brush's last quick hop made it jump)."""
+    if tip is None or not seconds or seconds<=0: return tip
+    painting=[s for s in plan.segments if s.painting]
+    if not painting: return tip
+    last=painting[-1]
+    clock=max(0.,min(1.,float(progress)))/.98*plan.total
+    span=ENDING/float(seconds)/.98*plan.total
+    left=last.end-clock
+    if span<=0 or left>=span: return tip
+    u=1.-max(0.,left)/span
+    e=u*u*(3-2*u)
+    return (tip[0]+(last.b[0]-tip[0])*e,tip[1]+(last.b[1]-tip[1])*e)
+
+
+def _plan_alpha(plan,method,look,image,progress):
+    """Where a plan has painted at progress (PIL 'L', the picture's size)."""
+    if method=='strokes':
+        # 1.0.1: the paint appears where the round brush strokes pass, at full size
+        from stroke_paint import stroke_alpha
+        return Image.fromarray(stroke_alpha(plan,image,progress),'L')
+    if SOFT_PAINT and look!='classic':
+        return Image.fromarray(soft_paint_alpha(plan,image,progress,look),'L')
+    alpha=plan.mask(progress)
+    return alpha.resize((image.width(),image.height()),Image.Resampling.NEAREST)
+
+
 def adaptive_paint_mask(drawing,image,width,height,rect,progress,brush_width,stroke_spacing=.55):
     plan=plan_for(drawing,image,brush_width,stroke_spacing)
-    alpha=plan.mask(progress)
-    alpha=alpha.resize((image.width(),image.height()),Image.Resampling.NEAREST)
+    look=getattr(drawing,'paint_look','classic') or 'classic'
+    if getattr(plan,'pencil',None) is not None:          # exp.2: the colour pass of pencil-first
+        alpha=_plan_alpha(plan.colour,plan.colour_method,look,image,pencil_passes(plan,progress)[1])
+    else:
+        alpha=_plan_alpha(plan,getattr(drawing,'paint_method','adaptive'),look,image,progress)
     small=Image.new('RGBA',alpha.size,(255,255,255,0)); small.putalpha(alpha)
     mask=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
     mask.fill(Qt.GlobalColor.transparent)
     painter=QPainter(mask)
-    # Nearest-neighbor keeps the exact discrete footprint at every resolution.
+    # Classic: nearest-neighbour keeps the exact discrete footprint (as before exp.177).
     painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
     painter.drawImage(rect,qimage(small)); painter.end()
-    segment,tip=plan.state(progress)
+    segment,tip=plan.state(progress)     # exp.228: the brush's own point (227's averaging flattened the strokes)
+    tip=_onto_last(plan,progress,tip,getattr(drawing,'paint_seconds',None))
     if tip is not None:
         tip=(rect.x()+tip[0]*rect.width()/plan.size[0],
              rect.y()+tip[1]*rect.height()/plan.size[1])
     return mask,tip
 
+def pencil_picture(image):
+    """The pencil version of a picture: its gray tones (the alpha is kept), a little lighter
+    in the middle tones, like graphite (QImage)."""
+    key=image.cacheKey()
+    kept=_PENCIL_PICTURES.get(key)
+    if kept is not None: return kept
+    import numpy as np
+    rgba=np.asarray(pil_image(image).convert('RGBA')).astype(np.float32)
+    gray=rgba[...,0]*.299+rgba[...,1]*.587+rgba[...,2]*.114
+    gray=255.*(gray/255.)**.85                           # graphite: mid tones a little lighter
+    out=np.dstack([gray,gray,gray*.98+2,rgba[...,3]]).clip(0,255).astype(np.uint8)
+    picture=qimage(Image.fromarray(out,'RGBA'))
+    _PENCIL_PICTURES[key]=picture
+    while len(_PENCIL_PICTURES)>4: _PENCIL_PICTURES.popitem(last=False)
+    return picture
+
+_PENCIL_PICTURES=OrderedDict()
+
+
+def under_pencil(frame,drawing,image,width,height,rect,progress,brush_width,stroke_spacing=.55):
+    """exp.2: puts the pencil pass under a frame of painted colour (frame: the colour already
+    masked by where it is painted): pencil x where it is drawn, under what is not yet coloured."""
+    if pencil_key(drawing) is None: return frame
+    try:
+        plan=plan_for(drawing,image,brush_width,stroke_spacing)
+        if getattr(plan,'pencil',None) is None: return frame
+        first,_=pencil_passes(plan,progress)
+        if first<=0: return frame
+        look=getattr(drawing,'paint_look','classic') or 'classic'
+        alpha=_plan_alpha(plan.pencil,plan.pencil_method,look,image,first)
+        picture=pil_image(pencil_picture(image)).convert('RGBA')
+        a=np.minimum(np.asarray(picture.getchannel('A'),np.uint16),
+                     np.asarray(alpha.resize(picture.size),np.uint16))
+        picture.putalpha(Image.fromarray(a.astype(np.uint8),'L'))
+        p=QPainter(frame)
+        p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOver)
+        p.drawImage(rect,qimage(picture))
+        p.end()
+    except Exception:
+        pass
+    return frame
+
+
 def render_adaptive(drawing,image,width,height,progress,thickness,brush_width,
-                    stroke_spacing,hand,hand_scale,anchor):
+                    stroke_spacing,hand,hand_scale,anchor,display_image=None):
     from color_reveal import artwork_rect,draw_hand
     from engine import render
     rect=artwork_rect(drawing,image,width,height)
     # All cells were painted by the real stroke plan at 98%. Render the
     # settled original PNG directly rather than recompositing it over SVG
     # outlines; this preserves exact colors/alpha and avoids dark fringes.
-    if progress>=.98:
+    if painting_done(drawing,image,progress,brush_width,stroke_spacing):
         frame=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
         frame.fill(Qt.GlobalColor.transparent)
         painter=QPainter(frame)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        painter.drawImage(rect,image)
+        from source_render import draw_source
+        draw_source(painter,rect,display_image if display_image is not None else image)
+        draw_hand(painter,finished_tip(drawing,image,rect,progress,brush_width,stroke_spacing),
+                  hand,width,hand_scale,anchor)       # exp.182: the hand stays on its last stroke
         painter.end()
         return frame
     mask,tip=adaptive_paint_mask(drawing,image,width,height,rect,progress,
                                 brush_width,stroke_spacing)
-    # Preserve the complete SVG until real painted pixels cover it. The old
-    # footprint clipping erased unreached contours immediately at paint start.
-    from PIL import ImageChops
-    source=pil_image(image)
-    coverage=plan_for(drawing,image,brush_width,stroke_spacing).mask(progress)
-    coverage=coverage.resize(source.size,Image.Resampling.NEAREST)
-    source.putalpha(ImageChops.multiply(source.getchannel('A'),coverage))
+    # The brush mask governs BOTH colored pixels and temporary SVG ink.
+    # Using only the PNG alpha to erase outlines would strand misregistered
+    # guides in transparent areas until the final frame.
     painted=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
     painted.fill(Qt.GlobalColor.transparent)
-    p=QPainter(painted); p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    p.drawImage(rect,qimage(source)); p.end()
-    from color_reveal import replace_outlines_with_painted_pixels
-    outline=replace_outlines_with_painted_pixels(
-        render(drawing,1,width,height,thickness),painted)
-    p=QPainter(outline)
+    p=QPainter(painted)
+    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    from source_render import draw_source
+    draw_source(p,rect,display_image if display_image is not None else image)
+    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+    p.drawImage(0,0,mask)
+    p.end()
+    painted=under_pencil(painted,drawing,image,width,height,rect,progress,brush_width,stroke_spacing)
+    from svg_guide_cleanup import remove_svg_guides
+    outline=remove_svg_guides(render(drawing,1,width,height,thickness),
+                              mask,image,rect,progress/.98)
+    # Assemble on a fresh premultiplied canvas, exactly like the settled
+    # frame. Compositing onto the SVG layer's own image format rounded some
+    # semi-transparent edge pixels, so a fully painted frame could differ
+    # slightly from the final frame and flicker at the end.
+    frame=QImage(width,height,QImage.Format.Format_ARGB32_Premultiplied)
+    frame.fill(Qt.GlobalColor.transparent)
+    p=QPainter(frame)
+    p.drawImage(0,0,outline)
+    p.drawImage(0,0,painted)
     draw_hand(p,tip,hand,width,hand_scale,anchor)
     p.end()
-    return outline
+    return frame

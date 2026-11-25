@@ -13,19 +13,49 @@ import os
 from pathlib import Path
 import re
 import shutil
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+# urllib is imported when a font is downloaded (exp.120: faster start).
 
-import cv2
+from lazy_import import Lazy as _Lazy
+cv2 = _Lazy("cv2")      # exp.130: loaded when first used
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from engine import Drawing, Stroke
 
-STARTER_FONTS=(
-    'Caveat','Kalam','Patrick Hand','Indie Flower','Dancing Script',
-    'Sacramento','Gochi Hand','Architects Daughter',
-    'Shadows Into Light','Reenie Beanie',
-)
+# Open-licensed Google Fonts (OFL or Apache 2.0: free, also for commercial use),
+# downloaded on request with their license. Grouped in the font list.
+FONT_GROUPS={
+    'Handwriting':('Caveat','Kalam','Patrick Hand','Indie Flower','Gochi Hand','Architects Daughter',
+                   'Shadows Into Light','Reenie Beanie','Amatic SC','Permanent Marker','Rock Salt',
+                   'Covered By Your Grace','Gloria Hallelujah','Handlee','Nothing You Could Do',
+                   'Just Another Hand','Schoolbell','Coming Soon','Neucha','Over the Rainbow',
+                   'Annie Use Your Telescope','La Belle Aurore','Zeyada','Delius','Mali','Sriracha','Caveat Brush',
+                   'Pangolin','Delicious Handrawn','Sue Ellen Francisco','Short Stack'),
+    # exp.12 (the user's picks for the Arthur Morgan journal): 1800s-style cursive, readable
+    'Western':('Homemade Apple','Arizonia','Niconne','Italianno'),
+    'Script':('Dancing Script','Sacramento','Satisfy','Great Vibes','Pacifico','Courgette','Kaushan Script',
+              'Allura'),
+    'Clean titles':('Nunito','Poppins','Montserrat','Lato','Quicksand','Comfortaa','Fredoka','Bebas Neue',
+                    'Oswald','Bangers','Luckiest Guy','Chewy'),
+    'Serif':('Merriweather','Playfair Display','Lora'),
+}
+STARTER_FONTS=tuple(f for group in FONT_GROUPS.values() for f in group)
+# exp.14: fonts that come with Windows (not downloaded, never copied or shared): the app uses
+# the copy already on the PC. Ink Free is the hand the user used for the Arthur Morgan video.
+WINDOWS_FONTS={'Ink Free':('Inkfree.ttf','inkfree.ttf')}
+
+
+def windows_font(family):
+    """Path of a Windows font on this PC (all users or this user), or None."""
+    names=WINDOWS_FONTS.get(family)
+    if not names: return None
+    folders=[Path(os.environ.get('WINDIR','C:/Windows'))/'Fonts']
+    if os.environ.get('LOCALAPPDATA'):
+        folders.append(Path(os.environ['LOCALAPPDATA'])/'Microsoft'/'Windows'/'Fonts')
+    for folder in folders:
+        for name in names:
+            p=folder/name
+            if p.is_file(): return p
+    return None
 MAX_FONT_BYTES=12_000_000
 API_ROOT='https://api.github.com/repos/google/fonts/contents'
 BINARY_HOST='https://raw.githubusercontent.com/google/fonts/'
@@ -47,6 +77,8 @@ def font_slug(family):
 
 
 def installed_font(family):
+    if family in WINDOWS_FONTS:
+        return windows_font(family)
     dest=font_dir()/font_slug(family)
     if not dest.is_dir(): return None
     for path in sorted(dest.glob('*')):
@@ -56,6 +88,7 @@ def installed_font(family):
 
 
 def _read_url(url,binary=False):
+    from urllib.request import Request, urlopen
     req=Request(url,headers={
         'User-Agent':'StrokeScribe-font-installer/0.5.3',
         'Accept':'application/vnd.github+json' if not binary else 'application/octet-stream',
@@ -73,6 +106,12 @@ def download_google_font(family):
     Supports open font licenses as organized in Google's public repository.
     Does not download a font without its accompanying upstream license.
     """
+    from urllib.error import HTTPError, URLError
+    if family in WINDOWS_FONTS:
+        path=windows_font(family)
+        if path is None:
+            raise ValueError(f'{family} is a font that comes with Windows 10 and 11, and it is not on this PC.')
+        return path
     slug=font_slug(family)
     existing=installed_font(family)
     if existing: return existing
@@ -200,10 +239,10 @@ def _trace_skeleton(image):
     return paths
 
 
-def make_font_text(text,fontfile,point_size=68):
+def make_font_text(text,fontfile,point_size=68,natural=False,layout=None):
     """Build authentic font ink with estimated centerline pen trajectories."""
     from font_stroke_reveal import create_font_drawing
-    return create_font_drawing(text,fontfile,point_size)
+    return create_font_drawing(text,fontfile,point_size,natural=natural,layout=layout)
 
 
 def render_font_lettering(drawing,progress,width,height,thickness=1.,
