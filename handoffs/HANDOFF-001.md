@@ -1,3 +1,9 @@
+# HANDOFF-001
+Date: 2026-11-25 · Written by: (earlier sessions; signed by HENRY II on 2026-11-26) · Previous: none
+
+This is the former HANDOFF.md, unchanged below this header. From now on each session
+adds a new numbered file in handoffs/ (see AGENTS.md).
+
 # StrokeScribe — Handoff
 
 Last updated: 2026-11-25. Current version: **1.0.1-experimental.71** (Prototype channel).
